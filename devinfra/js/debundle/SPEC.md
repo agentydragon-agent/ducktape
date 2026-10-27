@@ -48,10 +48,63 @@ The browser writer materializes those decisions without rediscovering entries.
 
 ## Authoring reports
 
+Each `dependency_graph.json` written by `debundle run` carries input provenance:
+SHA-256 of the executable engine and the exact bytes read for the tree config,
+vendor marks, module YAMLs, optional binding patches, JS list, every listed JS
+chunk, and vendor package files consulted by planning. Module YAML path
+membership is recorded separately, including paths outside the graph chunk.
+The provenance also retains a canonical runnable argv with resolved paths and
+effective env-provided values, the original cwd, logical root paths, and the
+config's chunk-to-module-tree mapping. A graph created before this metadata
+existed remains a historical report only.
+
+A command that combines a saved graph with current spec or source checks the
+recorded baseline before reading claims or writing edits. It refuses changed,
+added, deleted, or mismapped inputs and reports the mismatch with a regeneration
+command that uses a fresh output directory. An accepted edit evaluates its
+candidate assignment against the saved dependency analysis; the graph remains
+the **pre-edit** snapshot and the next graph-backed edit requires another
+`debundle run`. A batch edit checks one
+starting snapshot and one combined candidate. Graph-only historical views do
+not certify current input compatibility.
+
+`inspect-source --id unit:...` resolves that exact graph node without current
+module claims. It skips the authored module-scope check, allowing flat-spec
+graphs, while retaining captured-input, engine, and source identity checks.
+Other graph-backed selections and edits require the authored scope.
+
 Description reports include `module_proposals` and `module_proposal_diagnostics`
 only when proposal analysis runs. Their limits sections use the same field names.
 Proposals name their outgoing residual quotient-class dependencies with
 `edges_to_other_residual_classes` and `other_residual_classes_referenced`.
+
+## Delegated input snapshots
+
+`snapshot create` copies one saved graph's verified input set and exact engine
+bytes into a new worker directory. It preserves the input bytes and root
+relationships, rechecks copied file digests, and publishes the directory only
+after verifying the complete copy. Existing destinations are refused.
+
+The snapshot includes source chunks, the complete captured spec/config input
+set, dependency inputs, the graph, and a manifest describing the starting
+state. Its returned regeneration argument vector names the worker's copied
+engine, inputs and output directory. The returned `graph_package_roots` map
+supplies each global `--graph-package-root NAME=DIR` override for graph-backed
+queries and edits, including the `__packages_root__` fallback name. Separate
+snapshots share no writable
+input or output files. Snapshot verification continues to work after the
+original workspace is removed or the snapshot directory is moved.
+Browser source assets and their summary are copied and fingerprinted when
+the snapshot is created.
+
+`snapshot verify` checks the starting graph, engine, input contents and YAML
+membership. After a worker edits its spec, this baseline check fails; running
+the returned regeneration command produces analysis for the edited state.
+
+Snapshot creation requires a graph produced by `run` from a tree-shaped spec.
+Embedded source and vendor-bundle paths must be relative to the configured
+source root, and all captured files must belong to declared relocatable roots.
+Unsupported inputs are refused before a worker directory is published.
 
 ## Unassigned source
 
@@ -534,6 +587,29 @@ guards and require the same namespace capability audit as the fresh-only
 contract. Result mutation and later callback invocation/publication retain the
 ordinary synchronous-effect checks. No callback deferral assertion implies
 purity or permission to reorder argument evaluation.
+
+`debundle gate diagnose <binding>` provides a bounded source-backed trace for
+one ownership target through constraining promoted callback dependencies. Its
+initial supported rejection family is a matched imported namespace-member
+callback-factory signature rejected by a top-level write to that member or a
+recognized alias. The report names the matched signature and a write witness
+selected by source-unit order, with deterministic selection within a unit,
+including receiver, property, source span, and graph source-unit reference. A
+supported row also requires the promoted edge's callee source unit to match a
+statically resolved callback argument root from that exact signature.
+Unresolved callback arguments and source-unit mismatches are inconclusive. The
+report provides an explicit-path `inspect-source` command. Diagnose currently
+does not read or fingerprint the source input, so it does not emit a parsed
+statement ID or apply a possibly stale `SourceUnitOrdinal -> StatementId`
+crosswalk. Five rows are returned by
+default; `--all` requests exhaustive output, while query status summarizes all
+uniquely linked candidate edges regardless of the output limit. This is a
+local witness for this guard family, not a claim of a sole or globally earliest
+cause. Other guard families and absent promoted
+dependencies are inconclusive. Multiple candidate barriers at one source unit
+are also reported as an ambiguous link rather than cross-paired with callback
+dependencies. Configured overloads are included only when their arity and
+callback argument positions apply to the actual call.
 
 ### Retaining callbacks in constructed instances
 

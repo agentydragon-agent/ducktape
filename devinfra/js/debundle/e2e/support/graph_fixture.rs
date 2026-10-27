@@ -10,6 +10,9 @@ pub struct GraphFixture {
 }
 
 impl GraphFixture {
+    pub fn root(&self) -> &Path {
+        self.run.root()
+    }
     /// Module paths are relative to this fixture's single `main` chunk tree.
     pub fn new(source: &str, modules: &[(&str, &str)]) -> Self {
         Self::run(source, modules, true)
@@ -45,11 +48,7 @@ impl GraphFixture {
             &TreeFixture {
                 chunks,
                 module_roots: &[("main", "main")],
-                modules: if files.is_empty() {
-                    &[("main/empty.yaml", "members: []\n")]
-                } else {
-                    &files
-                },
+                modules: &files,
             },
             &[],
         );
@@ -60,9 +59,6 @@ impl GraphFixture {
             run.result.stderr
         );
         let modules_root = run._root.path().join("modules/main");
-        if files.is_empty() {
-            fs::remove_file(modules_root.join("empty.yaml")).unwrap();
-        }
         Self {
             graph: run.report_root.join("main/dependency_graph.json"),
             modules: modules_root,
@@ -128,6 +124,20 @@ impl GraphFixture {
     /// Both edit modes must refuse for the intended reason, without changing
     /// any spec bytes or creating/deleting files (including nested modules).
     pub fn assert_rejected_unchanged(&self, args: &[&str], diagnostics: &[&str]) {
+        self.assert_rejected_unchanged_with_graph(args, diagnostics, true);
+    }
+
+    /// Test an explicitly unverified edit without supplying a saved graph.
+    pub fn assert_rejected_unchanged_without_graph(&self, args: &[&str], diagnostics: &[&str]) {
+        self.assert_rejected_unchanged_with_graph(args, diagnostics, false);
+    }
+
+    fn assert_rejected_unchanged_with_graph(
+        &self,
+        args: &[&str],
+        diagnostics: &[&str],
+        with_graph: bool,
+    ) {
         fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
             let mut files = BTreeMap::new();
             for entry in fs::read_dir(root).unwrap() {
@@ -147,7 +157,11 @@ impl GraphFixture {
             if dry_run {
                 args.push("--dry-run");
             }
-            let out = self.command(&args);
+            let mut command = self.process(&args);
+            if !with_graph {
+                command.env_remove("DEBUNDLE_GRAPH");
+            }
+            let out = command.output().expect("run fixture command");
             let stderr = String::from_utf8_lossy(&out.stderr);
             // `debundle` exits 1 when it refuses an edit and clap exits 2 on a usage error; a
             // panic exits 101 and is no refusal.
@@ -200,10 +214,55 @@ impl GraphFixture {
 
     /// Re-run the edited spec, then execute its emitted entry under Node.
     pub fn assert_runs(&self, expected: &str) {
+        let rerun = self.rerun();
+        assert_node_output(&rerun.path().join("app/main/entry.js"), expected, "");
+    }
+
+    /// Refresh the saved graph after deliberate changes to valid authoring inputs.
+    pub fn refresh_graph(&self) {
+        let rerun = self.rerun();
+        fs::copy(
+            rerun.path().join("reports/tree/main/dependency_graph.json"),
+            &self.graph,
+        )
+        .expect("refresh fixture graph from the real pipeline");
+    }
+
+    fn rerun(&self) -> TempDir {
+        let rerun = TempDir::new_in(self.run._root.path()).expect("create fresh output directory");
+        let out = self.run_current_spec(rerun.path());
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        rerun
+    }
+
+    /// Run validation against the current input spec, independent of the
+    /// saved graph used by CLI edit commands.
+    pub fn assert_current_pipeline_rejects(&self, diagnostics: &[&str]) {
+        let output_root = TempDir::new_in(self.run._root.path())
+            .expect("create current-spec validation output directory");
+        let out = self.run_current_spec(output_root.path());
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "current spec should fail validation: {stderr}"
+        );
+        for diagnostic in diagnostics {
+            assert!(stderr.contains(diagnostic), "{stderr}");
+        }
+        assert!(
+            !output_root.path().join("app/main/entry.js").exists(),
+            "rejected current spec emitted an accepted app entry"
+        );
+    }
+
+    fn run_current_spec(&self, out_root: &Path) -> std::process::Output {
         let root = self.run._root.path();
-        let rerun = TempDir::new_in(root).expect("create fresh output directory");
-        let out_root = rerun.path();
-        let out = Command::new(debundler_path())
+        Command::new(debundler_path())
             .arg("run")
             .arg("--tree-config")
             .arg(root.join("spec_config.yaml"))
@@ -216,13 +275,7 @@ impl GraphFixture {
             .arg("--out-root")
             .arg(out_root)
             .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        assert_node_output(&out_root.join("app/main/entry.js"), expected, "");
+            .unwrap()
     }
 
     pub fn dependency_graph(&self) -> DependencyGraphReport {

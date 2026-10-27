@@ -65,6 +65,10 @@ pub struct RejectedFixture {
     pub chunk_id: String,
     pub stderr: String,
     pub report_root: PathBuf,
+    /// Empty spec root used by source-unit inspection queries in this flat-spec fixture.
+    pub modules_root: PathBuf,
+    /// Source snapshot root used to resolve graph source locations.
+    pub source_root: PathBuf,
     /// The `write_js_tree` output root, exposed so dry-run callers can
     /// assert the no-output contract (only `reports/` may exist).
     pub out_root: PathBuf,
@@ -319,6 +323,8 @@ fn run_rejection_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -
         chunk_id: opts.chunk_id.to_string(),
         stderr: result.stderr,
         report_root: setup.report_root,
+        modules_root: setup.modules_root,
+        source_root: setup.snapshot_root,
         out_root: setup.out_root,
         _root: setup.root,
     }
@@ -678,6 +684,7 @@ struct PreparedFixture {
     out_root: PathBuf,
     report_root: PathBuf,
     snapshot_root: PathBuf,
+    modules_root: PathBuf,
     js_list_path: PathBuf,
 }
 
@@ -687,9 +694,11 @@ fn prepare_fixture(opts: &FixtureOpts<'_>) -> PreparedFixture {
     let out_root = root.path().join("out");
     let report_root = out_root.join("reports").join("tree");
     let snapshot_root = root.path().join("snapshot");
+    let modules_root = root.path().join("modules/main");
     fs::create_dir_all(&extracted_root).unwrap();
     fs::create_dir_all(&out_root).unwrap();
     fs::create_dir_all(&snapshot_root).unwrap();
+    fs::create_dir_all(&modules_root).unwrap();
 
     // Mark the snapshot tree as ESM so node loads emitted .js files as modules.
     write_text_file(
@@ -733,6 +742,7 @@ fn prepare_fixture(opts: &FixtureOpts<'_>) -> PreparedFixture {
         out_root,
         report_root,
         snapshot_root,
+        modules_root,
         js_list_path,
     };
     write_yaml_file(&setup.spec_path, &build_spec(opts, &setup));
@@ -1098,6 +1108,7 @@ pub fn run_tree_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeR
     let root = TempDir::with_prefix(current_test_prefix()).expect("create tempdir");
     let snapshot = root.path().join("snapshot");
     let modules = root.path().join("modules");
+    fs::create_dir_all(&modules).expect("create modules root");
     let out_root = root.path().join("out");
     let mut js_list = String::new();
     let mut unassigned_mode = String::new();
@@ -1112,6 +1123,9 @@ pub fn run_tree_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeR
         .iter()
         .map(|(tree, chunk)| format!("  {tree}: {chunk}\n"))
         .collect::<String>();
+    for (tree, _) in fixture.module_roots {
+        fs::create_dir_all(modules.join(tree)).expect("create chunk module root");
+    }
     for (path, body) in fixture.modules {
         write_text_file(&modules.join(path), body);
     }

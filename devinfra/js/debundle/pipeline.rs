@@ -9,6 +9,7 @@ use artifact::ChunkId;
 use artifact::load_js_chunks;
 use artifact::reports::ChunkDecompositionOutput;
 use emit_harness::emit_browser_harness;
+use graph_provenance::{InputCapture, ProvenanceRoots};
 use lowering::{
     MaterializeLogicalModulesOptions, MaterializeSpecInputs, ReportEmission,
     materialize_logical_modules, naturalize_cross_chunk_imports,
@@ -19,7 +20,7 @@ use prune_module_exports::prune_unimported_module_exports;
 use reconstruction::{ReconstructionPlan, UnmatchedSpecClaim, VendorManifestOutput};
 use spec::TransformSpec;
 use spec_modules::read_flat_transform_spec;
-use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
+use spec_tree::{CompileSpecTreeOptions, compile_spec_tree, graph_module_roots};
 use vendor::{
     VendorPlanOptions, VendorSwapsReport, apply_emission_rewrites_in_place,
     build_partial_swap_resolutions, build_vendor_resolution_plan,
@@ -108,7 +109,9 @@ impl TransformArgs {
         let spec_source = resolve_spec_source(&self)?;
         Ok(TransformCli {
             spec_source,
-            package_roots: self.package_roots.into_iter().collect(),
+            package_roots: collect_package_roots(self.package_roots)?
+                .into_iter()
+                .collect(),
             packages_root: self.packages_root,
         })
     }
@@ -145,15 +148,15 @@ fn required_tree_arg(name: &str, value: &Option<PathBuf>) -> Result<PathBuf> {
         .with_context(|| format!("{name} is required with --tree-config"))
 }
 
-fn parse_package_root_kv(value: &str) -> Result<(String, PathBuf), String> {
+pub fn parse_package_root_kv(value: &str) -> Result<(String, PathBuf), String> {
     let Some(separator) = value.find('=') else {
         return Err(format!(
-            "--package-root must be in <package>=<dir> form, got {value}"
+            "package root mapping must be <package>=<dir>, got {value}"
         ));
     };
     if separator == 0 || separator == value.len() - 1 {
         return Err(format!(
-            "--package-root must be in <package>=<dir> form, got {value}"
+            "package root mapping must be <package>=<dir>, got {value}"
         ));
     }
     Ok((
@@ -162,8 +165,46 @@ fn parse_package_root_kv(value: &str) -> Result<(String, PathBuf), String> {
     ))
 }
 
+pub fn collect_package_roots(
+    pairs: impl IntoIterator<Item = (String, PathBuf)>,
+) -> Result<std::collections::BTreeMap<String, PathBuf>> {
+    let mut roots = std::collections::BTreeMap::new();
+    for (name, path) in pairs {
+        anyhow::ensure!(
+            roots.insert(name.clone(), path).is_none(),
+            "duplicate package root mapping for {name}"
+        );
+    }
+    Ok(roots)
+}
+
 pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Result<()> {
+    let (roots, modules_directory) = provenance_roots(cli)?;
+    let generation_command = canonical_generation_command(cli, &options, &roots)?;
+    let capture = InputCapture::start(roots, modules_directory, generation_command)?;
+    if let TransformSpecSource::Tree(tree) = &cli.spec_source {
+        // Capture the whole authored tree, including YAMLs outside the chunk
+        // selected for this graph. Path membership is part of the analysis input.
+        let members = graph_provenance::collect_yaml(&tree.modules_root)?;
+        let paths = members
+            .iter()
+            .map(|member| tree.modules_root.join(member))
+            .collect::<Vec<_>>();
+        graph_provenance::record_yaml_membership(&tree.modules_root, &paths)?;
+        for path in &paths {
+            graph_provenance::read_bytes(path)?;
+        }
+    }
     let spec = load_transform_spec_source(&cli.spec_source)?;
+    if let TransformSpecSource::Tree(tree) = &cli.spec_source {
+        capture.set_tree_scope(&tree.config_path, graph_module_roots(&tree.config_path)?)?;
+    }
+    let source_root = match &cli.spec_source {
+        TransformSpecSource::Tree(tree) => tree.source_root.clone(),
+        TransformSpecSource::Flat { .. } => None,
+    }
+    .unwrap_or_else(|| std::env::current_dir().expect("current directory"));
+    capture.set_source_root(&source_root)?;
     validate_transform_spec(&spec)?;
     if !options.dry_run {
         preflight_output_roots(&spec)?;
@@ -203,6 +244,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
             output_wrapper_dir: swap_cfg.output_wrapper_dir.as_deref(),
         },
     )?;
+    let graph_provenance = capture.finish()?;
     let write_vendor_outputs = swap_cfg.write && !options.dry_run;
 
     // Full swaps are an emission-set exclusion: the swapped chunks stay in
@@ -243,6 +285,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
             },
             &vendor_plan,
             MaterializeLogicalModulesOptions {
+                graph_provenance: Some(graph_provenance),
                 config: spec.materialize_logical_modules.clone(),
                 chunk_ids: materialise_chunk_ids,
                 keep_going: options.keep_going,
@@ -385,6 +428,127 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     Ok(())
 }
 
+fn provenance_roots(cli: &TransformCli) -> Result<(ProvenanceRoots, Option<PathBuf>)> {
+    let (spec_root, modules_directory) = match &cli.spec_source {
+        TransformSpecSource::Flat { path } => (
+            graph_provenance::absolute(
+                path.parent()
+                    .filter(|parent| !parent.as_os_str().is_empty())
+                    .unwrap_or_else(|| Path::new(".")),
+            )?,
+            None,
+        ),
+        TransformSpecSource::Tree(tree) => {
+            let config_parent = graph_provenance::absolute(
+                tree.config_path
+                    .parent()
+                    .filter(|parent| !parent.as_os_str().is_empty())
+                    .unwrap_or_else(|| Path::new(".")),
+            )?;
+            let vendor_parent = graph_provenance::absolute(
+                tree.vendor_marks_path
+                    .parent()
+                    .filter(|parent| !parent.as_os_str().is_empty())
+                    .unwrap_or_else(|| Path::new(".")),
+            )?;
+            let modules_root = graph_provenance::absolute(&tree.modules_root)?;
+            let mut common = config_parent;
+            while !vendor_parent.starts_with(&common) || !modules_root.starts_with(&common) {
+                common = common
+                    .parent()
+                    .context("spec inputs have no common root")?
+                    .to_path_buf();
+            }
+            let modules_directory = modules_root.strip_prefix(&common)?.to_path_buf();
+            (common, Some(modules_directory))
+        }
+    };
+    let source = match &cli.spec_source {
+        TransformSpecSource::Tree(tree) => tree
+            .source_root
+            .as_deref()
+            .map(graph_provenance::absolute)
+            .transpose()?,
+        TransformSpecSource::Flat { .. } => None,
+    }
+    .unwrap_or(std::env::current_dir()?);
+    let mut packages = std::collections::BTreeMap::new();
+    anyhow::ensure!(
+        !cli.package_roots.contains_key("__packages_root__"),
+        "package name __packages_root__ is reserved for the shared packages root in graph provenance"
+    );
+    for (name, root) in &cli.package_roots {
+        packages.insert(name.clone(), graph_provenance::absolute(root)?);
+    }
+    if let Some(root) = &cli.packages_root {
+        packages.insert(
+            "__packages_root__".to_string(),
+            graph_provenance::absolute(root)?,
+        );
+    }
+    Ok((
+        ProvenanceRoots {
+            spec: spec_root,
+            source,
+            packages,
+        },
+        modules_directory,
+    ))
+}
+
+/// A runnable argv containing the effective inputs, including values supplied
+/// only through Clap env vars. All input and output roots are absolute so a
+/// caller can replay it from another working directory (or translate roots
+/// for an isolated snapshot).
+fn canonical_generation_command(
+    cli: &TransformCli,
+    options: &TransformRunOptions,
+    roots: &ProvenanceRoots,
+) -> Result<Vec<String>> {
+    fn path_arg(path: &Path) -> Result<String> {
+        Ok(graph_provenance::absolute(path)?
+            .to_str()
+            .with_context(|| format!("non-UTF-8 generation path {}", path.display()))?
+            .to_string())
+    }
+    let mut argv = vec![path_arg(&std::env::current_exe()?)?, "run".to_string()];
+    match &cli.spec_source {
+        TransformSpecSource::Flat { path } => {
+            argv.extend(["--spec".to_string(), path_arg(path)?]);
+        }
+        TransformSpecSource::Tree(tree) => {
+            argv.extend(["--tree-config".to_string(), path_arg(&tree.config_path)?]);
+            argv.extend(["--tree-modules".to_string(), path_arg(&tree.modules_root)?]);
+            argv.extend([
+                "--tree-vendor-marks".to_string(),
+                path_arg(&tree.vendor_marks_path)?,
+            ]);
+            // Explicitly preserve the effective compile root when it came
+            // from DEBUNDLE_TREE_SOURCE_ROOT or the original cwd.
+            argv.extend(["--tree-source-root".to_string(), path_arg(&roots.source)?]);
+            argv.extend(["--out-root".to_string(), path_arg(&tree.out_root)?]);
+        }
+    }
+    let mut package_roots = cli.package_roots.iter().collect::<Vec<_>>();
+    package_roots.sort_by_key(|(name, _)| *name);
+    for (name, path) in package_roots {
+        argv.extend([
+            "--package-root".to_string(),
+            format!("{name}={}", path_arg(path)?),
+        ]);
+    }
+    if let Some(root) = &cli.packages_root {
+        argv.extend(["--packages-root".to_string(), path_arg(root)?]);
+    }
+    if options.dry_run {
+        argv.push("--dry-run".to_string());
+    }
+    if !options.keep_going {
+        argv.push("--fail-fast".to_string());
+    }
+    Ok(argv)
+}
+
 fn load_transform_spec_source(source: &TransformSpecSource) -> Result<TransformSpec> {
     match source {
         TransformSpecSource::Flat { path } => read_flat_transform_spec(path),
@@ -505,6 +669,27 @@ mod tests {
         report_dir_override: None,
         list_template_identifiers: false,
     };
+
+    #[test]
+    fn reserved_package_root_name_is_rejected() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let mut package_roots = HashMap::new();
+        package_roots.insert("__packages_root__".to_string(), temp.path().to_path_buf());
+        let cli = TransformCli {
+            spec_source: TransformSpecSource::Flat {
+                path: temp.path().join("spec.yaml"),
+            },
+            package_roots,
+            packages_root: Some(temp.path().to_path_buf()),
+        };
+        assert!(
+            provenance_roots(&cli)
+                .unwrap_err()
+                .to_string()
+                .contains("reserved")
+        );
+        Ok(())
+    }
 
     #[derive(Serialize)]
     struct AssetSummaryFixture<'a> {

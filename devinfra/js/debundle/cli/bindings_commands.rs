@@ -20,6 +20,51 @@ pub(super) struct BindingsNs {
     command: BindingsNsCommand,
 }
 
+impl BindingsNs {
+    pub(super) fn writes_with_graph(&self) -> bool {
+        match &self.command {
+            BindingsNsCommand::Assign(args) => {
+                args.edit.dependency_graph_path.is_some() && !args.edit.dry_run
+            }
+            BindingsNsCommand::Unassign(args) => {
+                args.edit.dependency_graph_path.is_some() && !args.edit.dry_run
+            }
+            _ => false,
+        }
+    }
+    pub(super) fn format(&self) -> Option<OutputFormat> {
+        match &self.command {
+            BindingsNsCommand::Assign(args) => args.edit.format,
+            BindingsNsCommand::Unassign(args) => args.edit.format,
+            _ => None,
+        }
+    }
+    pub(super) fn verify_graph(
+        &self,
+        spec_root: Option<&std::path::Path>,
+        graph_source_root: Option<&std::path::Path>,
+        graph_package_roots: &std::collections::BTreeMap<String, PathBuf>,
+    ) -> Result<()> {
+        let edit = match &self.command {
+            BindingsNsCommand::Assign(args) => &args.edit,
+            BindingsNsCommand::Unassign(args) => &args.edit,
+            _ => return Ok(()),
+        };
+        if let Some(graph) = &edit.dependency_graph_path {
+            crate::verify_graph_compatibility(
+                graph,
+                &edit.modules_root,
+                edit.source_root.as_deref(),
+                spec_root,
+                graph_source_root,
+                graph_package_roots,
+                None,
+            )?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Subcommand)]
 enum BindingsNsCommand {
     /// Read, set, edit, or clear a binding's `comment:` field.
