@@ -36,11 +36,8 @@ stay deferred until a worker must reach a caller that has not asked.
 
 ### Reading turns depends on History's read and follow design
 
-`read_turns` and `wait_for_turn` build on [History read and follow](history_read_follow.md)'s `FollowSession`,
-accepted by the operator on 2026-10-27 and built under
-[`HISTORY_READ_FOLLOW_API`](task_dag.md#history_read_follow_api--implement-the-reviewed-readfollow-api), not on
-today's paged reads and payload-free summary watch, which would add one more follow loop
-([#11817](https://github.com/agentydragon/ducktape/issues/11817) is what such a loop got wrong for titles). What an
+`read_turns` and `wait_for_turn` build on the implemented
+[`FollowSession`](../history_service/README.md#read-and-follow-one-session). What an
 orchestrator needs from it: a start a number of turns back, a kind filter for turn completions and final assistant
 messages, and a bounded wait for the next turn end that a caller with a 30 s tool budget can repeat without a gap or
 duplicate; [how these two tools build on it](history_read_follow.md#what-the-orchestration-executor-builds-on-it).
@@ -105,7 +102,7 @@ permissions or `bind` on it by name; the counterpart here would grant attaching 
 - **P0, configuration only (optional).** Bind `claude-ai` to the `send-to-*` sets the operator picks, so Claude
   can message existing Haku or public-coder Sessions from a box. It also exercises the agent receive, read and
   acknowledge behavior the cross-agent plan still lists as unvalidated.
-- **P2, reading turns, after `HISTORY_READ_FOLLOW_API`** (`ORCHESTRATION_V1_TURN_READS`). `read_turns` and
+- **P2, reading turns** (`ORCHESTRATION_V1_TURN_READS`). `read_turns` and
   `wait_for_turn` on the reviewed read and follow API. Acceptance adds waiting for and reading a turn's outcome, and
   a wait that spans several calls.
 - **P3, backend grants, one operation at a time** (`ORCHESTRATION_V1_BACKEND_GRANTS`). As
