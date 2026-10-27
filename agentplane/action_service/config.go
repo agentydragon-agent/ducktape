@@ -70,6 +70,17 @@ type config struct {
 	IntegratedConnectionService bool    `mapstructure:"integrated_connection_service"`
 	MaxWaitSeconds              float64 `mapstructure:"max_wait_seconds"`
 	DirectWaitSeconds           float64 `mapstructure:"direct_wait_seconds"`
+	// SessionDispatcher is where the orchestration_v1 groups send Session commands, and HistoryService where they read
+	// Sessions; both are set exactly when one is configured.
+	SessionDispatcher *peer `mapstructure:"session_dispatcher"`
+	HistoryService    *peer `mapstructure:"history_service"`
+}
+
+// peer is a gRPC service this one calls as its workload, with its projected token for the peer's audience.
+type peer struct {
+	Target                string  `mapstructure:"target"`
+	TokenFile             string  `mapstructure:"token_file"`
+	RequestTimeoutSeconds float64 `mapstructure:"request_timeout_s"`
 }
 
 // oauthSettings reads the existing Secret unchanged. The signing and encryption files and discovery
@@ -244,8 +255,39 @@ func (c *config) validate() error {
 			return errors.New("oauth.base_url must be an origin")
 		}
 	}
+	if err := c.validateOrchestration(); err != nil {
+		return err
+	}
 	if c.operatorsEnabled() {
 		return c.OperatorOIDC.Validate()
+	}
+	return nil
+}
+
+// validateOrchestration requires the Session Dispatcher and the History Service exactly when an orchestration_v1 group
+// calls them, and each such group to launch where the policy index reads its launcher grants.
+func (c *config) validateOrchestration() error {
+	var orchestration bool
+	for key, group := range c.ActionGroups.Groups() {
+		if binding, is := group.Executor.(catalog.OrchestrationBinding); is {
+			orchestration = true
+			if binding.Namespace != c.PolicyNamespace {
+				return fmt.Errorf("ActionGroup %s must launch in policy_namespace, where its launcher grants are read", key)
+			}
+		}
+	}
+	for _, called := range []struct {
+		key  string
+		peer *peer
+	}{{"session_dispatcher", c.SessionDispatcher}, {"history_service", c.HistoryService}} {
+		switch p := called.peer; {
+		case orchestration && p == nil:
+			return fmt.Errorf("%s is required by the orchestration_v1 groups", called.key)
+		case !orchestration && p != nil:
+			return fmt.Errorf("%s is set, but no orchestration_v1 group calls it", called.key)
+		case p != nil && (p.Target == "" || p.TokenFile == "" || !(p.RequestTimeoutSeconds > 0) || math.IsInf(p.RequestTimeoutSeconds, 0)):
+			return fmt.Errorf("%s requires target, token_file and a finite positive request_timeout_s", called.key)
+		}
 	}
 	return nil
 }
