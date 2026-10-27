@@ -269,6 +269,8 @@
           nixpkgs ? inputs.nixpkgs,
           home-manager ? inputs.home-manager,
           extraModules ? [ ],
+          # Component guests can opt into package groups from the root flake.
+          extraSpecialArgs ? { },
           # Inline home-manager config: if set, HM is activated during NixOS
           # activation (no hm-bootstrap.nix needed). Requires the HM host
           # config module path (e.g., ./nix/home/hosts/nixos-vm.nix).
@@ -309,7 +311,8 @@
               llama-cpp-openvino
               llama-router
               ;
-          };
+          }
+          // extraSpecialArgs;
           modules = [
             ./nix/nixos/modules/base.nix
             hostModule
@@ -582,6 +585,8 @@
           hostname = "agentplane-runner-vm";
           username = "runner";
           hostModule = ./agentplane/runner/vm.nix;
+          # Keep the guest's repository tooling identical to the Pod runner's.
+          extraSpecialArgs = { inherit preCommitPackages; };
           enableHomeManager = false;
         };
 

@@ -19,11 +19,14 @@ on:
       - "devinfra/secrets/ci_env.sh"
       - "flake.lock"
       - "flake.nix"
+      - "nix/artifact-pins.json"
       - "nix/attic-pubkeys.json"
+      - "nix/flake/devtools.nix"
       - "nix/flake/packages.nix"
       - "nix/lib/nix-ld-image.nix"
       - "nix/nixos/modules/base.nix"
       - "nix/nixos/modules/vm-hardware.nix"
+      - "nix/packages/**"
   # Same-repository PRs can use pull_request directly. Fork PRs are skipped here
   # (their secrets are unavailable) and use pull_request_target below instead.
   pull_request:
@@ -40,11 +43,14 @@ on:
       - "devinfra/secrets/ci_env.sh"
       - "flake.lock"
       - "flake.nix"
+      - "nix/artifact-pins.json"
       - "nix/attic-pubkeys.json"
+      - "nix/flake/devtools.nix"
       - "nix/flake/packages.nix"
       - "nix/lib/nix-ld-image.nix"
       - "nix/nixos/modules/base.nix"
       - "nix/nixos/modules/vm-hardware.nix"
+      - "nix/packages/**"
       # keep-sorted end
   # Fork PRs use pull_request_target so repository secrets are available, with
   # the same trusted-author / fork-ci-review gate as trusted-fork-pr-ci.yml.
@@ -63,11 +69,14 @@ on:
       - "devinfra/secrets/ci_env.sh"
       - "flake.lock"
       - "flake.nix"
+      - "nix/artifact-pins.json"
       - "nix/attic-pubkeys.json"
+      - "nix/flake/devtools.nix"
       - "nix/flake/packages.nix"
       - "nix/lib/nix-ld-image.nix"
       - "nix/nixos/modules/base.nix"
       - "nix/nixos/modules/vm-hardware.nix"
+      - "nix/packages/**"
       # keep-sorted end
   workflow_dispatch:
 
