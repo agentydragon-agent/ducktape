@@ -8,8 +8,10 @@ with that direction. And if we have a mode where we run sampling in agentplane o
 would allow us to e.g. better control things like memory retrieval."
 
 Codex evidence is read from [`openai/codex` at `rust-v0.162.1`][tag] (commit `092d3acd`), the
-`agentplane_codex_cli_linux_x64` pin. Claude Code evidence comes from strings in the runner-pinned
-2.1.252 binary. Nothing here was run.
+`agentplane_codex_cli_linux_x64` scripted-test pin. Claude evidence includes static inspection of
+the 2.1.252 test pin and this session's installed 2.1.296, plus existing scripted-test source
+([versioned evidence](../debug/claude_execution_placement.md)). The runner image uses independently
+pinned nixpkgs harnesses. No new inference or execution-placement probe was run for this research.
 
 ## Today
 
@@ -206,12 +208,12 @@ shared app-server would have to turn them off, or each owner gets an app-server 
   executor, and central Codex with the Sandbox's exec-server can run side by side; a new mode applies
   to new Sandboxes, and none retires the others.
 
-## Our own harness instead of Codex
+## A Postgres-backed Codex fork or custom harness
 
 Rai: "Or generally any things that codex does that would be hard to replicate if we run it or an
 analogous harness we write ourselves outside the sandbox where its executed commands run". Run outside,
-Codex itself loses only the host-side items [above](#codex-supports-the-split-upstream). A harness
-Agentplane writes would have to reproduce, beyond where it runs:
+Codex has the host-side placement limits [above](#codex-supports-the-split-upstream). A custom
+harness needs to account for each feature it retains, beyond where it runs:
 
 - **The model's tool contract.** GPT-6 entries are code mode only on Responses Lite; the model expects
   `exec` and `wait`, the `tools.*` API, `apply_patch`'s grammar, unified exec's yield and stdin
@@ -227,29 +229,96 @@ Agentplane writes would have to reproduce, beyond where it runs:
 - **Rollouts, resume, fork and `thread/items/list`**, which the Runner's recovery reconciliation reads
   ([runner](../runner/README.md#native-continuation-evidence)).
 
-Every control point above (environment placement, per-turn context, driver tools, hooks, thread
-instructions, per-thread configuration) is already in Codex's client API, so running upstream Codex
-centrally gets them without that cost. A harness of our own earns its cost only for a control need that
-API cannot meet. Rewriting requests at the LLM ingress is a third route, but it fights the harness's
-world-state diffs and prompt caching.
+Central placement and persistence ownership are independent choices. Upstream Codex centrally
+retains its native store plus Agentplane's command/Event journal. A fork or custom sampler could
+make Postgres authoritative for the model conversation, prompt/context state, turns, tool intents,
+results and recovery checkpoints. This could remove several layers whose purpose is observing a
+remote, independently persistent harness. Removing CLI rendering alone does not measure that saving:
+the current headless app-server already avoids an interactive terminal UI.
+
+| Current responsibility                                                    | Candidate in a central Postgres-backed mode                                                                                                  |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native rollout files and state DB, plus Runner SQLite journal             | One service-owned durable conversation store; preserve the native/provider facts needed for continuation                                     |
+| Runner journal push, exact-replay acknowledgements and seal-before-delete | Central commits protect conversation state independently of executor storage; executor effects still need receipts and fencing               |
+| Native transcript versus Runner-event recovery reconciliation             | Recover the sampler from committed state; retain uncertainty about unobserved model responses and tool effects                               |
+| History raw archive and derived Thread fold                               | Keep retained history and frontend projections; evaluate serving them from the same authoritative log without a second ingestion copy        |
+| Dispatcher command delivery and Runner Gateway proxy                      | Central input admission may become local to the sampler; retain authenticated executor dial-out, routing, cancellation and lifecycle control |
+
+These are proposed responsibility changes, not permission for multiple services to write each
+other's tables or a decision to delete services. The [current authorities](../docs/thread_layering.md#authorities-and-representations),
+[Gateway](../runner_gateway/README.md) and [History](../history_service/README.md) still provide those
+contracts. Central sampling alone does not replace them. Any extraction must preserve retained
+Sessions, identities, history and native state under the staging data-preservation procedure.
+
+### Bounded spike: measure the headless subset we need
+
+Operator, 2026-10-27: investigate whether our own "Codex" is small enough to justify tighter tracking
+of OpenAI APIs. **Unscheduled; no implementation yet.** Compare a persistence-focused
+Codex fork with a custom loop that reuses useful upstream components. Count new code, reused code,
+dependencies and the ongoing provider-API surface separately; no unsupported line-count estimate.
+
+The first end-to-end slice is a scripted model turn, remote shell and patch, and continuation from
+Postgres after sampler restart, without a native rollout or second Runner conversation journal.
+Use the same tool semantics and code-mode model surface as the upstream comparison. Capture the
+actual model request/response and demonstrate a minimal frontend-readable trace. Measure the extra
+work for yielding/stdin, interrupts, compaction, instruction loading and resume rather than hiding it
+behind a successful text/tool loop. Distinguish features exercised, reused but unverified, and omitted;
+interactive CLI rendering and unrelated CLI commands need no equivalent. Specify the minimal intended
+support for subagents, skills/MCP, approvals and hooks before claiming the subset is sufficient.
+
+Crash checks must distinguish committed tool intent, dispatch, effect and returned result. Postgres
+cannot atomically commit a shell side effect: loss after dispatch remains uncertain and must not
+blindly replay a mutating command. Persist turn ownership with fencing across sampler replicas; show
+that a stale owner cannot advance a resumed turn. Kill the executor or its state backend mid-call:
+conversation state remains readable and the sampler reports a bounded failure with honest effect
+uncertainty ([incident #12203](https://github.com/agentydragon/ducktape/issues/12203)).
+
+### Model exchange visibility
+
+A custom central sampler owns the request/response boundary before native adapters translate it.
+Merely relocating upstream Codex does not expose every model payload through app-server; equivalent
+evidence would need model-client instrumentation or an ingress capture path. Record a model-exchange ID linked to Session, turn and tool IDs, with ordered streaming parts,
+completion/error, usage and timing. Keep the request actually sent distinct from assembled input,
+frontend projections, and a recovered or retried attempt. This lets the frontend show prompts,
+instruction/context sources, compaction and tool results without inferring the model exchange from
+SDK events. Preserve opaque provider continuation data needed for resume. Store model
+payloads without substituted credentials under conversation authorization and an explicit retention policy; do not put auth headers
+or credential-bearing URLs in frontend traces. Central ownership must still bound buffering and apply
+backpressure when storage or a viewer is slow. The spike should show what fidelity upstream's API
+already exposes and what a fork/custom loop gains.
 
 ## Claude
 
-Rai, 2026-10-27: "anthropic wants you to run the Claude CLI when you're on a subscription while openai
-seems more chill about you talking to codex's api". On the subscription the CLI stays the client, so
-this direction is Codex first.
+[Collected evidence](../debug/claude_execution_placement.md) distinguishes built-in local tools,
+driver-hosted MCP, native remote-tool serving, Remote Control/RemoteIO and provider wire cloaking.
+Subscription use alone does not establish that the CLI must execute tools locally. Technical wire compatibility, live provider acceptance and supported account use
+are separate questions.
 
-Claude Code 2.1.252 has no usable remote tool backend: the bundle reads
-`CLAUDE_CODE_REMOTE_TOOLS_{SERVE,POLICY,SESSION_CHANNEL}`, but the availability check beside them is
-compiled to `false` in the public build. A central Claude would run the CLI with `--tools ""` and driver
-tools ([driver tools](../docs/driver_tools.md)) that act in the Sandbox. That gives up the built-in
-tools' behavior: nested CLAUDE.md on Read, read-before-edit tracking, background shells, image and PDF
-reads, and the tool names the model knows. Agentplane would reimplement nested CLAUDE.md in its own read
-tool. Claude stays in the Sandbox unless a separate case is made.
+The 2.1.252 test build compiles the remote-tool entry gate off. Installed 2.1.296 instead has a local
+`CLAUDE_CODE_REMOTE_TOOLS_FORWARD` switch plus account flags and bridge requirements. Its native
+serving path uses per-caller read state and the tool pipeline, but full nested `CLAUDE.md` propagation
+to the remote model request is unverified. Enabling the local predicate does not prove a self-hostable
+backend. A shell proxy alone leaves filesystem tools, instruction loading and related state local.
+
+Alternatives to compare:
+
+- **Codex-only central mode.** Use its upstream execution-environment API; Claude remains local.
+  Claude investigation does not block that mode.
+- **Claude native remote tools.** Characterize the newer binary's gate, transport and built-in
+  semantics with a scripted peer before committing to integration.
+- **Central Claude CLI plus custom tools.** Disable built-ins with `--tools ""`, supply remote tools
+  through the tested driver MCP seam, and explicitly reproduce wanted behavior such as nested
+  instructions and read-before-edit state. Existing MCP tests do not establish full parity.
+- **Custom sampler through CLIProxyAPI.** Send model API requests using its translation/cloaking or
+  a required CLI/SDK-shaped identity. The pinned proxy implements those mechanisms, but no live
+  compatibility was tested here. Agentplane owns the tool/context loop and persistence; presenting
+  a Claude identity does not supply Claude's built-in tool behavior.
 
 ## Next
 
-`CENTRAL_CODEX_SPIKE`, then `HARNESS_PLACEMENT_DESIGN`, in [task DAG](task_dag.md) section 5.
+`CENTRAL_CODEX_SPIKE` and `POSTGRES_HARNESS_SPIKE` supply `HARNESS_PLACEMENT_DESIGN` in
+[task DAG](task_dag.md) section 5. `CLAUDE_REMOTE_EXECUTION_SPIKE` supplies optional Claude evidence;
+it is not a prerequisite for choosing a Codex-only mode. No runtime cutover is selected.
 
 [tag]: https://github.com/openai/codex/tree/rust-v0.162.1/codex-rs
 [env-add]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/app-server-protocol/src/protocol/v2/environment.rs#L38-L53

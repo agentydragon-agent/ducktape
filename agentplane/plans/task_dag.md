@@ -606,7 +606,11 @@ flowchart LR
     STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
     CENTRAL_CODEX_SPIKE[Unscheduled: Codex outside the Sandbox drives its exec-server]
-    CENTRAL_CODEX_SPIKE --> HARNESS_PLACEMENT_DESIGN[Decision, unscheduled: where Codex's agent loop runs]
+    CENTRAL_CODEX_SPIKE --> HARNESS_PLACEMENT_DESIGN[Decision, unscheduled: sampler placement and state authority]
+    POSTGRES_HARNESS_SPIKE[Unscheduled: measure a Postgres-backed headless Codex subset]
+    POSTGRES_HARNESS_SPIKE --> HARNESS_PLACEMENT_DESIGN
+    CLAUDE_REMOTE_EXECUTION_SPIKE[Unscheduled: Claude remote tools and custom sampler compatibility]
+    CLAUDE_REMOTE_EXECUTION_SPIKE -. optional Claude branch evidence .-> HARNESS_PLACEMENT_DESIGN
 ```
 
 ### `STRUCTURED_TOOL_OUTPUT` — tool results as ordered text and image parts
@@ -638,18 +642,57 @@ In the k3s fixture, run the pinned Codex app-server in a control-plane Pod and `
 Drive a scripted GPT-6 code-mode turn: a cell running `tools.exec_command` and `tools.apply_patch`, a
 `view_image`, and AGENTS.md read from the Sandbox's workspace. Check that the Sandbox needs no LLM ingress
 grant, and whether a per-thread model provider token attributes spend to the Session. Measure nested-call
-latency against isolated-executor mode. Exit: the test, and its numbers in the research plan. Changes no
-deployed mode.
+latency against isolated-executor mode. Put sampling, native persistence and the recovery journal outside the
+executor's mounts and failure domain. Kill the executor or its state backend mid-tool: the conversation remains
+readable, the turn reaches a bounded failure, and unknown effects are not replayed
+([incident #12203](https://github.com/agentydragon/ducktape/issues/12203)). Exit: the test and its numbers in the
+research plan. Changes no deployed mode.
 
-### `HARNESS_PLACEMENT_DESIGN` — where Codex's agent loop runs
+### `POSTGRES_HARNESS_SPIKE` — measure a Postgres-backed headless Codex subset
 
-**Decision, unscheduled; after `CENTRAL_CODEX_SPIKE`.** Alternatives: a harness Pod per Sandbox, outside it; one
-shared app-server for many Sandboxes; no change. Recommendation to review: a harness Pod per Sandbox, which keeps
-today's failure scope and per-Pod spend attribution and shares no `CODEX_HOME` between owners. The decision also
-names who owns the journal and recovery for a central harness (it meets the frozen
-`RUNNER_STATE_BOUNDARY_RETHINK`), the tunnel's authentication, interrupts and executor replacement, spend
-attribution, where memory lives, and how central and Sandbox-hosted modes coexist. Claude stays Sandbox-hosted:
-subscription use goes through its CLI, and 2.1.252 has no usable remote tool backend.
+**Unscheduled spike; operator, 2026-10-27 PDT.** Independent of
+`CENTRAL_CODEX_SPIKE`. Compare a Codex persistence fork with a custom sampler using only the headless
+features Agentplane needs ([scope](sampling_outside_sandboxes.md#bounded-spike-measure-the-headless-subset-we-need)).
+Run a scripted model/tool/continuation slice with Postgres as the conversation authority and a remote executor,
+without a native rollout or second Runner conversation journal. Keep code-mode and shell/patch contracts
+comparable to upstream. Measure new/reused code, dependencies, provider API maintenance and remaining gaps
+in interrupts, compaction, instructions, recovery and other selected features. Include replica ownership fencing,
+executor-loss uncertainty and no blind replay of effects. Capture actual model request/response parts with
+turn/tool correlation and a frontend-readable trace; record the visibility gained over app-server events.
+Exit: runnable prototype, measured size and dependency inventory, failure evidence, explicit omissions and a
+fork-versus-custom recommendation. No CLI rendering, production replacement or deployment in this spike.
+
+### `CLAUDE_REMOTE_EXECUTION_SPIKE` — Claude remote tools and custom sampler compatibility
+
+**Unscheduled investigation/spike; operator, 2026-10-27 PDT.** Independent of both Codex spikes.
+Start from [versioned evidence](../debug/claude_execution_placement.md): the 2.1.252 test pin's gate is compiled
+off; installed 2.1.296 has a local forwarding switch, account flags and native tool serving. Establish which
+gates are locally settable, which require account support, and whether a scripted Agentplane peer can implement
+the transport. Trace and capture root/nested `CLAUDE.md` in the next model request after a remote read, including
+resume, caller isolation and read-before-edit behavior; file-operation success alone does not establish parity.
+Compare native serving, central CLI with driver MCP and built-ins disabled, and a custom Postgres sampler through
+CLIProxyAPI translation/cloaking or CLI/SDK-shaped requests. Distinguish model-wire identity from Claude controller
+protocol compatibility. Check streaming, tool names, continuation and cache behavior; mark any untested provider
+or subscription compatibility explicitly. Exit: versioned captures or a reproducible blocker and a recommendation
+for the Claude branch. No live account feature changes or runtime cutover implied.
+
+### `HARNESS_PLACEMENT_DESIGN` — sampler placement and state authority
+
+**Decision, unscheduled; after `CENTRAL_CODEX_SPIKE` and `POSTGRES_HARNESS_SPIKE`.** Claude evidence is optional
+and must not block a Codex-only choice. Compare upstream central Codex (per-Sandbox harness Pod or shared
+app-server), a Postgres-backed Codex fork, a custom central sampler, and no change. Recommendation to review:
+measure the smaller headless subset before choosing a rewrite; upstream per-Sandbox hosting remains the
+baseline for preserving behavior and failure scope. Operator question: do removing duplicate persistence/recovery
+and gaining model-exchange visibility justify owning the provider/tool contract more directly?
+
+Name the single conversation/command authority, recovery and replica ownership, the future role of History reads
+and frontend folds, and which Dispatcher/Gateway responsibilities remain necessary for executor authentication,
+dial-out, cancellation and lifecycle. Include instructions/memory placement, spend attribution, request/response
+trace fidelity and retention, executor replacement and unknown effects, coexistence with local modes, and
+preservation of existing identities/history/native state. This owns the central-mode portion of the frozen
+`RUNNER_STATE_BOUNDARY_RETHINK`; it does not authorize a cutover. Review Codex-only support versus a Claude native
+remote-tool or custom-sampler branch; CLI subscription assumptions do not settle that choice. Implementation and
+data-preserving migration nodes follow the chosen design.
 
 ### `SANDBOX_FORM_TERMINOLOGY` — distinguish launch presets from runtime templates
 

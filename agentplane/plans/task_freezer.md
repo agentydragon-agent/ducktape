@@ -279,7 +279,13 @@ Requires a fresh operator product/architecture decision. These alternatives are 
 
 ### `RUNNER_STATE_BOUNDARY_RETHINK` — should the runner own durable state?
 
-Choose whether command durability moves centrally and the runner becomes a thin adapter. Central-admission changes require this decision. Transport direction is settled separately by the [runner control stream](../docs/runner_control.md), which retains runner durability.
+The central-sampling portion is now owned by active `HARNESS_PLACEMENT_DESIGN` in
+[task DAG](task_dag.md#harness_placement_design--sampler-placement-and-state-authority), informed by
+`CENTRAL_CODEX_SPIKE` and `POSTGRES_HARNESS_SPIKE` (operator, 2026-10-27). Do not create a competing authority
+decision here. A standalone redesign of legacy Sandbox-hosted runners remains deferred until explicitly
+selected. Central-admission implementation still waits for the reviewed authority design. Transport direction
+is settled separately by the [runner control stream](../docs/runner_control.md), which currently retains
+runner durability.
 
 ### `RUNNER_JOURNAL_SETTLEMENT` — settle deltas in the runner journal too
 
