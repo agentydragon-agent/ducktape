@@ -38,7 +38,6 @@ go_library(
 
 go_test(
     name = "event_kind_backfill_test",
-    size = "medium",
     srcs = [
         "event_kind_backfill_test.go",
         "event_kind_backfill_testmain_test.go",

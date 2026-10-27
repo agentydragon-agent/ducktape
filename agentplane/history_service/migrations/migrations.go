@@ -14,7 +14,7 @@ import (
 //go:embed history/*.sql
 var scripts embed.FS
 
-// Up applies authored SQL with Goose in a dedicated init container, never while serving traffic.
+// Up applies history schema migrations with Goose in a dedicated init container, never while serving traffic.
 func Up(ctx context.Context, db *sql.DB) error {
 	provider, err := newProvider(db)
 	if err != nil {
