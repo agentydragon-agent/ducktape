@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
-from pydantic import BaseModel, FiniteDecimal
+from pydantic import BaseModel, ConfigDict
 
 from finance.plaid.spend.portfolio_models import PlaidSourcePolicy, PortfolioPolicy, SourceValuation
 
@@ -19,20 +19,24 @@ _USD_MINOR_UNITS = Decimal(100)
 class AccountObservation(BaseModel):
     """Validated balance query row, decoded at the transport boundary."""
 
+    model_config = ConfigDict(allow_inf_nan=False)
+
     account_id: str
     account_type: str
     account_currency: str | None
     balance_currency: str | None
-    current: FiniteDecimal | None
+    current: Decimal | None
     captured_at: datetime | None
 
 
 class HoldingObservation(BaseModel):
     """Validated position from a complete account capture batch."""
 
+    model_config = ConfigDict(allow_inf_nan=False)
+
     account_id: str
     security_id: str
-    institution_value: FiniteDecimal | None
+    institution_value: Decimal | None
     holding_currency: str | None
     captured_at: datetime | None
 
