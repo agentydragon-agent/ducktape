@@ -114,17 +114,23 @@ func serveExecutorContainer(ctx context.Context, socket, binary, listen string) 
 					cancel()
 					return
 				}
-				status.Owned = true
 				child := exec.Command(binary, "exec-server", "--listen", listen)
 				child.Env = environment(request.Environment)
 				child.Stdout, child.Stderr = os.Stdout, os.Stderr
 				child.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 				if err := child.Start(); err != nil {
+					// Nothing was spawned, so this generation holds no work to fence. Refuse the claim
+					// with the reason and keep serving: exiting here makes the runtime restart a container
+					// whose next start fails the same way, and a claimant in restart backoff leaves no
+					// socket to fence, so the Runner can neither start nor quiesce.
 					fmt.Fprintln(os.Stderr, "start Codex executor:", err)
+					refused := status
+					refused.Error = err.Error()
 					mu.Unlock()
-					cancel()
+					_ = json.NewEncoder(c).Encode(refused)
 					return
 				}
+				status.Owned = true
 				go reapExecutorContainer(lifetime, child.Process, cancel)
 			} else if request.Operation != "inspect" || len(request.Environment) != 0 {
 				mu.Unlock()

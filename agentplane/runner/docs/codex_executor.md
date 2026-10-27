@@ -21,6 +21,14 @@ Runner holds a Unix connection to the companion through an `emptyDir`. Claiming 
 `exec-server`; EOF, a fence request, termination, or executor exit ends that whole container
 generation. Exiting PID 1 lets the runtime kill detached descendants as well as the process group.
 An idle successor's fresh generation ID proves cleanup completed. A socket close alone does not.
+
+A claim whose `exec-server` cannot be spawned at all (a missing or unexecutable Codex binary) starts
+nothing, so it ends no generation and fences nothing: the companion refuses the claim with the reason,
+stays PID 1 and serving, and answers the next claim the same way. Exiting instead would restart the
+container into the identical failure, and a companion in restart backoff leaves no control socket for
+Runner to fence — a Sandbox could then neither run Codex nor prove it may stop. Runner records the
+reason, surfaces it to every Session waiting on isolated execution instead of its own startup deadline,
+and keeps retrying at its backoff until a new container generation answers.
 The companion also reaps orphaned children while running. Its Kubernetes liveness probe checks the
 control socket, including while waiting for Runner to claim it. Pod OOM evidence remains in
 `status.containerStatuses[].lastState.terminated` and `restartCount`; an ownership disconnect alone

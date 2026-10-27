@@ -77,6 +77,9 @@ type codexExecutor struct {
 	done                    chan struct{}
 	cancel                  context.CancelFunc
 	stopErr                 error
+	// refused is the most recent refusal to start Codex, or nil. The companion survives one, so the
+	// restart loop keeps trying; this is what a caller whose deadline expired was actually waiting on.
+	refused error
 }
 
 func newCodexExecutor(r *Runner, config CodexExecutorConfig) *codexExecutor {
@@ -89,6 +92,19 @@ func (e *codexExecutor) setReady(ready bool) {
 	close(e.changed)
 	e.changed = make(chan struct{})
 	e.mu.Unlock()
+}
+
+// setRefusal replaces a companion's refusal to start Codex, waking waiters, and reports whether the
+// new value opens an outage rather than repeating one already published. Clearing it (nil) ends the
+// outage: an attempt that got elsewhere supersedes the old reason.
+func (e *codexExecutor) setRefusal(refusal error) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	first := refusal != nil && e.refused == nil
+	e.refused = refusal
+	close(e.changed)
+	e.changed = make(chan struct{})
+	return first
 }
 
 // ensure starts one restart loop for the lifetime of the Runner. It never
@@ -108,6 +124,11 @@ func (e *codexExecutor) ensure(ctx context.Context) error {
 		if e.ready {
 			e.mu.Unlock()
 			return nil
+		}
+		if e.refused != nil {
+			refused := e.refused
+			e.mu.Unlock()
+			return refused
 		}
 		changed := e.changed
 		e.mu.Unlock()
@@ -188,6 +209,17 @@ func (e *codexExecutor) run(ctx context.Context) {
 			})
 		}
 		cancel()
+		var refusal executorRefusal
+		if errors.As(err, &refusal) {
+			// The companion is serving and will answer the next claim too, so the loop keeps
+			// retrying at its backoff. Publish the reason for callers waiting on it, and name it
+			// once per outage rather than at every attempt.
+			if e.setRefusal(refusal) {
+				slog.Error("Codex executor refused to start", "error", refusal)
+			}
+		} else {
+			e.setRefusal(nil)
+		}
 		if err == nil {
 			e.setReady(true)
 			slog.Info("Codex executor ready", "url", e.config.URL)
@@ -324,6 +356,14 @@ func probeExecutor(ctx context.Context, endpoint string) error {
 	return nil
 }
 
+// executorRefusal is a companion's refusal to start Codex at all, with its reason. It describes a
+// generation that spawned nothing, so it needs no fencing and repeats until the container is replaced.
+type executorRefusal struct{ reason string }
+
+func (r executorRefusal) Error() string {
+	return "executor companion refused to start Codex: " + r.reason
+}
+
 // All companion control traffic is local to a Pod over an emptyDir Unix socket.
 // A generation identifies a whole container PID namespace, not just exec-server.
 type executorControlRequest struct {
@@ -333,6 +373,10 @@ type executorControlRequest struct {
 type executorControlStatus struct {
 	Generation string `json:"generation"`
 	Owned      bool   `json:"owned"`
+	// Error explains a claim that was refused without starting anything, so the reason survives
+	// the wire. Empty otherwise. A refusal never ends a container generation: no child was spawned,
+	// so there is nothing left in it to fence.
+	Error string `json:"error,omitempty"`
 }
 
 func executorControl(ctx context.Context, socket string, request executorControlRequest) (net.Conn, executorControlStatus, error) {
@@ -392,6 +436,9 @@ func claimExecutorContainer(ctx context.Context, socket string, env map[string]s
 	}
 	if !status.Owned {
 		_ = c.Close()
+		if status.Error != "" {
+			return nil, executorRefusal{reason: status.Error}
+		}
 		return nil, errors.New("executor companion refused ownership")
 	}
 	done := make(chan error, 1)

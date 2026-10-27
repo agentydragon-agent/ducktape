@@ -7,7 +7,9 @@ _HARNESSES_LAYOUT = "//agentplane/system_tests/k3s:harnesses/runner_layout"
 
 # The k3s target's runner image, by what its scenarios run.
 _RUNNER_LAYOUTS = {
-    # No harness, so the image imports faster.
+    # No harness, so the image imports faster. Only for scenarios that run no turn: activating a
+    # Codex Session starts the harness binary through the isolated executor's companion, which fails
+    # on an image without one (agentplane/runner/executor.go).
     "model_free": "//agentplane/system_tests/k3s:model_free/runner_layout",
     "scripted": _HARNESSES_LAYOUT,
 }
