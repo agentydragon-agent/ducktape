@@ -13,7 +13,6 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 py_library(
     name = "models",
     srcs = ["models.py"],
-    deps = ["@pypi//pydantic"],
 )
 
 py_library(
@@ -90,15 +89,6 @@ py_library(
 )
 
 py_library(
-    name = "oauth_settings",
-    srcs = ["oauth_settings.py"],
-    deps = [
-        ":models",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "operator_oidc_settings",
     srcs = ["operator_oidc_settings.py"],
     visibility = [
@@ -124,7 +114,6 @@ py_library(
     deps = [
         ":catalog",
         ":mcp_settings",
-        ":oauth_settings",
         ":operator_oidc_settings",
         ":push_settings",
         "//agentplane:log_levels",
@@ -268,7 +257,6 @@ go_library(
     srcs = [
         "config.go",
         "docs.go",
-        "edge.go",
         "main.go",
     ],
     embedsrcs = glob(["docs/agents/**"]) + [":action_service_openapi"],
@@ -291,10 +279,6 @@ go_library(
         "//agentplane/grpc/bearer",
         "//agentplane/grpc/facade",
         "//agentplane/history_service:history_service_go_proto",
-        "//agentplane/mcp_edge:connection_service_go_proto",
-        "//agentplane/mcp_edge/authserver",
-        "//agentplane/mcp_edge/connections",
-        "//agentplane/mcp_edge/mcpserver",
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/reader",
@@ -302,11 +286,9 @@ go_library(
         "//agentplane/postgres/go/wakeups",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/sandboxes/api",
-        "//agentplane/settings/go:config",
         "//agentplane/workload_auth/go/auth",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_lib_pq//:pq",
-        "@com_github_modelcontextprotocol_go_sdk//auth",
         "@com_github_prometheus_client_golang//prometheus/promhttp",
         "@com_github_spf13_viper//:viper",
         "@in_gopkg_yaml_v3//:yaml_v3",
@@ -389,7 +371,6 @@ go_test(
     name = "integration_test",
     size = "medium",
     srcs = [
-        "edge_test.go",
         "integration_testmain_test.go",
         "main_test.go",
         "push_test.go",
