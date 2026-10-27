@@ -325,6 +325,18 @@ serving path uses per-caller read state and the tool pipeline, but full nested `
 to the remote model request is unverified. Enabling the local predicate does not prove a self-hostable
 backend. A shell proxy alone leaves filesystem tools, instruction loading and related state local.
 
+The operator-dispatched local/MCP comparison is complete and in review in
+[PR #12210](https://github.com/agentydragon/ducktape/pull/12210) (Codex report, 2026-10-27 PDT;
+[versioned captures and checks](../debug/claude_remote_tools_20261027.md)). With unmodified 2.1.296,
+local native Read adds nested `CLAUDE.md` to the next model request; a generic driver MCP Read does
+not, and does not satisfy native Edit's prior-read requirement. Native resume retains read/edit
+state, independent sessions do not, and explicit denial/path checks pass. Neither forwarding
+startup variant attempted a bridge handshake under the synthetic account/provider setup.
+
+Actual native serving eligibility, transport and instruction delivery in the remote caller's next
+model request remain open; these local/MCP comparators do not establish remote parity. Custom-sampler
+and provider compatibility work is separately delegated and is not part of PR #12210.
+
 Alternatives to compare:
 
 - **Codex-only central mode.** Use its upstream execution-environment API; Claude remains local.

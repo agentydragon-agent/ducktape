@@ -615,7 +615,7 @@ flowchart LR
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
     CENTRAL_CODEX_SPIKE[In progress: experimental central Codex process fixture]
     CENTRAL_CODEX_SPIKE --> HARNESS_PLACEMENT_DESIGN[Decision, unscheduled: sampler placement and state authority]
-    CLAUDE_REMOTE_EXECUTION_SPIKE[Unscheduled: Claude remote tools and custom sampler compatibility]
+    CLAUDE_REMOTE_EXECUTION_SPIKE[In review: local and MCP evidence, native serving open]
     CLAUDE_REMOTE_EXECUTION_SPIKE -. optional Claude branch evidence .-> HARNESS_PLACEMENT_DESIGN
 ```
 
@@ -666,17 +666,25 @@ research plan. Changes no deployed mode.
 
 ### `CLAUDE_REMOTE_EXECUTION_SPIKE` — Claude remote tools and custom sampler compatibility
 
-**Unscheduled investigation/spike; operator, 2026-10-27 PDT.** Independent of both Codex spikes.
-Start from [versioned evidence](../debug/claude_execution_placement.md): the 2.1.252 test pin's gate is compiled
-off; installed 2.1.296 has a local forwarding switch, account flags and native tool serving. Establish which
-gates are locally settable, which require account support, and whether a scripted Agentplane peer can implement
-the transport. Trace and capture root/nested `CLAUDE.md` in the next model request after a remote read, including
-resume, caller isolation and read-before-edit behavior; file-operation success alone does not establish parity.
-Compare native serving, central CLI with driver MCP and built-ins disabled, and a custom Postgres sampler through
-CLIProxyAPI translation/cloaking or CLI/SDK-shaped requests. Distinguish model-wire identity from Claude controller
-protocol compatibility. Check streaming, tool names, continuation and cache behavior; mark any untested provider
-or subscription compatibility explicitly. Exit: versioned captures or a reproducible blocker and a recommendation
-for the Claude branch. No live account feature changes or runtime cutover implied.
+**In review for local/MCP characterization; native serving remains open.** Operator dispatched the native
+investigation on 2026-10-27 PDT; Codex reported the completed comparison in
+[PR #12210](https://github.com/agentydragon/ducktape/pull/12210). Independent of both Codex spikes.
+The [captured evidence](../debug/claude_remote_tools_20261027.md) establishes local native versus generic MCP
+instruction propagation, native read/edit state across resume and independent sessions, and explicit denial/path
+checks. It records zero bridge attempts under the synthetic account/provider setup, not native serving parity.
+
+Remaining native work: establish eligible serving and a scripted peer's transport handshake, or a reproducible
+blocker. Capture root/nested `CLAUDE.md` in the remote caller's next model request, including resume, caller
+isolation and read-before-edit behavior; local file-operation success does not establish that contract. The
+[gate inventory](../debug/claude_execution_placement.md) distinguishes the compiled-off 2.1.252 entry gate from
+2.1.296's local forwarding switch, account flags and bridge requirements.
+
+Custom-sampler/provider compatibility is separately delegated, outside PR #12210: compare CLIProxyAPI
+translation/cloaking or CLI/SDK-shaped requests, distinguishing model-wire identity from Claude controller
+protocol compatibility. Streaming, tool names, continuation, cache behavior and provider/subscription acceptance
+remain unverified there. The central CLI with built-ins disabled and driver MCP also still needs an explicit
+instruction/state contract. Exit: versioned captures or a reproducible blocker and a recommendation for the
+Claude branch. No live account feature changes or runtime cutover implied.
 
 ### `HARNESS_PLACEMENT_DESIGN` — sampler placement and state authority
 
