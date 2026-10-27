@@ -51,6 +51,31 @@ class PreparedConsumption:
     issues: list[str]
 
 
+def _consumption_disposition(
+    transaction: Transaction,
+    *,
+    rule: Rule | None,
+    amount_minor_units: int,
+    currency: str,
+    is_reversal: bool,
+    include_excluded_categories: Collection[str],
+    confirmed_refund_rule_ids: Collection[str],
+    mode: ConsumptionMode,
+) -> ConsumptionDisposition:
+    """Decide whether a prepared transaction contributes to consumption."""
+    if transaction.currency not in (None, currency):
+        return ConsumptionDisposition.OTHER_CURRENCY
+    if is_reversal:
+        return ConsumptionDisposition.REVERSAL
+    if rule is not None and rule.kind == Kind.EXCLUDED and rule.analysis_category not in include_excluded_categories:
+        return ConsumptionDisposition.EXCLUDED
+    if amount_minor_units < 0 and mode == ConsumptionMode.GROSS_PURCHASES:
+        return ConsumptionDisposition.GROSS_CREDIT
+    if amount_minor_units < 0 and (rule is None or rule.id not in confirmed_refund_rule_ids):
+        return ConsumptionDisposition.HELD_REFUND
+    return ConsumptionDisposition.COUNTED
+
+
 def prepare_consumption(
     allowance: AllowancePolicy,
     transactions: list[Transaction],
@@ -84,22 +109,16 @@ def prepare_consumption(
             continue
         rule = matching_rule(transaction, allowance.rules)
         amount = int((transaction.amount * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
-        if transaction.currency not in (None, currency):
-            disposition = ConsumptionDisposition.OTHER_CURRENCY
-        elif key in reversals.pairs_by_transaction:
-            disposition = ConsumptionDisposition.REVERSAL
-        elif (
-            rule is not None
-            and rule.kind == Kind.EXCLUDED
-            and rule.analysis_category not in include_excluded_categories
-        ):
-            disposition = ConsumptionDisposition.EXCLUDED
-        elif amount < 0 and mode == ConsumptionMode.GROSS_PURCHASES:
-            disposition = ConsumptionDisposition.GROSS_CREDIT
-        elif amount < 0 and (rule is None or rule.id not in confirmed_refund_rule_ids):
-            disposition = ConsumptionDisposition.HELD_REFUND
-        else:
-            disposition = ConsumptionDisposition.COUNTED
+        disposition = _consumption_disposition(
+            transaction,
+            rule=rule,
+            amount_minor_units=amount,
+            currency=currency,
+            is_reversal=key in reversals.pairs_by_transaction,
+            include_excluded_categories=include_excluded_categories,
+            confirmed_refund_rule_ids=confirmed_refund_rule_ids,
+            mode=mode,
+        )
         entries.append(
             ConsumptionEntry(
                 transaction=transaction,
