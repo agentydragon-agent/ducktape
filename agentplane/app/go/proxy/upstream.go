@@ -27,7 +27,8 @@ type UpstreamProxy struct {
 
 // HandlerUpstream relays a request to an in-process generated HTTP facade. Its requests still use
 // the same narrow headers and request context as UpstreamProxy, while the generated handler can
-// carry them to its gRPC target without an HTTP hop.
+// carry them to its gRPC target without an HTTP hop. Responses expose only Content-Type from the
+// generated handler and force the app's cache and buffering headers.
 type HandlerUpstream struct {
 	handler   http.Handler
 	tokenFile string
@@ -82,8 +83,60 @@ func (p *HandlerUpstream) ForwardHTTP(
 		forwarded.Header.Set("Authorization", "Bearer "+bearer)
 	}
 	forwarded.Header.Set("Accept-Encoding", "identity")
-	p.handler.ServeHTTP(w, forwarded)
+	p.handler.ServeHTTP(newFacadeResponseWriter(w), forwarded)
 	return nil
+}
+
+type facadeResponseWriter struct {
+	underlying  http.ResponseWriter
+	header      http.Header
+	wroteHeader bool
+}
+
+// newFacadeResponseWriter keeps backend headers separate from the app's response headers.
+func newFacadeResponseWriter(underlying http.ResponseWriter) http.ResponseWriter {
+	filtered := &facadeResponseWriter{underlying: underlying, header: make(http.Header)}
+	if _, ok := underlying.(http.Flusher); ok {
+		return &flushingFacadeResponseWriter{facadeResponseWriter: filtered}
+	}
+	return filtered
+}
+
+func (w *facadeResponseWriter) Header() http.Header { return w.header }
+
+func (w *facadeResponseWriter) WriteHeader(statusCode int) {
+	if w.wroteHeader {
+		return
+	}
+	w.wroteHeader = true
+	if values := w.header.Values("Content-Type"); len(values) > 0 {
+		w.underlying.Header().Set("Content-Type", values[0])
+	}
+	w.underlying.Header().Set("Cache-Control", "no-store")
+	w.underlying.Header().Set("X-Accel-Buffering", "no")
+	w.underlying.WriteHeader(statusCode)
+}
+
+func (w *facadeResponseWriter) Write(data []byte) (int, error) {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.underlying.Write(data)
+}
+
+func (w *facadeResponseWriter) Unwrap() http.ResponseWriter { return w.underlying }
+
+type flushingFacadeResponseWriter struct {
+	*facadeResponseWriter
+}
+
+func (w *flushingFacadeResponseWriter) Flush() { _ = w.FlushError() }
+
+func (w *flushingFacadeResponseWriter) FlushError() error {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	return http.NewResponseController(w.underlying).Flush()
 }
 
 // NewUpstreamProxy creates a streaming client for baseURL.

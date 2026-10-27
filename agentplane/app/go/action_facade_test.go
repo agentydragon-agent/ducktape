@@ -54,6 +54,10 @@ type generatedDispatcherService struct {
 	watchCanceled chan struct{}
 }
 
+type generatedMetadataDispatcherService struct {
+	dispatcherpb.UnimplementedSessionDispatcherServer
+}
+
 func (s *generatedDispatcherService) GetDispatch(ctx context.Context, request *dispatcherpb.GetDispatchRequest) (*dispatcherpb.GetDispatchResponse, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	s.authorization = append(s.authorization, md.Get("authorization")...)
@@ -74,6 +78,16 @@ func (s *generatedDispatcherService) WatchDispatches(_ *dispatcherpb.WatchDispat
 		return status.FromContextError(stream.Context().Err()).Err()
 	}
 	return nil
+}
+
+func (s *generatedMetadataDispatcherService) WatchDispatches(_ *dispatcherpb.WatchDispatchesRequest, stream grpc.ServerStreamingServer[dispatcherpb.WatchDispatchesResponse]) error {
+	if err := stream.SendHeader(metadata.Pairs("x-backend-header", "header-secret")); err != nil {
+		return err
+	}
+	stream.SetTrailer(metadata.Pairs("x-backend-trailer", "trailer-secret"))
+	return stream.Send(&dispatcherpb.WatchDispatchesResponse{
+		Frame: &dispatcherpb.WatchDispatchesResponse_Dispatch{Dispatch: &dispatcherpb.Dispatch{CommandId: "streamed-command"}},
+	})
 }
 
 func (s *generatedActionService) ListActionGroups(
@@ -317,7 +331,64 @@ func TestGeneratedDispatcherFacadeBoundsUnaryButNotWatchStream(t *testing.T) {
 	}
 }
 
+func TestGeneratedDispatcherFacadeFiltersResponseHeadersAndPreservesStreaming(t *testing.T) {
+	handler := newGeneratedDispatcherHandler(t, &generatedMetadataDispatcherService{}, 10*time.Second)
+	rawResponse := httptest.NewRecorder()
+	handler.ServeHTTP(rawResponse, httptest.NewRequest(http.MethodGet, "/v1/dispatches:watch", nil))
+	if rawResponse.Header().Get("Grpc-Metadata-X-Backend-Header") != "header-secret" {
+		t.Fatalf("generated handler did not expose backend metadata for the boundary test: %v", rawResponse.Header())
+	}
+
+	upstream := proxy.NewHandlerUpstream(handler, "")
+	response := httptest.NewRecorder()
+	trackedResponse := &flushCountingResponseWriter{ResponseRecorder: response}
+	request := httptest.NewRequest(http.MethodGet, "/upstream/dispatcher/v1/dispatches:watch", nil)
+	if err := upstream.ForwardHTTP(trackedResponse, request, request.Context(), "v1/dispatches:watch", ""); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "streamed-command") {
+		t.Fatalf("generated stream response = %d %q", response.Code, response.Body.String())
+	}
+	if got := response.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", got)
+	}
+	if got := response.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
+	}
+	if got := response.Header().Get("X-Accel-Buffering"); got != "no" {
+		t.Fatalf("X-Accel-Buffering = %q, want no", got)
+	}
+	if trackedResponse.flushes == 0 {
+		t.Fatal("generated stream did not flush through the response wrapper")
+	}
+	result := response.Result()
+	for _, headers := range []http.Header{result.Header, result.Trailer} {
+		for name, values := range headers {
+			lowerName := strings.ToLower(name)
+			if strings.HasPrefix(lowerName, "grpc-metadata-") || strings.HasPrefix(lowerName, "grpc-trailer-") ||
+				strings.Contains(strings.Join(values, " "), "header-secret") || strings.Contains(strings.Join(values, " "), "trailer-secret") {
+				t.Fatalf("gRPC response metadata leaked as %s: %v", name, values)
+			}
+		}
+	}
+}
+
+type flushCountingResponseWriter struct {
+	*httptest.ResponseRecorder
+	flushes int
+}
+
+func (w *flushCountingResponseWriter) Flush() {
+	w.flushes++
+	w.ResponseRecorder.Flush()
+}
+
 func newGeneratedDispatcherFacade(t *testing.T, service *generatedDispatcherService, unaryTimeout time.Duration) *proxy.HandlerUpstream {
+	t.Helper()
+	return proxy.NewHandlerUpstream(newGeneratedDispatcherHandler(t, service, unaryTimeout), "")
+}
+
+func newGeneratedDispatcherHandler(t *testing.T, service dispatcherpb.SessionDispatcherServer, unaryTimeout time.Duration) http.Handler {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -339,5 +410,5 @@ func newGeneratedDispatcherFacade(t *testing.T, service *generatedDispatcherServ
 	if err != nil {
 		t.Fatal(err)
 	}
-	return proxy.NewHandlerUpstream(handler, "")
+	return handler
 }
