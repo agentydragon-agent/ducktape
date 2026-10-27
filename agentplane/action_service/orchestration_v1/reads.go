@@ -7,6 +7,7 @@ import (
 	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc/codes"
@@ -83,9 +84,17 @@ type Delivery struct {
 
 // CommandDelivery is where the Session Dispatcher has one of a Session's commands.
 type CommandDelivery struct {
-	CommandID string `json:"command_id"`
-	Operation string `json:"operation"`
+	CommandID string          `json:"command_id"`
+	Operation string          `json:"operation"`
+	History   *CommandHistory `json:"history,omitempty"`
 	Delivery
+}
+
+// CommandHistory is the latest observed effect for a command, independently of Dispatcher admission.
+type CommandHistory struct {
+	Outcome string  `json:"outcome"`
+	TurnID  *string `json:"turn_id,omitempty"`
+	Reason  *string `json:"reason,omitempty"`
 }
 
 // SessionList is the result of list_sessions.
@@ -97,6 +106,11 @@ type SessionList struct {
 // Service. A Session that neither its opening nor its history ties to that incarnation is refused as not found, so a
 // grant on one Sandbox reads no other's Sessions.
 func (e *Executor) getSession(ctx context.Context, args getSessionArgs) (SessionState, error) {
+	ctx, cancel, err := e.sessionReadContext(ctx)
+	if err != nil {
+		return SessionState{}, err
+	}
+	defer cancel()
 	sandbox, opening, summary, err := e.sessionForRead(ctx, args.Sandbox, args.SessionID)
 	if err != nil {
 		return SessionState{}, err
@@ -109,6 +123,13 @@ func (e *Executor) getSession(ctx context.Context, args getSessionArgs) (Session
 	}
 	dispatches := listed.GetDispatches()
 	recent := dispatches[max(0, len(dispatches)-recentDispatches):]
+	var history map[string]*CommandHistory
+	if summary != nil && len(recent) > 0 {
+		history, err = e.commandHistory(ctx, args.SessionID, summary.GetCommittedCursor(), recent)
+		if err != nil {
+			return SessionState{}, err
+		}
+	}
 	state := SessionState{Dispatches: make([]CommandDelivery, 0, len(recent))}
 	if ready := meta.FindStatusCondition(sandbox.Status.Conditions, sandboxapi.ConditionReady); ready != nil {
 		state.SandboxReady = &Readiness{Status: ready.Status, Reason: ready.Reason, Message: ready.Message}
@@ -123,7 +144,7 @@ func (e *Executor) getSession(ctx context.Context, args getSessionArgs) (Session
 	}
 	for _, dispatch := range slices.Backward(recent) {
 		state.Dispatches = append(state.Dispatches, CommandDelivery{
-			CommandID: dispatch.GetCommandId(), Operation: dispatch.GetOperation().String(),
+			CommandID: dispatch.GetCommandId(), Operation: dispatch.GetOperation().String(), History: history[dispatch.GetCommandId()],
 			Delivery: Delivery{
 				State: dispatch.GetState().String(), Reason: dispatch.Reason,
 				CreatedAt: dispatch.GetCreatedAt().AsTime(), UpdatedAt: dispatch.GetUpdatedAt().AsTime(),
@@ -131,6 +152,72 @@ func (e *Executor) getSession(ctx context.Context, args getSessionArgs) (Session
 		})
 	}
 	return state, nil
+}
+
+// commandHistory starts before every listed admission. Clamp to the known committed prefix because
+// the Dispatcher may acknowledge a runner admission before History has ingested it. Without an
+// admission cursor, only a read from zero covers any outcome already recorded for that command.
+func (e *Executor) commandHistory(ctx context.Context, sessionID string, committed uint64, dispatches []*dispatcherpb.Dispatch) (map[string]*CommandHistory, error) {
+	after := committed
+	result := make(map[string]*CommandHistory, len(dispatches))
+	for _, dispatch := range dispatches {
+		result[dispatch.GetCommandId()] = nil
+		if cursor := dispatch.GetAdmission().GetCursor(); cursor > 0 {
+			after = min(after, cursor-1)
+		} else {
+			after = 0
+		}
+	}
+	stream, err := e.history.FollowSession(ctx, &historypb.FollowSessionRequest{
+		SessionId: sessionID,
+		Start:     &historypb.FollowSessionRequest_AfterCursor{AfterCursor: after},
+		Kinds: []historypb.EventKind{
+			historypb.EventKind_EVENT_KIND_HARNESS_USER_MESSAGE_CONFIRMED,
+			historypb.EventKind_EVENT_KIND_MODEL_CHANGED,
+			historypb.EventKind_EVENT_KIND_REASONING_EFFORT_CHANGED,
+			historypb.EventKind_EVENT_KIND_COMMAND_FAILED,
+			historypb.EventKind_EVENT_KIND_COMMAND_NOOP,
+		},
+	})
+	if err != nil {
+		return nil, readError("History Service", err)
+	}
+	record := func(commandID string, fact *CommandHistory) {
+		if _, listed := result[commandID]; listed {
+			result[commandID] = fact
+		}
+	}
+	for {
+		frame, err := stream.Recv()
+		if err != nil {
+			return nil, readError("History Service", err)
+		}
+		for _, entry := range frame.GetEntries().GetEntries() {
+			switch observation := entry.GetEvent().GetObservation().(type) {
+			case *eventpb.Event_HarnessUserMessageConfirmed:
+				confirmed := observation.HarnessUserMessageConfirmed
+				for _, id := range confirmed.GetOriginCommandIds() {
+					record(id, &CommandHistory{Outcome: "confirmed", TurnID: new(confirmed.GetTurnId())})
+				}
+			case *eventpb.Event_ModelChanged:
+				record(observation.ModelChanged.GetCommandId(), &CommandHistory{Outcome: "applied"})
+			case *eventpb.Event_ReasoningEffortChanged:
+				record(observation.ReasoningEffortChanged.GetCommandId(), &CommandHistory{Outcome: "applied"})
+			case *eventpb.Event_CommandFailed:
+				record(observation.CommandFailed.GetCommandId(), &CommandHistory{Outcome: "failed", Reason: new(observation.CommandFailed.GetReason())})
+			case *eventpb.Event_CommandNoop:
+				record(observation.CommandNoop.GetCommandId(), &CommandHistory{Outcome: "no_op", Reason: new(observation.CommandNoop.GetReason())})
+			}
+		}
+		switch frame.GetFrame().(type) {
+		case *historypb.FollowSessionResponse_CaughtUp:
+			return result, nil
+		case *historypb.FollowSessionResponse_ReconnectRequired:
+			return nil, readError("History Service", status.Error(codes.Unavailable, "History read requires reconnect"))
+		case *historypb.FollowSessionResponse_Removed:
+			return nil, readError("History Service", status.Error(codes.DataLoss, "command history contains a removed range"))
+		}
+	}
 }
 
 // listSessions reads the Sessions the History Service records for the named incarnation, which it finds by UID alone:

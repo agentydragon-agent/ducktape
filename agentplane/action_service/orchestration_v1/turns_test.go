@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -76,7 +77,7 @@ func TestReadTurnsGroupsConfirmedInputToolsAndFinalAssistantText(t *testing.T) {
 		t.Fatalf("turns = %+v", got)
 	}
 	turn := got.Turns[0]
-	if len(turn.Input) != 1 || turn.Input[0] != "test input" || len(turn.ToolCalls) != 1 || turn.ToolCalls[0].Name != "test_tool" || turn.FinalAssistantMessage == nil || *turn.FinalAssistantMessage != "final test response" || turn.Status == nil || *turn.Status != "TURN_STATUS_COMPLETED" {
+	if len(turn.Input) != 1 || turn.Input[0].Text != "test input" || len(turn.ToolCalls) != 1 || turn.ToolCalls[0].Name != "test_tool" || turn.FinalAssistantMessage == nil || *turn.FinalAssistantMessage != "final test response" || turn.Status == nil || *turn.Status != "TURN_STATUS_COMPLETED" {
 		t.Errorf("completed turn = %+v", turn)
 	}
 	if got.Turns[1].Status != nil {
@@ -337,5 +338,37 @@ func TestWaitKeepsAuthorizationCallerAndBackendFailures(t *testing.T) {
 				t.Fatalf("wait failure = %v; want read_failed", err)
 			}
 		})
+	}
+}
+
+func TestReadTurnsPreservesCommandOriginsWithoutReplayingInputs(t *testing.T) {
+	f := newFixture(t)
+	sandbox := f.launch(t, "test-input-origins")
+	session := uuid.NewString()
+	f.history.hold(summaryOf(f, session, sandbox, nil))
+	f.history.follow = func(_ *historypb.FollowSessionRequest, stream grpc.ServerStreamingServer[historypb.FollowSessionResponse]) error {
+		confirmation := &eventpb.Event{Observation: &eventpb.Event_HarnessUserMessageConfirmed{HarnessUserMessageConfirmed: &eventpb.HarnessUserMessageConfirmed{TurnId: "test-turn", HarnessMessageId: "test-message", Text: "same text", OriginCommandIds: []string{"test-command-a", "test-command-b"}}}}
+		frame := turnEntries(
+			2,
+			&eventpb.Event{Observation: &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: "test-turn"}}},
+			confirmation,
+		)
+		for range 2 {
+			if err := stream.Send(frame); err != nil {
+				return err
+			}
+		}
+		if err := stream.Send(turnEntries(
+			4, confirmation,
+			&eventpb.Event{Observation: &eventpb.Event_HarnessUserMessageConfirmed{HarnessUserMessageConfirmed: &eventpb.HarnessUserMessageConfirmed{TurnId: "test-turn", HarnessMessageId: "test-unattributed", Text: "same text"}}},
+		)); err != nil {
+			return err
+		}
+		return stream.Send(&historypb.FollowSessionResponse{ThroughCursor: 4, Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}})
+	}
+	got := resultOf[Turns](f.attempt(t, f.caller, actionReadTurns, turnArguments(t, sandbox, session, map[string]any{"count": 1})))
+	want := []TurnInput{{Text: "same text", CommandIDs: []string{"test-command-a", "test-command-b"}}, {Text: "same text", CommandIDs: []string{}}}
+	if len(got.Turns) != 1 || !reflect.DeepEqual(got.Turns[0].Input, want) {
+		t.Fatalf("turns = %+v; want input %+v", got.Turns, want)
 	}
 }

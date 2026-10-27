@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
@@ -57,9 +58,14 @@ type TurnToolCall struct {
 	Name   string `json:"name"`
 }
 
+type TurnInput struct {
+	Text       string   `json:"text"`
+	CommandIDs []string `json:"command_ids"`
+}
+
 type Turn struct {
 	TurnID                string         `json:"turn_id"`
-	Input                 []string       `json:"input"`
+	Input                 []TurnInput    `json:"input"`
 	ToolCalls             []TurnToolCall `json:"tool_calls"`
 	Status                *string        `json:"status,omitempty"`
 	Error                 *string        `json:"error,omitempty"`
@@ -83,16 +89,16 @@ type TurnWait struct {
 	ResumeToken string          `json:"resume_token"`
 }
 
-func (e *Executor) turnReadContext(ctx context.Context) (context.Context, context.CancelFunc, error) {
+func (e *Executor) sessionReadContext(ctx context.Context) (context.Context, context.CancelFunc, error) {
 	if e.readBudget <= 0 {
-		return nil, nil, refuse("wait_unavailable", "direct-tool budget must exceed one second for turn reads")
+		return nil, nil, refuse("wait_unavailable", "direct-tool budget must exceed one second for Session reads")
 	}
 	bounded, cancel := context.WithTimeout(ctx, e.readBudget)
 	return bounded, cancel, nil
 }
 
 func (e *Executor) readTurns(ctx context.Context, args readTurnsArgs) (Turns, error) {
-	ctx, cancel, err := e.turnReadContext(ctx)
+	ctx, cancel, err := e.sessionReadContext(ctx)
 	if err != nil {
 		return Turns{}, err
 	}
@@ -112,6 +118,11 @@ func (e *Executor) readTurns(ctx context.Context, args readTurnsArgs) (Turns, er
 	byID := map[string]int{}
 	items := map[string]eventpb.ItemKind{}
 	active := -1
+	type inputKey struct {
+		turn, message string
+		cursor        uint64
+	}
+	inputs := map[inputKey]int{}
 	for {
 		frame, err := stream.Recv()
 		if err != nil {
@@ -127,13 +138,28 @@ func (e *Executor) readTurns(ctx context.Context, args readTurnsArgs) (Turns, er
 				} else {
 					active = len(result.Turns)
 					byID[id] = active
-					result.Turns = append(result.Turns, Turn{TurnID: id, Input: []string{}, ToolCalls: []TurnToolCall{}})
+					result.Turns = append(result.Turns, Turn{TurnID: id, Input: []TurnInput{}, ToolCalls: []TurnToolCall{}})
 				}
 				items = map[string]eventpb.ItemKind{}
 			case *eventpb.Event_HarnessUserMessageConfirmed:
 				confirmed := observation.HarnessUserMessageConfirmed
 				if i, ok := byID[confirmed.GetTurnId()]; ok {
-					result.Turns[i].Input = append(result.Turns[i].Input, confirmed.GetText())
+					key := inputKey{turn: confirmed.GetTurnId(), message: confirmed.GetHarnessMessageId()}
+					if key.message == "" {
+						key.cursor = entry.GetCursor()
+					}
+					index, replayed := inputs[key]
+					if !replayed {
+						index = len(result.Turns[i].Input)
+						inputs[key] = index
+						result.Turns[i].Input = append(result.Turns[i].Input, TurnInput{Text: confirmed.GetText(), CommandIDs: []string{}})
+					}
+					input := &result.Turns[i].Input[index]
+					for _, id := range confirmed.GetOriginCommandIds() {
+						if !slices.Contains(input.CommandIDs, id) {
+							input.CommandIDs = append(input.CommandIDs, id)
+						}
+					}
 				}
 			case *eventpb.Event_ItemStarted:
 				if active < 0 {
@@ -178,7 +204,7 @@ func (e *Executor) waitForTurn(parent context.Context, args waitForTurnArgs) (Tu
 	if err != nil {
 		return TurnWait{}, err
 	}
-	readCtx, cancelRead, err := e.turnReadContext(parent)
+	readCtx, cancelRead, err := e.sessionReadContext(parent)
 	if err != nil {
 		return TurnWait{}, err
 	}
