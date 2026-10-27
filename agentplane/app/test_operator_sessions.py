@@ -20,6 +20,7 @@ from more_itertools import one
 from sqlalchemy import select, update
 from starlette.types import Message, Scope
 
+from agentplane.app.action_clients import ActionServiceClient
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import app_services, create_app
@@ -30,6 +31,7 @@ from agentplane.app.notifications_operator_client import NotificationsOperatorCl
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, request_session
 from agentplane.app.sandbox_access import SandboxAccess
+from agentplane.app.testing.fake_action_service import FakeActionService
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
@@ -37,7 +39,6 @@ from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import WakeupListener
@@ -63,11 +64,11 @@ class Gate:
 
     def __init__(self) -> None:
         self._parked: asyncio.Queue[None] = asyncio.Queue()
-        self._open = asyncio.Event()
+        self.opened = asyncio.Event()
 
     async def wait(self) -> None:
         self._parked.put_nowait(None)
-        await self._open.wait()
+        await self.opened.wait()
 
     async def reached(self, count: int = 1) -> None:
         """Return once `count` more requests are parked."""
@@ -75,7 +76,7 @@ class Gate:
             await self._parked.get()
 
     def open(self) -> None:
-        self._open.set()
+        self.opened.set()
 
 
 class StubActions(FederatedOperatorActions):
@@ -84,14 +85,6 @@ class StubActions(FederatedOperatorActions):
 
     async def token_for_request(self, request: Request) -> str:
         return "test-actions-token"
-
-
-class OpenStream(httpx.AsyncByteStream):
-    """An Action stream: one frame, then nothing until its reader goes."""
-
-    async def __aiter__(self) -> AsyncIterator[bytes]:
-        yield b'{"result":{"snapshotComplete":{}}}\n'
-        await asyncio.Event().wait()
 
 
 @pytest.fixture
@@ -141,10 +134,13 @@ async def app(
     database_updates: WakeupListener,
     electric_proxy: ElectricProxy,
     notifications: NotificationsOperatorClient,
-    dispatcher_http: UpstreamProxy,
+    action_service: tuple[FakeActionService, ActionServiceClient],
 ) -> AsyncIterator[FastAPI]:
     """The app with a login that needs no identity provider, and an Action Service that answers once
     `gate` opens."""
+    service, action_client = action_service
+    service.unary_gate = gate.opened
+    service.watch_gate = gate.opened
     app = create_app(
         inventory,
         bridge,
@@ -161,7 +157,6 @@ async def app(
         operator_sessions=operator_sessions,
         electric=electric_proxy,
         notifications=notifications,
-        dispatcher_http=dispatcher_http,
         system_status=answering_system_status(),
     )
 
@@ -190,18 +185,11 @@ async def app(
         await gate.wait()
         request_session(request).log_in(LOGIN, absolute_expires_at=datetime.now(UTC) + timedelta(hours=1))
 
-    async def answer(request: httpx.Request) -> httpx.Response:
-        await gate.wait()
-        if request.url.path.endswith(":watch"):
-            return httpx.Response(200, stream=OpenStream(), headers={"content-type": "application/x-ndjson"})
-        return httpx.Response(200, json={"actionRequests": []})
-
-    async with httpx.AsyncClient(
-        base_url="https://test-actions.invalid", transport=httpx.MockTransport(answer)
-    ) as http:
-        app_services(app).operator_actions = StubActions()
-        app_services(app).actions_http = UpstreamProxy(http, token_file=None)
+    app_services(app).operator_actions = StubActions()
+    app_services(app).action_service = action_client
+    try:
         yield app
+    finally:
         # Nothing a failed test left parked outlives it.
         gate.open()
 
@@ -269,12 +257,17 @@ class RawRequest:
     ],
 )
 async def test_a_request_held_before_its_headers_holds_up_no_other_on_its_session(
-    app: FastAPI, gate: Gate, path: str
+    app: FastAPI, gate: Gate, path: str, action_service: tuple[FakeActionService, ActionServiceClient]
 ) -> None:
     cookie = await _session(app, "/test-login")
     held = RawRequest(app, path, cookie)
     async with asyncio.timeout(10):
-        await gate.reached()
+        if path == "/upstream/actions/v1/action-requests":
+            await action_service[0].unary_started.wait()
+        elif path == "/upstream/actions/v1/action-requests:watch":
+            await action_service[0].watch_started.wait()
+        else:
+            await gate.reached()
         async with _browser(app, cookie) as browser:
             assert (await browser.get("/models")).status_code == 200
     assert not held.started.is_set()

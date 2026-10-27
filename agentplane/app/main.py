@@ -13,9 +13,11 @@ import uvicorn
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane.app.action_clients import ActionServiceClient, OperatorActionServiceClient, WebPushServiceClient
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
+from agentplane.app.connection_client import ConnectionServiceClient
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, create_database_updates
 from agentplane.app.egress_access import EgressAccess
@@ -38,7 +40,6 @@ from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.background_task import background
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import dial
@@ -87,11 +88,10 @@ async def async_main(settings: Settings) -> None:
     async with (
         AsyncExitStack() as upstream_clients,
         ApiClient(configuration=await kubernetes_configuration(settings.kubeconfig)) as api,
-        httpx.AsyncClient(base_url=str(settings.action_federation.service_url), timeout=10) as actions_http,
+        httpx.AsyncClient(base_url=str(settings.action_federation.service_url), timeout=10) as mcp_callback_http,
         dial(
             f"{settings.action_federation.service_url.host}:{settings.action_federation.service_url.port}"
         ) as actions_health_channel,
-        httpx.AsyncClient(base_url=str(settings.connection_service_url), timeout=10) as connection_http,
         dial(f"{settings.egress_admin_url.host}:{settings.egress_admin_url.port}") as egress_channel,
         dial(f"{settings.notifications_url.host}:{settings.notifications_url.port}") as notifications_channel,
         dial(settings.runner_gateway_target) as gateway_channel,
@@ -175,12 +175,6 @@ async def async_main(settings: Settings) -> None:
                 electric_http, content, event_logs=event_logs, thread_changes=database_updates.changes[Channel.THREADS]
             )
             system_probes.append(http_health_probe("Electric", electric_http, "/v1/health"))
-        dispatcher_http = UpstreamProxy(
-            await upstream_clients.enter_async_context(
-                httpx.AsyncClient(base_url=str(settings.session_dispatcher_http_url))
-            ),
-            settings.session_dispatcher_token_file,
-        )
         app = create_app(
             inventory,
             bridge,
@@ -194,7 +188,6 @@ async def async_main(settings: Settings) -> None:
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
             operator_actions=FederatedOperatorActions(settings.action_federation, oidc),
             electric=electric,
-            dispatcher_http=dispatcher_http,
             presets=PresetCatalog(sandboxes=settings.sandbox_presets, threads=settings.thread_presets),
             new_sandbox_defaults=settings.new_sandbox_defaults,
             frontend_config=settings.frontend_config,
@@ -207,8 +200,11 @@ async def async_main(settings: Settings) -> None:
                 token_file=settings.notifications_token_file,
                 request_timeout_s=settings.notifications_request_timeout_s,
             ),
-            actions_http=UpstreamProxy(actions_http, token_file=None),
-            connection_http=UpstreamProxy(connection_http, token_file=None),
+            action_service=ActionServiceClient(actions_health_channel, request_timeout_s=10),
+            operator_action_service=OperatorActionServiceClient(actions_health_channel, request_timeout_s=10),
+            web_push_service=WebPushServiceClient(actions_health_channel, request_timeout_s=10),
+            mcp_callback_http=mcp_callback_http,
+            connection_service=ConnectionServiceClient(connection_health_channel, request_timeout_s=10),
             system_status=SystemStatusChecker(system_probes, timeout_s=SYSTEM_STATUS_TIMEOUT_S),
         )
         async with AsyncExitStack() as tasks:

@@ -29,8 +29,6 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-import httpx
-import httpx2
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from kubernetes_asyncio import client as k8s_client
@@ -38,7 +36,8 @@ from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane import sandbox_resource
-from agentplane.app.action_federation import OperatorFederationError, operator_action_token, upstream_failure_detail
+from agentplane.app.action_clients import ActionServiceClient
+from agentplane.app.action_federation import OperatorFederationError, UpstreamFailure, operator_action_token
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
 from agentplane.app.database_updates import Channel
 from agentplane.app.identity import CallerIdentity, require_caller
@@ -46,7 +45,6 @@ from agentplane.app.sandbox_models import SandboxView, sandbox_view as http_sand
 from agentplane.app.shutdown import Shutdown
 from agentplane.app.threads.store import MAX_PAGE, ThreadStore
 from agentplane.app.threads.thread_view import ThreadView
-from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.changes import ChangeSignal
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.decisions import Decision
@@ -321,14 +319,22 @@ async def action_policy_frame(
     frame rather than ending a stream that also carries the sandbox itself."""
     try:
         bearer = await operator_action_token(request, caller)
-        actions_http = request.app.state.services.actions_http
-        if not isinstance(actions_http, UpstreamProxy):
-            return ActionPolicyUnavailable(code="action_facade_not_configured")
-        return await inventory.for_subject(actions_http, bearer, subject)
+        actions = request.app.state.services.action_service
+        if not isinstance(actions, ActionServiceClient):
+            return ActionPolicyUnavailable(code="action_service_not_configured")
+        return await inventory.for_subject(actions, bearer, subject)
     except OperatorFederationError as error:
         return ActionPolicyUnavailable(code=str(error))
-    except (httpx.HTTPStatusError, httpx.RequestError, httpx2.HTTPStatusError, httpx2.TransportError) as error:
-        return ActionPolicyUnavailable(code="upstream_request_failed", upstream=upstream_failure_detail(error))
+    except (ServiceError, TimeoutError) as error:
+        return ActionPolicyUnavailable(
+            code="upstream_request_failed",
+            upstream=UpstreamFailure(
+                method="gRPC",
+                url="ActionService/GetActionPolicy",
+                upstream_status=None,
+                error_type=error.code.name if isinstance(error, ServiceError) else type(error).__name__,
+            ),
+        )
 
 
 async def threads_frame(

@@ -17,6 +17,7 @@ import pytest
 from kubernetes_asyncio.client import AuthenticationV1Api
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane.app.action_clients import ActionServiceClient
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.database import connect
 from agentplane.app.database_migrate import RUNNER
@@ -30,6 +31,7 @@ from agentplane.app.operator_sessions import BrowserSession, OperatorSession, Op
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.testing.dispatcher import served_dispatcher
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
+from agentplane.app.testing.fake_action_service import FakeActionService, served_action_service
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.notifications_operator import FakeNotificationsOperator
 from agentplane.app.testing.runner_gateway import (
@@ -49,7 +51,6 @@ from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.upstream_proxy import UpstreamProxy
 from agentplane.egress import egress_admin_pb2_grpc
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import dial
@@ -252,6 +253,12 @@ async def dispatcher(tmp_path: Path) -> AsyncIterator[SessionDispatcherClient]:
 
 
 @pytest.fixture
+async def action_service() -> AsyncIterator[tuple[FakeActionService, ActionServiceClient]]:
+    async with served_action_service(FakeActionService()) as service:
+        yield service
+
+
+@pytest.fixture
 def bridge(
     runners: RunnerDirectory,
     dispatcher: SessionDispatcherClient,
@@ -417,14 +424,6 @@ def notifications(
     notifications_channel: grpc.aio.Channel, notifications_token_file: Path
 ) -> NotificationsOperatorClient:
     return NotificationsOperatorClient(notifications_channel, token_file=notifications_token_file, request_timeout_s=5)
-
-
-@pytest.fixture
-async def dispatcher_http(tmp_path: Path) -> AsyncIterator[UpstreamProxy]:
-    async with httpx.AsyncClient(
-        base_url="http://dispatcher-facade.test", transport=_refusing("Dispatcher facade")
-    ) as client:
-        yield UpstreamProxy(client, tmp_path / "dispatcher-token")
 
 
 @pytest.fixture
