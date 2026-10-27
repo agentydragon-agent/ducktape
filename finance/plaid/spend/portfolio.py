@@ -12,15 +12,9 @@ import httpx
 import jwt
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 
-from finance.plaid.spend.plaid_valuation import (
-    ACCOUNT_BALANCES_SQL,
-    HOLDING_BATCHES_SQL,
-    decimal_amount,
-    unavailable_source,
-    usd_minor_units,
-    value_plaid_rows,
-)
+from finance.plaid.spend.plaid_valuation import decimal_amount, unavailable_source, usd_minor_units, value_plaid_rows
 from finance.plaid.spend.portfolio_models import PortfolioPolicy, PortfolioView, SourceValuation
+from finance.plaid.spend.portfolio_queries import compile_asyncpg, select_account_balances, select_holding_batches
 
 _COINBASE_HOST = "api.coinbase.com"
 _COINBASE_ACCOUNTS_PATH = "/api/v3/brokerage/accounts"
@@ -80,11 +74,13 @@ async def _read_plaid(
 
     try:
         async with pool.acquire() as connection:
-            account_rows = await connection.fetch(ACCOUNT_BALANCES_SQL, selected_ids)
+            balance_query, balance_args = compile_asyncpg(select_account_balances(selected_ids))
+            account_rows = await connection.fetch(balance_query, *balance_args)
             holding_rows: list[asyncpg.Record] = []
             if required_holding_accounts:
                 account_ids = sorted(required_holding_accounts)
-                holding_rows = await connection.fetch(HOLDING_BATCHES_SQL, account_ids)
+                holding_query, holding_args = compile_asyncpg(select_holding_batches(account_ids))
+                holding_rows = await connection.fetch(holding_query, *holding_args)
     except asyncpg.PostgresError, OSError, TimeoutError:
         return unavailable_source("plaid", "The Plaid mirror could not be read."), 0, 0, 0
 

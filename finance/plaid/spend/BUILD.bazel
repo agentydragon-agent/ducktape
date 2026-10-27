@@ -66,6 +66,7 @@ py_library(
     deps = [
         ":plaid_valuation",
         ":portfolio_models",
+        ":portfolio_queries",
         "@pypi//asyncpg",
         "@pypi//httpx",
         "@pypi//pydantic",
@@ -289,5 +290,27 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "portfolio_queries",
+    srcs = ["portfolio_queries.py"],
+    deps = [
+        "//finance/plaid/db:models",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_portfolio_queries",
+    srcs = ["test_portfolio_queries.py"],
+    deps = [
+        ":conftest",
+        ":portfolio_queries",
+        "//:conftest",
+        "//finance/plaid/db:models",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )

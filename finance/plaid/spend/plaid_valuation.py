@@ -1,6 +1,6 @@
 """Transport-independent USD valuation of selected Plaid snapshot rows.
 
-Queries bind $1 to a text array. Holding rows must come from each account's
+Holding rows must come from each account's
 latest complete capture batch, never the latest row of each individual security.
 """
 
@@ -11,48 +11,6 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from finance.plaid.spend.portfolio_models import PlaidSourcePolicy, PortfolioPolicy, SourceValuation
 
 _USD_MINOR_UNITS = Decimal(100)
-
-ACCOUNT_BALANCES_SQL = """
-WITH selected_accounts AS (
-    SELECT a.account_id, a.item_id, a.type, a.iso_currency_code AS account_currency
-    FROM accounts AS a
-    JOIN links AS l ON l.item_id = a.item_id
-    WHERE a.account_id = ANY($1::text[])
-      AND a.detached_at IS NULL
-      AND l.status = 'active'
-), latest_balances AS (
-    SELECT DISTINCT ON (b.account_id)
-           b.account_id, b.item_id, b.current, b.iso_currency_code AS balance_currency, b.captured_at
-    FROM balance_snapshots AS b
-    JOIN selected_accounts AS a ON a.account_id = b.account_id AND a.item_id = b.item_id
-    ORDER BY b.account_id, b.captured_at DESC, b.id DESC
-)
-SELECT a.account_id, a.type AS account_type, a.account_currency,
-       b.current, b.balance_currency, b.captured_at
-FROM selected_accounts AS a
-LEFT JOIN latest_balances AS b ON b.account_id = a.account_id
-"""
-
-HOLDING_BATCHES_SQL = """
-WITH latest_holding_batches AS (
-    SELECT h.account_id, MAX(h.captured_at) AS captured_at
-    FROM holding_snapshots AS h
-    JOIN accounts AS a ON a.account_id = h.account_id
-    JOIN links AS l ON l.item_id = h.item_id
-    WHERE h.account_id = ANY($1::text[])
-      AND a.detached_at IS NULL
-      AND l.status = 'active'
-    GROUP BY h.account_id
-)
-SELECT h.account_id, h.security_id, h.captured_at, h.institution_value,
-       h.iso_currency_code AS holding_currency
-FROM holding_snapshots AS h
-JOIN latest_holding_batches AS b
-  ON b.account_id = h.account_id
- AND b.captured_at = h.captured_at
-WHERE h.account_id = ANY($1::text[])
-ORDER BY h.account_id, h.security_id, h.id DESC
-"""
 
 
 def decimal_amount(value: object) -> Decimal | None:
@@ -100,7 +58,7 @@ def value_plaid_rows(
 ) -> tuple[SourceValuation, int, int, int]:
     """Return source, gross assets, signed liabilities and exclusions in USD cents.
 
-    Account keys follow ACCOUNT_BALANCES_SQL; holding keys follow HOLDING_BATCHES_SQL.
+    Account and holding keys follow portfolio_queries select builders.
     Amounts accept finite numeric values or numeric strings. Convert transport date
     strings to datetime before calling. Extra metadata columns are ignored. Supply
     holdings only for accounts with configured corrections/exclusions. Incomplete,
