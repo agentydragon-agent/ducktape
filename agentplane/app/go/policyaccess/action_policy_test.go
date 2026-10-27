@@ -245,11 +245,17 @@ func TestActionPolicyReaderCancelsTheGeneratedRPCWithItsRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan *ActionPolicyUnavailable, 1)
+	defer cancel()
+	type result struct {
+		view        *ActionPolicyView
+		unavailable *ActionPolicyUnavailable
+		err         error
+	}
+	done := make(chan result, 1)
 	go func() {
-		_, unavailable, _ := reader.ForSubject(ctx, auth.Caller{Kind: auth.CallerOperator}, actionSession(),
+		view, unavailable, err := reader.ForSubject(ctx, auth.Caller{Kind: auth.CallerOperator}, actionSession(),
 			&sandboxespb.ServiceAccount{Namespace: "team", Name: "worker"})
-		done <- unavailable
+		done <- result{view: view, unavailable: unavailable, err: err}
 	}()
 	select {
 	case <-entered:
@@ -258,9 +264,9 @@ func TestActionPolicyReaderCancelsTheGeneratedRPCWithItsRequest(t *testing.T) {
 	}
 	cancel()
 	select {
-	case unavailable := <-done:
-		if unavailable == nil || unavailable.Code != "upstream_request_failed" || unavailable.Upstream != nil {
-			t.Fatalf("cancelled RPC frame = %#v", unavailable)
+	case outcome := <-done:
+		if outcome.view != nil || outcome.unavailable != nil || !errors.Is(outcome.err, context.Canceled) {
+			t.Fatalf("cancelled RPC result = %+v", outcome)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("Action Service RPC did not return after request cancellation")
