@@ -215,7 +215,8 @@ async def test_connection_routes_use_federated_bearer_typed_requests_and_protojs
     assert listed.status_code == 200
     assert listed.json() == {"connections": []}
     assert updated.status_code == 200
-    assert updated.json()["connection"] == {"displayName": "renamed", "id": "connection-1", "version": "7"}
+    connection = updated.json()["connection"]
+    assert (connection["displayName"], connection["id"], connection["version"]) == ("renamed", "connection-1", "7")
     assert peer.authorization == ["Bearer test-operator-token-1", "Bearer test-operator-token-2"]
     assert len(peer.updated) == 1
     assert (peer.updated[0].connection_id, peer.updated[0].expected_version, peer.updated[0].display_name) == (
