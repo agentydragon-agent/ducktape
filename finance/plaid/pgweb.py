@@ -12,6 +12,10 @@ from pydantic import BaseModel
 from agentplane.egress.rule_client import Rules, create_client, load_rules
 
 
+class QueryError(RuntimeError):
+    """A query failed; the message excludes SQL and response contents."""
+
+
 class QueryResult(BaseModel):
     columns: list[str]
     rows: list[list[Any]]
@@ -37,9 +41,19 @@ def query(
     credential = rules.find_credential(
         host=parsed.hostname, method="POST", path=parsed.path, target_method="METHOD_BASIC_PASSWORD"
     )
-    response = client.post(url, data={"query": sql}, auth=httpx.BasicAuth(username, credential.placeholder))
-    response.raise_for_status()
-    result = QueryResult.model_validate(response.json())
+    try:
+        response = client.post(url, data={"query": sql}, auth=httpx.BasicAuth(username, credential.placeholder))
+    except httpx.RequestError:
+        raise QueryError("pgweb request failed") from None
+    if not response.is_success:
+        raise QueryError(f"pgweb returned HTTP {response.status_code}")
+    try:
+        result = QueryResult.model_validate(response.json())
+    except ValueError:
+        # pgweb SQL errors can include SQL literals; validation errors include input.
+        raise QueryError("pgweb returned an invalid query result") from None
     if len(set(result.columns)) != len(result.columns):
-        raise ValueError("pgweb result has duplicate column names; use SQL aliases")
+        raise QueryError("pgweb result has duplicate column names; use SQL aliases")
+    if any(len(row) != len(result.columns) for row in result.rows):
+        raise QueryError("pgweb result row width differs from its columns")
     return [dict(zip(result.columns, row, strict=True)) for row in result.rows]
