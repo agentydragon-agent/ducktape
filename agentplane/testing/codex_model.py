@@ -7,7 +7,7 @@ import json
 
 from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.model import MODEL
-from agentplane.native.codex.testing.requests import ResponsesRequest
+from agentplane.native.codex.testing.requests import InputText, ResponsesRequest
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.native.testing.model_endpoint import ModelExchange, SseEvent
 from agentplane.testing.scripted_model import Item, ModelRequest, Reasoning, ScriptedModel, ShellCall, Text, ToolOutput
@@ -42,7 +42,9 @@ class CodexModel(ScriptedModel[ResponsesRequest]):
                 *(
                     ToolOutput(
                         output.call_id,
-                        [output.output] if isinstance(output.output, str) else [part.text for part in output.output],
+                        [output.output]
+                        if isinstance(output.output, str)
+                        else [_text_output(part) for part in output.output],
                     )
                     for output in request.custom_tool_call_outputs
                 ),
@@ -79,3 +81,9 @@ def _item(item: Item, *, code_mode: bool) -> responses_sse.Item:
             return responses_sse.CustomToolCall(call_id, "exec", script)
         case ShellCall(call_id, command):
             return responses_sse.FunctionCall(call_id, "exec_command", {"cmd": command})
+
+
+def _text_output(part: object) -> str:
+    if not isinstance(part, InputText):
+        raise ValueError("CodexModel is a text-only fixture; use OpenAIResponses for image outputs")
+    return part.text

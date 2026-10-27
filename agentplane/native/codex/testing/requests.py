@@ -12,6 +12,12 @@ class InputText(BaseModel):
     text: str
 
 
+class InputImage(BaseModel):
+    type: Literal["input_image"]
+    image_url: str
+    detail: str | None = None
+
+
 class OutputText(BaseModel):
     type: Literal["output_text"]
     text: str
@@ -66,7 +72,7 @@ class CustomToolCallOutput(BaseModel):
     call_id: str
     # Code mode returns a script's result as content items: a status header, then what the script emitted. A
     # call Codex fails before running gets plain text.
-    output: str | list[InputText]
+    output: str | list[Annotated[InputText | InputImage, Field(discriminator="type")]]
 
 
 class SummaryText(BaseModel):
