@@ -58,6 +58,23 @@ for group in /sys/fs/cgroup /sys/fs/cgroup/system.slice "$service"; do
 	echo "$controllers" >"$group/cgroup.subtree_control"
 done
 
+# Mirror vm.nix's key-file service: use the guest's proxied Kubernetes identity, gate runner
+# startup on the first successful fetch, then refresh independently of the runner.
+(
+	set -a
+	. "$runtime/config/key-fetch.env"
+	set +a
+	until agentplane-key-file-sync --config "$runtime/config/key-files.json" --group-id 107 --once; do
+		sleep 10
+	done
+)
+(
+	set -a
+	. "$runtime/config/key-fetch.env"
+	set +a
+	exec agentplane-key-file-sync --config "$runtime/config/key-files.json" --group-id 107
+) &
+
 /usr/sbin/agentplane-cgroup-observer &
 
 umask 0007
