@@ -3,12 +3,25 @@ package main
 import (
 	"fmt"
 	"net/url"
+
+	"github.com/danielgtaylor/huma/v2"
 )
 
 // FrontendConfig is the browser-safe subset of deployment settings.
 type FrontendConfig struct {
-	TraceSearch    *TraceSearchSettings    `mapstructure:"trace_search" json:"trace_search" nullable:"true"`
-	LangfuseSearch *LangfuseSearchSettings `mapstructure:"langfuse_search" json:"langfuse_search" nullable:"true"`
+	TraceSearch    *TraceSearchSettings    `mapstructure:"trace_search" json:"trace_search"`
+	LangfuseSearch *LangfuseSearchSettings `mapstructure:"langfuse_search" json:"langfuse_search"`
+}
+
+// Huma's nullable tag only supports inline types. These object references need an explicit
+// union with null to document the omitted deployment settings returned by the endpoint.
+func (FrontendConfig) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	for _, name := range []string{"trace_search", "langfuse_search"} {
+		schema.Properties[name] = &huma.Schema{AnyOf: []*huma.Schema{
+			schema.Properties[name], {Type: "null"},
+		}}
+	}
+	return schema
 }
 
 type TraceSearchSettings struct {
