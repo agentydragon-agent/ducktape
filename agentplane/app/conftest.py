@@ -17,13 +17,14 @@ import pytest
 from kubernetes_asyncio.client import AuthenticationV1Api
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.app.action_clients import ActionServiceClient
+from agentplane.action_service import action_service_pb2_grpc
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.database import connect
 from agentplane.app.database_migrate import RUNNER
 from agentplane.app.database_updates import Channel, create_database_updates
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
+from agentplane.app.grpc_stream import OperatorGrpcClient
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.notifications_operator_client import NotificationsOperatorClient
@@ -253,7 +254,9 @@ async def dispatcher(tmp_path: Path) -> AsyncIterator[SessionDispatcherClient]:
 
 
 @pytest.fixture
-async def action_service() -> AsyncIterator[tuple[FakeActionService, ActionServiceClient]]:
+async def action_service() -> AsyncIterator[
+    tuple[FakeActionService, action_service_pb2_grpc.ActionServiceStub, OperatorGrpcClient]
+]:
     async with served_action_service(FakeActionService()) as service:
         yield service
 

@@ -158,6 +158,7 @@ py_proto_library_with_mypy_stubs(
 
 py_grpc_service_library(
     name = "action_service_pb2_grpc",
+    async_only = True,
     proto = ":action_service_proto",
     py_proto = ":action_service_pb2",
 )
@@ -213,6 +214,7 @@ py_proto_library_with_mypy_stubs(
 
 py_grpc_service_library(
     name = "operator_action_service_pb2_grpc",
+    async_only = True,
     proto = ":operator_action_service_proto",
     py_proto = ":operator_action_service_pb2",
 )
@@ -260,6 +262,7 @@ py_proto_library_with_mypy_stubs(
 
 py_grpc_service_library(
     name = "web_push_service_pb2_grpc",
+    async_only = True,
     proto = ":web_push_service_proto",
     py_proto = ":web_push_service_pb2",
 )

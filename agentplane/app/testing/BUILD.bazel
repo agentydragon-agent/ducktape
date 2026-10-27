@@ -35,7 +35,7 @@ py_library(
     deps = [
         "//agentplane/action_service:action_service_pb2",
         "//agentplane/action_service:action_service_pb2_grpc",
-        "//agentplane/app:action_clients",
+        "//agentplane/app:grpc_stream",
         "//agentplane/grpc:calls",
         "//agentplane/grpc:serving",
         "@pypi//grpcio",

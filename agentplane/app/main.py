@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+# Generated protobuf annotations need the protobuf typing dependency.
+# gazelle:include_dep @pypi//protobuf
 import asyncio
 import socket
 from contextlib import AsyncExitStack
@@ -13,15 +15,19 @@ import uvicorn
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.app.action_clients import ActionServiceClient, OperatorActionServiceClient, WebPushServiceClient
+from agentplane.action_service import (
+    action_service_pb2_grpc,
+    operator_action_service_pb2_grpc,
+    web_push_service_pb2_grpc,
+)
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
-from agentplane.app.connection_client import ConnectionServiceClient
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, create_database_updates
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
+from agentplane.app.grpc_stream import OperatorGrpcClient
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex, watch_for
 from agentplane.app.notifications_operator_client import NotificationsOperatorClient
@@ -45,6 +51,7 @@ from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
+from agentplane.mcp_edge import connection_service_pb2_grpc
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandboxes.inventory import SandboxInventory
@@ -200,11 +207,12 @@ async def async_main(settings: Settings) -> None:
                 token_file=settings.notifications_token_file,
                 request_timeout_s=settings.notifications_request_timeout_s,
             ),
-            action_service=ActionServiceClient(actions_health_channel, request_timeout_s=10),
-            operator_action_service=OperatorActionServiceClient(actions_health_channel, request_timeout_s=10),
-            web_push_service=WebPushServiceClient(actions_health_channel, request_timeout_s=10),
+            action_service=action_service_pb2_grpc.ActionServiceStub(actions_health_channel),
+            operator_action_service=operator_action_service_pb2_grpc.OperatorActionServiceStub(actions_health_channel),
+            web_push_service=web_push_service_pb2_grpc.WebPushServiceStub(actions_health_channel),
+            operator_grpc=OperatorGrpcClient(request_timeout_s=10),
             mcp_callback_http=mcp_callback_http,
-            connection_service=ConnectionServiceClient(connection_health_channel, request_timeout_s=10),
+            connection_service=connection_service_pb2_grpc.ConnectionServiceStub(connection_health_channel),
             system_status=SystemStatusChecker(system_probes, timeout_s=SYSTEM_STATUS_TIMEOUT_S),
         )
         async with AsyncExitStack() as tasks:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+# Generated protobuf annotations need the protobuf typing dependency.
+# gazelle:include_dep @pypi//protobuf
 import asyncio
 import logging
 import time
@@ -23,9 +25,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from agentplane.action_service import action_service_pb2
+from agentplane.action_service import action_service_pb2, action_service_pb2_grpc
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
-from agentplane.app.action_clients import ActionServiceClient
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_federation_settings import DirectFederationSettings, ExchangeFederationSettings
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
@@ -34,6 +35,7 @@ from agentplane.app.database import connect
 from agentplane.app.database_updates import create_database_updates
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
+from agentplane.app.grpc_stream import OperatorGrpcClient
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex, SandboxSnapshot
 from agentplane.app.notifications_operator_client import NotificationsOperatorClient
@@ -111,7 +113,7 @@ async def review(
     history_client: HistoryServiceClient,
     electric_proxy: ElectricProxy,
     notifications: NotificationsOperatorClient,
-    action_service: tuple[FakeActionService, ActionServiceClient],
+    action_service: tuple[FakeActionService, action_service_pb2_grpc.ActionServiceStub, OperatorGrpcClient],
 ) -> AsyncIterator[Review]:
     """Exercise the app's ASGI and gRPC client behavior against an in-process Action Service."""
     async with AsyncExitStack() as stack:
@@ -125,7 +127,7 @@ async def review(
             audience="test-app" if direct_federation and operator_connection != "wrong-audience" else "test-actions",
             jwks_uri=f"{idp_url}jwks/",
         )
-        fake_actions, actions_client = action_service
+        fake_actions, action_stub, operator_grpc = action_service
         policy = fake_actions.policy.action_policy
         policy.synced = True
         policy.subject.namespace = "test-sandboxes"
@@ -273,7 +275,8 @@ async def review(
             operator_sessions=operator_sessions,
             electric=electric_proxy,
             notifications=notifications,
-            action_service=actions_client,
+            action_service=action_stub,
+            operator_grpc=operator_grpc,
             system_status=answering_system_status(),
         )
         await stack.enter_async_context(idp_endpoint.serve(idp))
@@ -310,7 +313,8 @@ async def review(
             operator_sessions=OperatorSessionStore(replica_engine),
             electric=electric_proxy,
             notifications=notifications,
-            action_service=actions_client,
+            action_service=action_stub,
+            operator_grpc=operator_grpc,
             system_status=answering_system_status(),
         )
         second_browser = await stack.enter_async_context(

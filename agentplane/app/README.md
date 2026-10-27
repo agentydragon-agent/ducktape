@@ -123,9 +123,8 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
   reason, never an error response. The Kubernetes API is not probed either; the freshness of the live
   views shows it.
 - `action_federation.py`: request-bound operator federation into the canonical Action Service.
-- `action_clients.py`, `connection_client.py` and `grpc_stream.py`: generated operator-facing service
-  stubs, shared gRPC deadlines and bearer handling, and the bounded opening/cleanup lifecycle for
-  browser-relayed watches.
+- `grpc_stream.py`: shared gRPC deadlines and bearer handling for the generated operator-facing service
+  stubs, and the bounded opening/cleanup lifecycle for browser-relayed watches.
 - `frontend/connections/connection_service_client.ts`: generated ConnectionService ProtoJSON/NDJSON
   message adapters for the consent page and OAuth-client settings; the app's BFF owns the browser HTTP
   routes while the service owns Connections and consent.

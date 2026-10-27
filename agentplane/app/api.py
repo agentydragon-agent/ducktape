@@ -21,10 +21,16 @@ from google.protobuf.json_format import MessageToDict, Parse, ParseError
 from google.protobuf.message import Message
 from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
-from agentplane.action_service import action_service_pb2, operator_action_service_pb2, web_push_service_pb2
+from agentplane.action_service import (
+    action_service_pb2,
+    action_service_pb2_grpc,
+    operator_action_service_pb2,
+    operator_action_service_pb2_grpc,
+    web_push_service_pb2,
+    web_push_service_pb2_grpc,
+)
 from agentplane.action_service.policy_view import ActionPolicySetView
 from agentplane.app import auth_routes
-from agentplane.app.action_clients import ActionServiceClient, OperatorActionServiceClient, WebPushServiceClient
 from agentplane.app.action_federation import (
     FederatedOperatorActions,
     OperatorFederationError,
@@ -32,7 +38,6 @@ from agentplane.app.action_federation import (
     upstream_failure_detail,
 )
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
-from agentplane.app.connection_client import ConnectionServiceClient
 from agentplane.app.database_updates import Channel
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy, router as electric_router
@@ -86,7 +91,7 @@ from agentplane.app.threads.view.content import CommandIdConflictError, ContentS
 from agentplane.app.trace_relay import relay_traces
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import RefusedError, ServiceError, bearer
-from agentplane.mcp_edge import connection_service_pb2
+from agentplane.mcp_edge import connection_service_pb2, connection_service_pb2_grpc
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import command_pb2
 from agentplane.runner.harness import Harness
@@ -149,11 +154,12 @@ class AppServices:
     reviewer: TokenReviewer | None
     operator_actions: FederatedOperatorActions | None
     electric: ElectricProxy | None
-    action_service: ActionServiceClient | None
-    operator_action_service: OperatorActionServiceClient | None
-    web_push_service: WebPushServiceClient | None
+    action_service: action_service_pb2_grpc.ActionServiceStub | None
+    operator_action_service: operator_action_service_pb2_grpc.OperatorActionServiceStub | None
+    web_push_service: web_push_service_pb2_grpc.WebPushServiceStub | None
+    operator_grpc: OperatorGrpcClient | None
     mcp_callback_http: httpx.AsyncClient | None
-    connection_service: ConnectionServiceClient | None
+    connection_service: connection_service_pb2_grpc.ConnectionServiceStub | None
     frontend_config: FrontendConfig = field(default_factory=FrontendConfig)
     oauth: OAuth | None = field(init=False)
     drain: Drain = field(default_factory=Drain)
@@ -359,13 +365,13 @@ async def _operator_bearer(request: Request, caller: Caller) -> str:
 async def _operator_unary[ResponseMessage: Message](
     request: Request,
     caller: Caller,
-    client: OperatorGrpcClient | None,
     rpc: Callable[..., Awaitable[ResponseMessage]] | None,
     message: Message,
     *,
     label: str,
     extra_metadata: tuple[tuple[str, str], ...] = (),
 ) -> JSONResponse:
+    client = app_services(request.app).operator_grpc
     if client is None or rpc is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, f"{label} is not configured")
     bearer = await _operator_bearer(request, caller)
@@ -384,7 +390,6 @@ async def _operator_unary[ResponseMessage: Message](
 async def _operator_watch[ResponseMessage: Message](
     request: Request,
     caller: Caller,
-    client: OperatorGrpcClient | None,
     rpc: Callable[..., grpc.aio.UnaryStreamCall[Any, ResponseMessage]] | None,
     message: Message,
     *,
@@ -393,6 +398,7 @@ async def _operator_watch[ResponseMessage: Message](
     updates: Updates,
     sessions: OperatorSessions,
 ) -> StreamingResponse:
+    client = app_services(request.app).operator_grpc
     if client is None or rpc is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, f"{label} is not configured")
     bearer = await _operator_bearer(request, caller)
@@ -485,8 +491,7 @@ async def list_connection_callers(request: Request, services: Services, caller: 
     return await _operator_unary(
         request,
         caller,
-        client,
-        client.stub.ListCallerServiceAccounts if client else None,
+        client.ListCallerServiceAccounts if client else None,
         connection_service_pb2.ListCallerServiceAccountsRequest(),
         label="Connection Service",
     )
@@ -499,8 +504,7 @@ async def list_connections(request: Request, services: Services, caller: Caller)
     return await _operator_unary(
         request,
         caller,
-        client,
-        client.stub.ListConnections if client else None,
+        client.ListConnections if client else None,
         connection_service_pb2.ListConnectionsRequest(),
         label="Connection Service",
     )
@@ -522,8 +526,7 @@ async def watch_connections(
     return await _operator_watch(
         request,
         caller,
-        client,
-        client.stub.WatchConnections if client else None,
+        client.WatchConnections if client else None,
         connection_service_pb2.WatchConnectionsRequest(),
         label="Connection Service",
         shutdown=shutdown,
@@ -541,8 +544,7 @@ async def get_connection(request: Request, services: Services, caller: Caller, c
     return await _operator_unary(
         request,
         caller,
-        client,
-        client.stub.GetConnection if client else None,
+        client.GetConnection if client else None,
         connection_service_pb2.GetConnectionRequest(connection_id=connection_id),
         label="Connection Service",
     )
@@ -562,7 +564,7 @@ async def update_connection(request: Request, services: Services, caller: Caller
     message.connection_id = connection_id
     client = services.connection_service
     return await _operator_unary(
-        request, caller, client, client.stub.UpdateConnection if client else None, message, label="Connection Service"
+        request, caller, client.UpdateConnection if client else None, message, label="Connection Service"
     )
 
 
@@ -580,7 +582,7 @@ async def rebind_connection(request: Request, services: Services, caller: Caller
     message.connection_id = connection_id
     client = services.connection_service
     return await _operator_unary(
-        request, caller, client, client.stub.RebindConnection if client else None, message, label="Connection Service"
+        request, caller, client.RebindConnection if client else None, message, label="Connection Service"
     )
 
 
@@ -598,7 +600,7 @@ async def unbind_connection(request: Request, services: Services, caller: Caller
     message.connection_id = connection_id
     client = services.connection_service
     return await _operator_unary(
-        request, caller, client, client.stub.UnbindConnection if client else None, message, label="Connection Service"
+        request, caller, client.UnbindConnection if client else None, message, label="Connection Service"
     )
 
 
@@ -620,12 +622,7 @@ async def preview_connection_enrollment(
     message.handle = handle
     client = services.connection_service
     return await _operator_unary(
-        request,
-        caller,
-        client,
-        client.stub.PreviewConnectionEnrollment if client else None,
-        message,
-        label="Connection Service",
+        request, caller, client.PreviewConnectionEnrollment if client else None, message, label="Connection Service"
     )
 
 
@@ -647,12 +644,7 @@ async def decide_connection_enrollment(
     message.handle = handle
     client = services.connection_service
     return await _operator_unary(
-        request,
-        caller,
-        client,
-        client.stub.DecideConnectionEnrollment if client else None,
-        message,
-        label="Connection Service",
+        request, caller, client.DecideConnectionEnrollment if client else None, message, label="Connection Service"
     )
 
 
@@ -747,7 +739,7 @@ async def watch_dispatches(
     )
 
 
-def _action_states(states: list[str] | None) -> list[int]:
+def _action_states(states: list[str] | None) -> list[action_service_pb2.ActionState.ValueType]:
     try:
         return [action_service_pb2.ActionState.Value(value) for value in states or []]
     except ValueError as error:
@@ -775,7 +767,7 @@ async def list_action_requests(
         message.after_id = after_id
     client = services.action_service
     return await _operator_unary(
-        request, caller, client, client.stub.ListActionRequests if client else None, message, label="Action Service"
+        request, caller, client.ListActionRequests if client else None, message, label="Action Service"
     )
 
 
@@ -798,8 +790,7 @@ async def list_action_request_history(
     return await _operator_unary(
         request,
         caller,
-        services.action_service,
-        services.action_service.stub.ListActionRequestHistory if services.action_service else None,
+        services.action_service.ListActionRequestHistory if services.action_service else None,
         message,
         label="Action Service",
     )
@@ -810,8 +801,7 @@ async def get_action_request(request: Request, services: Services, caller: Calle
     return await _operator_unary(
         request,
         caller,
-        services.action_service,
-        services.action_service.stub.GetActionRequest if services.action_service else None,
+        services.action_service.GetActionRequest if services.action_service else None,
         action_service_pb2.GetActionRequestRequest(request_id=request_id),
         label="Action Service",
     )
@@ -831,8 +821,7 @@ async def watch_action_requests(
     return await _operator_watch(
         request,
         caller,
-        client,
-        client.stub.WatchActionRequests if client else None,
+        client.WatchActionRequests if client else None,
         action_service_pb2.WatchActionRequestsRequest(state=_action_states(state)),
         label="Action Service",
         shutdown=shutdown,
@@ -847,8 +836,7 @@ async def list_action_groups(request: Request, services: Services, caller: Calle
     return await _operator_unary(
         request,
         caller,
-        client,
-        client.stub.ListActionGroups if client else None,
+        client.ListActionGroups if client else None,
         action_service_pb2.ListActionGroupsRequest(),
         label="Action Service",
     )
@@ -867,8 +855,7 @@ async def watch_action_groups(
     return await _operator_watch(
         request,
         caller,
-        client,
-        client.stub.WatchActionGroups if client else None,
+        client.WatchActionGroups if client else None,
         action_service_pb2.WatchActionGroupsRequest(),
         label="Action Service",
         shutdown=shutdown,
@@ -890,12 +877,7 @@ async def decide_action_request(request: Request, services: Services, caller: Ca
     message.request_id = request_id
     client = services.operator_action_service
     return await _operator_unary(
-        request,
-        caller,
-        client,
-        client.stub.DecideActionRequest if client else None,
-        message,
-        label="Operator Action Service",
+        request, caller, client.DecideActionRequest if client else None, message, label="Operator Action Service"
     )
 
 
@@ -912,8 +894,7 @@ async def watch_mcp_servers(
     return await _operator_watch(
         request,
         caller,
-        client,
-        client.stub.WatchMcpServers if client else None,
+        client.WatchMcpServers if client else None,
         operator_action_service_pb2.WatchMcpServersRequest(),
         label="Operator Action Service",
         shutdown=shutdown,
@@ -935,12 +916,7 @@ async def start_mcp_linkage(request: Request, services: Services, caller: Caller
     message.server_id = server_id
     client = services.operator_action_service
     return await _operator_unary(
-        request,
-        caller,
-        client,
-        client.stub.StartMcpServerLinkage if client else None,
-        message,
-        label="Operator Action Service",
+        request, caller, client.StartMcpServerLinkage if client else None, message, label="Operator Action Service"
     )
 
 
@@ -954,8 +930,7 @@ async def disconnect_mcp_linkage(request: Request, services: Services, caller: C
     return await _operator_unary(
         request,
         caller,
-        client,
-        client.stub.DisconnectMcpServer if client else None,
+        client.DisconnectMcpServer if client else None,
         operator_action_service_pb2.DisconnectMcpServerRequest(server_id=server_id),
         label="Operator Action Service",
     )
@@ -967,8 +942,7 @@ async def get_push_config(request: Request, services: Services, caller: Caller) 
     return await _operator_unary(
         request,
         caller,
-        client,
-        client.stub.GetPushConfig if client else None,
+        client.GetPushConfig if client else None,
         web_push_service_pb2.GetPushConfigRequest(),
         label="Web Push Service",
     )
@@ -980,8 +954,7 @@ async def list_push_subscriptions(request: Request, services: Services, caller: 
     return await _operator_unary(
         request,
         caller,
-        client,
-        client.stub.ListPushSubscriptions if client else None,
+        client.ListPushSubscriptions if client else None,
         web_push_service_pb2.ListPushSubscriptionsRequest(),
         label="Web Push Service",
     )
@@ -1002,8 +975,7 @@ async def watch_push_subscriptions(
     return await _operator_watch(
         request,
         caller,
-        client,
-        client.stub.WatchPushSubscriptions if client else None,
+        client.WatchPushSubscriptions if client else None,
         web_push_service_pb2.WatchPushSubscriptionsRequest(),
         label="Web Push Service",
         shutdown=shutdown,
@@ -1021,8 +993,7 @@ async def create_push_subscription(request: Request, services: Services, caller:
     return await _operator_unary(
         request,
         caller,
-        client,
-        client.stub.CreatePushSubscription if client else None,
+        client.CreatePushSubscription if client else None,
         message,
         label="Web Push Service",
         extra_metadata=metadata,
@@ -1039,8 +1010,7 @@ async def delete_push_subscription(
     return await _operator_unary(
         request,
         caller,
-        client,
-        client.stub.DeletePushSubscription if client else None,
+        client.DeletePushSubscription if client else None,
         web_push_service_pb2.DeletePushSubscriptionRequest(endpoint=endpoint),
         label="Web Push Service",
     )
@@ -1705,11 +1675,12 @@ def create_app(
     operator_actions: FederatedOperatorActions | None = None,
     *,
     electric: ElectricProxy | None,
-    action_service: ActionServiceClient | None = None,
-    operator_action_service: OperatorActionServiceClient | None = None,
-    web_push_service: WebPushServiceClient | None = None,
+    action_service: action_service_pb2_grpc.ActionServiceStub | None = None,
+    operator_action_service: operator_action_service_pb2_grpc.OperatorActionServiceStub | None = None,
+    web_push_service: web_push_service_pb2_grpc.WebPushServiceStub | None = None,
+    operator_grpc: OperatorGrpcClient | None = None,
     mcp_callback_http: httpx.AsyncClient | None = None,
-    connection_service: ConnectionServiceClient | None = None,
+    connection_service: connection_service_pb2_grpc.ConnectionServiceStub | None = None,
     event_logs: EventLogStore,
     content: ContentStore,
     database_updates: WakeupListener,
@@ -1722,6 +1693,11 @@ def create_app(
     and an app given neither answers 401 to everything but /healthz."""
     if set(catalog.harnesses) != set(Harness) or not any(catalog.harnesses.values()):
         raise ValueError(f"the model catalog needs every harness key and at least one offered model: {catalog=}")
+    if operator_grpc is None and any(
+        service is not None
+        for service in (action_service, operator_action_service, web_push_service, connection_service)
+    ):
+        raise ValueError("operator_grpc is required when an operator service stub is configured")
     configured_presets = presets or PresetCatalog()
     for thread_preset_name, thread_preset in configured_presets.threads.items():
         if thread_preset.model not in catalog.harnesses[thread_preset.harness]:
@@ -1785,6 +1761,7 @@ def create_app(
         action_service=action_service,
         operator_action_service=operator_action_service,
         web_push_service=web_push_service,
+        operator_grpc=operator_grpc,
         mcp_callback_http=mcp_callback_http,
         connection_service=connection_service,
         frontend_config=frontend_config if frontend_config is not None else FrontendConfig(),

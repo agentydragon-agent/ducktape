@@ -36,7 +36,6 @@ from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane import sandbox_resource
-from agentplane.app.action_clients import ActionServiceClient
 from agentplane.app.action_federation import OperatorFederationError, UpstreamFailure, operator_action_token
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
 from agentplane.app.database_updates import Channel
@@ -319,10 +318,12 @@ async def action_policy_frame(
     frame rather than ending a stream that also carries the sandbox itself."""
     try:
         bearer = await operator_action_token(request, caller)
-        actions = request.app.state.services.action_service
-        if not isinstance(actions, ActionServiceClient):
+        services = request.app.state.services
+        actions = services.action_service
+        client = services.operator_grpc
+        if actions is None or client is None:
             return ActionPolicyUnavailable(code="action_service_not_configured")
-        return await inventory.for_subject(actions, bearer, subject)
+        return await inventory.for_subject(client, actions, bearer, subject)
     except OperatorFederationError as error:
         return ActionPolicyUnavailable(code=str(error))
     except (ServiceError, TimeoutError) as error:

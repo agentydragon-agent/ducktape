@@ -12,7 +12,7 @@ from typing import Literal
 from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentplane.action_service import action_service_pb2 as action_pb
+from agentplane.action_service import action_service_pb2 as action_pb, action_service_pb2_grpc
 from agentplane.action_service.models import PolicyKind, PolicySource
 from agentplane.action_service.policy_view import (
     ArgumentSchemaView,
@@ -23,8 +23,8 @@ from agentplane.action_service.policy_view import (
     HomeAssistantEntityControlView,
     PolicyView,
 )
-from agentplane.app.action_clients import ActionServiceClient
 from agentplane.app.action_federation import UpstreamFailure
+from agentplane.app.grpc_stream import OperatorGrpcClient
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.policy_sets import POLICY_SETS_PLURAL
 from agentplane.sandboxes.action_policy_views import ActionPolicyReader
@@ -72,13 +72,17 @@ class ActionPolicyInventory(ActionPolicyReader):
         return sorted(item["metadata"]["name"] for item in listed["items"])
 
     async def for_subject(
-        self, client: ActionServiceClient, bearer: str, subject: ServiceAccountRef
+        self,
+        client: OperatorGrpcClient,
+        stub: action_service_pb2_grpc.ActionServiceStub,
+        bearer: str,
+        subject: ServiceAccountRef,
     ) -> ActionPolicyView:
         """The subject's policy from the Action Service's generated gRPC API."""
         request = action_pb.GetActionPolicyRequest()
         request.subject.namespace = subject.namespace
         request.subject.name = subject.name
-        response = await client.unary(client.stub.GetActionPolicy, request, bearer_token=bearer)
+        response = await client.unary(stub.GetActionPolicy, request, bearer_token=bearer)
         if not response.HasField("action_policy"):
             raise ValueError("Action Service returned no action policy")
         policy = response.action_policy

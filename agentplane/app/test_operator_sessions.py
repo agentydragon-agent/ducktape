@@ -20,12 +20,13 @@ from more_itertools import one
 from sqlalchemy import select, update
 from starlette.types import Message, Scope
 
-from agentplane.app.action_clients import ActionServiceClient
+from agentplane.action_service import action_service_pb2_grpc
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import app_services, create_app
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
+from agentplane.app.grpc_stream import OperatorGrpcClient
 from agentplane.app.live import LiveIndex
 from agentplane.app.notifications_operator_client import NotificationsOperatorClient
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
@@ -134,11 +135,11 @@ async def app(
     database_updates: WakeupListener,
     electric_proxy: ElectricProxy,
     notifications: NotificationsOperatorClient,
-    action_service: tuple[FakeActionService, ActionServiceClient],
+    action_service: tuple[FakeActionService, action_service_pb2_grpc.ActionServiceStub, OperatorGrpcClient],
 ) -> AsyncIterator[FastAPI]:
     """The app with a login that needs no identity provider, and an Action Service that answers once
     `gate` opens."""
-    service, action_client = action_service
+    service, action_stub, operator_grpc = action_service
     service.unary_gate = gate.opened
     service.watch_gate = gate.opened
     app = create_app(
@@ -186,7 +187,8 @@ async def app(
         request_session(request).log_in(LOGIN, absolute_expires_at=datetime.now(UTC) + timedelta(hours=1))
 
     app_services(app).operator_actions = StubActions()
-    app_services(app).action_service = action_client
+    app_services(app).action_service = action_stub
+    app_services(app).operator_grpc = operator_grpc
     try:
         yield app
     finally:
@@ -257,7 +259,10 @@ class RawRequest:
     ],
 )
 async def test_a_request_held_before_its_headers_holds_up_no_other_on_its_session(
-    app: FastAPI, gate: Gate, path: str, action_service: tuple[FakeActionService, ActionServiceClient]
+    app: FastAPI,
+    gate: Gate,
+    path: str,
+    action_service: tuple[FakeActionService, action_service_pb2_grpc.ActionServiceStub, OperatorGrpcClient],
 ) -> None:
     cookie = await _session(app, "/test-login")
     held = RawRequest(app, path, cookie)

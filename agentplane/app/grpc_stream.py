@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import grpc
 from google.protobuf.message import Message
@@ -58,7 +58,7 @@ async def open_watch[Request: Message, Response: Message](
     if first is grpc.aio.EOF:
         stream.cancel()
         raise ConnectionError("gRPC watch ended before its first frame")
-    return OpenWatch(stream, first)
+    return OpenWatch(stream, cast(Response, first))
 
 
 async def messages[Response: Message](watch: OpenWatch[Response]) -> AsyncIterator[Response]:
@@ -72,7 +72,7 @@ async def messages[Response: Message](watch: OpenWatch[Response]) -> AsyncIterat
                 raise_status(error)
             if response is grpc.aio.EOF:
                 return
-            yield response
+            yield cast(Response, response)
     finally:
         watch.call.cancel()
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+# Generated protobuf annotations need the protobuf typing dependency.
+# gazelle:include_dep @pypi//protobuf
 import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -16,18 +18,17 @@ from fastapi import FastAPI, Request
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import app_services, create_app
-from agentplane.app.connection_client import ConnectionServiceClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
+from agentplane.app.grpc_stream import OperatorGrpcClient
 from agentplane.app.live import LiveIndex
 from agentplane.app.notifications_operator_client import NotificationsOperatorClient
-from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.testing.dispatcher import served_dispatcher
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
-from agentplane.app.testing.operator_streams import APP_URL, EventSource, login, logout, with_test_login
+from agentplane.app.testing.operator_streams import APP_URL, OIDC, EventSource, login, logout, with_test_login
 from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
@@ -128,16 +129,22 @@ class FakeDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
 
 
 def _authorization(context: grpc.aio.ServicerContext) -> str | None:
-    return next((item.value for item in context.invocation_metadata() if item.key == "authorization"), None)
+    return next((str(value) for key, value in context.invocation_metadata() or () if key == "authorization"), None)
 
 
 @pytest.fixture
-async def connection_peer(tmp_path: Path) -> AsyncIterator[tuple[ConnectionServiceClient, FakeConnectionService]]:
+async def connection_peer(
+    tmp_path: Path,
+) -> AsyncIterator[tuple[connection_service_pb2_grpc.ConnectionServiceStub, FakeConnectionService, OperatorGrpcClient]]:
     service = FakeConnectionService()
     server = grpc.aio.server()
     connection_service_pb2_grpc.add_ConnectionServiceServicer_to_server(service, server)
     async with serving(server, "127.0.0.1:0", grace_s=0) as port, dial(f"127.0.0.1:{port}") as channel:
-        yield ConnectionServiceClient(channel, request_timeout_s=2), service
+        yield (
+            connection_service_pb2_grpc.ConnectionServiceStub(channel),
+            service,
+            OperatorGrpcClient(request_timeout_s=2),
+        )
 
 
 @pytest.fixture
@@ -155,9 +162,11 @@ def app(
     notifications: NotificationsOperatorClient,
     operator_sessions: OperatorSessionStore,
     database_updates: WakeupListener,
-    connection_peer: tuple[ConnectionServiceClient, FakeConnectionService],
+    connection_peer: tuple[
+        connection_service_pb2_grpc.ConnectionServiceStub, FakeConnectionService, OperatorGrpcClient
+    ],
 ) -> FastAPI:
-    connection, _ = connection_peer
+    connection, _, operator_grpc = connection_peer
     app = create_app(
         inventory,
         bridge,
@@ -167,13 +176,14 @@ def app(
         decisions,
         live_index,
         action_policy,
-        OIDCSettings(),
+        OIDC,
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,
         operator_sessions=operator_sessions,
         electric=electric_proxy,
         connection_service=connection,
+        operator_grpc=operator_grpc,
         notifications=notifications,
         system_status=answering_system_status(),
     )
@@ -182,9 +192,12 @@ def app(
 
 
 async def test_connection_routes_use_federated_bearer_typed_requests_and_protojson(
-    app: FastAPI, connection_peer: tuple[ConnectionServiceClient, FakeConnectionService]
+    app: FastAPI,
+    connection_peer: tuple[
+        connection_service_pb2_grpc.ConnectionServiceStub, FakeConnectionService, OperatorGrpcClient
+    ],
 ) -> None:
-    _, peer = connection_peer
+    _, peer, _ = connection_peer
     cookie = await login(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url=APP_URL, cookies={"agentplane": cookie}
@@ -209,9 +222,12 @@ async def test_connection_routes_use_federated_bearer_typed_requests_and_protojs
 
 
 async def test_connection_watch_uses_ndjson_and_fails_auth_before_headers(
-    app: FastAPI, connection_peer: tuple[ConnectionServiceClient, FakeConnectionService]
+    app: FastAPI,
+    connection_peer: tuple[
+        connection_service_pb2_grpc.ConnectionServiceStub, FakeConnectionService, OperatorGrpcClient
+    ],
 ) -> None:
-    _, peer = connection_peer
+    _, peer, _ = connection_peer
     cookie = await login(app)
     browser = EventSource(app, cookie, CONNECTIONS_WATCH)
     assert await browser.next_chunk() == CONNECTION_FRAME

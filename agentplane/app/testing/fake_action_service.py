@@ -13,7 +13,7 @@ from google.protobuf.empty_pb2 import Empty
 from google.protobuf.message import Message
 
 from agentplane.action_service import action_service_pb2, action_service_pb2_grpc
-from agentplane.app.action_clients import ActionServiceClient
+from agentplane.app.grpc_stream import OperatorGrpcClient
 from agentplane.grpc.calls import dial
 from agentplane.grpc.serving import serving
 
@@ -107,9 +107,13 @@ class FakeActionService(action_service_pb2_grpc.ActionServiceServicer):
 @asynccontextmanager
 async def served_action_service(
     service: FakeActionService, *, request_timeout_s: float = 5
-) -> AsyncIterator[tuple[FakeActionService, ActionServiceClient]]:
-    """Serve the fake on loopback and yield the service plus the app's generated client."""
+) -> AsyncIterator[tuple[FakeActionService, action_service_pb2_grpc.ActionServiceStub, OperatorGrpcClient]]:
+    """Serve the fake on loopback and yield its generated stub with the shared transport."""
     server = grpc.aio.server()
     action_service_pb2_grpc.add_ActionServiceServicer_to_server(service, server)
     async with serving(server, "127.0.0.1:0", grace_s=0) as port, dial(f"127.0.0.1:{port}") as channel:
-        yield service, ActionServiceClient(channel, request_timeout_s=request_timeout_s)
+        yield (
+            service,
+            action_service_pb2_grpc.ActionServiceStub(channel),
+            OperatorGrpcClient(request_timeout_s=request_timeout_s),
+        )

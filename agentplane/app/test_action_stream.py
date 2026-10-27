@@ -5,6 +5,8 @@ buffer a body that never ends; logins and logouts go through httpx. Another repl
 whose operator sessions are on a connection pool of their own, and whose listener never starts.
 """
 
+# Generated protobuf annotations need the protobuf typing dependency.
+# gazelle:include_dep @pypi//protobuf
 import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -16,14 +18,14 @@ import pytest_bazel
 from fastapi import FastAPI, Request
 from sqlalchemy.engine import make_url
 
-from agentplane.action_service import action_service_pb2
-from agentplane.app.action_clients import ActionServiceClient
+from agentplane.action_service import action_service_pb2, action_service_pb2_grpc
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import app_services, create_app
 from agentplane.app.database_updates import Channel, create_database_updates
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
+from agentplane.app.grpc_stream import OperatorGrpcClient
 from agentplane.app.live import LiveIndex
 from agentplane.app.notifications_operator_client import NotificationsOperatorClient
 from agentplane.app.oidc import INSECURE_COOKIE
@@ -46,15 +48,13 @@ FIRST = b'{"result":{"snapshotComplete":{}}}\n'
 
 
 async def test_cancelling_watch_handshake_cancels_the_grpc_call(
-    action_service: tuple[FakeActionService, ActionServiceClient],
+    action_service: tuple[FakeActionService, action_service_pb2_grpc.ActionServiceStub, OperatorGrpcClient],
 ) -> None:
-    service, client = action_service
+    service, stub, client = action_service
     service.watch_gate = asyncio.Event()
     opening = asyncio.create_task(
         client.open_watch(
-            client.stub.WatchActionRequests,
-            action_service_pb2.WatchActionRequestsRequest(),
-            bearer_token="test-watch-token",
+            stub.WatchActionRequests, action_service_pb2.WatchActionRequestsRequest(), bearer_token="test-watch-token"
         )
     )
 
@@ -112,7 +112,7 @@ def serve(
     content: ContentStore,
     electric_proxy: ElectricProxy,
     notifications: NotificationsOperatorClient,
-    action_service: tuple[FakeActionService, ActionServiceClient],
+    action_service: tuple[FakeActionService, action_service_pb2_grpc.ActionServiceStub, OperatorGrpcClient],
 ) -> ServeApp:
     def serving(sessions: OperatorSessionStore, updates: WakeupListener) -> FastAPI:
         app = create_app(
@@ -133,6 +133,7 @@ def serve(
             electric=electric_proxy,
             notifications=notifications,
             action_service=action_service[1],
+            operator_grpc=action_service[2],
             system_status=answering_system_status(),
         )
 
@@ -156,11 +157,11 @@ def other_replica(serve: ServeApp, replica: Replica, db_url: str) -> FastAPI:
 )
 async def test_grpc_status_before_downstream_headers(
     app: FastAPI,
-    action_service: tuple[FakeActionService, ActionServiceClient],
+    action_service: tuple[FakeActionService, action_service_pb2_grpc.ActionServiceStub, OperatorGrpcClient],
     grpc_code: grpc.StatusCode,
     http_status: int,
 ) -> None:
-    service, _client = action_service
+    service, _, _ = action_service
     service.watch_error_before_first = grpc_code
     cookie = await login(app)
     messages = await EventSource(app, cookie, ACTIONS_WATCH).ended()
@@ -233,11 +234,11 @@ async def test_unknown_actions_version_is_not_routed(app: FastAPI) -> None:
 @pytest.mark.parametrize("ending", ["rpc-error", "disconnect", "drain"])
 async def test_stream_cleanup(
     app: FastAPI,
-    action_service: tuple[FakeActionService, ActionServiceClient],
+    action_service: tuple[FakeActionService, action_service_pb2_grpc.ActionServiceStub, OperatorGrpcClient],
     ending: str,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    service, _client = action_service
+    service, _, _ = action_service
     cookie = await login(app)
     browser = EventSource(app, cookie, ACTIONS_WATCH)
     assert await browser.next_chunk() == FIRST
@@ -256,9 +257,11 @@ async def test_stream_cleanup(
 
 
 async def test_a_logout_on_another_replica_ends_the_stream(
-    app: FastAPI, other_replica: FastAPI, action_service: tuple[FakeActionService, ActionServiceClient]
+    app: FastAPI,
+    other_replica: FastAPI,
+    action_service: tuple[FakeActionService, action_service_pb2_grpc.ActionServiceStub, OperatorGrpcClient],
 ) -> None:
-    service, _client = action_service
+    service, _, _ = action_service
     cookie = await login(app)
     browser = EventSource(app, cookie, ACTIONS_WATCH)
     assert await browser.next_chunk() == FIRST
@@ -272,9 +275,9 @@ async def test_another_sessions_logout_leaves_the_stream_open(
     app: FastAPI,
     other_replica: FastAPI,
     database_updates: WakeupListener,
-    action_service: tuple[FakeActionService, ActionServiceClient],
+    action_service: tuple[FakeActionService, action_service_pb2_grpc.ActionServiceStub, OperatorGrpcClient],
 ) -> None:
-    service, _client = action_service
+    service, _, _ = action_service
     cookie, other = await login(app), await login(app)
     browser = EventSource(app, cookie, ACTIONS_WATCH)
     assert await browser.next_chunk() == FIRST
@@ -296,9 +299,10 @@ async def test_another_sessions_logout_leaves_the_stream_open(
 
 
 async def test_the_stream_ends_when_its_session_expires(
-    app: FastAPI, action_service: tuple[FakeActionService, ActionServiceClient]
+    app: FastAPI,
+    action_service: tuple[FakeActionService, action_service_pb2_grpc.ActionServiceStub, OperatorGrpcClient],
 ) -> None:
-    service, _client = action_service
+    service, _, _ = action_service
     # Long enough to open the stream inside it; nothing but the expiry ends this one.
     cookie = await login(app, seconds=2)
     browser = EventSource(app, cookie, ACTIONS_WATCH)
@@ -309,9 +313,10 @@ async def test_the_stream_ends_when_its_session_expires(
 
 
 async def test_a_clean_grpc_eof_ends_the_watch_for_the_browser_to_reconnect(
-    app: FastAPI, action_service: tuple[FakeActionService, ActionServiceClient]
+    app: FastAPI,
+    action_service: tuple[FakeActionService, action_service_pb2_grpc.ActionServiceStub, OperatorGrpcClient],
 ) -> None:
-    service, _client = action_service
+    service, _, _ = action_service
     service.watch_frames.put_nowait(None)
     cookie = await login(app)
     browser = EventSource(app, cookie, ACTIONS_WATCH)
