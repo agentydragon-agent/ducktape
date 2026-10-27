@@ -734,7 +734,7 @@ async def test_launcher_drives_only_the_sandbox_it_launched(
         state = json_format.MessageToDict(read.execution.result)
         turn = state["turns"][0]
         assert turn["turn_id"] == outcome["turn"]["turn_id"]
-        assert turn["input"] == ["Run the test command."]
+        assert turn["input"] == [{"text": "Run the test command.", "command_ids": [command_id]}]
         assert turn["tool_calls"]
         assert turn["status"] == "TURN_STATUS_COMPLETED"
         assert turn["final_assistant_message"] == "Done."
@@ -749,6 +749,9 @@ async def test_launcher_drives_only_the_sandbox_it_launched(
         assert [(d["command_id"], d["operation"]) for d in state["dispatches"]] == [
             (command_id, "OPERATION_SUBMIT_INPUT")
         ]
+
+        assert state["dispatches"][0]["history"] == {"outcome": "confirmed", "turn_id": turn["turn_id"]}
+        assert state["dispatches"][0]["state"] == "DELIVERY_STATE_RUNNER_ADMITTED"
 
         another = {**session, "sandbox": {"name": name, "uid": str(uuid4())}}
         elsewhere = await launcher.submit(

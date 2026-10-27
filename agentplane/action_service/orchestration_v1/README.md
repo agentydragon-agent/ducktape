@@ -53,11 +53,29 @@ Sandbox's launcher grant to the new one.
 History's `FollowSession` from the requested number of retained `TURN_STARTED` entries back,
 filtering confirmed user messages, turn starts/completions and item starts/completions. It returns
 `turns` oldest first and an opaque `resume_token` for that Session and Sandbox incarnation.
-Each turn includes `turn_id`, confirmed `input` messages, `tool_calls` (`item_id` and `name`),
+Each turn includes `turn_id`, confirmed `input` objects (`text` and `command_ids`),
+`tool_calls` (`item_id` and `name`),
 optional terminal `status`/`error`, and optional `final_assistant_message`: the last completed
 assistant-text item. Reasoning and tool output never become that final message. A running turn has
 no terminal status. A removed range makes the read fail rather than return an apparently complete
-transcript.
+transcript. Each input's `command_ids` comes from History's `origin_command_ids`; an input with no
+originating command has an empty array. Replayed confirmations of the same native message within a
+turn do not duplicate inputs or command IDs. Distinct messages with equal text remain distinct.
+
+`get_session` keeps the Dispatcher's `state`, `reason` and timestamps on each of its at most 20
+recent dispatches. A separate optional `history` object reports the latest observed History fact:
+`outcome: "confirmed"` with `turn_id`, `"applied"` for a model or reasoning-effort change,
+`"failed"` with `reason`, or `"no_op"` with `reason`. Admission alone is never a History effect.
+An absent `history` field means no fact was observed in this read, including when History has not
+reached that dispatch; it does not assert that the command had no effect.
+
+After checking the Sandbox incarnation, `get_session` uses one non-following, kind-filtered
+`FollowSession` inside the deployment's read budget. It starts just before the earliest listed
+journal admission, capped at the summary's committed cursor to tolerate ingest lag. If any listed
+admission is unknown, it starts at zero. Before History knows the Session it returns no History
+facts. Read failures, required reconnects and removed ranges fail the Action rather than produce
+an apparently complete result. `get_session` shares the `direct_wait_seconds` minus one second
+read budget with the turn reads; the caller's earlier deadline also applies.
 
 `wait_for_turn` takes the same Sandbox and Session plus `resume_token` and `wait_seconds`
 (positive, at most 30). It follows only turn completions from that cursor. The executor bounds the
