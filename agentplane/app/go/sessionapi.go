@@ -24,7 +24,7 @@ type sessionOpener interface {
 }
 
 type threadOpener interface {
-	OpenThread(context.Context, uuid.UUID, bool) error
+	OpenThread(context.Context, uuid.UUID) error
 }
 
 type newSessionInput struct {
@@ -33,11 +33,10 @@ type newSessionInput struct {
 }
 
 type newSessionBody struct {
-	SessionID               uuid.UUID      `json:"session_id" format:"uuid"`
-	Spec                    map[string]any `json:"spec"`
-	AutoTitleOnFirstMessage *bool          `json:"auto_title_on_first_message,omitempty"`
-	SetupScript             *string        `json:"setup_script,omitempty"`
-	SetupScriptPresent      bool           `json:"-"`
+	SessionID          uuid.UUID      `json:"session_id" format:"uuid"`
+	Spec               map[string]any `json:"spec"`
+	SetupScript        *string        `json:"setup_script,omitempty"`
+	SetupScriptPresent bool           `json:"-"`
 }
 
 func (b *newSessionBody) UnmarshalJSON(data []byte) error {
@@ -57,15 +56,14 @@ func (b *newSessionBody) UnmarshalJSON(data []byte) error {
 
 type sessionOpeningOutput struct{ Body map[string]any }
 
-// RegisterSessionRoutes preserves the caller-minted idempotency key, configured Sandbox preset
-// defaults, and durable thread metadata before dispatching the generated Session Dispatcher RPC.
+// RegisterSessionRoutes preserves the caller-minted idempotency key and configured Sandbox preset
+// defaults before dispatching the generated Session Dispatcher RPC.
 func RegisterSessionRoutes(
 	server *HTTPServer,
 	config Config,
 	inventory *sandboxes.Access,
 	bridge sessionOpener,
 	store threadOpener,
-	titlesAvailable bool,
 ) {
 	api := server.ProtectedAPI()
 	huma.Register[newSessionInput, sessionOpeningOutput](api, huma.Operation{
@@ -91,14 +89,7 @@ func RegisterSessionRoutes(
 			return nil, huma.Error422UnprocessableEntity(err.Error())
 		}
 		spec.Cwd = replaceSessionID(spec.GetCwd(), body.SessionID.String())
-		autoTitle := config.AutoTitleOnFirstMessageDefault
-		if body.AutoTitleOnFirstMessage != nil {
-			autoTitle = *body.AutoTitleOnFirstMessage
-		}
-		if autoTitle && !titlesAvailable {
-			return nil, huma.Error409Conflict("automatic Thread titles are not configured")
-		}
-		if err := store.OpenThread(ctx, body.SessionID, autoTitle); err != nil {
+		if err := store.OpenThread(ctx, body.SessionID); err != nil {
 			return nil, huma.Error503ServiceUnavailable("Thread metadata is unavailable")
 		}
 		opening, err := bridge.OpenSession(ctx, input.Name, body.SessionID, spec, setupScript)

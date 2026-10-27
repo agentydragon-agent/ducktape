@@ -10,6 +10,7 @@ import (
 )
 
 func main() {
+	configureLogLevels(nil)
 	if len(os.Args) == 2 && os.Args[1] == "--export-openapi" {
 		if err := exportOpenAPI(os.Stdout); err != nil {
 			slog.Error("export Agentplane OpenAPI schema", "error", err)
@@ -46,5 +47,5 @@ func configureLogLevels(levels map[string]string) {
 		default:
 		}
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 }

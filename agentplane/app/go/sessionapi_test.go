@@ -61,7 +61,7 @@ func TestSessionRoutesRequireCallerAuthentication(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewHTTPServer(authentication)
-	RegisterSessionRoutes(server, Config{}, nil, nil, nil, false)
+	RegisterSessionRoutes(server, Config{}, nil, nil, nil)
 	handler := server.Handler(authentication)
 	for _, test := range []struct {
 		method string

@@ -12,37 +12,20 @@ import (
 )
 
 const (
-	UpdatesChannel     = "agentplane_thread_updates"
-	MaxPage            = 200
-	titleClaimDuration = 5 * time.Minute
+	UpdatesChannel = "agentplane_thread_updates"
+	MaxPage        = 200
 )
 
-var (
-	// ErrNotFound means an app-owned thread row does not exist.
-	ErrNotFound = errors.New("thread not found")
-	// ErrConcurrentTitleUpdate means automatic title generation lost its optimistic revision.
-	ErrConcurrentTitleUpdate = errors.New("concurrent title update")
-)
+// ErrNotFound means an app-owned thread row does not exist.
+var ErrNotFound = errors.New("thread not found")
 
 // Thread is the app-owned metadata for one History Session. The History Service remains the authority
 // for its Sandbox identity and folded activity.
 type Thread struct {
-	ID                      uuid.UUID
-	CreatedAt               time.Time
-	Name                    *string
-	Archived                bool
-	AutoTitleOnFirstMessage bool
-	TitleUserManaged        bool
-	TitleStatus             string
-	TitleScanCursor         int64
-	TitleClaimedAt          *time.Time
-	TitleRevision           int
-}
-
-// PendingTitle is an unnamed auto-title thread and the last History cursor already scanned.
-type PendingTitle struct {
-	ID     uuid.UUID
-	Cursor int64
+	ID        uuid.UUID
+	CreatedAt time.Time
+	Name      *string
+	Archived  bool
 }
 
 // PageCursor is the final row of a metadata page, in newest-first listing order.
@@ -69,15 +52,15 @@ func NewStore(db *sql.DB) *Store { return &Store{db: db, now: time.Now} }
 
 // OpenThread creates the row before a newly opened History Session can receive a user message.
 // Reopening the same ID leaves the existing row unchanged.
-func (s *Store) OpenThread(ctx context.Context, id uuid.UUID, autoTitle bool) error {
+func (s *Store) OpenThread(ctx context.Context, id uuid.UUID) error {
 	return withTx(ctx, s.db, func(tx *sql.Tx) error {
 		var inserted uuid.UUID
 		err := tx.QueryRowContext(ctx, `
-			INSERT INTO thread (id, created_at, auto_title_on_first_message)
-			VALUES ($1, $2, $3)
+			INSERT INTO thread (id, created_at)
+			VALUES ($1, $2)
 			ON CONFLICT (id) DO NOTHING
 			RETURNING id
-		`, id, s.now().UTC(), autoTitle).Scan(&inserted)
+		`, id, s.now().UTC()).Scan(&inserted)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
@@ -91,8 +74,7 @@ func (s *Store) OpenThread(ctx context.Context, id uuid.UUID, autoTitle bool) er
 // GetThread returns the metadata row, or nil when the History Session has not been opened by the app.
 func (s *Store) GetThread(ctx context.Context, id uuid.UUID) (*Thread, error) {
 	thread, err := scanThread(s.db.QueryRowContext(ctx, `
-		SELECT id, created_at, name, archived, auto_title_on_first_message, title_user_managed,
-		       title_status, title_scan_cursor, title_claimed_at, title_revision
+		SELECT id, created_at, name, archived
 		  FROM thread WHERE id = $1
 	`, id))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -111,8 +93,7 @@ func (s *Store) ListPage(ctx context.Context, limit int, after *PageCursor, incl
 		return Page{}, fmt.Errorf("thread page size must be between 1 and %d: %d", MaxPage, limit)
 	}
 	query := `
-		SELECT id, created_at, name, archived, auto_title_on_first_message, title_user_managed,
-		       title_status, title_scan_cursor, title_claimed_at, title_revision
+		SELECT id, created_at, name, archived
 		  FROM thread
 		 WHERE ($1 OR archived = false)
 		 ORDER BY created_at DESC, id DESC
@@ -121,8 +102,7 @@ func (s *Store) ListPage(ctx context.Context, limit int, after *PageCursor, incl
 	args := []any{includeArchived, limit + 1}
 	if after != nil {
 		query = `
-			SELECT id, created_at, name, archived, auto_title_on_first_message, title_user_managed,
-			       title_status, title_scan_cursor, title_claimed_at, title_revision
+			SELECT id, created_at, name, archived
 			  FROM thread
 			 WHERE ($1 OR archived = false)
 			   AND (created_at, id) < ($2, $3)
@@ -162,11 +142,9 @@ func (s *Store) Rename(ctx context.Context, id uuid.UUID, name *string) (Thread,
 		var err error
 		thread, err = scanThread(tx.QueryRowContext(ctx, `
 			UPDATE thread
-			   SET name = $2, title_user_managed = true, title_status = 'done',
-			       title_claimed_at = NULL, title_revision = title_revision + 1
+			   SET name = $2
 			 WHERE id = $1
-			RETURNING id, created_at, name, archived, auto_title_on_first_message, title_user_managed,
-			          title_status, title_scan_cursor, title_claimed_at, title_revision
+			RETURNING id, created_at, name, archived
 		`, id, name))
 		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("%w: %s", ErrNotFound, id)
@@ -195,8 +173,7 @@ func (s *Store) setArchived(ctx context.Context, id uuid.UUID, archived bool) (T
 		var err error
 		thread, err = scanThread(tx.QueryRowContext(ctx, `
 			UPDATE thread SET archived = $2 WHERE id = $1
-			RETURNING id, created_at, name, archived, auto_title_on_first_message, title_user_managed,
-			          title_status, title_scan_cursor, title_claimed_at, title_revision
+			RETURNING id, created_at, name, archived
 		`, id, archived))
 		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("%w: %s", ErrNotFound, id)
@@ -214,152 +191,6 @@ func (s *Store) ArchivedCount(ctx context.Context) (int, error) {
 	var count int
 	err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM thread WHERE archived`).Scan(&count)
 	return count, err
-}
-
-// PendingAutoTitles returns threads still awaiting their first-message scan or whose claim went stale.
-func (s *Store) PendingAutoTitles(ctx context.Context) ([]PendingTitle, error) {
-	staleBefore := s.now().UTC().Add(-titleClaimDuration)
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, title_scan_cursor
-		  FROM thread
-		 WHERE auto_title_on_first_message
-		   AND NOT title_user_managed
-		   AND name IS NULL
-		   AND (
-		       title_status = 'waiting'
-		       OR (title_status = 'generating' AND title_claimed_at < $1)
-		   )
-		 ORDER BY created_at
-	`, staleBefore)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	pending := make([]PendingTitle, 0)
-	for rows.Next() {
-		var item PendingTitle
-		if err := rows.Scan(&item.ID, &item.Cursor); err != nil {
-			return nil, err
-		}
-		pending = append(pending, item)
-	}
-	return pending, rows.Err()
-}
-
-// AdvanceTitleScanCursor advances the scan checkpoint only while the thread is waiting for a claim.
-func (s *Store) AdvanceTitleScanCursor(ctx context.Context, id uuid.UUID, cursor int64) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE thread SET title_scan_cursor = $2
-		 WHERE id = $1 AND title_status = 'waiting'
-	`, id, cursor)
-	return err
-}
-
-// ClaimAutoTitle atomically claims a thread across replicas, recovering claims older than five minutes.
-func (s *Store) ClaimAutoTitle(ctx context.Context, id uuid.UUID, cursor int64) (*int, error) {
-	now := s.now().UTC()
-	staleBefore := now.Add(-titleClaimDuration)
-	var revision int
-	err := s.db.QueryRowContext(ctx, `
-		UPDATE thread
-		   SET title_status = 'generating', title_claimed_at = $3, title_scan_cursor = $2
-		 WHERE id = $1
-		   AND auto_title_on_first_message
-		   AND NOT title_user_managed
-		   AND name IS NULL
-		   AND (
-		       title_status = 'waiting'
-		       OR (title_status = 'generating' AND title_claimed_at < $4)
-		   )
-		RETURNING title_revision
-	`, id, cursor, now, staleBefore).Scan(&revision)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &revision, nil
-}
-
-// GeneratedTitle applies on-demand generation only if the user-visible title revision still matches.
-func (s *Store) GeneratedTitle(ctx context.Context, id uuid.UUID, title string, expectedRevision int) (Thread, error) {
-	var thread Thread
-	err := withTx(ctx, s.db, func(tx *sql.Tx) error {
-		var err error
-		thread, err = scanThread(tx.QueryRowContext(ctx, `
-			UPDATE thread
-			   SET name = $3, title_status = 'done', title_claimed_at = NULL,
-			       title_revision = title_revision + 1
-			 WHERE id = $1 AND title_revision = $2
-			RETURNING id, created_at, name, archived, auto_title_on_first_message, title_user_managed,
-			          title_status, title_scan_cursor, title_claimed_at, title_revision
-		`, id, expectedRevision, title))
-		if errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("%w: thread %s was renamed while generating its title", ErrConcurrentTitleUpdate, id)
-		}
-		if err != nil {
-			return err
-		}
-		return notify(ctx, tx)
-	})
-	return thread, err
-}
-
-// ApplyFirstMessageTitle completes a first-message claim only while it is still owned by this revision.
-func (s *Store) ApplyFirstMessageTitle(ctx context.Context, id uuid.UUID, title string, expectedRevision int) (bool, error) {
-	updated := false
-	err := withTx(ctx, s.db, func(tx *sql.Tx) error {
-		var updatedID uuid.UUID
-		err := tx.QueryRowContext(ctx, `
-			UPDATE thread
-			   SET name = $3, title_status = 'done', title_claimed_at = NULL,
-			       title_revision = title_revision + 1
-			 WHERE id = $1
-			   AND title_status = 'generating'
-			   AND title_revision = $2
-			   AND NOT title_user_managed
-			   AND name IS NULL
-			RETURNING id
-		`, id, expectedRevision, title).Scan(&updatedID)
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		updated = true
-		return notify(ctx, tx)
-	})
-	return updated, err
-}
-
-// FailAutoTitle records a failed generation only while the same claim is still active.
-func (s *Store) FailAutoTitle(ctx context.Context, id uuid.UUID, expectedRevision int) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE thread
-		   SET title_status = 'failed', title_claimed_at = NULL
-		 WHERE id = $1 AND title_status = 'generating' AND title_revision = $2
-	`, id, expectedRevision)
-	return err
-}
-
-// TitleContext returns the current title revision and title for on-demand generation.
-func (s *Store) TitleContext(ctx context.Context, id uuid.UUID) (int, *string, error) {
-	var revision int
-	var name sql.NullString
-	err := s.db.QueryRowContext(ctx, `SELECT title_revision, name FROM thread WHERE id = $1`, id).
-		Scan(&revision, &name)
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, nil, fmt.Errorf("%w: %s", ErrNotFound, id)
-	}
-	if err != nil {
-		return 0, nil, err
-	}
-	if !name.Valid {
-		return revision, nil, nil
-	}
-	return revision, &name.String, nil
 }
 
 func withTx(ctx context.Context, db *sql.DB, f func(*sql.Tx) error) error {
@@ -382,27 +213,17 @@ func notify(ctx context.Context, tx *sql.Tx) error {
 func scanThread(scanner interface{ Scan(...any) error }) (Thread, error) {
 	var thread Thread
 	var name sql.NullString
-	var claimedAt sql.NullTime
 	err := scanner.Scan(
 		&thread.ID,
 		&thread.CreatedAt,
 		&name,
 		&thread.Archived,
-		&thread.AutoTitleOnFirstMessage,
-		&thread.TitleUserManaged,
-		&thread.TitleStatus,
-		&thread.TitleScanCursor,
-		&claimedAt,
-		&thread.TitleRevision,
 	)
 	if err != nil {
 		return Thread{}, err
 	}
 	if name.Valid {
 		thread.Name = &name.String
-	}
-	if claimedAt.Valid {
-		thread.TitleClaimedAt = &claimedAt.Time
 	}
 	return thread, nil
 }

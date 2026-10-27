@@ -28,8 +28,7 @@ type Config struct {
 	EgressAdminURL                      string                   `mapstructure:"egress_admin_url"`
 	ConnectionServiceURL                string                   `mapstructure:"connection_service_url"`
 	ActionFederation                    ActionFederationConfig   `mapstructure:"action_federation"`
-	AutoTitleOnFirstMessageDefault      bool                     `mapstructure:"auto_title_on_first_message_default"`
-	TitleGeneration                     *TitleGenerationConfig   `mapstructure:"title_generation"`
+	FrontendConfig                      FrontendConfig           `mapstructure:"frontend_config"`
 	SandboxNamespace                    string                   `mapstructure:"sandbox_namespace"`
 	RunnerGatewayTarget                 string                   `mapstructure:"runner_gateway_target"`
 	SessionDispatcherTarget             string                   `mapstructure:"session_dispatcher_target"`
@@ -112,12 +111,6 @@ type OperatorOIDCConfig struct {
 	Audience     string `mapstructure:"audience" json:"audience"`
 	JWKsURI      string `mapstructure:"jwks_uri" json:"jwks_uri"`
 	TokenProfile string `mapstructure:"token_profile" json:"token_profile"`
-}
-
-type TitleGenerationConfig struct {
-	Endpoint        string  `mapstructure:"endpoint" json:"endpoint"`
-	Model           string  `mapstructure:"model" json:"model"`
-	TokenSecretName *string `mapstructure:"token_secret_name" json:"token_secret_name"`
 }
 
 type SessionDefaultsView struct {
@@ -242,7 +235,7 @@ func loadConfigWithArgs(args []string) (Config, error) {
 		}
 		sandboxPresetOrder = yamlMappingKeys(contents, "sandbox_presets")
 	}
-	for _, key := range []string{"models", "thread_presets", "sandbox_presets", "new_sandbox_defaults"} {
+	for _, key := range []string{"models", "thread_presets", "sandbox_presets", "new_sandbox_defaults", "frontend_config"} {
 		if value, ok := os.LookupEnv("AGENTPLANE_" + strings.ToUpper(key)); ok {
 			var decoded any
 			if err := yaml.Unmarshal([]byte(value), &decoded); err != nil {
@@ -252,6 +245,9 @@ func loadConfigWithArgs(args []string) (Config, error) {
 				rawSettings = map[string]any{}
 			}
 			rawSettings[key] = decoded
+			if key == "frontend_config" {
+				settings.Set(key, decoded)
+			}
 			if key == "sandbox_presets" {
 				sandboxPresetOrder = yamlMappingKeys([]byte(value), "")
 			}
@@ -364,7 +360,8 @@ func applyCommandLineOverrides(c *Config, args []string) (map[string]any, []stri
 		target := reflect.New(configType.Field(configured.index).Type)
 		decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
 			Result: target.Interface(), TagName: "mapstructure", WeaklyTypedInput: true,
-			DecodeHook: mapstructure.TextUnmarshallerHookFunc(),
+			ErrorUnused: true,
+			DecodeHook:  mapstructure.TextUnmarshallerHookFunc(),
 		})
 		if err != nil {
 			return nil, nil, fmt.Errorf("configure --%s decoder: %w", configured.name, err)
@@ -426,6 +423,12 @@ func (c *Config) decodeCaseSensitiveSettings(raw map[string]any) error {
 			return fmt.Errorf("invalid new_sandbox_defaults settings: %w", err)
 		}
 	}
+	if frontend, ok := rawSection(raw, "frontend_config"); ok {
+		c.FrontendConfig = FrontendConfig{}
+		if err := decodeMapSection(frontend, &c.FrontendConfig); err != nil {
+			return fmt.Errorf("invalid frontend_config settings: %w", err)
+		}
+	}
 	normalized := make(map[string][]string, len(c.Models.Harnesses))
 	for harness, models := range c.Models.Harnesses {
 		normalized[strings.ToUpper(harness)] = models
@@ -439,6 +442,7 @@ func decodeMapSection(value any, result any) error {
 		Result:           result,
 		TagName:          "mapstructure",
 		WeaklyTypedInput: true,
+		ErrorUnused:      true,
 	})
 	if err != nil {
 		return err
@@ -587,23 +591,8 @@ func (c Config) validate() error {
 			return err
 		}
 	}
-	if c.TitleGeneration != nil {
-		if err := validateHTTPURL("title_generation.endpoint", c.TitleGeneration.Endpoint); err != nil {
-			return err
-		}
-		if strings.TrimSpace(c.TitleGeneration.Model) == "" {
-			return errors.New("title_generation.model must not be empty")
-		}
-		if c.TitleGeneration.TokenSecretName != nil && *c.TitleGeneration.TokenSecretName == "" {
-			return errors.New("title_generation.token_secret_name must not be empty")
-		}
-		parsed, _ := url.Parse(c.TitleGeneration.Endpoint)
-		host := strings.Trim(parsed.Hostname(), "[]")
-		if parsed.Scheme == "http" && !(strings.HasSuffix(host, ".svc.cluster.local") || host == "localhost" || strings.HasPrefix(host, "127.")) {
-			return errors.New("title-generation HTTP endpoints must be cluster-local; use HTTPS for external backends")
-		}
-	} else if c.AutoTitleOnFirstMessageDefault {
-		return errors.New("auto-title default requires a configured title-generation backend")
+	if err := c.FrontendConfig.validate(); err != nil {
+		return err
 	}
 	if c.ActionFederation.Mode != "exchange" && c.ActionFederation.Mode != "direct" {
 		return errors.New("action_federation.mode must be exchange or direct")

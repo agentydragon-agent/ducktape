@@ -1,5 +1,5 @@
 -- +goose Up
--- The app schema is currently at Alembic head 0036_auto_thread_titles. On an existing database this
+-- The app schema is currently at Alembic head 0037_drop_auto_thread_titles. On an existing database this
 -- migration adopts that exact schema without changing its rows. On a fresh database it creates the
 -- same schema and writes the Alembic head marker so the previous Python image can still be restored.
 -- +goose StatementBegin
@@ -32,9 +32,9 @@ BEGIN
           INTO revision_count, revision
           FROM alembic_version_app;
 
-        IF revision_count <> 1 OR revision IS DISTINCT FROM '0036_auto_thread_titles' THEN
+        IF revision_count <> 1 OR revision IS DISTINCT FROM '0037_drop_auto_thread_titles' THEN
             RAISE EXCEPTION
-                'refusing to adopt app schema at Alembic revision % (expected exactly 0036_auto_thread_titles)',
+                'refusing to adopt app schema at Alembic revision % (expected exactly 0037_drop_auto_thread_titles)',
                 revision;
         END IF;
 
@@ -49,12 +49,6 @@ BEGIN
                   ('thread', 'name', 'text', 'YES'),
                   ('thread', 'archived', 'boolean', 'NO'),
                   ('thread', 'created_at', 'timestamp with time zone', 'NO'),
-                  ('thread', 'auto_title_on_first_message', 'boolean', 'NO'),
-                  ('thread', 'title_user_managed', 'boolean', 'NO'),
-                  ('thread', 'title_status', 'text', 'NO'),
-                  ('thread', 'title_scan_cursor', 'bigint', 'NO'),
-                  ('thread', 'title_claimed_at', 'timestamp with time zone', 'YES'),
-                  ('thread', 'title_revision', 'integer', 'NO'),
                   ('operator_browser_session', 'id', 'text', 'NO'),
                   ('operator_browser_session', 'expires_at', 'timestamp with time zone', 'NO'),
                   ('operator_browser_session', 'payload', 'jsonb', 'NO'),
@@ -135,13 +129,7 @@ CREATE TABLE IF NOT EXISTS thread (
     id UUID PRIMARY KEY,
     name TEXT,
     archived BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMPTZ NOT NULL,
-    auto_title_on_first_message BOOLEAN NOT NULL DEFAULT false,
-    title_user_managed BOOLEAN NOT NULL DEFAULT false,
-    title_status TEXT NOT NULL DEFAULT 'waiting',
-    title_scan_cursor BIGINT NOT NULL DEFAULT 0,
-    title_claimed_at TIMESTAMPTZ,
-    title_revision INTEGER NOT NULL DEFAULT 0
+    created_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS operator_browser_session (
@@ -182,7 +170,7 @@ BEGIN
         CREATE TABLE alembic_version_app (
             version_num VARCHAR(32) NOT NULL PRIMARY KEY
         );
-        INSERT INTO alembic_version_app (version_num) VALUES ('0036_auto_thread_titles');
+        INSERT INTO alembic_version_app (version_num) VALUES ('0037_drop_auto_thread_titles');
     END IF;
 END $$;
 -- +goose StatementEnd

@@ -83,8 +83,9 @@ func (f *threadReadStoreFake) Unarchive(_ context.Context, id uuid.UUID) (thread
 }
 
 type threadReadHistoryFake struct {
-	summaries map[uuid.UUID]historydata.FoldSummary
-	sandboxes map[uuid.UUID]string
+	summaries   map[uuid.UUID]historydata.FoldSummary
+	sandboxes   map[uuid.UUID]string
+	sandboxUIDs map[uuid.UUID]string
 }
 
 type threadReadInventoryFake struct {
@@ -117,13 +118,16 @@ func (f *threadReadHistoryFake) BatchGetSummaries(_ context.Context, ids []uuid.
 	return result, nil
 }
 
-func (f *threadReadHistoryFake) FindSessions(_ context.Context, sandboxName, sandboxNameContains *string) (map[uuid.UUID]string, error) {
+func (f *threadReadHistoryFake) FindSessions(_ context.Context, sandboxName, sandboxNameContains, sandboxUID *string) (map[uuid.UUID]string, error) {
 	result := make(map[uuid.UUID]string)
 	for id, sandbox := range f.sandboxes {
 		if sandboxName != nil && sandbox == *sandboxName {
 			result[id] = sandbox
 		}
 		if sandboxNameContains != nil && strings.Contains(strings.ToLower(sandbox), strings.ToLower(*sandboxNameContains)) {
+			result[id] = sandbox
+		}
+		if sandboxUID != nil && f.sandboxUIDs[id] == *sandboxUID {
 			result[id] = sandbox
 		}
 	}
@@ -200,6 +204,63 @@ func TestListThreadViewsFiltersHistoryAndContinuesFromLastReturnedThread(t *test
 	}
 }
 
+func TestListThreadViewsFiltersBySandboxIncarnationAndBindsPageToken(t *testing.T) {
+	ids := []uuid.UUID{
+		uuid.MustParse("00000000-0000-0000-0000-000000000014"),
+		uuid.MustParse("00000000-0000-0000-0000-000000000013"),
+		uuid.MustParse("00000000-0000-0000-0000-000000000012"),
+	}
+	uid := "11111111-1111-4111-8111-111111111111"
+	replacementUID := "22222222-2222-4222-8222-222222222222"
+	base := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
+	store := &threadReadStoreFake{rows: []threads.Thread{
+		{ID: ids[0], CreatedAt: base, Archived: true},
+		{ID: ids[1], CreatedAt: base.Add(-time.Minute), Archived: true},
+		{ID: ids[2], CreatedAt: base.Add(-2 * time.Minute), Archived: true},
+	}}
+	history := &threadReadHistoryFake{
+		summaries: map[uuid.UUID]historydata.FoldSummary{
+			ids[0]: {Present: true, Sandbox: "reused-name", SandboxUID: uid},
+			ids[1]: {Present: true, Sandbox: "reused-name", SandboxUID: replacementUID},
+			ids[2]: {Present: true, Sandbox: "other-name", SandboxUID: uid},
+		},
+		sandboxes:   map[uuid.UUID]string{ids[0]: "reused-name", ids[1]: "reused-name", ids[2]: "other-name"},
+		sandboxUIDs: map[uuid.UUID]string{ids[0]: uid, ids[1]: replacementUID, ids[2]: uid},
+	}
+	listing := threadListing{SandboxUID: stringPointer(uid), IncludeArchived: true}
+	first, err := listThreadViews(context.Background(), store, history, listing, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Threads) != 1 || first.Threads[0].ID != ids[0] || first.Threads[0].SandboxUID == nil || first.Threads[0].SandboxUID.String() != uid || first.NextPageToken == nil {
+		t.Fatalf("first page = %+v, want archived Thread %s with UID %s and a continuation", first, ids[0], uid)
+	}
+	second, err := listThreadViews(context.Background(), store, history, listing, 1, first.NextPageToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Threads) != 1 || second.Threads[0].ID != ids[2] || second.Threads[0].SandboxUID == nil || second.Threads[0].SandboxUID.String() != uid || second.NextPageToken != nil {
+		t.Fatalf("second page = %+v, want older Thread %s with UID %s and no continuation", second, ids[2], uid)
+	}
+	otherListing := threadListing{SandboxUID: stringPointer(replacementUID), IncludeArchived: true}
+	if _, err := decodeThreadPageToken(first.NextPageToken, otherListing); !errors.Is(err, errMismatchedThreadListing) {
+		t.Fatalf("page token UID mismatch = %v, want errMismatchedThreadListing", err)
+	}
+}
+
+func TestThreadListSandboxUIDQueryParsing(t *testing.T) {
+	parsed, err := parseOptionalUUID(optionalQueryString{Value: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA", IsSet: true})
+	if err != nil || parsed == nil || *parsed != "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" {
+		t.Fatalf("parseOptionalUUID = %v, %v; want canonical UUID", parsed, err)
+	}
+	if parsed, err := parseOptionalUUID(optionalQueryString{}); err != nil || parsed != nil {
+		t.Fatalf("omitted sandbox_uid = %v, %v; want nil", parsed, err)
+	}
+	if _, err := parseOptionalUUID(optionalQueryString{Value: "not-a-uuid", IsSet: true}); err == nil {
+		t.Fatal("invalid sandbox_uid was accepted")
+	}
+}
+
 func TestMakeThreadViewPreservesFeedStatusEnum(t *testing.T) {
 	thread := threads.Thread{ID: uuid.New(), CreatedAt: time.Now().UTC()}
 	attachment := &runnerpb.Attached{HarnessState: runnerpb.HarnessState_HARNESS_STATE_STOPPED}
@@ -233,6 +294,30 @@ func TestMakeThreadViewPreservesFeedStatusEnum(t *testing.T) {
 	}
 }
 
+func TestMakeThreadViewReturnsSandboxUID(t *testing.T) {
+	uid := "11111111-1111-4111-8111-111111111111"
+	view, err := makeThreadView(threads.Thread{ID: uuid.New()}, historydata.FoldSummary{
+		Present: true, Sandbox: "sandbox", SandboxUID: uid,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.SandboxUID == nil || view.SandboxUID.String() != uid {
+		t.Fatalf("sandbox_uid = %v, want %s", view.SandboxUID, uid)
+	}
+	body, err := json.Marshal(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := decoded["sandbox_uid"].(string); !ok || got != uid {
+		t.Fatalf("JSON sandbox_uid = %v, want %q", decoded["sandbox_uid"], uid)
+	}
+}
+
 func TestThreadRenameBodyRequiresOneKnownField(t *testing.T) {
 	for _, test := range []struct {
 		name    string
@@ -260,15 +345,15 @@ func TestThreadRenameBodyRequiresOneKnownField(t *testing.T) {
 
 func TestThreadReadRouteRegistrationPublishesOpenAPIPaths(t *testing.T) {
 	server := NewHTTPServer(nil)
-	RegisterThreadReadRoutes(server, nil, nil, nil, false, nil, nil)
+	RegisterThreadReadRoutes(server, nil, nil, nil, nil)
 	recorder := httptest.NewRecorder()
 	server.Handler(nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("GET /openapi.json status = %d; body: %s", recorder.Code, recorder.Body.String())
 	}
 	for _, path := range []string{
-		"/threads/form", "/threads", "/threads/{thread_id}", "/threads/{thread_id}/archive",
-		"/threads/{thread_id}/unarchive", "/threads/{thread_id}/auto-title",
+		"/threads", "/threads/{thread_id}", "/threads/{thread_id}/archive",
+		"/threads/{thread_id}/unarchive",
 		"/threads/{thread_id}/observations", "/threads/{thread_id}/observations/{cursor}",
 		"/threads/{thread_id}/evidence", "/threads/{thread_id}/evidence/{observation_cursor}/frames",
 	} {
@@ -282,11 +367,35 @@ func TestThreadReadRouteRegistrationPublishesOpenAPIPaths(t *testing.T) {
 				Name     string `json:"name"`
 				In       string `json:"in"`
 				Required bool   `json:"required"`
+				Schema   struct {
+					Format string `json:"format"`
+				} `json:"schema"`
 			} `json:"parameters"`
 		} `json:"paths"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &document); err != nil {
 		t.Fatalf("decode OpenAPI document: %v", err)
+	}
+	list, ok := document.Paths["/threads"]["get"]
+	if !ok {
+		t.Fatal("OpenAPI has no GET operation for /threads")
+	}
+	var sandboxUIDParameter *struct {
+		Name     string `json:"name"`
+		In       string `json:"in"`
+		Required bool   `json:"required"`
+		Schema   struct {
+			Format string `json:"format"`
+		} `json:"schema"`
+	}
+	for index := range list.Parameters {
+		if list.Parameters[index].Name == "sandbox_uid" {
+			sandboxUIDParameter = &list.Parameters[index]
+			break
+		}
+	}
+	if sandboxUIDParameter == nil || sandboxUIDParameter.In != "query" || sandboxUIDParameter.Required || sandboxUIDParameter.Schema.Format != "uuid" {
+		t.Fatalf("GET /threads sandbox_uid parameter = %+v, want optional UUID query parameter", sandboxUIDParameter)
 	}
 	for _, path := range []string{"/threads/{thread_id}/evidence", "/threads/{thread_id}/evidence/{observation_cursor}/frames"} {
 		get, ok := document.Paths[path]["get"]

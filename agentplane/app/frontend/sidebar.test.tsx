@@ -74,6 +74,7 @@ function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sandbo
     name: null,
     archived: false,
     last_cursor: 0,
+    sandbox_uid: null,
     last_event_at: null,
     last_model_activity_at: null,
     idle_since: null,

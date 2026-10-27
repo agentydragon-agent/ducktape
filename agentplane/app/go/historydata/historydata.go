@@ -113,13 +113,15 @@ func (s *Store) BatchGetSummaries(ctx context.Context, ids []uuid.UUID) (map[uui
 	return result, nil
 }
 
-func (s *Store) FindSessions(ctx context.Context, sandboxName, sandboxNameContains *string) (map[uuid.UUID]string, error) {
+func (s *Store) FindSessions(ctx context.Context, sandboxName, sandboxNameContains, sandboxUID *string) (map[uuid.UUID]string, error) {
 	request := &historypb.FindSessionsRequest{}
 	switch {
 	case sandboxName != nil:
 		request.Sandbox = &historypb.FindSessionsRequest_SandboxName{SandboxName: *sandboxName}
 	case sandboxNameContains != nil:
 		request.Sandbox = &historypb.FindSessionsRequest_SandboxNameContains{SandboxNameContains: *sandboxNameContains}
+	case sandboxUID != nil:
+		request.Sandbox = &historypb.FindSessionsRequest_SandboxUid{SandboxUid: *sandboxUID}
 	default:
 		return nil, errors.New("History Session lookup requires one Sandbox filter")
 	}

@@ -28,7 +28,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/status"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threadcommands"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
-	"github.com/agentydragon/ducktape/agentplane/app/go/titles"
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
@@ -212,31 +211,6 @@ func run(ctx context.Context, config Config) error {
 		return fmt.Errorf("configure app authentication: %w", err)
 	}
 
-	titleHTTPClient := &http.Client{Timeout: 20 * time.Second, Transport: observability.HTTPTransport(http.DefaultTransport)}
-	titleGenerator := titles.NewGenerator(nil, titleHTTPClient)
-	var titleService *titles.ThreadTitles
-	var titleWorker *titles.ThreadTitleWorker
-	if config.TitleGeneration != nil {
-		titleGenerator = titles.NewGenerator(&titles.GeneratorConfig{
-			Endpoint: config.TitleGeneration.Endpoint, Model: config.TitleGeneration.Model,
-			TokenSecretName: config.TitleGeneration.TokenSecretName,
-		}, titleHTTPClient)
-		titleHistoryClient, clientErr := newHistory()
-		if clientErr != nil {
-			return fmt.Errorf("configure title History watcher: %w", clientErr)
-		}
-		defer titleHistoryClient.Close()
-		titleHistory := titleHistoryAdapter{titleHistoryClient}
-		titleService, err = titles.NewThreadTitles(titleGenerator, threadStore, titleHistory, logger)
-		if err != nil {
-			return fmt.Errorf("configure automatic Thread titles: %w", err)
-		}
-		titleWorker, err = titles.NewThreadTitleWorker(titleHistory, titleService, titles.WorkerOptions{})
-		if err != nil {
-			return fmt.Errorf("configure title worker: %w", err)
-		}
-	}
-
 	historyWatchClientAdapter := historyWatchAdapter{historyWatchClient}
 	historyWatch, err := historywatch.NewHistoryWatch(historyWatchClientAdapter, func() {
 		if _, notifyErr := db.ExecContext(ctx, `SELECT pg_notify($1, '')`, threads.UpdatesChannel); notifyErr != nil {
@@ -297,9 +271,9 @@ func run(ctx context.Context, config Config) error {
 	RegisterCoreRoutes(server, config)
 	RegisterSandboxRoutes(server, config, inventory)
 	RegisterPolicyRoutes(server, config, inventory, policies)
-	RegisterSessionRoutes(server, config, inventory, appBridge, threadStore, titleService != nil)
+	RegisterSessionRoutes(server, config, inventory, appBridge, threadStore)
 	RegisterRunnerRoutes(server, appBridge)
-	RegisterThreadReadRoutes(server, threadStore, history, titleService, config.AutoTitleOnFirstMessageDefault, inventory, appBridge)
+	RegisterThreadReadRoutes(server, threadStore, history, inventory, appBridge)
 	if err := threadcommands.RegisterRoutes(server.ProtectedAPI(), threadcommands.Dependencies{
 		Threads: threadStore, History: history, Readiness: appBridge, Dispatcher: dispatcher,
 		Models: config.Models.Harnesses,
@@ -335,9 +309,6 @@ func run(ctx context.Context, config Config) error {
 		{name: "history-watch", run: historyWatch.Run},
 		{name: "session-openings", run: sessionOpenings.Run},
 	}
-	if titleWorker != nil {
-		workers = append(workers, processWorker{name: "title-watch", run: titleWorker.Run})
-	}
 	return serve(ctx, config, server, appAuth, workers)
 }
 
@@ -359,19 +330,6 @@ func (c historyWatchAdapter) WatchSessionSummaries(
 }
 
 func (c historyWatchAdapter) Redial() { c.client.Redial() }
-
-// titleHistoryAdapter gives the title worker a dedicated generated History client and stream
-// channel without routing title reads through the BFF's projection store.
-type titleHistoryAdapter struct{ *historyclient.Client }
-
-func (c titleHistoryAdapter) WatchSessionSummaries(
-	ctx context.Context,
-	request *historypb.WatchSessionSummariesRequest,
-) (historywatch.Stream, error) {
-	return c.Client.WatchSessionSummaries(ctx, request)
-}
-
-func (c titleHistoryAdapter) Redial() { c.Client.Redial() }
 
 type threadScopeStore struct {
 	threads *threads.Store

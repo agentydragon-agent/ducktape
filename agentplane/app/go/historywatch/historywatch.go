@@ -34,7 +34,7 @@ type Client interface {
 
 // ThreadOpener is implemented by threads.Store.
 type ThreadOpener interface {
-	OpenThread(context.Context, uuid.UUID, bool) error
+	OpenThread(context.Context, uuid.UUID) error
 }
 
 // Options controls recovery from a failed watch stream.
@@ -192,8 +192,7 @@ type SessionOpenings struct {
 	openedThrough uint64
 }
 
-// NewSessionOpenings creates a worker resuming from position zero. Newly observed sessions use the
-// same default auto-title setting as EventLogStore.open.
+// NewSessionOpenings creates a worker resuming from position zero.
 func NewSessionOpenings(client Client, threads ThreadOpener, options Options) (*SessionOpenings, error) {
 	if client == nil || threads == nil {
 		return nil, errors.New("history watch client and thread store are required")
@@ -245,7 +244,7 @@ func (w *SessionOpenings) follow(ctx context.Context, progress func()) error {
 			}
 			openingCtx, span := observability.Start(spanParent, "agentplane.session.opening.record")
 			span.SetAttributes(attribute.Int64("agentplane.session.opening.position", int64(opened.GetPosition())))
-			if err := w.threads.OpenThread(openingCtx, id, false); err != nil {
+			if err := w.threads.OpenThread(openingCtx, id); err != nil {
 				observability.End(span, err)
 				return fmt.Errorf("open app thread for History Session %s: %w", id, err)
 			}

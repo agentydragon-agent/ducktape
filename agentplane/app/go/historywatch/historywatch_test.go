@@ -97,15 +97,13 @@ func (s *fakeStream) Recv() (*historypb.WatchSessionSummariesResponse, error) {
 type fakeThreadStore struct {
 	mu        sync.Mutex
 	ids       []uuid.UUID
-	autoTitle []bool
 	failFirst bool
 }
 
-func (s *fakeThreadStore) OpenThread(_ context.Context, id uuid.UUID, autoTitle bool) error {
+func (s *fakeThreadStore) OpenThread(_ context.Context, id uuid.UUID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ids = append(s.ids, id)
-	s.autoTitle = append(s.autoTitle, autoTitle)
 	if s.failFirst {
 		s.failFirst = false
 		return errors.New("temporary database error")
@@ -113,10 +111,10 @@ func (s *fakeThreadStore) OpenThread(_ context.Context, id uuid.UUID, autoTitle 
 	return nil
 }
 
-func (s *fakeThreadStore) snapshot() ([]uuid.UUID, []bool) {
+func (s *fakeThreadStore) snapshot() []uuid.UUID {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]uuid.UUID(nil), s.ids...), append([]bool(nil), s.autoTitle...)
+	return append([]uuid.UUID(nil), s.ids...)
 }
 
 func testOptions() Options {
@@ -258,7 +256,7 @@ func TestSessionOpeningsReplaysFailedOpenAndAdvancesPositionAfterSuccess(t *test
 	cancel := runUntilCancelled(t, openings.Run)
 	waitFor(t, func() bool {
 		requests, _ := client.snapshot()
-		ids, _ := store.snapshot()
+		ids := store.snapshot()
 		return len(requests) >= 3 && len(ids) == 3
 	})
 	contexts := client.contextsSnapshot()
@@ -277,14 +275,11 @@ func TestSessionOpeningsReplaysFailedOpenAndAdvancesPositionAfterSuccess(t *test
 			t.Errorf("request %d opened_after = %+v, want %+v", i, requests[i], want)
 		}
 	}
-	ids, autoTitle := store.snapshot()
+	ids := store.snapshot()
 	wantIDs := []uuid.UUID{id1, id1, id2}
 	for i, want := range wantIDs {
 		if ids[i] != want {
 			t.Errorf("OpenThread call %d ID = %s, want %s", i, ids[i], want)
-		}
-		if autoTitle[i] {
-			t.Errorf("OpenThread call %d enabled auto-title; want default false", i)
 		}
 	}
 	if redials != 0 {
@@ -308,7 +303,7 @@ func TestSessionOpeningsRejectsNonCanonicalSessionID(t *testing.T) {
 	if !errors.Is(err, ErrInvalidSessionID) {
 		t.Fatalf("Run error = %v, want invalid Session ID error", err)
 	}
-	ids, _ := store.snapshot()
+	ids := store.snapshot()
 	if len(ids) != 0 {
 		t.Fatalf("OpenThread called %d times for malformed Session ID", len(ids))
 	}

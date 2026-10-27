@@ -19,6 +19,7 @@ type fakeHistoryReader struct {
 	events       *historypb.ReadSessionEventsResponse
 	entities     *historypb.ReadThreadEntitiesResponse
 	readEvents   error
+	findSessions *historypb.FindSessionsRequest
 }
 
 func (f *fakeHistoryReader) ReadSessionEvents(context.Context, *historypb.ReadSessionEventsRequest) (*historypb.ReadSessionEventsResponse, error) {
@@ -52,7 +53,8 @@ func (*fakeHistoryReader) ReadNativeFrames(context.Context, *historypb.ReadNativ
 	return nil, errors.New("unexpected ReadNativeFrames")
 }
 
-func (*fakeHistoryReader) FindSessions(context.Context, *historypb.FindSessionsRequest) (*historypb.FindSessionsResponse, error) {
+func (f *fakeHistoryReader) FindSessions(_ context.Context, request *historypb.FindSessionsRequest) (*historypb.FindSessionsResponse, error) {
+	f.findSessions = request
 	return &historypb.FindSessionsResponse{}, nil
 }
 
@@ -127,6 +129,25 @@ func TestFoldSummaryPreservesSandboxIncarnation(t *testing.T) {
 	}
 	if view.Sandbox != "worker" || view.SandboxUID != uid {
 		t.Fatalf("summary Sandbox identity = %q/%q, want worker/%q", view.Sandbox, view.SandboxUID, uid)
+	}
+}
+
+func TestFindSessionsUsesSandboxUIDFilter(t *testing.T) {
+	uid := uuid.NewString()
+	reader := &fakeHistoryReader{}
+	store, err := New(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.FindSessions(t.Context(), nil, nil, &uid); err != nil {
+		t.Fatal(err)
+	}
+	if reader.findSessions == nil {
+		t.Fatal("FindSessions did not call the History reader")
+	}
+	filter, ok := reader.findSessions.GetSandbox().(*historypb.FindSessionsRequest_SandboxUid)
+	if !ok || filter.SandboxUid != uid {
+		t.Fatalf("FindSessions Sandbox filter = %T (%v), want UID %q", reader.findSessions.GetSandbox(), reader.findSessions.GetSandbox(), uid)
 	}
 }
 

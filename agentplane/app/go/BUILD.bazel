@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "api.go",
         "config.go",
+        "frontend_config.go",
         "main.go",
         "operatorapi.go",
         "policyapi.go",
@@ -37,7 +38,6 @@ go_library(
         "//agentplane/app/go/status",
         "//agentplane/app/go/threadcommands",
         "//agentplane/app/go/threads",
-        "//agentplane/app/go/titles",
         "//agentplane/egress:egress_admin_go_proto",
         "//agentplane/egress/api/v1alpha1",
         "//agentplane/grpc/bearer",

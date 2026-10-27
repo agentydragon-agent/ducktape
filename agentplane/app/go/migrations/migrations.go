@@ -91,8 +91,8 @@ func preflight(ctx context.Context, db queryRower) error {
 	if err := db.QueryRowContext(ctx, `SELECT count(*), min(version_num) FROM alembic_version_app`).Scan(&revisionCount, &revision); err != nil {
 		return fmt.Errorf("read app Alembic marker: %w", err)
 	}
-	if revisionCount != 1 || !revision.Valid || revision.String != "0036_auto_thread_titles" {
-		return fmt.Errorf("refusing to adopt app schema at Alembic revision %q (expected exactly 0036_auto_thread_titles)", revision.String)
+	if revisionCount != 1 || !revision.Valid || revision.String != "0037_drop_auto_thread_titles" {
+		return fmt.Errorf("refusing to adopt app schema at Alembic revision %q (expected exactly 0037_drop_auto_thread_titles)", revision.String)
 	}
 
 	var incompatibleColumns int
@@ -103,12 +103,6 @@ func preflight(ctx context.Context, db queryRower) error {
 			('thread', 'name', 'text', 'YES'),
 			('thread', 'archived', 'boolean', 'NO'),
 			('thread', 'created_at', 'timestamp with time zone', 'NO'),
-			('thread', 'auto_title_on_first_message', 'boolean', 'NO'),
-			('thread', 'title_user_managed', 'boolean', 'NO'),
-			('thread', 'title_status', 'text', 'NO'),
-			('thread', 'title_scan_cursor', 'bigint', 'NO'),
-			('thread', 'title_claimed_at', 'timestamp with time zone', 'YES'),
-			('thread', 'title_revision', 'integer', 'NO'),
 			('operator_browser_session', 'id', 'text', 'NO'),
 			('operator_browser_session', 'expires_at', 'timestamp with time zone', 'NO'),
 			('operator_browser_session', 'payload', 'jsonb', 'NO'),

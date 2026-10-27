@@ -15,10 +15,20 @@ type listPresetsOutput struct {
 	Body []SandboxPresetView `nullable:"false"`
 }
 
+type frontendConfigOutput struct {
+	Body FrontendConfig
+}
+
 // RegisterCoreRoutes adds the configuration-backed application endpoints. All routes in this
 // group use the same caller authentication as the Python API router.
 func RegisterCoreRoutes(server *HTTPServer, config Config) {
 	api := server.ProtectedAPI()
+	huma.Register[struct{}, frontendConfigOutput](api, huma.Operation{
+		OperationID: "getFrontendConfig", Method: http.MethodGet, Path: "/frontend-config", Tags: []string{"frontend config"},
+		Summary: "Read browser-safe deployment settings",
+	}, func(context.Context, *struct{}) (*frontendConfigOutput, error) {
+		return &frontendConfigOutput{Body: config.FrontendConfig}, nil
+	})
 	huma.Register[struct{}, listModelsOutput](api, huma.Operation{
 		OperationID: "listModels", Method: http.MethodGet, Path: "/models", Tags: []string{"models"},
 		Summary: "List configured model and harness offers",

@@ -13,6 +13,7 @@ export const THREAD: ThreadView = {
   name: "Test thread",
   archived: false,
   last_cursor: 1,
+  sandbox_uid: null,
   last_event_at: null,
   last_model_activity_at: null,
   idle_since: null,

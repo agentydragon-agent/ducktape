@@ -18,7 +18,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
-	"github.com/agentydragon/ducktape/agentplane/app/go/titles"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
@@ -44,15 +43,10 @@ type threadReadStore interface {
 	Unarchive(context.Context, uuid.UUID) (threads.Thread, error)
 }
 
-type threadTitleService interface {
-	Enabled() bool
-	AutoTitle(context.Context, uuid.UUID) (threads.Thread, error)
-}
-
 type threadReadHistory interface {
 	GetSummary(context.Context, uuid.UUID) (historydata.FoldSummary, error)
 	BatchGetSummaries(context.Context, []uuid.UUID) (map[uuid.UUID]historydata.FoldSummary, error)
-	FindSessions(context.Context, *string, *string) (map[uuid.UUID]string, error)
+	FindSessions(context.Context, *string, *string, *string) (map[uuid.UUID]string, error)
 	Observations(context.Context, uuid.UUID, *uint64, *uint64, int) (historydata.ObservationPage, error)
 	ObservationEntry(context.Context, uuid.UUID, uint64, uint64) (*historydata.ObservationEntry, error)
 	Evidence(context.Context, uuid.UUID, string, string, string, uint64, int) (historydata.EvidencePage, error)
@@ -65,13 +59,6 @@ type threadSandboxInventory interface {
 
 type threadRunnerStatusReader interface {
 	RunnerStatus(context.Context, string) (*runnerpb.RunnerStatus, error)
-}
-
-type threadFormOutput struct {
-	Body struct {
-		AutoTitleOnFirstMessageDefault bool `json:"auto_title_on_first_message_default"`
-		TitleGenerationAvailable       bool `json:"title_generation_available"`
-	}
 }
 
 type (
@@ -88,6 +75,7 @@ type (
 type threadView struct {
 	ID                  uuid.UUID  `json:"id" format:"uuid"`
 	Sandbox             string     `json:"sandbox"`
+	SandboxUID          *uuid.UUID `json:"sandbox_uid" format:"uuid"`
 	Harness             *string    `json:"harness" enum:"HARNESS_CLAUDE,HARNESS_CODEX"`
 	Model               *string    `json:"model"`
 	CWD                 *string    `json:"cwd"`
@@ -114,6 +102,7 @@ type threadPage struct {
 
 type threadListing struct {
 	Sandbox         *string `json:"sandbox"`
+	SandboxUID      *string `json:"sandbox_uid"`
 	Search          *string `json:"search"`
 	IncludeArchived bool    `json:"include_archived"`
 }
@@ -126,6 +115,7 @@ type threadPageToken struct {
 
 type threadListInput struct {
 	Sandbox         optionalQueryString `query:"sandbox"`
+	SandboxUID      optionalQueryString `query:"sandbox_uid" format:"uuid"`
 	IncludeArchived bool                `query:"include_archived"`
 	Search          optionalQueryString `query:"search" minLength:"1"`
 	Limit           int                 `query:"limit" minimum:"1" maximum:"200" default:"50"`
@@ -156,6 +146,18 @@ func (p optionalQueryString) Pointer() *string {
 		return nil
 	}
 	return &p.Value
+}
+
+func parseOptionalUUID(value optionalQueryString) (*string, error) {
+	if !value.IsSet {
+		return nil, nil
+	}
+	id, err := uuid.Parse(value.Value)
+	if err != nil {
+		return nil, fmt.Errorf("must be a UUID")
+	}
+	canonical := id.String()
+	return &canonical, nil
 }
 
 type threadIDInput struct {
@@ -232,23 +234,10 @@ func RegisterThreadReadRoutes(
 	server *HTTPServer,
 	store threadReadStore,
 	history threadReadHistory,
-	titleService threadTitleService,
-	autoTitleDefault bool,
 	inventory threadSandboxInventory,
 	runner threadRunnerStatusReader,
 ) {
 	api := server.ProtectedAPI()
-	available := titleService != nil && titleService.Enabled()
-
-	huma.Register[struct{}, threadFormOutput](api, huma.Operation{
-		OperationID: "getThreadForm", Method: http.MethodGet, Path: "/threads/form", Tags: []string{"threads"},
-		Summary: "Read automatic Thread title settings",
-	}, func(context.Context, *struct{}) (*threadFormOutput, error) {
-		output := &threadFormOutput{}
-		output.Body.TitleGenerationAvailable = available
-		output.Body.AutoTitleOnFirstMessageDefault = autoTitleDefault && available
-		return output, nil
-	})
 	huma.Register[threadListInput, threadPageOutput](api, huma.Operation{
 		OperationID: "listThreads", Method: http.MethodGet, Path: "/threads", Tags: []string{"threads"},
 		Summary: "List persisted Threads newest first",
@@ -257,7 +246,14 @@ func RegisterThreadReadRoutes(
 		if limit == 0 {
 			limit = threadDefaultPageSize
 		}
-		listing := threadListing{Sandbox: input.Sandbox.Pointer(), Search: input.Search.Pointer(), IncludeArchived: input.IncludeArchived}
+		sandboxUID, err := parseOptionalUUID(input.SandboxUID)
+		if err != nil {
+			return nil, huma.Error422UnprocessableEntity("sandbox_uid " + err.Error())
+		}
+		listing := threadListing{
+			Sandbox: input.Sandbox.Pointer(), SandboxUID: sandboxUID, Search: input.Search.Pointer(),
+			IncludeArchived: input.IncludeArchived,
+		}
 		page, err := listThreadViews(ctx, store, history, listing, limit, input.PageToken.Pointer())
 		if err != nil {
 			return nil, threadReadHTTPError(err)
@@ -347,30 +343,6 @@ func RegisterThreadReadRoutes(
 			return nil, threadReadHTTPError(err)
 		}
 		return nil, nil
-	})
-	huma.Register[threadIDInput, threadViewOutput](api, huma.Operation{
-		OperationID: "autoTitleThread", Method: http.MethodPost, Path: "/threads/{thread_id}/auto-title", Tags: []string{"threads"},
-		Summary: "Generate and store a title from confirmed user messages",
-	}, func(ctx context.Context, input *threadIDInput) (*threadViewOutput, error) {
-		if !available {
-			return nil, huma.Error503ServiceUnavailable("automatic Thread titles are not configured")
-		}
-		thread, err := titleService.AutoTitle(ctx, input.ThreadID)
-		if err != nil {
-			return nil, threadTitleHTTPError(err)
-		}
-		summary, err := readThreadSummary(ctx, history, input.ThreadID)
-		if err != nil {
-			return nil, threadReadHTTPError(err)
-		}
-		if !summary.Present {
-			return nil, huma.Error404NotFound(fmt.Sprintf("no thread %s", input.ThreadID))
-		}
-		view, err := makeThreadView(thread, summary)
-		if err != nil {
-			return nil, threadReadHTTPError(err)
-		}
-		return &threadViewOutput{Body: view}, nil
 	})
 	huma.Register[observationListInput, observationPageOutput](api, huma.Operation{
 		OperationID: "listThreadObservations", Method: http.MethodGet, Path: "/threads/{thread_id}/observations", Tags: []string{"threads"},
@@ -502,14 +474,21 @@ func listThreadViews(ctx context.Context, store threadReadStore, history threadR
 	page := threadPage{Threads: make([]threadView, 0, limit)}
 	var sandboxMatches map[uuid.UUID]string
 	if listing.Sandbox != nil {
-		sandboxMatches, err = history.FindSessions(ctx, listing.Sandbox, nil)
+		sandboxMatches, err = history.FindSessions(ctx, listing.Sandbox, nil, nil)
+		if err != nil {
+			return threadPage{}, err
+		}
+	}
+	var sandboxUIDMatches map[uuid.UUID]string
+	if listing.SandboxUID != nil {
+		sandboxUIDMatches, err = history.FindSessions(ctx, nil, nil, listing.SandboxUID)
 		if err != nil {
 			return threadPage{}, err
 		}
 	}
 	var searchSandboxMatches map[uuid.UUID]string
 	if listing.Search != nil {
-		searchSandboxMatches, err = history.FindSessions(ctx, nil, listing.Search)
+		searchSandboxMatches, err = history.FindSessions(ctx, nil, listing.Search, nil)
 		if err != nil {
 			return threadPage{}, err
 		}
@@ -529,7 +508,7 @@ func listThreadViews(ctx context.Context, store threadReadStore, history threadR
 		}
 		for _, thread := range stored.Threads {
 			summary, ok := summaries[thread.ID]
-			if !ok || !summary.Present || !threadMatches(thread, listing, sandboxMatches, searchSandboxMatches) {
+			if !ok || !summary.Present || !threadMatches(thread, listing, sandboxMatches, sandboxUIDMatches, searchSandboxMatches) {
 				continue
 			}
 			view, err := makeThreadView(thread, summary)
@@ -557,9 +536,18 @@ func listThreadViews(ctx context.Context, store threadReadStore, history threadR
 	}
 }
 
-func threadMatches(thread threads.Thread, listing threadListing, exactSandbox, searchSandbox map[uuid.UUID]string) bool {
+func threadMatches(
+	thread threads.Thread,
+	listing threadListing,
+	exactSandbox, exactSandboxUID, searchSandbox map[uuid.UUID]string,
+) bool {
 	if listing.Sandbox != nil {
 		if _, ok := exactSandbox[thread.ID]; !ok {
+			return false
+		}
+	}
+	if listing.SandboxUID != nil {
+		if _, ok := exactSandboxUID[thread.ID]; !ok {
 			return false
 		}
 	}
@@ -630,7 +618,9 @@ func encodeThreadPageToken(listing threadListing, created time.Time, id uuid.UUI
 }
 
 func sameThreadListing(left, right threadListing) bool {
-	return equalOptionalString(left.Sandbox, right.Sandbox) && equalOptionalString(left.Search, right.Search) && left.IncludeArchived == right.IncludeArchived
+	return equalOptionalString(left.Sandbox, right.Sandbox) &&
+		equalOptionalString(left.SandboxUID, right.SandboxUID) &&
+		equalOptionalString(left.Search, right.Search) && left.IncludeArchived == right.IncludeArchived
 }
 
 func equalOptionalString(left, right *string) bool {
@@ -671,6 +661,13 @@ func makeThreadView(thread threads.Thread, summary historydata.FoldSummary) (thr
 		LastCursor: summary.FoldedThrough, LastEventAt: summary.LastEventAt,
 		LastModelActivityAt: summary.LastModelActivityAt, IdleSince: summary.IdleSince,
 		HarnessState: runnerpb.HarnessState_HARNESS_STATE_UNSPECIFIED.String(),
+	}
+	if summary.SandboxUID != "" {
+		sandboxUID, err := uuid.Parse(summary.SandboxUID)
+		if err != nil {
+			return threadView{}, fmt.Errorf("History Service returned an invalid Sandbox UID %q: %w", summary.SandboxUID, err)
+		}
+		view.SandboxUID = &sandboxUID
 	}
 	if summary.LastTurnStatus != nil {
 		value := eventpb.TurnStatus_name[*summary.LastTurnStatus]
@@ -832,26 +829,6 @@ func isHistoryConnectionError(err error) bool {
 	return errors.As(err, &networkError) || errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "History Service") || strings.Contains(err.Error(), "service observation page")
 }
 
-func threadTitleHTTPError(err error) error {
-	switch {
-	case errors.Is(err, threads.ErrNotFound):
-		return huma.Error404NotFound(err.Error())
-	case errors.Is(err, threads.ErrConcurrentTitleUpdate):
-		return huma.Error409Conflict(err.Error())
-	case errors.Is(err, titles.ErrUnavailable):
-		return huma.Error503ServiceUnavailable(err.Error())
-	case strings.Contains(err.Error(), "confirmed user message"),
-		strings.Contains(err.Error(), "configured title-generation token is empty"),
-		strings.Contains(err.Error(), "title backend returned an empty title"),
-		strings.Contains(err.Error(), "decode title-generation response"):
-		return huma.Error409Conflict(err.Error())
-	case errors.Is(err, context.DeadlineExceeded):
-		return huma.Error504GatewayTimeout("Upstream deadline expired")
-	default:
-		return huma.Error502BadGateway("the title backend could not generate a title")
-	}
-}
-
 func threadArchiveHTTPError(err error) error {
 	if errors.Is(err, errThreadBusy) || errors.Is(err, errThreadRunnerUnready) {
 		return huma.Error409Conflict(err.Error())
@@ -859,7 +836,4 @@ func threadArchiveHTTPError(err error) error {
 	return sandboxHTTPError(err)
 }
 
-var (
-	_ threadReadStore    = (*threads.Store)(nil)
-	_ threadTitleService = (*titles.ThreadTitles)(nil)
-)
+var _ threadReadStore = (*threads.Store)(nil)

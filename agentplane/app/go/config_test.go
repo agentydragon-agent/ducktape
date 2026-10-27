@@ -97,6 +97,16 @@ default_policy_sets: []
 new_sandbox_defaults:
   wake_on_send: true
   idle_suspend_after_seconds: 900
+frontend_config:
+  trace_search:
+    grafana_base_url: https://grafana.example.test/
+    tempo_datasource_uid: fixture-tempo
+    deployment_environment: fixture
+  langfuse_search:
+    base_url: https://langfuse.example.test/
+    project_id: fixture-project
+    sandbox_namespace_metadata_key: sandbox_namespace
+    sandbox_service_account_metadata_key: sandbox_service_account
 egress_admin_url: http://egress:8080
 connection_service_url: http://connection:8080
 action_federation:
@@ -152,6 +162,34 @@ session_dispatcher_http_url: http://dispatcher:8080
 	}
 	if c.LogLevels == nil || len(c.LogLevels) != 0 {
 		t.Fatalf("omitted log_levels must default to an empty map, got %#v", c.LogLevels)
+	}
+	if c.FrontendConfig.TraceSearch == nil || c.FrontendConfig.TraceSearch.TempoDatasourceUID != "fixture-tempo" ||
+		c.FrontendConfig.LangfuseSearch == nil || c.FrontendConfig.LangfuseSearch.ProjectID != "fixture-project" {
+		t.Fatalf("frontend config was not loaded from YAML: %+v", c.FrontendConfig)
+	}
+	t.Setenv("AGENTPLANE_FRONTEND_CONFIG", `{"trace_search":{"grafana_base_url":"https://grafana.example.test/","tempo_datasource_uid":"env-tempo","deployment_environment":"env"}}`)
+	c, err = loadConfigWithArgs(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.FrontendConfig.TraceSearch == nil || c.FrontendConfig.TraceSearch.TempoDatasourceUID != "env-tempo" || c.FrontendConfig.LangfuseSearch != nil {
+		t.Fatalf("frontend config environment override = %+v", c.FrontendConfig)
+	}
+	c, err = loadConfigWithArgs([]string{`--frontend-config={"langfuse_search":{"base_url":"https://langfuse.example.test/","project_id":"cli-project","sandbox_namespace_metadata_key":"namespace","sandbox_service_account_metadata_key":"account"}}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.FrontendConfig.TraceSearch != nil || c.FrontendConfig.LangfuseSearch == nil || c.FrontendConfig.LangfuseSearch.ProjectID != "cli-project" {
+		t.Fatalf("frontend config CLI override = %+v", c.FrontendConfig)
+	}
+	for _, invalid := range []string{
+		`{"trace_search":{}}`,
+		`{"langfuse_search":{"base_url":"https://langfuse.example.test/","project_id":"partial"}}`,
+		`{"unknown":"refused"}`,
+	} {
+		if _, err := loadConfigWithArgs([]string{"--frontend-config=" + invalid}); err == nil {
+			t.Errorf("accepted invalid frontend config: %s", invalid)
+		}
 	}
 	if !reflect.DeepEqual(c.TokenSubjects, []string{"system:serviceaccount:sandboxes:agentplane-agent"}) {
 		t.Fatalf("token subjects environment override = %#v", c.TokenSubjects)
@@ -334,10 +372,19 @@ func TestValidateRejectsUnsafeEndpointForms(t *testing.T) {
 	}
 }
 
-func TestValidateTitleHTTPBackendMustBeClusterLocal(t *testing.T) {
-	c := validTestConfig()
-	c.TitleGeneration = &TitleGenerationConfig{Endpoint: "http://api.example.test/v1/responses", Model: "title-model"}
-	if err := c.validate(); err == nil || !strings.Contains(err.Error(), "cluster-local") {
-		t.Fatalf("validate() error = %v, want cluster-local rejection", err)
+func TestFrontendLinksRejectUnsafeEndpoints(t *testing.T) {
+	for _, endpoint := range []string{
+		"http://grafana.example.test/", "https://user:pass@grafana.example.test/",
+		"https://grafana.example.test/?token=secret", "https://grafana.example.test/#fragment", "relative",
+	} {
+		t.Run(endpoint, func(t *testing.T) {
+			c := validTestConfig()
+			c.FrontendConfig.TraceSearch = &TraceSearchSettings{
+				GrafanaBaseURL: endpoint, TempoDatasourceUID: "tempo", DeploymentEnvironment: "fixture",
+			}
+			if err := c.validate(); err == nil {
+				t.Fatalf("accepted unsafe frontend endpoint: %s", endpoint)
+			}
+		})
 	}
 }

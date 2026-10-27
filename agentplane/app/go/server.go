@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"sync"
 	"sync/atomic"
 
@@ -15,7 +16,7 @@ import (
 // HTTPServer owns the standard-library router, Huma API and the readiness drain gate.
 // A single mux keeps API documentation, auth and health routes on one listener.
 type HTTPServer struct {
-	mux            *http.ServeMux
+	mux            *uuidMux
 	api            huma.API
 	authentication *auth.Auth
 	drain          atomic.Bool
@@ -24,7 +25,7 @@ type HTTPServer struct {
 }
 
 func NewHTTPServer(authentication *auth.Auth) *HTTPServer {
-	mux := http.NewServeMux()
+	mux := &uuidMux{ServeMux: http.NewServeMux()}
 	apiConfig := huma.DefaultConfig("Agentplane", "0")
 	// Keep Huma's generated OpenAPI document enabled; the custom docs pages below render it.
 	apiConfig.DocsPath = ""
@@ -53,9 +54,31 @@ func NewHTTPServer(authentication *auth.Auth) *HTTPServer {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	if authentication != nil {
-		authentication.RegisterRoutes(mux)
+		authentication.RegisterRoutes(mux.ServeMux)
 	}
 	return server
+}
+
+// ServeMux wildcards have no type constraints. Apply the UUID route constraint before auth or
+// Huma validation, to match the Python app's UUID path converter for typed and streaming routes.
+type uuidMux struct{ *http.ServeMux }
+
+var uuidPathSegment = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+func (m *uuidMux) Handle(pattern string, handler http.Handler) {
+	m.ServeMux.Handle(pattern, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, name := range []string{"thread_id", "session_id"} {
+			if value := r.PathValue(name); value != "" && !uuidPathSegment.MatchString(value) {
+				http.NotFound(w, r)
+				return
+			}
+		}
+		handler.ServeHTTP(w, r)
+	}))
+}
+
+func (m *uuidMux) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
+	m.Handle(pattern, http.HandlerFunc(handler))
 }
 
 const swaggerDocsHTML = `<!doctype html>

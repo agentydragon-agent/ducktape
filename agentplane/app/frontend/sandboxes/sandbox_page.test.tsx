@@ -149,6 +149,7 @@ function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id">): Thread
     name: null,
     archived: false,
     last_cursor: 0,
+    sandbox_uid: null,
     harness_state: "HARNESS_STATE_UNSPECIFIED",
     last_event_at: null,
     last_model_activity_at: null,

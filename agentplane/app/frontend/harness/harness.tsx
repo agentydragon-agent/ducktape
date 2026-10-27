@@ -86,6 +86,7 @@ const NOW = Date.now();
 const HOUR = 3_600_000;
 const NULL_SANDBOX_FIELDS = { binding: null, preset: null, idle_suspend_after_seconds: null, suspended_by: null };
 const NULL_THREAD_FIELDS = {
+  sandbox_uid: null,
   last_model_activity_at: null,
   idle_since: null,
   setup_state: null,

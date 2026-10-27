@@ -28,7 +28,7 @@ func TestExportOpenAPIUsesHumaSchemasForThreadRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	document := assertSaneOpenAPI(t, output.Bytes())
-	for _, path := range []string{"/threads/form", "/threads", "/threads/{thread_id}", "/threads/{thread_id}/evidence"} {
+	for _, path := range []string{"/threads", "/threads/{thread_id}", "/threads/{thread_id}/evidence"} {
 		if _, ok := document.Paths[path]; !ok {
 			t.Errorf("OpenAPI document omits Huma route %q", path)
 		}
