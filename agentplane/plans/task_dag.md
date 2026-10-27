@@ -305,6 +305,10 @@ flowchart TD
     HISTORY_SANDBOX_RECORD --> THREAD_READ_POLICY
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
+    MCP_ORCHESTRATION_DESIGN[Decision: orchestrating agents from an MCP client]
+    MCP_ORCHESTRATION_DESIGN -. interim until .-> THREAD_CREATE_AUTHORIZATION
+    MCP_ORCHESTRATION_DESIGN -. interim until .-> THREAD_READ_POLICY
+    MCP_ORCHESTRATION_DESIGN -. interim until .-> AGENT_SANDBOX_LAUNCH
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement]
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
@@ -441,6 +445,22 @@ alternative. Spend limits: see `THREAD_CREATE_POLICY`.
 effective spec and delegation server-side. Test allowed and forbidden launch parameters and
 concurrent retries. Reuse the app's create path (the shared Sandbox inventory), not harness-native agent tools. Launch alone
 does not grant history read, messaging, credentials or execution of another principal's Actions.
+
+### `MCP_ORCHESTRATION_DESIGN` — orchestrating agents from an MCP client
+
+**Decision; operator request, 2026-10-26 UTC.** [Plan](mcp_orchestration.md): one `orchestration` Action group lets
+an MCP Connection or an in-cluster orchestrator launch Session Sandboxes, open Sessions, send input and read turn
+outcomes. Operations no backend can grant a caller yet run as the operator's act, authorized by the Action Decision
+(the operator offered approval-gated Actions, 23:21), with Sandbox-owned launcher grants making one approval per
+worker enough. Each moves to its backend rule as `THREAD_CREATE_AUTHORIZATION`, `THREAD_READ_POLICY` and
+`AGENT_SANDBOX_LAUNCH` land. Its turn reads (`read_turns`, `wait_for_turn`) wait on `HISTORY_READ_FOLLOW_API` and
+are not built on today's reads. The operator accepted the operator's-act path as transitional (2026-10-26 23:37 UTC),
+so the Dispatcher and History may trust the group's executor until then, and a launch writes launcher grants on every
+worker (23:47 UTC), and the executor reads a rendered copy of the preset catalog (2026-10-27 00:01 UTC), and workers answer by turn
+outcomes with no caller inbox in v1 (00:02 UTC), `claude-ai` orchestrates (00:03 UTC), and the executor lives in the Action Service
+(00:04 UTC). Matching auto-approval on argument shape is accepted for v1 only; the operator prefers RBAC-style
+verb-over-target permissions ([why](mcp_orchestration.md#shape-matched-approval-is-the-v1-expedient)). Every plan
+decision is answered; the plan awaits the operator's review of the whole. No implementation until the operator accepts the plan.
 
 ### `RUNNER_HARNESS_OBJECTS_DESIGN` — decide process diagnostics and placement policy
 
@@ -1268,10 +1288,14 @@ restart. Notification presentation/outcome design remains separate.
 
 **Deferred TODO; v0 decision does not block delivery design.** Dispatcher may specifically trust the
 App and Notification service identities to act for their users, with wake permission separately
-allowlisted. Do not extend that exception to agents or other services. Design destination- and
+allowlisted. Do not extend that exception to agents or other services, except the one the operator accepted on
+2026-10-26: the [`orchestration` group's executor](mcp_orchestration.md), which acts only on Action Decisions,
+until each of its operations has a caller grant. Design destination- and
 operation-scoped grants, delegated caller proof and the effect of revocation on queued work before
 general senders are admitted. Consider RBAC-backed permissions, but choose the authority with the
-multiagent model. Include authorization before wake and any required execution-time recheck. The
+multiagent model; the operator prefers verb-over-target rules to shape-matched auto-approval and expects Session
+commands to be RBAC-checked in the Runner Gateway (2026-10-27,
+[orchestration](mcp_orchestration.md#shape-matched-approval-is-the-v1-expedient)). Include authorization before wake and any required execution-time recheck. The
 mandatory Sandbox UID fence is part of `DELIVERY_DESTINATION_CONTRACT`, independent of sender policy.
 
 ### `RESUME_CREDENTIALS_VALID` — grants and tokens still valid after a long suspension
@@ -1445,6 +1469,7 @@ flowchart TD
     HISTORY_READ_FOLLOW_DESIGN --> HISTORY_READ_FOLLOW_API
     HISTORY_READ_FOLLOW_API -. browser watch .-> HISTORY_READS_FACADE
     HISTORY_READ_FOLLOW_API -. possible consumer .-> SESSION_ACTIVITY_STREAM
+    HISTORY_READ_FOLLOW_API -. turn reads .-> MCP_ORCHESTRATION_DESIGN[Decision: orchestration from MCP, section 3]
     HISTORY_READ_FOLLOW_DESIGN -. related .- NOTIFICATION_COMMAND_OUTCOME_DESIGN
     HISTORY_READ_FOLLOW_API -. a feed it must authorize .-> THREAD_READ_POLICY
 ```
@@ -1462,6 +1487,9 @@ remaining consumers:
 - the Notification Service scans raw history for its own command's admission and confirmation
   (`NOTIFICATION_COMMAND_OUTCOME_DESIGN`);
 - `SESSION_ACTIVITY_STREAM` would re-read a summary after every `changed`;
+- the planned orchestration turn reads (`MCP_ORCHESTRATION_DESIGN`) need a start at the tail or a number of turns
+  back, a kind filter for turn completions and final assistant messages, and a bounded wait for the next turn end
+  that a 30 s tool call can repeat without a gap ([needs](mcp_orchestration.md#reading-turns-depends-on-historys-read-and-follow-design));
 - the browser follows Threads through Electric shapes over the fold tables.
 
 Decide what a follow carries (raw runner entries, fold entities or both, and how a caller narrows the kinds
@@ -1474,7 +1502,8 @@ approved transport direction (section 13). Callers stay the configured reader ac
 [thread sync plan](thread_sync/README.md) holds Electric's open work and the second-implementation
 candidates, and #11817 asks for that comparison without a parallel sync path unless a concrete gap needs one.
 
-**Question for review:** which consumers the first version serves (the backend ones only, or the browser
+[History read and follow](history_read_follow.md) proposes raw entries with a kind filter for the backend readers,
+the browser staying on Electric. **Question for review:** which consumers the first version serves (the backend ones only, or the browser
 too), and whether it follows raw entries, fold entities or both. Exit: a reviewed API (proto sketch,
 start, resume and end semantics, settlement and epoch behavior, bounds) and the consumers that move to it.
 
