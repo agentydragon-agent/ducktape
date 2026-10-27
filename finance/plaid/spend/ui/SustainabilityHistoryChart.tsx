@@ -63,10 +63,7 @@ export function SustainabilityHistoryChart({
     const data = history.map((point) =>
       hasRates ? point.tax_adjusted_draw_rate : point.annualized_spending_minor_units
     );
-    const values = [
-      ...data.filter((value): value is number => value != null),
-      ...(hasRates ? referenceDrawRates : []),
-    ];
+    const values = [...data.filter((value): value is number => value != null), ...(hasRates ? referenceDrawRates : [])];
     const minimum = values.length > 0 ? Math.min(...values) : 0;
     const maximum = values.length > 0 ? Math.max(...values) : 1;
     const padding = (maximum - minimum || Math.abs(maximum) || 1) * 0.05;
