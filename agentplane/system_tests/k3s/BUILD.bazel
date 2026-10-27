@@ -252,6 +252,7 @@ py_library(
         ":vm_sandboxes",
         "//agentplane/system_tests:conftest",
         "//agentplane/testing:tls",
+        "//cluster/cdk8s/agentplane:egress",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//pyyaml",
