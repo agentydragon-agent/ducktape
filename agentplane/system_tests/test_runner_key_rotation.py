@@ -67,11 +67,7 @@ exit 1
     await client.create_session(
         name,
         session,
-        overrides={
-            "harness": "HARNESS_CODEX",
-            "model": models[0],
-            "cwd": "/state/workspaces/accept" if vm else "/workspace",
-        },
+        overrides={"harness": "HARNESS_CODEX", "model": models[0], "cwd": "/state/workspaces/accept"},
         setup_script=source,
     )
     await client.wait_for_thread_projection(session, timeout_s=120)
@@ -85,7 +81,12 @@ exit 1
                 assert entry.event.setup_finished.exit_code == 0, stderr.decode()
                 assert "KEY_PROBE_OK" in stdout.decode(), stdout.decode()
                 return str(session)
-            assert not entry.event.HasField("setup_interrupted")
+            if entry.event.HasField("setup_interrupted"):
+                if not vm:
+                    (undeclared_outputs_dir() / "runner-setup.log").write_text(
+                        await kubectl("logs", name, "-c", "runner", "--tail=100")
+                    )
+                raise AssertionError("key probe setup was interrupted")
     raise AssertionError("key probe emitted no setup result")
 
 
