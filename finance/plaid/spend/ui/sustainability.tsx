@@ -18,7 +18,12 @@ import {
 
 import { money, time } from "./spend_display";
 import { SustainabilityHistoryChart } from "./SustainabilityHistoryChart";
-import type { SustainabilityPortfolio, SustainabilitySource, SustainabilityView } from "./types";
+import type {
+  SustainabilityDashboard,
+  SustainabilityPortfolio,
+  SustainabilitySource,
+  SustainabilityView,
+} from "./types";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 
 type AccountCoverage = NonNullable<SustainabilityView["account_coverage"]>[number];
@@ -583,14 +588,22 @@ function DrawGauge({ view }: { view: SustainabilityView }) {
   );
 }
 
-function SustainabilitySkeleton({ minHeight }: { minHeight: number }) {
+function SustainabilitySkeleton() {
   return (
-    <Stack role="status" aria-label="Loading sustainability estimate" gap="lg" mih={minHeight}>
+    <Stack role="status" aria-label="Loading sustainability estimate" gap="lg">
       <Group justify="space-between" aria-hidden="true">
         <Skeleton height={26} width={80} radius="xl" />
         <Skeleton height={16} width="60%" />
       </Group>
       <Skeleton height={14} width="45%" aria-hidden="true" />
+      <Paper withBorder radius="lg" p="lg" aria-hidden="true">
+        <Stack gap="md">
+          <Skeleton height={22} width="50%" />
+          <Skeleton height={14} width="65%" />
+          <Skeleton height={20} width="45%" />
+          <Skeleton height={300} radius="md" />
+        </Stack>
+      </Paper>
       <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg" aria-hidden="true">
         <Paper withBorder radius="lg" p="xl">
           <Stack gap="lg">
@@ -620,14 +633,6 @@ function SustainabilitySkeleton({ minHeight }: { minHeight: number }) {
           </Stack>
         </Paper>
       </SimpleGrid>
-      <Paper withBorder radius="lg" p="lg" aria-hidden="true">
-        <Stack gap="md">
-          <Skeleton height={22} width="50%" />
-          <Skeleton height={14} width="65%" />
-          <Skeleton height={20} width="45%" />
-          <Skeleton height={300} radius="md" />
-        </Stack>
-      </Paper>
       <Paper withBorder radius="lg" p="lg" aria-hidden="true">
         <Stack gap="lg">
           <Skeleton height={22} width="55%" />
@@ -659,9 +664,7 @@ function windowHash(days: number): string {
 }
 
 export function SustainabilityPage() {
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [loadingHeight, setLoadingHeight] = useState(0);
-  const [view, setView] = useState<SustainabilityView | null>(null);
+  const [dashboard, setDashboard] = useState<SustainabilityDashboard | null>(null);
   const [selectedWindowDays, setSelectedWindowDays] = useState<number | null>(windowDaysFromUrl);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -669,8 +672,6 @@ export function SustainabilityPage() {
 
   useEffect(() => {
     const restoreWindow = () => {
-      setLoadingHeight((previous) => contentRef.current?.getBoundingClientRect().height ?? previous);
-      setError(null);
       setSelectedWindowDays(windowDaysFromUrl());
     };
     window.addEventListener("hashchange", restoreWindow);
@@ -685,9 +686,8 @@ export function SustainabilityPage() {
       requestInProgress = true;
       setLoading(true);
       setError(null);
-      const query = selectedWindowDays == null ? "" : `?window_days=${selectedWindowDays}`;
       try {
-        const response = await fetch(`/api/v1/sustainability${query}`, {
+        const response = await fetch("/api/v1/sustainability/windows", {
           cache: "no-store",
           credentials: "same-origin",
           signal: controller.signal,
@@ -697,12 +697,9 @@ export function SustainabilityPage() {
           return;
         }
         if (!response.ok) throw new Error(`Sustainability request returned ${response.status}`);
-        const data: SustainabilityView = await response.json();
+        const data: SustainabilityDashboard = await response.json();
         if (!controller.signal.aborted) {
-          setView(data);
-          if (selectedWindowDays == null) {
-            window.history.replaceState(window.history.state, "", windowHash(data.window_days));
-          }
+          setDashboard(data);
         }
       } catch (cause) {
         if (!controller.signal.aborted) {
@@ -719,15 +716,19 @@ export function SustainabilityPage() {
       window.clearInterval(interval);
       controller.abort();
     };
-  }, [selectedWindowDays, refreshVersion]);
+  }, [refreshVersion]);
 
-  const displayingSelectedWindow =
-    view != null && (selectedWindowDays == null || view.window_days === selectedWindowDays);
-  const showSkeleton = !displayingSelectedWindow && error == null;
+  const view =
+    dashboard?.windows.find((window) => window.window_days === selectedWindowDays) ??
+    dashboard?.windows.find((window) => window.window_days === dashboard.default_window_days) ??
+    dashboard?.windows[0];
+  useEffect(() => {
+    if (view && selectedWindowDays !== view.window_days) {
+      window.history.replaceState(window.history.state, "", windowHash(view.window_days));
+    }
+  }, [selectedWindowDays, view?.window_days]);
   const statusLabel = view?.status ?? "loading";
   const statusColor = view?.status === "ready" ? "blue" : view?.status === "unavailable" ? "orange" : "gray";
-  const accountCoverage = view?.account_coverage ?? [];
-  const hasHistoricalSpending = view?.history.some((point) => point.annualized_spending_minor_units != null) ?? false;
 
   return (
     <Stack gap="lg">
@@ -751,101 +752,114 @@ export function SustainabilityPage() {
         </Button>
       </Group>
 
-      <Group justify="space-between" align="flex-end" gap="md">
-        {view && view.available_windows_days.length > 0 ? (
-          <SegmentedControl
-            aria-label="Sustainability lookback window"
-            value={String(selectedWindowDays ?? view.window_days)}
-            onChange={(value) => {
-              setLoadingHeight(contentRef.current?.getBoundingClientRect().height ?? 0);
-              setError(null);
-              setSelectedWindowDays(Number(value));
-              window.location.hash = windowHash(Number(value));
-            }}
-            data={view.available_windows_days.map((days) => ({ label: `${days} days`, value: String(days) }))}
-          />
-        ) : (
-          <Skeleton height={36} width={220} />
-        )}
-        {showSkeleton ? (
-          <Skeleton height={14} width={180} />
-        ) : (
-          <Text size="xs" c="dimmed">
-            {view ? `Updated ${time(view.generated_at)}` : "No result yet"}
-          </Text>
-        )}
-      </Group>
-
+      <Text size="xs" c="dimmed">
+        {view ? `Updated ${time(view.generated_at)}` : "No result yet"}
+      </Text>
       {error && (
         <Alert color="red" title="Couldn't load sustainability data" aria-live="polite">
           {error}
         </Alert>
       )}
-      {showSkeleton && <SustainabilitySkeleton minHeight={loadingHeight} />}
-      {view && displayingSelectedWindow && (
-        <Stack ref={contentRef} gap="lg" aria-busy={loading}>
-          <Group justify="space-between" gap="sm">
-            <Badge color={statusColor} variant="light" size="lg">
-              {statusLabel}
-            </Badge>
-            <Text size="sm" c="dimmed">
-              {view.covered_days} of {view.window_days} days covered · {view.period_start} through {view.period_end}{" "}
-              (complete days, {view.time_zone})
-            </Text>
-          </Group>
-          <Group gap="md" wrap="wrap">
-            <Text size="xs" c="dimmed">
-              No other income is modeled.
-            </Text>
-            <Text size="xs" c="dimmed">
-              Withdrawal taxes:{" "}
-              {view.effective_tax_rate == null ? "not modeled" : `${percent(view.effective_tax_rate)} modeled`}
-            </Text>
-          </Group>
-
+      {!dashboard && !error && <SustainabilitySkeleton />}
+      {view && dashboard && (
+        <Stack gap="lg" aria-busy={loading}>
           {view.status === "disabled" && (
             <Alert color="gray" title="Sustainability estimate is disabled">
               The service has not enabled this experimental estimate.
             </Alert>
           )}
-          {view.status === "unavailable" && (
-            <Alert color="orange" title="Estimate unavailable">
-              Current spending or portfolio data is not sufficient to calculate the estimate. Review the source status
-              and issues below.
-            </Alert>
+          {view.status !== "disabled" && (
+            <>
+              <SustainabilityHistoryChart
+                windows={dashboard.windows}
+                selectedWindowDays={view.window_days}
+                referenceDrawRates={view.reference_draw_rates}
+                currency={view.currency}
+                portfolioMinorUnits={view.portfolio.net_minor_units}
+                effectiveTaxRate={view.effective_tax_rate}
+              />
+              <Paper component="section" aria-labelledby="spending-details-title" withBorder radius="lg" p="lg">
+                <Stack gap="lg">
+                  <Title id="spending-details-title" order={2} size="h4">
+                    Spending details
+                  </Title>
+                  <SegmentedControl
+                    aria-label="Spending details window"
+                    value={String(view.window_days)}
+                    onChange={(value) => {
+                      setSelectedWindowDays(Number(value));
+                      window.location.hash = windowHash(Number(value));
+                    }}
+                    data={dashboard.windows.map((window) => ({
+                      label: `${window.window_days} days`,
+                      value: String(window.window_days),
+                    }))}
+                    w="fit-content"
+                  />
+                  <Text size="xs" c="dimmed">
+                    Selects the estimate and breakdown below. Graph visibility is controlled above.
+                  </Text>
+                  <Group justify="space-between" gap="sm">
+                    <Title order={3} size="h5">
+                      {view.window_days}-day estimate
+                    </Title>
+                    <Badge color={statusColor} variant="light">
+                      {statusLabel}
+                    </Badge>
+                  </Group>
+                  <Text size="sm" c="dimmed">
+                    {view.covered_days} of {view.window_days} days covered · {view.period_start} through{" "}
+                    {view.period_end} (complete days, {view.time_zone})
+                  </Text>
+                  {view.status === "unavailable" && (
+                    <Alert color="orange" title="Estimate unavailable">
+                      Current spending or portfolio data is not sufficient to calculate this estimate. Review the source
+                      status and issues below.
+                    </Alert>
+                  )}
+                  {view.status === "ready" && (
+                    <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
+                      <DrawGauge view={view} />
+                      <SpendingComposition view={view} />
+                    </SimpleGrid>
+                  )}
+                  {view.status === "unavailable" && view.annualized_spending_minor_units != null && (
+                    <SpendingComposition view={view} />
+                  )}
+                  <AccountHistoryCoverage accounts={view.account_coverage ?? []} />
+                  {view.issues.length > 0 && (
+                    <Alert color="orange" title={`${view.window_days}-day estimate issues`}>
+                      <Stack gap={4}>
+                        {view.issues.map((issue) => (
+                          <Text key={issue} size="sm">
+                            {issue}
+                          </Text>
+                        ))}
+                      </Stack>
+                    </Alert>
+                  )}
+                </Stack>
+              </Paper>
+            </>
           )}
 
-          {view.status === "ready" && (
-            <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
-              <DrawGauge view={view} />
-              <SpendingComposition view={view} />
-            </SimpleGrid>
-          )}
-          {view.status === "unavailable" && view.annualized_spending_minor_units != null && (
-            <SpendingComposition view={view} />
-          )}
-          {(view.status === "ready" || hasHistoricalSpending) && (
-            <SustainabilityHistoryChart
-              history={view.history}
-              referenceDrawRates={view.reference_draw_rates}
-              currency={view.currency}
-              windowDays={view.window_days}
-              portfolioMinorUnits={view.portfolio.net_minor_units}
-              effectiveTaxRate={view.effective_tax_rate}
-            />
-          )}
-
-          <AccountHistoryCoverage accounts={accountCoverage} />
-
+          <Text size="xs" c="dimmed">
+            No other income is modeled.
+          </Text>
+          <Text size="xs" c="dimmed">
+            Withdrawal taxes:{" "}
+            {view.effective_tax_rate == null ? "not modeled" : `${percent(view.effective_tax_rate)} modeled`}
+          </Text>
           <PortfolioDetails portfolio={view.portfolio} generatedAt={view.generated_at} currency={view.currency} />
 
           <details>
             <summary style={{ cursor: "pointer", fontWeight: 650 }}>Assumptions &amp; calculation</summary>
             <Stack gap="xs" mt="sm">
               <Text size="sm">
-                Spending is annualized from the covered complete days in the selected lookback. The implied draw rate
-                compares annual funding including modeled withdrawal taxes with the current net portfolio value.
-                Historical draw rates use today&apos;s portfolio value for every date shown.
+                Spending details are annualized from covered complete days in the selected lookback; each history curve
+                requires a complete window. The implied draw rate compares annual funding including modeled withdrawal
+                taxes with the current net portfolio value. Historical draw rates use today&apos;s portfolio value for
+                every date shown.
               </Text>
               <Text size="sm">
                 Account sync and transaction posting may lag. Asset snapshots from different institutions can arrive at
@@ -863,17 +877,6 @@ export function SustainabilityPage() {
               </Text>
             </Stack>
           </details>
-          {view.issues.length > 0 && (
-            <Alert color="orange" title="Current data issues">
-              <Stack gap={4}>
-                {view.issues.map((issue) => (
-                  <Text key={issue} size="sm">
-                    {issue}
-                  </Text>
-                ))}
-              </Stack>
-            </Alert>
-          )}
           {view.known_issues.length > 0 && (
             <Alert color="yellow" title="Known limitations">
               <Stack gap={4}>

@@ -167,6 +167,11 @@ class SustainabilityView(BaseModel):
     account_coverage: list[SpendingAccountCoverage] = Field(default_factory=list)
 
 
+class SustainabilityDashboard(BaseModel):
+    default_window_days: int
+    windows: list[SustainabilityView]
+
+
 @dataclass(frozen=True)
 class Consumption:
     mandatory: int = 0

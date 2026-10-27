@@ -22,7 +22,7 @@ from finance.plaid.spend.models import SpendConfigurationView, SpendTransactions
 from finance.plaid.spend.portfolio import CoinbaseClient
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
-from finance.plaid.spend.sustainability import SustainabilityView
+from finance.plaid.spend.sustainability import SustainabilityDashboard, SustainabilityView
 from util.oidc_login import LoginConfig, current_session_is_valid, install_login
 from util.oidc_principal import (
     AuthentikOidcPrincipalResolver,
@@ -88,6 +88,7 @@ def _web_login_config(settings: SpendSettings) -> LoginConfig:
             "/api/v1/configuration",
             "/api/v1/transactions",
             "/api/v1/sustainability",
+            "/api/v1/sustainability/windows",
         },
         signed_out_text="You are signed out of Plaid Spend.",
         session_created_log="Authentik session created for Plaid Spend",
@@ -157,6 +158,10 @@ def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bo
             return await reader.read_sustainability(window_days)
         except ValueError as error:
             raise HTTPException(status_code=422, detail="Window is not configured for sustainability.") from error
+
+    @app.get("/api/v1/sustainability/windows", response_model=SustainabilityDashboard)
+    async def get_sustainability_dashboard(_access: SpendAccess, reader: SpendReader) -> SustainabilityDashboard:
+        return await reader.read_sustainability_dashboard()
 
     @app.get("/api/v1/events")
     async def events(

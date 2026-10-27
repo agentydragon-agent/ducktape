@@ -22,7 +22,7 @@ from finance.plaid.spend.models import (
 )
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
-from finance.plaid.spend.sustainability import SustainabilityView, disabled_view
+from finance.plaid.spend.sustainability import SustainabilityDashboard, SustainabilityView, disabled_view
 from util.oidc_login import LoginSession
 from util.oidc_principal import InvalidOidcPrincipalError, VerifiedOidcPrincipal
 
@@ -66,6 +66,9 @@ class _Reader:
         now = datetime.now(UTC)
         return disabled_view(now, "UTC", now.date())
 
+    async def read_sustainability_dashboard(self) -> SustainabilityDashboard:
+        return SustainabilityDashboard(default_window_days=90, windows=[await self.read_sustainability()])
+
 
 class _Resolver:
     async def resolve(self, token_response: dict[str, str]) -> VerifiedOidcPrincipal:
@@ -98,7 +101,13 @@ async def test_one_api_route_accepts_bearer_or_signed_session() -> None:
         base64.b64encode(json.dumps({"user": payload}).encode())
     )
     cookie = {"Cookie": f"{config.session_cookie_name}={signed.decode()}"}
-    paths = ("/api/v1/view", "/api/v1/configuration", "/api/v1/transactions", "/api/v1/sustainability")
+    paths = (
+        "/api/v1/view",
+        "/api/v1/configuration",
+        "/api/v1/transactions",
+        "/api/v1/sustainability",
+        "/api/v1/sustainability/windows",
+    )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app.test") as client:
         for path in paths:
             assert (await client.get(path)).status_code == 401
