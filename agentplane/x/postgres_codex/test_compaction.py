@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Self
-from uuid import uuid4
+from uuid import UUID
 
 import pytest
 import pytest_bazel
@@ -18,6 +18,8 @@ from sqlalchemy import select, update
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, response_stream
 from agentplane.native.testing.model_endpoint import ModelEndpoint, ModelExchange, SseEvent
 from agentplane.x.postgres_codex.compaction import compact, context_bytes
+from agentplane.x.postgres_codex.control import controlled_advance
+from agentplane.x.postgres_codex.control_testing import options
 from agentplane.x.postgres_codex.executor import Executor
 from agentplane.x.postgres_codex.sampler import advance
 from agentplane.x.postgres_codex.store import (
@@ -313,72 +315,232 @@ async def test_live_process_handle_survives_compaction_and_fresh_sampler(
     database_url: str,
     sampler_binary: str,
     codex_binary: str,
+    code_mode_host: str,
     executor_url: str,
     tmp_path: Path,
 ) -> None:
     store, owner = owned_store
-    process_id = str(uuid4())
-    async with ClientSession() as http, http.ws_connect(executor_url) as socket, CompactionEndpoint() as endpoint:
+    async with ClientSession() as http, http.ws_connect(executor_url) as socket:
         executor = Executor(socket, cwd=tmp_path, codex_path=codex_binary)
+        executor.bind(store, owner)
         await executor.initialize()
-        await store.register_process(owner, process_id, tty=False)
-        await executor.rpc(
-            "process/start",
-            {
-                "processId": process_id,
-                "argv": ["/bin/sh", "-c", "sleep 60"],
-                "cwd": tmp_path.as_uri(),
-                "env": {},
-                "tty": False,
-                "pipeStdin": False,
-                "arg0": None,
-            },
+        result = await executor.invoke(
+            "exec_command", {"cmd": 'read line; printf resumed:%s "$line"', "yield_time_ms": 1}
         )
-        await store.process_result(owner, process_id, None, "running")
+        process_id = result["session_id"]
         await store.release(owner)
-        options = ("--endpoint", endpoint.origin + "/v1/responses", "--model", "test")
-        try:
-            task = asyncio.create_task(
-                run(sampler_binary, database_url, "compact", str(owner.conversation_id), *options)
+    # Native sessions have one attached connection. Detach before a fresh sampler resumes it.
+    async with CompactionEndpoint() as endpoint:
+        task = asyncio.create_task(
+            run(
+                sampler_binary,
+                database_url,
+                "compact",
+                str(owner.conversation_id),
+                "--endpoint",
+                endpoint.origin + "/v1/responses",
+                "--model",
+                "test-model",
             )
-            async with await endpoint.await_next_request() as exchange:
-                handle_message = next(
-                    item for item in exchange.request.body["input"] if "Active execution handles:" in str(item)
-                )
-                assert process_id in handle_message["content"]
-                await exchange.send(*compact_events())
-            assert await task == "compact"
-            # Sampling needs no executor connection; its independent process rebuilds handle state from Postgres.
-            task = asyncio.create_task(
-                run(
-                    sampler_binary,
-                    database_url,
-                    "advance",
-                    str(owner.conversation_id),
-                    "--executor-url",
-                    "ws://unused",
-                    "--executor-codex",
+        )
+        async with await endpoint.await_next_request() as exchange:
+            state = handles(exchange.request.body)
+            assert state["processes"][0]["session_id"] == process_id
+            await exchange.send(*compact_events())
+        assert await task == "compact"
+        step = options(
+            "advance",
+            owner.conversation_id,
+            executor_url,
+            codex_binary,
+            code_mode_host,
+            tmp_path,
+            endpoint.origin + "/v1/responses",
+        )
+        task = asyncio.create_task(run(sampler_binary, database_url, *step))
+        async with await endpoint.await_next_request() as exchange:
+            assert handles(exchange.request.body)["processes"][0]["session_id"] == process_id
+            assert OPAQUE in exchange.request.body["input"]
+            arguments = json.dumps({"session_id": process_id, "chars": "hello\n", "yield_time_ms": 1000})
+            await exchange.send(
+                *response_stream(
+                    [CustomToolCall("resumed-input", "exec", f"text(await tools.write_stdin({arguments}));")],
+                    model="test-model",
+                ).events
+            )
+        assert await task == "sample"
+        assert await run(sampler_binary, database_url, *step) == "cell"
+    owner = await store.claim(owner.conversation_id, lease=timedelta(seconds=30))
+    row = await store.read(owner)
+    assert "resumed:hello" in str(row.items[-1])
+    assert row.context()[0] == OPAQUE
+    assert await store.execution_state(owner) == {"processes": [], "cells": []}
+
+
+def handles(body: dict[str, Any]) -> dict[str, Any]:
+    prefix = "Active execution handles: "
+    item = next(item for item in body["input"] if str(item.get("content", "")).startswith(prefix))
+    result: dict[str, Any] = json.loads(item["content"][len(prefix) :])
+    return result
+
+
+async def test_retained_run_defers_compaction_until_wait_then_preserves_stdin(
+    database_url: str, sampler_binary: str, codex_binary: str, code_mode_host: str, executor_url: str, tmp_path: Path
+) -> None:
+    conversation_id = UUID(
+        await run(sampler_binary, database_url, "init", "Continue. " * 300, "--instructions", STANDING)
+    )
+    async with CompactionEndpoint() as endpoint:
+        task = asyncio.create_task(
+            run(
+                sampler_binary,
+                database_url,
+                *options(
+                    "run",
+                    conversation_id,
+                    executor_url,
                     codex_binary,
-                    "--code-mode-host",
-                    "unused",
-                    "--cwd",
-                    str(tmp_path),
-                    "--logs",
-                    str(tmp_path / "unused.log"),
-                    *options,
-                )
+                    code_mode_host,
+                    tmp_path,
+                    endpoint.origin + "/v1/responses",
+                ),
+                "--auto-compact-tokens",
+                "15",
             )
-            async with await endpoint.await_next_request() as exchange:
-                assert handle_message in exchange.request.body["input"]
-                assert OPAQUE in exchange.request.body["input"]
-                await exchange.send(*response_stream([Message("DONE")], model="test").events)
-            assert await task == "sample"
-            process = await executor.rpc(
-                "process/read", {"processId": process_id, "afterSeq": None, "maxBytes": 1024, "waitMs": 0}
+        )
+        async with await endpoint.await_next_request() as exchange:
+            command = json.dumps({"cmd": 'read line; printf received:%s "$line"', "yield_time_ms": 1000})
+            await exchange.send(
+                *response_stream(
+                    [
+                        CustomToolCall(
+                            "start-input",
+                            "exec",
+                            '// @exec: {"yield_time_ms": 1}\n' + f"text(await tools.exec_command({command}));",
+                        )
+                    ],
+                    model="test-model",
+                ).events
             )
-            assert not process["exited"]
-        finally:
-            await executor.rpc("process/signal", {"processId": process_id, "signal": "interrupt"})
+        # Usage reached the threshold, but the live JS cell must remain waitable.
+        async with await endpoint.await_next_request() as exchange:
+            state = handles(exchange.request.body)
+            assert len(state["cells"]) == 1
+            assert exchange.request.body["input"][-1]["type"] != "compaction_trigger"
+            await exchange.send(
+                *response_stream(
+                    [
+                        CustomToolCall(
+                            "wait-input",
+                            "wait",
+                            json.dumps({"cell_id": state["cells"][0]["cell_id"], "yield_time_ms": 2000}),
+                        )
+                    ],
+                    model="test-model",
+                ).events
+            )
+        async with await endpoint.await_next_request() as exchange:
+            assert exchange.request.body["input"][-1] == {"type": "compaction_trigger"}
+            state = handles(exchange.request.body)
+            assert not state["cells"]
+            assert len(state["processes"]) == 1
+            process_id = state["processes"][0]["session_id"]
+            await exchange.send(*compact_events())
+        async with await endpoint.await_next_request() as exchange:
+            assert OPAQUE in exchange.request.body["input"]
+            assert handles(exchange.request.body)["processes"][0]["session_id"] == process_id
+            arguments = json.dumps({"session_id": process_id, "chars": "hello\n", "yield_time_ms": 1000})
+            await exchange.send(
+                *response_stream(
+                    [CustomToolCall("send-input", "exec", f"text(await tools.write_stdin({arguments}));")],
+                    model="test-model",
+                ).events
+            )
+        async with await endpoint.await_next_request() as exchange:
+            assert exchange.request.body["input"][-1] == {"type": "compaction_trigger"}
+            assert "received:hello" in str(exchange.request.body["input"])
+            await exchange.send(*compact_events())
+        async with await endpoint.await_next_request() as exchange:
+            assert OPAQUE in exchange.request.body["input"]
+            assert any(item.get("content") == STANDING for item in exchange.request.body["input"])
+            await exchange.send(*response_stream([Message("DONE")], model="test-model").events)
+        assert await task == "done"
+    async with postgres_async_engine(database_url) as engine:
+        store = Store(engine)
+        owner = await store.claim(conversation_id, lease=timedelta(seconds=30))
+        row = await store.read(owner)
+        assert "received:hello" in str(row.items)
+        assert row.context()[0] == OPAQUE
+        assert await store.execution_state(owner) == {"processes": [], "cells": []}
+
+
+async def test_interrupt_outputs_and_new_input_stay_in_compacted_context(owned_store: tuple[Store, Owner]) -> None:
+    store, owner = owned_store
+    async with CompactionEndpoint() as endpoint, ClientSession() as http:
+        args: dict[str, Any] = {"endpoint": endpoint.origin + "/v1/responses", "credential": "test", "model": "test"}
+        task = asyncio.create_task(compact(store, owner, http, **args))
+        async with await endpoint.await_next_request() as exchange:
+            await exchange.send(*compact_events())
+        await task
+        calls = [
+            {"type": "custom_tool_call", "call_id": name, "name": "exec", "input": "throw Error('must not run')"}
+            for name in ("first-call", "sibling-call")
+        ]
+        intent = await store.begin(owner, {"kind": "sampling"})
+        await store.finish(owner, intent, {"output": calls}, calls)
+        await store.request_interrupt(owner.conversation_id, owner.generation)
+        assert await controlled_advance(store, owner, None, None, http, **args) == "interrupted"
+        row = await store.read(owner)
+        outputs = [item for item in row.context() if item["type"] == "custom_tool_call_output"]
+        assert {item["call_id"] for item in outputs} == {"first-call", "sibling-call"}
+        assert row.items[-2:] == outputs
+        await store.append_input(owner, "Continue after interruption")
+        advance_task = asyncio.create_task(controlled_advance(store, owner, None, None, http, **args))
+        async with await endpoint.await_next_request() as exchange:
+            body = exchange.request.body
+            assert OPAQUE in body["input"]
+            assert all(item in body["input"] for item in outputs)
+            assert body["input"][-1]["content"] == "Continue after interruption"
+            await exchange.send(*response_stream([Message("DONE")], model="test").events)
+        assert await advance_task == "sample"
+
+
+async def test_external_interrupt_during_automatic_compaction_preserves_context(
+    owned_store: tuple[Store, Owner],
+) -> None:
+    store, owner = owned_store
+    original = (await store.read(owner)).context()
+    intent = await store.begin(owner, {"kind": "sampling"})
+    await store.finish(owner, intent, {}, [], context_tokens=100)
+    async with CompactionEndpoint() as endpoint, ClientSession() as http:
+        task = asyncio.create_task(
+            controlled_advance(
+                store,
+                owner,
+                None,
+                None,
+                http,
+                endpoint=endpoint.origin + "/v1/responses",
+                credential="test",
+                model="test",
+                auto_compact_tokens=100,
+            )
+        )
+        async with await endpoint.await_next_request() as exchange:
+            assert exchange.request.body["input"][-1] == {"type": "compaction_trigger"}
+            await store.request_interrupt(owner.conversation_id, owner.generation)
+            assert await task == "interrupted"
+        row = await store.read(owner)
+        assert row.context() == original
+        assert row.pending is None
+        assert row.stopped
+        status = await store.status(owner.conversation_id)
+        assert status["interrupts"][0]["result"]["provider_completion_unknown"]
+        await store.append_input(owner, "Resume original context")
+        assert (await store.read(owner)).context() == [
+            *original,
+            {"type": "message", "role": "user", "content": "Resume original context"},
+        ]
 
 
 if __name__ == "__main__":

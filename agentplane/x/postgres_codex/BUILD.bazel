@@ -46,7 +46,10 @@ py_library(
 py_library(
     name = "executor",
     srcs = ["executor.py"],
-    deps = ["@pypi//aiohttp"],
+    deps = [
+        ":store",
+        "@pypi//aiohttp",
+    ],
 )
 
 py_library(
@@ -76,6 +79,7 @@ py_library(
     deps = [
         ":code_mode",
         ":compaction",
+        ":control",
         ":executor",
         ":sampler",
         ":store",
@@ -111,6 +115,130 @@ py_library(
 )
 
 py_library(
+    name = "control",
+    srcs = ["control.py"],
+    deps = [
+        ":code_mode",
+        ":executor",
+        ":sampler",
+        ":store",
+        "@pypi//aiohttp",
+    ],
+)
+
+py_test(
+    name = "test_controls",
+    srcs = ["test_controls.py"],
+    data = [
+        ":main_bin",
+        "@agentplane_codex_cli_linux_x64//:files",
+    ],
+    requires_docker = True,
+    deps = [
+        ":code_mode",
+        ":conftest",
+        ":control_testing",
+        ":executor",
+        ":sampler",
+        ":store",
+        ":testing",
+        "//:conftest",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/native/codex/testing:responses_sse",
+        "//util/testing:sqlalchemy_engines",
+        "//util/testing:undeclared_outputs",
+        "@pypi//aiohttp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "control_testing",
+    srcs = ["control_testing.py"],
+    deps = [
+        ":store",
+        "//util/testing:undeclared_outputs",
+    ],
+)
+
+py_test(
+    name = "test_interrupts",
+    srcs = ["test_interrupts.py"],
+    data = [
+        ":main_bin",
+        "@agentplane_codex_cli_linux_x64//:files",
+    ],
+    requires_docker = True,
+    deps = [
+        ":code_mode",
+        ":conftest",
+        ":control",
+        ":control_testing",
+        ":executor",
+        ":sampler",
+        ":store",
+        "//:conftest",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/native/codex/testing:responses_sse",
+        "//util/testing:sqlalchemy_engines",
+        "//util/testing:undeclared_outputs",
+        "@pypi//aiohttp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_schema",
+    srcs = ["test_schema.py"],
+    data = [
+        "migrations/0001_compaction.sql",
+        "migrations/0002_process_controls.sql",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":store",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "//util/testing:sqlalchemy_engines",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_compaction",
+    srcs = ["test_compaction.py"],
+    data = [
+        ":main_bin",
+        "@agentplane_codex_cli_linux_x64//:files",
+    ],
+    requires_docker = True,
+    deps = [
+        ":compaction",
+        ":conftest",
+        ":control",
+        ":control_testing",
+        ":executor",
+        ":sampler",
+        ":store",
+        "//:conftest",
+        "//agentplane/native/codex/testing:responses_sse",
+        "//agentplane/native/testing:model_endpoint",
+        "//util/testing:sqlalchemy_engines",
+        "//util/testing:undeclared_outputs",
+        "@pypi//aiohttp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "compaction",
     srcs = ["compaction.py"],
     deps = [
@@ -126,31 +254,5 @@ py_library(
     deps = [
         ":code_mode",
         "@pypi//aiohttp",
-    ],
-)
-
-py_test(
-    name = "test_compaction",
-    srcs = ["test_compaction.py"],
-    data = [
-        ":main_bin",
-        "@agentplane_codex_cli_linux_x64//:files",
-    ],
-    requires_docker = True,
-    deps = [
-        ":compaction",
-        ":conftest",
-        ":executor",
-        ":sampler",
-        ":store",
-        "//:conftest",
-        "//agentplane/native/codex/testing:responses_sse",
-        "//agentplane/native/testing:model_endpoint",
-        "//util/testing:sqlalchemy_engines",
-        "//util/testing:undeclared_outputs",
-        "@pypi//aiohttp",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )

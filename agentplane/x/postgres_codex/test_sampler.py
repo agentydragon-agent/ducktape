@@ -192,6 +192,7 @@ async def test_real_effect_with_lost_reply_is_not_replayed(
             http.ws_connect(proxy_url) as socket,
         ):
             executor = Executor(socket, cwd=tmp_path, codex_path=codex_binary)
+            executor.bind(store, owner)
             await executor.initialize()
             async with code_mode(
                 code_mode_host, undeclared_outputs_dir() / "lost-reply.log", store, owner, executor
@@ -292,6 +293,7 @@ async def test_executor_death_preserves_pending_cell(
             executor = ObservingExecutor(socket, cwd=tmp_path, codex_path=codex_binary)
             output = asyncio.Event()
             executor.observe_output(output)
+            executor.bind(store, owner)
             await executor.initialize()
             async with code_mode(
                 code_mode_host, undeclared_outputs_dir() / "executor-death.log", store, owner, executor

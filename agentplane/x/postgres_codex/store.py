@@ -26,6 +26,7 @@ class Conversation(Base):
     items: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
     pending: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     stopped: Mapped[bool] = mapped_column(default=False)
+    executor_session: Mapped[str | None]
     context_items: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
     instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
     context_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -60,8 +61,8 @@ class LiveCell(Base):
     __tablename__ = "spike_cell"
 
     id: Mapped[str] = mapped_column(primary_key=True)
-    conversation_id: Mapped[UUID] = mapped_column(ForeignKey(Conversation.id))
-    generation: Mapped[int]
+    conversation_id: Mapped[UUID] = mapped_column(ForeignKey(Conversation.id), primary_key=True)
+    generation: Mapped[int] = mapped_column(primary_key=True)
     status: Mapped[str]
 
 
@@ -79,6 +80,10 @@ class LostOwnershipError(RuntimeError):
 
 
 class UnknownEffectError(RuntimeError):
+    pass
+
+
+class InterruptPendingError(RuntimeError):
     pass
 
 
@@ -146,12 +151,21 @@ class Store:
                 "owner": str(row.owner) if row.owner else None,
                 "pending": row.pending,
                 "stopped": row.stopped,
+                "interrupts": [
+                    {"id": str(request.id), "generation": request.generation, "result": request.result}
+                    for request in (
+                        await db.scalars(
+                            select(InterruptRequest).where(InterruptRequest.conversation_id == conversation_id)
+                        )
+                    ).all()
+                ],
             }
 
     async def begin(self, owner: Owner, request: dict[str, Any]) -> UUID:
         """Commit intent before any provider or executor request leaves this process."""
         async with self.sessions.begin() as db:
             row = await self._lock(db, owner)
+            await self._check_interrupt(db, owner)
             if row.pending is not None:
                 raise UnknownEffectError(
                     f"unresolved {row.pending['kind']} intent {row.pending['id']}; no automatic replay"
@@ -188,6 +202,7 @@ class Store:
             row = await self._lock(db, owner)
             if row.pending is not None:
                 raise UnknownEffectError("unresolved intent; cannot compact")
+            await self._check_interrupt(db, owner)
             if row.context() != original:
                 raise ValueError("compaction context changed before intent commit")
             live_cell = await db.scalar(
@@ -229,6 +244,8 @@ class Store:
     async def record_nested(self, owner: Owner, request: dict[str, Any]) -> UUID:
         async with self.sessions.begin() as db:
             row = await self._lock(db, owner)
+            if request["kind"] == "tool":
+                await self._check_interrupt(db, owner)
             if row.pending is not None and row.pending["kind"] == "compaction":
                 raise UnknownEffectError("cannot start a nested effect during compaction")
             intent_id = uuid4()
@@ -260,6 +277,24 @@ class Store:
                 )
             )
 
+    async def set_executor_session(self, owner: Owner, session_id: str) -> None:
+        async with self.sessions.begin() as db:
+            row = await self._lock(db, owner)
+            if row.executor_session is not None and row.executor_session != session_id:
+                process = await db.scalar(
+                    select(RemoteProcess.id)
+                    .where(RemoteProcess.conversation_id == owner.conversation_id, RemoteProcess.status != "exited")
+                    .limit(1)
+                )
+                cell = await db.scalar(
+                    select(LiveCell.id)
+                    .where(LiveCell.conversation_id == owner.conversation_id, LiveCell.status == "live")
+                    .limit(1)
+                )
+                if process is not None or cell is not None:
+                    raise UnknownEffectError("executor returned another session; existing handles cannot be replaced")
+            row.executor_session = session_id
+
     async def process(self, owner: Owner, process_id: str) -> RemoteProcess:
         async with self.sessions.begin() as db:
             await self._lock(db, owner)
@@ -288,7 +323,15 @@ class Store:
     async def cell_result(self, owner: Owner, cell_id: str, status: str) -> None:
         async with self.sessions.begin() as db:
             await self._lock(db, owner)
-            row = await db.get(LiveCell, cell_id)
+            row = (
+                await db.scalars(
+                    select(LiveCell).where(
+                        LiveCell.id == cell_id,
+                        LiveCell.conversation_id == owner.conversation_id,
+                        LiveCell.generation == owner.generation,
+                    )
+                )
+            ).one_or_none()
             if row is None:
                 db.add(
                     LiveCell(
@@ -356,6 +399,7 @@ class Store:
     async def acknowledge_interrupt(self, owner: Owner, request_ids: list[UUID], result: dict[str, Any]) -> None:
         async with self.sessions.begin() as db:
             row = await self._lock(db, owner)
+            active_call = None
             for request_id in request_ids:
                 request = (
                     await db.scalars(
@@ -370,23 +414,57 @@ class Store:
             if row.pending is not None:
                 intent = await db.get(Intent, UUID(row.pending["id"]))
                 assert intent is not None
+                active_call = intent.request.get("call", {}).get("call_id")
                 intent.result = {"status": "interrupted", **result}
                 if result["cleanup_complete"]:
-                    if intent.request["kind"] == "cell":
-                        output = {
-                            "type": "custom_tool_call_output",
-                            "call_id": intent.request["call"]["call_id"],
-                            "output": [
-                                {
-                                    "type": "input_text",
-                                    "text": "Interrupted by user. Partial effects may have occurred.",
-                                }
-                            ],
-                        }
-                        row.items = [*row.items, output]
-                        if row.context_items is not None:
-                            row.context_items = [*row.context_items, output]
                     row.pending = None
+            if result["cleanup_complete"]:
+                completed = {item["call_id"] for item in row.items if item["type"] == "custom_tool_call_output"}
+                outputs = [
+                    {
+                        "type": "custom_tool_call_output",
+                        "call_id": item["call_id"],
+                        "output": [
+                            {
+                                "type": "input_text",
+                                "text": (
+                                    "Interrupted by user. Partial effects may have occurred."
+                                    if item["call_id"] == active_call
+                                    else "Not started because user interrupted the turn."
+                                ),
+                            }
+                        ],
+                    }
+                    for item in row.items
+                    if item["type"] == "custom_tool_call" and item["call_id"] not in completed
+                ]
+                row.items = [*row.items, *outputs]
+                if row.context_items is not None:
+                    row.context_items = [*row.context_items, *outputs]
+                for nested in (
+                    await db.scalars(
+                        select(Intent).where(
+                            Intent.conversation_id == owner.conversation_id,
+                            Intent.generation == owner.generation,
+                            Intent.result.is_(None),
+                        )
+                    )
+                ).all():
+                    nested.result = {"status": "interrupted", "partial_effects_possible": True}
+            elif row.pending is None:
+                # A yielded cell/process may be interrupted between outer transitions.
+                # Uncertain cleanup still needs a durable blocking boundary.
+                intent_id = uuid4()
+                db.add(
+                    Intent(
+                        id=intent_id,
+                        conversation_id=owner.conversation_id,
+                        generation=owner.generation,
+                        request={"kind": "interrupt", "requests": [str(i) for i in request_ids]},
+                        result=result,
+                    )
+                )
+                row.pending = {"id": str(intent_id), "kind": "interrupt"}
             row.stopped = True
 
     async def append_input(self, owner: Owner, prompt: str) -> None:
@@ -399,6 +477,20 @@ class Store:
             if row.context_items is not None:
                 row.context_items = [*row.context_items, item]
             row.stopped = False
+
+    @staticmethod
+    async def _check_interrupt(db: AsyncSession, owner: Owner) -> None:
+        request = await db.scalar(
+            select(InterruptRequest.id)
+            .where(
+                InterruptRequest.conversation_id == owner.conversation_id,
+                InterruptRequest.generation == owner.generation,
+                InterruptRequest.result.is_(None),
+            )
+            .limit(1)
+        )
+        if request is not None:
+            raise InterruptPendingError("interrupt already requested; next dispatch is blocked")
 
     @staticmethod
     async def _lock(db: AsyncSession, owner: Owner) -> Conversation:

@@ -30,13 +30,17 @@ async def advance(
 ) -> str:
     if auto_compact_tokens is not None and auto_compact_tokens <= 0:
         raise ValueError("auto-compaction threshold must be positive")
-    await store.check_live_cells(owner, runtime_available=runtime is not None)
-    execution_state = await store.execution_state(owner)
     row = await store.read(owner)
     if row.pending is not None:
         raise UnknownEffectError(f"unresolved {row.pending['kind']} intent {row.pending['id']}; no automatic replay")
+    if row.stopped:
+        return "interrupted"
+    await store.check_live_cells(owner, runtime_available=runtime is not None)
+    execution_state = await store.execution_state(owner)
+    if runtime is not None and runtime.error is not None:
+        raise runtime.error
     if (call := pending_call(row.items)) is not None:
-        if call["name"] != "exec":
+        if call["name"] not in {"exec", "wait"}:
             raise ValueError(f"unsupported model tool: {call['name']}")
         if runtime is None:
             raise ValueError("a pending cell requires a code-mode runtime")
@@ -47,7 +51,12 @@ async def advance(
         return "cell"
     if row.items[-1]["type"] == "message" and row.items[-1]["role"] == "assistant":
         return "done"
-    if auto_compact_tokens is not None and row.context_tokens is not None and row.context_tokens >= auto_compact_tokens:
+    if (
+        auto_compact_tokens is not None
+        and row.context_tokens is not None
+        and row.context_tokens >= auto_compact_tokens
+        and not execution_state["cells"]
+    ):
         await compact(store, owner, http, endpoint=endpoint, credential=credential, model=model)
         return "compact"
     body = request_body(

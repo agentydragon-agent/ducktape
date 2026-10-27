@@ -20,7 +20,11 @@ def request_body(
     description = (
         "Run raw JavaScript as an async module in a fresh V8 isolate. Call tools.exec_command({cmd, workdir?}) "
         "or tools.apply_patch(patch). Emit results with text(value). No Node, filesystem, network or console. "
-        "This experiment has no wait, yielding, notify or persistent JS store. Await all tool calls. "
+        "exec_command supports tty and yield_time_ms; a running process returns session_id. "
+        "Use tools.write_stdin({session_id, chars?, eof?, yield_time_ms?}) to send input or poll. "
+        'An exec first-line // @exec: {"yield_time_ms": 10} yields an active JS cell; '
+        "call wait with JSON {cell_id, yield_time_ms?, terminate?} to observe it. "
+        "Process session_id and JavaScript cell_id are distinct. No notify or persistent JS store. Await all tool calls. "
         + json.dumps(tool_definitions())
     )
     return {
@@ -29,7 +33,15 @@ def request_body(
             {
                 "type": "additional_tools",
                 "role": "developer",
-                "tools": [{"type": "custom", "name": "exec", "description": description, "format": {"type": "text"}}],
+                "tools": [
+                    {"type": "custom", "name": "exec", "description": description, "format": {"type": "text"}},
+                    {
+                        "type": "custom",
+                        "name": "wait",
+                        "description": "Observe a yielded JavaScript cell. Input JSON: {cell_id, yield_time_ms?, terminate?}.",
+                        "format": {"type": "text"},
+                    },
+                ],
             },
             *([{"type": "message", "role": "developer", "content": instructions}] if instructions else []),
             *(

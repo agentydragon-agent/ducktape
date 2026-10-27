@@ -1,6 +1,6 @@
 # Postgres Codex sampler spike
 
-Implemented for review, 2026-10-27 07:54 PDT: `/root/postgres_harness_spike` implements the operator-dispatched
+Baseline merged in [PR #12207](https://github.com/agentydragon/ducktape/pull/12207), 2026-10-27: `/root/postgres_harness_spike` implements the operator-dispatched
 code-mode-only experiment in `agentplane/x/postgres_codex`, branch `x/postgres-codex-20261027`.
 This report describes a custom outer loop reusing upstream components; it is not a persistence fork
 or a production replacement. No staging changes or live inference were requested or performed.
@@ -84,3 +84,50 @@ central Codex for broad feature compatibility today. A custom loop becomes a rea
 if code-mode-only, completed-cell checkpoints and the narrower tool contract are accepted, with
 provider tracking and uncertainty reconciliation explicitly owned. Frontend tracing is separate work;
 the operator explicitly removed it as an acceptance gate because Langfuse provides partial links.
+
+## Process-control extension
+
+The operator required `wait`, stdin and interrupts as minimum custom-sampler capabilities after the
+baseline merged. The extension retains the actual pinned code-mode host across model sampling and
+`session/wait` observations in `main_bin run`. A yielded JS cell has a host-UUID-prefixed handle;
+raw native IDs restart at `1`, so they cannot be global database keys or model-facing identities.
+A separate durable process registry tracks running/terminal shell handles and retained-output cursors.
+The model receives current execution state regenerated from these tables alongside conversation input.
+
+`exec_command` can yield, and `write_stdin` sends real bytes or polls the same process. A sole Ctrl-C
+uses `process/signal`; EOF uses PTY Ctrl-D. The pinned protocol has no pipe-close operation, and that
+unsupported EOF request is rejected. Initialization must resume the database's executor `sessionId`:
+process IDs are session-scoped, and initializing a different session makes them unknown even on the
+same server. The pinned server keeps a detached session for **30 seconds**. Expiry/server loss with
+live handles blocks recovery without a replacement session or replay. Terminal handles permit a new
+session. V8 state remains live-only: a fresh sampler owner cannot reconstruct a yielded cell from
+nested results and must block, rather than replay JavaScript.
+
+An external CLI `interrupt` targets the active owner generation, persists a request and is observed
+by `advance`/`run`; `status` exposes its outcome. A committed request prevents the next outer or
+nested dispatch. Interrupt closes the sampling response, tries native cell termination, observes
+host shutdown, gates further executor mutations, terminates known processes and observes their exits.
+Stopping the whole host closes the window where native execution started before its cell registry
+write. Known fixture shell/child PIDs are checked for no remaining live process after successful
+cleanup; this is not a cgroup fence for escaped descendants.
+
+Successful cleanup appends interrupted/not-started results for every outstanding committed model
+call, stops sampling and allows only explicit new input to reopen the turn. Provider cancellation is
+local HTTP cancellation; provider completion and partial remote effects are not rolled back. Lost
+cleanup outcomes remain `effects_unknown` with a blocking intent, including an interrupt that occurs
+between transitions. Stdin mutations and shell commands are never automatically retried. The
+[experimental SPEC](../x/postgres_codex/SPEC.md) describes deadlines and remaining omissions.
+
+The extension has **1,275 physical runtime Python lines**, including comments/blanks, across
+`store.py` 435, `executor.py` 193, `code_mode.py` 329, `sampler.py` 127, `main.py` 116 and `control.py` 75. The baseline was 563; the
+additional lifecycle and durable control code is 712 lines. New control test/support code is 737
+lines. Counts exclude BUILD, SQL and docs, and do not include the reused upstream Rust inventory
+above. No new third-party runtime dependency or production caller was added.
+
+Validation is running for the final host-shutdown boundary and additive migration. An earlier
+complete run passed seven process-control cases, four interrupt cases and the original seven cases,
+with named runtime libraries' Ruff/mypy aspects:
+[`8e89959a-fff1-4e64-8be0-c52469fbb866`](https://app.buildbuddy.io/invocation/8e89959a-fff1-4e64-8be0-c52469fbb866).
+The new checks retain real binaries and Postgres. No live inference, production integration, merge
+or deployment is established by this extension. Compaction is independently implemented and must
+preserve the live registry prefix and interruption outputs when integrated.
