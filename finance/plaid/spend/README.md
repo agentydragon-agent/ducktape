@@ -144,9 +144,11 @@ The reference markers are scenarios, not guarantees of lifetime sustainability.
 The history chart labels its selected trailing simple moving average and annualization explicitly. It draws one
 curve, defaulting to annual funding including withdrawal taxes. A local switch changes dollar labels to annual
 spending excluding taxes. Withdrawal percentages remain tax-inclusive in both modes. Dollar and percentage axes
-share the same canonical rate bounds and tick positions; the dollar conversion includes the tax fraction when
+share the same canonical rate bounds and tick positions, fitted to the plotted values and reference scenarios with
+padding instead of anchoring at zero; the dollar conversion includes the tax fraction when
 showing consumption. The switch cannot create a different apparent volatility or change the implied withdrawal
-percentage. Tooltips separate spending, estimated withdrawal taxes, gross funding and the required percentage.
+percentage. Tooltips show the inclusive window's start and end dates with years, and separate spending, estimated
+withdrawal taxes, gross funding and the required percentage.
 Without a tax model, explicitly selecting spending shows dollars alone, with no reference-rate lines or percentage
 axis. This linear conversion relies on the current fixed effective tax fraction and current portfolio denominator.
 
