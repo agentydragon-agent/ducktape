@@ -140,7 +140,9 @@ budget for an isolated process purpose, while the parent aggregate remains autho
   before journal seals; shutdown fences it before releasing state ownership. VM supervisors retain
   inherited ownership through cgroup cleanup. Pod ownership-connection loss exits the executor
   container, and a new idle container generation proves the runtime cleaned up detached descendants.
-  Failed cleanup prevents sealing and starting a successor.
+  Failed cleanup prevents sealing and starting a successor. A Pod companion that could not spawn
+  Codex at all exits no generation and refuses the claim with its reason, staying available to
+  fence and to answer a later claim.
 - Code-mode workers, MCP helpers and external daemons are outside the executor budget in the pinned
   Codex release. Details and configuration: [Codex executor isolation](docs/codex_executor.md).
 

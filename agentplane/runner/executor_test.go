@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -183,4 +185,86 @@ func TestExecutorMonitorDoesNotDelayProcessExitForProbeGrace(t *testing.T) {
 			t.Fatalf("monitor: calls=%d error=%v, want immediate process exit", calls, err)
 		}
 	})
+}
+
+// A companion whose Codex binary cannot start serves a refusal instead of exiting: a generation that
+// spawned nothing has no work to fence, and a container restarting into the same failure would leave
+// no socket to fence and a Runner able neither to run Codex nor to quiesce.
+func TestExecutorCompanionRefusesClaimAndKeepsServing(t *testing.T) {
+	dir := t.TempDir()
+	socket := filepath.Join(dir, "control.sock")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	served := make(chan error, 1)
+	go func() {
+		served <- serveExecutorContainer(ctx, socket, filepath.Join(dir, "absent-codex"), "ws://127.0.0.1:4501")
+	}()
+	waitForSocket(t, socket)
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		_, err := claimExecutorContainer(ctx, socket, map[string]string{"PATH": "/usr/bin"})
+		var refusal executorRefusal
+		if !errors.As(err, &refusal) {
+			t.Fatalf("claim %d: %v (%T), want an executorRefusal", attempt, err, err)
+		}
+		if !strings.Contains(err.Error(), "absent-codex") {
+			t.Errorf("claim %d: %q, want the companion's reason", attempt, err)
+		}
+	}
+
+	// The generation survived both refusals: an idle companion still answers, unowned and unchanged.
+	_, status, err := executorControl(ctx, socket, executorControlRequest{Operation: "inspect"})
+	if err != nil {
+		t.Fatalf("inspect after refusals: %v", err)
+	}
+	if status.Owned || status.Error != "" {
+		t.Errorf("inspect after refusals = %+v, want an unowned generation reporting no error", status)
+	}
+	cancel()
+	if err := <-served; err != nil {
+		t.Fatalf("companion after cancellation: %v", err)
+	}
+}
+
+// A refusal must reach a waiting Session as itself, not as the expiry of its startup deadline: the
+// companion will refuse every later claim the same way, so nothing is recovered by waiting.
+func TestExecutorEnsureReportsRefusalInsteadOfItsDeadline(t *testing.T) {
+	dir := t.TempDir()
+	socket := filepath.Join(dir, "control.sock")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		_ = serveExecutorContainer(ctx, socket, filepath.Join(dir, "absent-codex"), "ws://127.0.0.1:4599")
+	}()
+	waitForSocket(t, socket)
+
+	e := newCodexExecutor(&Runner{ctx: ctx}, CodexExecutorConfig{URL: "ws://127.0.0.1:4599", ContainerSocket: socket})
+	startup, cancelStartup := context.WithTimeout(ctx, time.Minute)
+	defer cancelStartup()
+	started := time.Now()
+	err := e.ensure(startup)
+	var refusal executorRefusal
+	if !errors.As(err, &refusal) {
+		t.Fatalf("ensure: %v (%T), want an executorRefusal", err, err)
+	}
+	if elapsed := time.Since(started); elapsed > 10*time.Second {
+		t.Errorf("ensure took %v to report a refusal, want it reported without waiting for the deadline", elapsed)
+	}
+	if err := e.stop(context.Background()); err != nil {
+		t.Fatalf("stop after refusal: %v", err)
+	}
+}
+
+func waitForSocket(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no companion socket at %s", path)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }

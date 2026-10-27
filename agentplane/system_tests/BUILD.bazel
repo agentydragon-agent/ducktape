@@ -484,7 +484,9 @@ py_test(
 system_test(
     name = "test_dispatcher",
     srcs = ["test_dispatcher.py"],
-    k3s = "model_free",
+    # Opens Codex Sessions, so its runner image carries the harnesses: `model_free` has none, and
+    # every activation there fails in the executor companion instead of on the runner path.
+    k3s = "scripted",
     deps = [
         ":cluster",
         ":conftest",
@@ -510,7 +512,9 @@ system_test(
 system_test(
     name = "test_storage",
     srcs = ["test_storage.py"],
-    k3s = "model_free",
+    # Opens Codex Sessions, so its runner image carries the harnesses: `model_free` has none, and
+    # every activation there fails in the executor companion instead of on the runner path.
+    k3s = "scripted",
     vm_sandboxes = "manual",
     deps = [
         ":cluster",
