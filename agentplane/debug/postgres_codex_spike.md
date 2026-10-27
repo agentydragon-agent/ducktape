@@ -1,6 +1,6 @@
 # Postgres Codex sampler spike
 
-Implemented for review, 2026-10-27 07:54 PDT: `/root/postgres_harness_spike` implements the operator-dispatched
+Baseline merged in [PR #12207](https://github.com/agentydragon/ducktape/pull/12207), 2026-10-27: `/root/postgres_harness_spike` implements the operator-dispatched
 code-mode-only experiment in `agentplane/x/postgres_codex`, branch `x/postgres-codex-20261027`.
 This report describes a custom outer loop reusing upstream components; it is not a persistence fork
 or a production replacement. No staging changes or live inference were requested or performed.
@@ -84,3 +84,103 @@ central Codex for broad feature compatibility today. A custom loop becomes a rea
 if code-mode-only, completed-cell checkpoints and the narrower tool contract are accepted, with
 provider tracking and uncertainty reconciliation explicitly owned. Frontend tracing is separate work;
 the operator explicitly removed it as an acceptance gate because Langfuse provides partial links.
+
+## Process-control extension
+
+The operator required `wait`, stdin and interrupts as minimum custom-sampler capabilities after the
+baseline merged. [PR #12213](https://github.com/agentydragon/ducktape/pull/12213) retains the actual pinned code-mode host across model sampling and
+`session/wait` observations in `main_bin run`. A yielded JS cell has a host-UUID-prefixed handle;
+raw native IDs restart at `1`, so they cannot be global database keys or model-facing identities.
+A separate durable process registry tracks running/terminal shell handles and retained-output cursors.
+The model receives current execution state regenerated from these tables alongside conversation input.
+
+`exec_command` can yield, and `write_stdin` sends real bytes or polls the same process. A sole Ctrl-C
+uses `process/signal`; EOF uses PTY Ctrl-D. The pinned protocol has no pipe-close operation, and that
+unsupported EOF request is rejected. Initialization must resume the database's executor `sessionId`:
+process IDs are session-scoped, and initializing a different session makes them unknown even on the
+same server. The pinned server keeps a detached session for **30 seconds**. Expiry/server loss with
+live handles blocks recovery without a replacement session or replay. Terminal handles permit a new
+session. V8 state remains live-only: a fresh sampler owner cannot reconstruct a yielded cell from
+nested results and must block, rather than replay JavaScript.
+
+An external CLI `interrupt` targets the active owner generation, persists a request and is observed
+by `advance`/`run`; `status` exposes its outcome. A committed request prevents the next outer or
+nested dispatch. Interrupt closes the sampling response, tries native cell termination, observes
+host shutdown, gates further executor mutations, terminates known processes and observes their exits.
+Stopping the whole host closes the window where native execution started before its cell registry
+write. Known fixture shell/child PIDs are checked for no remaining live process after successful
+cleanup; this is not a cgroup fence for escaped descendants.
+
+Successful cleanup appends interrupted/not-started results for every outstanding committed model
+call, stops sampling and allows only explicit new input to reopen the turn. Provider cancellation is
+local HTTP cancellation; provider completion and partial remote effects are not rolled back. Lost
+cleanup outcomes remain `effects_unknown` with a blocking intent, including an interrupt that occurs
+between transitions. Stdin mutations and shell commands are never automatically retried. The
+[experimental SPEC](../x/postgres_codex/SPEC.md) describes deadlines and remaining omissions.
+
+The extension has **1,277 physical runtime Python lines**, including comments/blanks, across
+`store.py` 435, `executor.py` 193, `code_mode.py` 331, `sampler.py` 127, `main.py` 116 and `control.py` 75. The baseline was 563; the
+additional lifecycle and durable control code is 714 lines. New control test/support code is 739
+lines. Counts exclude BUILD, SQL and docs, and do not include the reused upstream Rust inventory
+above. No new third-party runtime dependency or production caller was added.
+
+All **20 integration cases across four targets passed** with named runtime libraries' Ruff/mypy
+aspects in [invocation 5dd30dcf-e2c5-4aa2-b4a3-12c86b470a80](https://app.buildbuddy.io/invocation/5dd30dcf-e2c5-4aa2-b4a3-12c86b470a80):
+seven control cases, five interrupt cases, one additive-schema upgrade case and the original seven.
+The final boundary case interrupts after native host execution starts but before its live-cell
+registry write; observed host exit prevents hidden V8 work from continuing. The migration starts
+with the original conversation/intent tables and verifies preserved prompt and result rows.
+Normal commit hooks passed.
+
+The final-code rerun [565aa96e](https://app.buildbuddy.io/invocation/565aa96e-ae4f-490a-aad7-04a220edd5a3)
+passed interrupt/schema checks and runtime lint, but the controls and original sampler targets hit
+their unchanged 60-second deadlines. A streamed diagnostic rerun of those two targets
+[e1991210](https://app.buildbuddy.io/invocation/e1991210-f0dc-4cb1-a1d2-8b324e18f7e3) passed all 14 cases
+in 33.2 and 42.5 seconds. Its stack dumps observed PostgreSQL image loading in
+`util.oci.push_to_daemon`; fixture setup took 19.14 and 22.50 seconds. This establishes final-code
+passes for all 20 cases across the two invocations, with a target-timeout flake still observed in
+the ordinary parallel run. No deadlines were increased.
+
+```sh
+bbr test //agentplane/x/postgres_codex:test_controls \
+  //agentplane/x/postgres_codex:test_interrupts //agentplane/x/postgres_codex:test_schema \
+  //agentplane/x/postgres_codex:test_sampler //agentplane/x/postgres_codex:store \
+  //agentplane/x/postgres_codex:executor //agentplane/x/postgres_codex:code_mode \
+  //agentplane/x/postgres_codex:control //agentplane/x/postgres_codex:sampler \
+  //agentplane/x/postgres_codex:main --test_output=errors
+```
+
+These checks use real binaries and Postgres. No live inference, production integration, merge
+or deployment is established by this extension.
+
+## Combined compaction and controls
+
+The integrated experiment supports all four requested controls: compaction, model-facing `wait`,
+interactive stdin and external interruption. `responses.py` owns the shared wire adapter and tool
+schema. `run --auto-compact-tokens` defers compaction while a JS cell is live, allowing the model to
+wait it to completion. Once compacted, the model still receives durable process handles and can
+send stdin to the existing executor process. Interrupted and unstarted sibling outputs append to
+both audit history and the active compacted context; explicit new user input continues from that
+context. External interruption during automatic compaction preserves the prior context and records
+provider-completion uncertainty.
+
+A native executor session permits only one attached connection. The fresh-sampler fixture detaches
+its original connection, compacts in one CLI process, samples in another, then resumes the recorded
+executor session in a third to send real input and observe process exit. Keeping the initial socket
+attached was rejected by upstream with error `-32010`; session resumption never substitutes a fresh
+executor session for live handles.
+
+All **38 cases across five targets passed**: the 20 sampler/control/interrupt/schema cases and 18
+compaction/integration cases. [105393d7](https://app.buildbuddy.io/invocation/105393d7-2865-45b6-a2e5-458631dd4b1a)
+passed all four sampler/control/interrupt/schema targets and named runtime library Ruff/mypy; its
+compaction target exposed the attached-session fixture error above.
+[8e92aa72](https://app.buildbuddy.io/invocation/8e92aa72-d60a-439a-9f54-3d7412881fd2)
+passed all 18 compaction cases after that fixture correction, in 31.8 seconds. The upgrade case applies
+both additive migrations to original experiment tables and verifies preserved prompt/result rows,
+active context and process-control state. Normal commit hooks passed; no timeout was increased.
+
+The combined runtime is **1,501 physical Python lines**, including comments/blanks, across `main.py`,
+`sampler.py`, `code_mode.py`, `executor.py`, `store.py`, `responses.py`, `compaction.py` and `control.py`.
+This still reuses the substantial pinned upstream host, execution and patch implementations counted
+above. Live provider acceptance, production integration and the remaining harness capabilities are
+not established by the scripted tests.

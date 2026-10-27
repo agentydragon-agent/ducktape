@@ -607,8 +607,6 @@ flowchart LR
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
     CENTRAL_CODEX_SPIKE[In progress: experimental central Codex process fixture]
     CENTRAL_CODEX_SPIKE --> HARNESS_PLACEMENT_DESIGN[Decision, unscheduled: sampler placement and state authority]
-    POSTGRES_HARNESS_SPIKE[Prototype complete, pending merge: Postgres-backed code-mode Codex subset]
-    POSTGRES_HARNESS_SPIKE --> HARNESS_PLACEMENT_DESIGN
     CLAUDE_REMOTE_EXECUTION_SPIKE[Unscheduled: Claude remote tools and custom sampler compatibility]
     CLAUDE_REMOTE_EXECUTION_SPIKE -. optional Claude branch evidence .-> HARNESS_PLACEMENT_DESIGN
 ```
@@ -658,26 +656,6 @@ readable, the turn reaches a bounded failure, and unknown effects are not replay
 ([incident #12203](https://github.com/agentydragon/ducktape/issues/12203)). Exit: the test and its numbers in the
 research plan. Changes no deployed mode.
 
-### `POSTGRES_HARNESS_SPIKE` — measure a Postgres-backed headless Codex subset
-
-**Prototype complete, pending merge; `/root/postgres_harness_spike`, 2026-10-27;
-[PR #12207](https://github.com/agentydragon/ducktape/pull/12207).** The isolated experiment under
-`agentplane/x/postgres_codex` has 563 physical Python runtime lines and reuses the pinned upstream
-code-mode host, exec-server and apply-patch binaries. The [measured findings](../debug/postgres_codex_spike.md)
-record the separate upstream source/dependency inventory and seven passing RBE integration cases: scripted
-model/tool execution, fresh-process continuation from Postgres, encrypted reasoning, ownership fencing,
-and sampler/executor crashes. Postgres is the conversation authority, without a native rollout or second
-Runner conversation journal. Durable intent and fencing protect database writes; they cannot atomically
-commit remote effects. Uncertain effects block automatic replay and have no reconciliation interface yet.
-
-The recommendation favors central upstream Codex for broad compatibility today; the custom sampler is a
-candidate only if the bounded completed-cell checkpoint and tool contract is sufficient. A persistence fork
-was not implemented or measured. See the [scope](sampling_outside_sandboxes.md#bounded-spike-measure-the-headless-subset-we-need)
-and experiment SPEC for omitted yielding/stdin, interrupts, compaction, instruction discovery, subagents,
-skills/MCP, approvals, hooks, memory, History export and frontend tracing. Frontend tracing was not a gate
-(operator clarification, 2026-10-27; existing Langfuse links provide partial visibility). Independent of
-`CENTRAL_CODEX_SPIKE`; no live provider compatibility, production replacement or deployment is established.
-
 ### `CLAUDE_REMOTE_EXECUTION_SPIKE` — Claude remote tools and custom sampler compatibility
 
 **Unscheduled investigation/spike; operator, 2026-10-27 PDT.** Independent of both Codex spikes.
@@ -694,7 +672,7 @@ for the Claude branch. No live account feature changes or runtime cutover implie
 
 ### `HARNESS_PLACEMENT_DESIGN` — sampler placement and state authority
 
-**Decision, unscheduled; after `CENTRAL_CODEX_SPIKE` and `POSTGRES_HARNESS_SPIKE`.** Claude evidence is optional
+**Decision, unscheduled; after `CENTRAL_CODEX_SPIKE`.** Claude evidence is optional
 and must not block a Codex-only choice. Compare upstream central Codex (per-Sandbox harness Pod or shared
 app-server), a Postgres-backed Codex fork, a custom central sampler, and no change. Recommendation to review:
 measure the smaller headless subset before choosing a rewrite; upstream per-Sandbox hosting remains the

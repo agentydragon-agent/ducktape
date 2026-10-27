@@ -264,7 +264,7 @@ Sessions, identities, history and native state under the staging data-preservati
 ### Bounded spike: measure the headless subset we need
 
 Operator, 2026-10-27: investigate whether our own "Codex" is small enough to justify tighter tracking
-of OpenAI APIs. **Prototype complete, pending merge in
+of OpenAI APIs. **Baseline merged in
 [PR #12207](https://github.com/agentydragon/ducktape/pull/12207), `/root/postgres_harness_spike`,
 2026-10-27.** The operator-authorized code-mode-only implementation is isolated under
 `agentplane/x/postgres_codex`. The [runnable experiment and measured findings](../debug/postgres_codex_spike.md)
@@ -288,11 +288,15 @@ Sampler and executor SIGKILL cases preserve readable conversation state and boun
 committed intent; database fencing does not guarantee exactly-once remote effects. There is no
 reconciliation interface yet.
 
-The experiment SPEC explicitly omits yielding and yielded-cell continuation, stdin, interrupts,
-compaction, instruction discovery, persistent JavaScript storage, subagents, skills/MCP, approvals,
-hooks, memory, History export and frontend tracing. A frontend trace was not an acceptance gate:
-the operator clarified that existing Langfuse links already provide partial visibility. These omissions
-remain work for a production contract; this spike establishes no production replacement or deployment.
+The [process-control extension](../debug/postgres_codex_spike.md#process-control-extension),
+in [PR #12213](https://github.com/agentydragon/ducktape/pull/12213), adds real yielded-cell `wait`, durable shell session handles,
+interactive stdin, PTY EOF/Ctrl-C and external generation-targeted interruption. A retained host is
+required for live V8 state; process continuation uses the upstream executor session's 30-second
+detached retention window. These are explicit limits, not Postgres serialization of live processes.
+Compaction is a separate extension. Instruction discovery, persistent JavaScript storage, subagents,
+skills/MCP, approvals, hooks, memory, History export and frontend tracing remain omitted. A frontend
+trace was not an acceptance gate: the operator clarified that existing Langfuse links already provide
+partial visibility. Neither extension establishes production replacement or deployment.
 
 ### Model exchange visibility
 
@@ -337,7 +341,8 @@ Alternatives to compare:
 
 ## Next
 
-`CENTRAL_CODEX_SPIKE` and `POSTGRES_HARNESS_SPIKE` supply `HARNESS_PLACEMENT_DESIGN` in
+The completed [combined custom sampler evidence](../debug/postgres_codex_spike.md#combined-compaction-and-controls)
+and remaining `CENTRAL_CODEX_SPIKE` gates inform `HARNESS_PLACEMENT_DESIGN` in
 [task DAG](task_dag.md) section 5. `CLAUDE_REMOTE_EXECUTION_SPIKE` supplies optional Claude evidence;
 it is not a prerequisite for choosing a Codex-only mode. No runtime cutover is selected.
 
