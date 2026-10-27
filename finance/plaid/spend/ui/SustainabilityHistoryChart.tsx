@@ -19,6 +19,19 @@ function shortDate(value: string): string {
   );
 }
 
+function windowDateRange(endDate: string, windowDays: number): string {
+  const end = new Date(`${endDate}T00:00:00Z`);
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - (windowDays - 1));
+  const formatter = new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+  return `${formatter.format(start)} – ${formatter.format(end)}`;
+}
+
 export function SustainabilityHistoryChart({
   history,
   referenceDrawRates,
@@ -47,14 +60,18 @@ export function SustainabilityHistoryChart({
       : []),
   ];
   const chart = useMemo(() => {
-    const rates = history.flatMap((point) =>
-      point.tax_adjusted_draw_rate == null ? [] : [point.tax_adjusted_draw_rate]
+    const data = history.map((point) =>
+      hasRates ? point.tax_adjusted_draw_rate : point.annualized_spending_minor_units
     );
-    const maximumRate = Math.ceil(Math.max(0.01, ...rates, ...referenceDrawRates) * 1.15 * 200) / 200;
-    const minimumRate = Math.floor(Math.min(0, ...rates) * 1.15 * 200) / 200;
+    const values = [
+      ...data.filter((value): value is number => value != null),
+      ...(hasRates ? referenceDrawRates : []),
+    ];
+    const minimum = values.length > 0 ? Math.min(...values) : 0;
+    const maximum = values.length > 0 ? Math.max(...values) : 1;
+    const padding = (maximum - minimum || Math.abs(maximum) || 1) * 0.05;
     return {
-      maximumRate,
-      minimumRate,
+      bounds: { min: minimum - padding, max: maximum + padding },
       labels: history.map((point) => shortDate(point.date)),
       datasets: [
         {
@@ -62,9 +79,7 @@ export function SustainabilityHistoryChart({
           label: amountLabel,
           // Keep one canonical rate scale when taxes are modeled. The toggle
           // changes dollar units, not the rate, bounds, or apparent volatility.
-          data: history.map((point) =>
-            hasRates ? point.tax_adjusted_draw_rate : point.annualized_spending_minor_units
-          ),
+          data,
           borderColor: SERIES_COLORS.funding,
           backgroundColor: SERIES_COLORS.funding,
           borderWidth: 2,
@@ -108,6 +123,7 @@ export function SustainabilityHistoryChart({
         plugins: {
           tooltip: {
             callbacks: {
+              title: (items) => windowDateRange(history[items[0].dataIndex].date, windowDays),
               label: (context) => {
                 const value = context.parsed.y;
                 if (value == null || !Number.isFinite(value)) return `${context.dataset.label}: unavailable`;
@@ -135,7 +151,7 @@ export function SustainabilityHistoryChart({
           amount: {
             type: "linear",
             position: "left",
-            ...(hasRates ? { min: chart.minimumRate, max: chart.maximumRate } : { beginAtZero: true }),
+            ...chart.bounds,
             title: { display: true, text: amountLabel },
             ticks: {
               count: 6,
@@ -147,8 +163,7 @@ export function SustainabilityHistoryChart({
             type: "linear",
             position: "right",
             display: hasRates,
-            min: chart.minimumRate,
-            max: chart.maximumRate,
+            ...chart.bounds,
             title: { display: true, text: "Required withdrawal rate including taxes" },
             grid: { drawOnChartArea: false },
             ticks: { count: 6, autoSkip: false, callback: (value) => percent(Number(value)) },
@@ -158,7 +173,7 @@ export function SustainabilityHistoryChart({
       },
     });
     return () => instance.destroy();
-  }, [amountLabel, amountPerRate, canPlot, chart, currency, hasRates, history, portfolioMinorUnits]);
+  }, [amountLabel, amountPerRate, canPlot, chart, currency, hasRates, history, portfolioMinorUnits, windowDays]);
 
   return (
     <Paper component="section" aria-labelledby="sustainability-history-title" withBorder radius="lg" p="lg">
