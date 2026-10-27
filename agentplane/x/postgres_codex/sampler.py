@@ -13,7 +13,11 @@ def request_body(model: str, conversation_id: str, items: list[dict[str, Any]]) 
     description = (
         "Run raw JavaScript as an async module in a fresh V8 isolate. Call tools.exec_command({cmd, workdir?}) "
         "or tools.apply_patch(patch). Emit results with text(value). No Node, filesystem, network or console. "
-        "This experiment has no wait, yielding, notify or persistent JS store. Await all tool calls. "
+        "exec_command supports tty and yield_time_ms; a running process returns session_id. "
+        "Use tools.write_stdin({session_id, chars?, eof?, yield_time_ms?}) to send input or poll. "
+        'An exec first-line // @exec: {"yield_time_ms": 10} yields an active JS cell; '
+        "call wait with JSON {cell_id, yield_time_ms?, terminate?} to observe it. "
+        "Process session_id and JavaScript cell_id are distinct. No notify or persistent JS store. Await all tool calls. "
         + json.dumps(tool_definitions())
     )
     return {
@@ -22,7 +26,15 @@ def request_body(model: str, conversation_id: str, items: list[dict[str, Any]]) 
             {
                 "type": "additional_tools",
                 "role": "developer",
-                "tools": [{"type": "custom", "name": "exec", "description": description, "format": {"type": "text"}}],
+                "tools": [
+                    {"type": "custom", "name": "exec", "description": description, "format": {"type": "text"}},
+                    {
+                        "type": "custom",
+                        "name": "wait",
+                        "description": "Observe a yielded JavaScript cell. Input JSON: {cell_id, yield_time_ms?, terminate?}.",
+                        "format": {"type": "text"},
+                    },
+                ],
             },
             *items,
         ],
@@ -80,8 +92,13 @@ async def advance(
     row = await store.read(owner)
     if row.pending is not None:
         raise UnknownEffectError(f"unresolved {row.pending['kind']} intent {row.pending['id']}; no automatic replay")
+    if row.stopped:
+        return "interrupted"
+    await store.check_live_cells(owner, runtime_available=runtime is not None)
+    if runtime is not None and runtime.error is not None:
+        raise runtime.error
     if (call := pending_call(row.items)) is not None:
-        if call["name"] != "exec":
+        if call["name"] not in {"exec", "wait"}:
             raise ValueError(f"unsupported model tool: {call['name']}")
         if runtime is None:
             raise ValueError("a pending cell requires a code-mode runtime")
@@ -92,7 +109,14 @@ async def advance(
         return "cell"
     if row.items[-1]["type"] == "message" and row.items[-1]["role"] == "assistant":
         return "done"
-    body = request_body(model, str(row.id), row.items)
+    state = await store.execution_state(owner)
+    context = row.items
+    if state["processes"] or state["cells"]:
+        context = [
+            *context,
+            {"type": "message", "role": "developer", "content": "Current execution state: " + json.dumps(state)},
+        ]
+    body = request_body(model, str(row.id), context)
     intent_id = await store.begin(owner, {"kind": "sampling", "body": body})
     result = await sample(http, endpoint, credential, body)
     for item in result["output"]:
