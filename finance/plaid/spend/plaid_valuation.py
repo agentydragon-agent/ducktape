@@ -157,12 +157,12 @@ def value_plaid_rows(
     }
     holding_by_position: dict[tuple[str, str], HoldingObservation] = {}
     holdings_by_account: dict[str, list[HoldingObservation]] = {}
-    for row in holding_rows:
-        position = (row.account_id, row.security_id)
+    for holding in holding_rows:
+        position = (holding.account_id, holding.security_id)
         if position in holding_by_position:
             raise PlaidValuationError("A selected holding has an ambiguous observation.")
-        holding_by_position[position] = row
-        holdings_by_account.setdefault(position[0], []).append(row)
+        holding_by_position[position] = holding
+        holdings_by_account.setdefault(position[0], []).append(holding)
 
     for account_id in required_holding_accounts:
         account_holdings = holdings_by_account.get(account_id)
@@ -192,12 +192,12 @@ def value_plaid_rows(
     correction_account_ids = {correction.account_id for correction in plaid.holding_value_corrections}
     for account_id, account_holdings in holdings_by_account.items():
         adjusted_total = Decimal(0)
-        for row in account_holdings:
-            position = (account_id, row.security_id)
-            holding_value = row.institution_value
+        for holding in account_holdings:
+            position = (account_id, holding.security_id)
+            holding_value = holding.institution_value
             if holding_value is None:
                 raise PlaidValuationError("A holding batch has an unusable value.")
-            if row.holding_currency != "USD":
+            if holding.holding_currency != "USD":
                 raise PlaidValuationError("A holding does not have a confirmed USD value.")
             adjusted_value = corrected_holding_value(
                 plaid, account_id=account_id, security_id=position[1], value=holding_value
