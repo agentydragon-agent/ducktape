@@ -15,7 +15,7 @@ import (
 
 func followPage(t *testing.T, store *Store, sessionID uuid.UUID, after uint64, kinds ...historypb.EventKind) FollowPage {
 	t.Helper()
-	page, err := store.ReadFollowEntries(t.Context(), sessionID, after, kinds)
+	page, err := store.ReadFollowEntries(t.Context(), sessionID, after, kinds, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,9 +104,9 @@ func TestFollowEntryBoundsAndFilteredCursor(t *testing.T) {
 	if len(empty.Entries) != 0 || empty.ThroughCursor != 260 {
 		t.Fatalf("filtered empty page: %+v", empty)
 	}
-	_, err := store.ReadFollowEntries(t.Context(), sessionID, math.MaxUint64, nil)
+	_, err := store.ReadFollowEntries(t.Context(), sessionID, math.MaxUint64, nil, true)
 	assertError(t, err, ErrOutOfRange)
-	_, err = store.ReadFollowEntries(t.Context(), uuid.New(), 0, nil)
+	_, err = store.ReadFollowEntries(t.Context(), uuid.New(), 0, nil, true)
 	assertError(t, err, ErrNotFound)
 }
 
@@ -160,24 +160,16 @@ func TestFollowMetadataReplaysLateCorrectionsWithBoundedPagination(t *testing.T)
 	if page.ThroughCursor != 10 {
 		t.Fatalf("through %d", page.ThroughCursor)
 	}
-	removed, err := store.ReadFollowRemoved(t.Context(), sessionID, 0, 10, 0)
-	if err != nil || removed != nil {
+	removed, err := store.ReadFollowRemoved(t.Context(), sessionID, 0, 10)
+	if err != nil || len(removed) != 0 {
 		t.Fatalf("initial removal %v, error %v", removed, err)
 	}
 	removeEntries(t, db, sessionID, 2, 3, 8)
-	for _, test := range []struct {
-		after uint64
-		want  *historypb.CursorRange
-	}{
-		{0, &historypb.CursorRange{First: 2, Last: 3}},
-		{2, &historypb.CursorRange{First: 8, Last: 8}},
-		{8, nil},
-		{0, &historypb.CursorRange{First: 2, Last: 3}},
-	} {
-		got, err := store.ReadFollowRemoved(t.Context(), sessionID, 0, page.ThroughCursor, test.after)
-		if err != nil || !proto.Equal(got, test.want) {
-			t.Fatalf("after %d removal %v, error %v, want %v", test.after, got, err, test.want)
-		}
+	removed, err = store.ReadFollowRemoved(t.Context(), sessionID, 0, page.ThroughCursor)
+	if err != nil || !proto.Equal(&historypb.ReadSessionEventsResponse{Removed: removed}, &historypb.ReadSessionEventsResponse{
+		Removed: []*historypb.CursorRange{{First: 2, Last: 3}, {First: 8, Last: 8}},
+	}) {
+		t.Fatalf("removals %v, error %v", removed, err)
 	}
 	settlements := []*historypb.SettledDeltas{
 		{ItemId: "first", CompletionCursor: 6, Ranges: []*historypb.CursorRange{{First: 4, Last: 5}}},
@@ -190,27 +182,46 @@ func TestFollowMetadataReplaysLateCorrectionsWithBoundedPagination(t *testing.T)
 			t.Fatal(err)
 		}
 	}
-	for i, after := range []uint64{0, 6, 10, 0} {
-		got, err := store.ReadFollowSettlement(t.Context(), sessionID, 0, 10, after)
-		var want *historypb.SettledDeltas
-		if i != 2 {
-			want = settlements[i%3]
+	page = followPage(t, store, sessionID, 0)
+	if len(page.Settlements) != 2 || !proto.Equal(page.Settlements[0], settlements[0]) || !proto.Equal(page.Settlements[1], settlements[1]) {
+		t.Fatalf("follow settlements %v, want %v", page.Settlements, settlements)
+	}
+	page, err = store.ReadFollowEntries(t.Context(), sessionID, 6, nil, true)
+	if err != nil || len(page.Settlements) != 1 || !proto.Equal(page.Settlements[0], settlements[1]) {
+		t.Fatalf("settlements after completion 6: %v, error %v", page.Settlements, err)
+	}
+	page, err = store.ReadFollowEntries(t.Context(), sessionID, 10, nil, true)
+	if err != nil || len(page.Settlements) != 0 {
+		t.Fatalf("settlements at or before the resume cursor: %v, error %v", page.Settlements, err)
+	}
+	page, err = store.ReadFollowEntries(t.Context(), sessionID, 0, nil, false)
+	if err != nil || len(page.Settlements) != 0 {
+		t.Fatalf("excluded settlements: %v, error %v", page.Settlements, err)
+	}
+}
+
+func TestFollowPageBoundsSettlementsWhenKindsFilterOutCompletions(t *testing.T) {
+	db := testDB(t)
+	store := NewStore(db, false)
+	sessionID := opened(t, store)
+	appendEntries(t, store, sessionID, entries(1, FollowSettlementsLimit+1)...)
+	for cursor := uint64(1); cursor <= FollowSettlementsLimit+1; cursor++ {
+		settled := &historypb.SettledDeltas{CompletionCursor: cursor}
+		if err := transaction(t.Context(), db, nil, func(tx *sql.Tx) error {
+			return recordSettlement(t.Context(), tx, sessionID, settled)
+		}); err != nil {
+			t.Fatal(err)
 		}
-		if err != nil || !proto.Equal(got, want) {
-			t.Fatalf("after %d settlement %v, error %v, want %v", after, got, err, want)
-		}
 	}
-	// A settled range intersects this window even though its completion is beyond the window.
-	got, err := store.ReadFollowSettlement(t.Context(), sessionID, 3, 4, 0)
-	if err != nil || !proto.Equal(got, settlements[0]) {
-		t.Fatalf("intersecting settlement %v, error %v", got, err)
+	page, err := store.ReadFollowEntries(t.Context(), sessionID, 0, []historypb.EventKind{historypb.EventKind_EVENT_KIND_TEXT_DELTA}, true)
+	if err != nil {
+		t.Fatal(err)
 	}
-	got, err = store.ReadFollowSettlement(t.Context(), sessionID, 5, 6, 0)
-	if err != nil || !proto.Equal(got, settlements[0]) {
-		t.Fatalf("completion settlement %v, error %v", got, err)
+	if len(page.Entries) != 0 || len(page.Settlements) != FollowSettlementsLimit || page.ThroughCursor != FollowSettlementsLimit {
+		t.Fatalf("bounded page: entries %d, settlements %d, through %d", len(page.Entries), len(page.Settlements), page.ThroughCursor)
 	}
-	got, err = store.ReadFollowSettlement(t.Context(), sessionID, 0, 3, 0)
-	if err != nil || got != nil {
-		t.Fatalf("settlement before window %v, error %v", got, err)
+	page, err = store.ReadFollowEntries(t.Context(), sessionID, page.ThroughCursor, []historypb.EventKind{historypb.EventKind_EVENT_KIND_TEXT_DELTA}, true)
+	if err != nil || len(page.Entries) != 0 || len(page.Settlements) != 1 || page.ThroughCursor != FollowSettlementsLimit+1 {
+		t.Fatalf("remaining page: entries %d, settlements %d, through %d, error %v", len(page.Entries), len(page.Settlements), page.ThroughCursor, err)
 	}
 }

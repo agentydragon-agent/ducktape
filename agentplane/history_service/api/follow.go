@@ -42,16 +42,18 @@ func (s *Service) FollowSession(request *historypb.FollowSessionRequest, stream 
 		return err
 	}
 	call := &followCall{service: s, stream: stream, sessionID: sessionID, request: request, through: after}
+	initial := true
 	for {
 		if leased.Err() != nil {
 			return call.reconnect()
 		}
-		if err := call.catchUp(leased); err != nil {
+		if err := call.catchUp(leased, initial); err != nil {
 			if leased.Err() != nil && ctx.Err() == nil {
 				return call.reconnect()
 			}
 			return err
 		}
+		initial = false
 		if !request.GetFollow() {
 			return nil
 		}
@@ -83,70 +85,56 @@ func (c *followCall) reconnect() error {
 	return c.send(&historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}}})
 }
 
-func (c *followCall) catchUp(ctx context.Context) error {
+func (c *followCall) catchUp(ctx context.Context, initial bool) error {
+	startThrough := c.through
+	sentFrame := false
 	for {
 		readCtx, cancel := context.WithTimeout(ctx, c.service.requestTimeout)
-		page, err := c.service.reader.History.ReadFollowEntries(readCtx, c.sessionID, c.through, c.request.GetKinds())
+		page, err := c.service.reader.History.ReadFollowEntries(readCtx, c.sessionID, c.through, c.request.GetKinds(), wantsSettlements(c.request.GetKinds()))
 		if err != nil {
 			err = failure(readCtx, err)
 		}
 		cancel()
 		if err != nil {
 			return err
+		}
+		for _, settled := range page.Settlements {
+			if err := c.send(&historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_Settled{Settled: settled}}); err != nil {
+				return err
+			}
+			sentFrame = true
 		}
 		if len(page.Entries) > 0 {
 			response := &historypb.FollowSessionResponse{ThroughCursor: page.ThroughCursor, Frame: &historypb.FollowSessionResponse_Entries{Entries: &historypb.Entries{Entries: page.Entries}}}
 			if err := sendWithin(c.stream, c.service.requestTimeout, response); err != nil {
 				return err
 			}
+			sentFrame = true
 		}
 		c.through = page.ThroughCursor
 		if c.through == page.LastCursor {
 			break
 		}
 	}
-	// Corrections are idempotent and replayed, including below the resume cursor: a disconnect
-	// after an entries frame must not lose a correction that was not sent yet. Each read holds
-	// one correction, with no database transaction kept open while the client consumes it.
-	if wantsSettlements(c.request.GetKinds()) {
-		for after := uint64(0); ; {
-			readCtx, cancel := context.WithTimeout(ctx, c.service.requestTimeout)
-			settled, err := c.service.reader.History.ReadFollowSettlement(readCtx, c.sessionID, 0, c.through, after)
-			if err != nil {
-				err = failure(readCtx, err)
-			}
-			cancel()
-			if err != nil {
-				return err
-			}
-			if settled == nil {
-				break
-			}
-			if err := c.send(&historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_Settled{Settled: settled}}); err != nil {
-				return err
-			}
-			after = settled.GetCompletionCursor()
-		}
+	readCtx, cancel := context.WithTimeout(ctx, c.service.requestTimeout)
+	removed, err := c.service.reader.History.ReadFollowRemoved(readCtx, c.sessionID, 0, c.through)
+	if err != nil {
+		err = failure(readCtx, err)
 	}
-	for after := uint64(0); ; {
-		readCtx, cancel := context.WithTimeout(ctx, c.service.requestTimeout)
-		removed, err := c.service.reader.History.ReadFollowRemoved(readCtx, c.sessionID, 0, c.through, after)
-		if err != nil {
-			err = failure(readCtx, err)
-		}
-		cancel()
-		if err != nil {
+	cancel()
+	if err != nil {
+		return err
+	}
+	for _, cursorRange := range removed {
+		if err := c.send(&historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_Removed{Removed: cursorRange}}); err != nil {
 			return err
 		}
-		if removed == nil {
-			break
-		}
-		if err := c.send(&historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_Removed{Removed: removed}}); err != nil {
-			return err
-		}
-		after = removed.GetFirst()
+		sentFrame = true
 	}
-	return c.send(&historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}})
+	if initial || c.through != startThrough || sentFrame {
+		return c.send(&historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}})
+	}
+	return nil
 }
 
 func wantsSettlements(kinds []historypb.EventKind) bool {

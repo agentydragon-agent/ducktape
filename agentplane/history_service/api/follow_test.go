@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"io"
 	"strings"
 	"testing"
@@ -22,15 +23,18 @@ import (
 type following struct {
 	t      *testing.T
 	stream grpc.ServerStreamingClient[historypb.FollowSessionResponse]
+	cancel context.CancelFunc
 }
 
 func (s testServer) follow(t *testing.T, request *historypb.FollowSessionRequest) following {
 	t.Helper()
-	stream, err := s.client.FollowSession(bearing(t, readerToken), request)
+	ctx, cancel := context.WithCancel(bearing(t, readerToken))
+	t.Cleanup(cancel)
+	stream, err := s.client.FollowSession(ctx, request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return following{t: t, stream: stream}
+	return following{t: t, stream: stream, cancel: cancel}
 }
 
 func (f following) receive() *historypb.FollowSessionResponse {
@@ -219,36 +223,25 @@ func TestFollowSessionStreamsSettlementAndLaterRemovalCorrections(t *testing.T) 
 
 	// Appending the completion settles deltas that this follower already sent.
 	appendFollowEntries(t, server, sessionID, span.Entries[4:]...)
-	var gotCursors []uint64
-	var settled *historypb.SettledDeltas
-	for {
-		response := follow.receive()
-		switch {
-		case response.GetEntries() != nil:
-			for _, entry := range response.GetEntries().GetEntries() {
-				gotCursors = append(gotCursors, entry.GetCursor())
-			}
-		case response.GetSettled() != nil:
-			settled = response.GetSettled()
-		case response.GetCaughtUp() != nil:
-			if response.GetThroughCursor() != 8 {
-				t.Fatalf("caught up through %d, want 8", response.GetThroughCursor())
-			}
-			break
-		default:
-			t.Fatalf("unexpected frame while awaiting settlement: %v", response)
-		}
-		if response.GetCaughtUp() != nil {
-			break
-		}
-	}
-	if len(gotCursors) != 2 || gotCursors[0] != 7 || gotCursors[1] != 8 {
-		t.Fatalf("entries after settlement: %v, want retained completion cursors [7 8]", gotCursors)
-	}
-	if settled == nil || settled.GetCompletionCursor() != 8 || settled.GetChunkCount() != 2 || len(settled.GetRanges()) != 1 ||
+	settlementFrame := follow.receive()
+	settled := settlementFrame.GetSettled()
+	if settled == nil || settlementFrame.GetThroughCursor() != 4 || settled.GetCompletionCursor() != 8 ||
+		settled.GetChunkCount() != 2 || len(settled.GetRanges()) != 1 ||
 		settled.GetRanges()[0].GetFirst() != 3 || settled.GetRanges()[0].GetLast() != 6 {
-		t.Fatalf("settlement correction: %v", settled)
+		t.Fatalf("settlement correction before progress: %v", settlementFrame)
 	}
+	// The client resumes from the last cursor it received. The correction may repeat, and it arrives
+	// before the entries frame that advances past its completion cursor.
+	follow.cancel()
+	reconnected := server.follow(t, &historypb.FollowSessionRequest{
+		SessionId: sessionID.String(), Start: &historypb.FollowSessionRequest_AfterCursor{AfterCursor: 4}, Follow: true,
+	})
+	replayed := reconnected.receive()
+	if !proto.Equal(replayed.GetSettled(), settled) || replayed.GetThroughCursor() != 4 {
+		t.Fatalf("resumed settlement %v, want correction at cursor 4", replayed)
+	}
+	reconnected.wantEntries(7, 8)
+	reconnected.wantCaughtUp(8)
 
 	// Cleanup can remove an entry after the follower passed it; the same covered window gets corrected.
 	tx, err := server.db.BeginTx(t.Context(), nil)
@@ -268,29 +261,62 @@ func TestFollowSessionStreamsSettlementAndLaterRemovalCorrections(t *testing.T) 
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	var replayedSettlement, gotRemoved bool
-	for {
-		response := follow.receive()
-		switch {
-		case response.GetSettled() != nil:
-			replayedSettlement = replayedSettlement || proto.Equal(response.GetSettled(), settled)
-		case response.GetRemoved() != nil:
-			removed := response.GetRemoved()
-			if removed.GetFirst() != 1 || removed.GetLast() != 1 {
-				t.Fatalf("removed prior range correction: %v", response)
-			}
-			gotRemoved = true
-		case response.GetCaughtUp() != nil:
-			if response.GetThroughCursor() != 8 {
-				t.Fatalf("after cleanup, caught up through %d, want 8", response.GetThroughCursor())
-			}
-			if !gotRemoved || !replayedSettlement {
-				t.Fatalf("cleanup refresh replayed settlement=%v and removed=%v before caught_up", replayedSettlement, gotRemoved)
-			}
-			return
-		default:
-			t.Fatalf("unexpected cleanup correction frame: %v", response)
-		}
+	removedFrame := reconnected.receive()
+	if got := removedFrame.GetRemoved(); got == nil || got.GetFirst() != 1 || got.GetLast() != 1 {
+		t.Fatalf("removed prior range correction: %v", removedFrame)
+	}
+	if response := reconnected.wantCaughtUp(8); response.GetSettled() != nil {
+		t.Fatalf("cleanup refresh replayed a settlement below the resume cursor: %v", response)
+	}
+}
+
+func TestFollowSessionDoesNotReplaySettlementsAtOrBeforeItsStartCursor(t *testing.T) {
+	server := newServer(t, time.Minute)
+	sessionID, _ := server.record(t)
+	span := spans.ClaudeText([]string{"hello", " world"}, spans.TextOptions{})
+	appendFollowEntries(t, server, sessionID, span.Entries...)
+	follow := server.follow(t, &historypb.FollowSessionRequest{
+		SessionId: sessionID.String(), Start: &historypb.FollowSessionRequest_AfterCursor{AfterCursor: 8},
+	})
+	follow.wantCaughtUp(8)
+	if _, err := follow.stream.Recv(); err != io.EOF {
+		t.Fatalf("resume at the completion cursor replayed a settlement: %v", err)
+	}
+}
+
+type recordedFollowStream struct {
+	grpc.ServerStream
+	ctx       context.Context
+	responses []*historypb.FollowSessionResponse
+}
+
+func (s *recordedFollowStream) Context() context.Context { return s.ctx }
+
+func (s *recordedFollowStream) Send(response *historypb.FollowSessionResponse) error {
+	s.responses = append(s.responses, response)
+	return nil
+}
+
+func TestFollowSessionDoesNotRepeatCaughtUpForAnIdleRefresh(t *testing.T) {
+	server := newServer(t, time.Minute)
+	sessionID, _ := server.record(t)
+	stream := &recordedFollowStream{ctx: t.Context()}
+	call := &followCall{
+		service: server.service, stream: stream, sessionID: sessionID,
+		request: &historypb.FollowSessionRequest{Follow: true},
+	}
+	if err := call.catchUp(t.Context(), true); err != nil {
+		t.Fatal(err)
+	}
+	if len(stream.responses) != 1 || stream.responses[0].GetCaughtUp() == nil || stream.responses[0].GetThroughCursor() != 0 {
+		t.Fatalf("initial empty catch-up: %v", stream.responses)
+	}
+	stream.responses = nil
+	if err := call.catchUp(t.Context(), false); err != nil {
+		t.Fatal(err)
+	}
+	if len(stream.responses) != 0 {
+		t.Fatalf("idle refresh emitted frames: %v", stream.responses)
 	}
 }
 

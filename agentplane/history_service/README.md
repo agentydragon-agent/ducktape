@@ -63,27 +63,35 @@ An empty `kinds` filter sends every observation. `EventKind` numbers match the f
 observation); `(session_id, kind, cursor)` indexes filtered reads and back starts. The separate kind
 backfill migration must deploy only after every History replica writes the column.
 
-Every response reports `through_cursor`, the highest cursor covered by sent entries or the filter.
-Resume with `after_cursor` equal to the last received `through_cursor`: entries have no gaps or
-duplicates. `caught_up` marks the committed tail of a read snapshot, including when every new entry
-was filtered out. With `follow = false`, the stream ends successfully after its first `caught_up`.
-With `follow = true`, it ends with `reconnect_required` when `watch_lease_s` expires or the replica
-drains; reconnect with fresh authorization. Bare EOF before either terminal frame is a failure.
+`entries` and `caught_up` frames report `through_cursor`, the highest cursor covered by sent entries
+or the filter. Correction frames retain the last such cursor. Resume with `after_cursor` equal to the
+last received `through_cursor`: entries have no gaps or duplicates. The initial `caught_up` marks the
+committed tail of its read snapshot, including when every new entry was filtered out. Later
+`caught_up` frames follow cursor progress or a correction; an idle wake sends no frame. With
+`follow = false`, the stream ends successfully after its initial `caught_up`. With `follow = true`,
+it ends with `reconnect_required` when `watch_lease_s` expires or the replica drains; reconnect with
+fresh authorization. Bare EOF before either terminal frame is a failure.
 
-`settled` carries the same `SettledDeltas` as `ReadSessionEvents`, including settlements whose ranges
-were already passed. It is sent only for an empty kind filter or one containing `text_delta`,
-`tool_arguments_delta`, `tool_output_delta` or `native`; all other kinds are retained.
-`removed` tells readers to discard a deliberately deleted range. Corrections are idempotent and
-replayed on refresh and reconnect, including below the requested starting cursor, so losing a
-connection between an entries frame and its correction cannot lose the correction. Readers apply
-these even when `through_cursor` does not advance. Raw cursors survive a projection epoch rebuild;
-the stream neither resets nor follows the fold's epoch.
+`settled` carries the same `SettledDeltas` as `ReadSessionEvents` and is sent only for an empty kind
+filter or one containing `text_delta`, `tool_arguments_delta`, `tool_output_delta` or `native`; all
+other kinds are retained. The settlement and its completion entry commit atomically. Follow pages
+include settlements whose completion cursor is after the previous cursor and through that page's
+cursor, read from the same snapshot as its entries. A page carries at most 128 settlements even
+when the filter skips many completion entries. The server sends those settlements before any page
+frame advances `through_cursor` past their completion. If a connection ends after a correction but
+before progress, resuming from the prior cursor can repeat that correction. Settlements completed at
+or before the requested starting cursor are not replayed. `removed` tells readers to discard a
+deliberately deleted range; later catch-ups may report a removal below the starting cursor when
+cleanup removes an already passed entry. Corrections are idempotent, and readers apply them even
+when `through_cursor` does not advance. Raw cursors survive a projection epoch rebuild; the stream
+neither resets nor follows the fold's epoch.
 
 Each entries frame holds at most 128 entries or 1 MiB of encoded response, with an oversized entry
 sent alone. Filtering and byte bounds are applied in the database before payloads are transferred.
-The server reads one frame, waits for its `Send` to finish, then reads the next; a slow reader holds
-one frame and no open database transaction. Backend reads and writes to the stream have
-`request_timeout_s` deadlines. Each replica subscribes followers to the wakeup hub's
+The server reads a bounded entries/settlements page, waits for its frames to finish sending, then
+reads the next; it holds no database transaction while sending. It reads all intersecting removal
+ranges once per catch-up. Backend reads and writes to the stream have `request_timeout_s` deadlines.
+Each replica subscribes followers to the wakeup hub's
 `agentplane_session_history_changes` before the first read. A payload-free notification wakes all
 followers; reconnecting the LISTEN connection also wakes them to cover lost notifications.
 Cleanup writers must record removed ranges and notify that channel in the same transaction.

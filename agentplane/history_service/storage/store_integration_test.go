@@ -610,8 +610,16 @@ func TestSettlingStoreDropsMatchedChunksOnceTheirItemCompletes(t *testing.T) {
 	if got := cursors(readPage(t, store, sessionID, 0, 128)); !reflect.DeepEqual(got, []uint64{1, 2, 3, 4, 5, 6}) {
 		t.Fatalf("cursors before the completion %v", got)
 	}
+	pageFollow := followPage(t, store, sessionID, 0)
+	if len(pageFollow.Settlements) != 0 {
+		t.Fatalf("follow page reported a settlement before its completion committed: %v", pageFollow.Settlements)
+	}
 	if last := appendEntries(t, store, sessionID, span[6:]...); last != 8 {
 		t.Fatalf("last cursor %d", last)
+	}
+	pageFollow = followPage(t, store, sessionID, 0)
+	if len(pageFollow.Settlements) != 1 || pageFollow.Settlements[0].GetCompletionCursor() != 8 {
+		t.Fatalf("follow page did not return the settlement with its completion: %v", pageFollow.Settlements)
 	}
 	page := readPage(t, store, sessionID, 0, 128)
 	if got := cursors(page); !reflect.DeepEqual(got, []uint64{1, 2, 7, 8}) || !reflect.DeepEqual(settledRanges(page), []CursorRange{{3, 6}}) ||

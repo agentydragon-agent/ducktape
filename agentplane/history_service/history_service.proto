@@ -93,15 +93,18 @@ message Entries {
 message FollowSessionResponse {
   oneof frame {
     Entries entries = 1;
-    // All entries through through_cursor have been sent or filtered out.
+    // All entries through through_cursor in the latest page snapshot have been sent or filtered out.
     google.protobuf.Empty caught_up = 2;
-    // Idempotent corrections may repeat, including ranges below the starting cursor.
+    // Correction for a completion in the next covered cursor page. The server sends it before an
+    // entries or caught_up frame advances through_cursor past that completion.
     SettledDeltas settled = 3;
+    // Cleanup correction; later catch-ups may report a removed range below the starting cursor.
     CursorRange removed = 4;
     // Planned renewal on lease expiry or drain: resume after through_cursor with fresh auth.
     google.protobuf.Empty reconnect_required = 5;
   }
-  // Highest cursor covered, including filtered entries. Retain this to resume without gaps or duplicates.
+  // Highest cursor covered by entries or caught_up, including filtered entries. Retain this to
+  // resume without gaps or duplicates; correction frames retain the last covered cursor.
   uint64 through_cursor = 6;
 }
 

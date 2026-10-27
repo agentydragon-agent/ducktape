@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	FollowEntriesLimit = 128
-	FollowBytesLimit   = 1 << 20
+	FollowEntriesLimit     = 128
+	FollowSettlementsLimit = 128
+	FollowBytesLimit       = 1 << 20
 )
 
 // ErrOutOfRange means a resume cursor is beyond the Session's committed prefix.
@@ -26,6 +27,7 @@ var ErrOutOfRange = errors.New("cursor beyond committed history")
 // tail in the same snapshot, so equality with ThroughCursor means this page caught up.
 type FollowPage struct {
 	Entries       []*eventlogpb.EventEntry
+	Settlements   []*historypb.SettledDeltas
 	ThroughCursor uint64
 	LastCursor    uint64
 }
@@ -121,10 +123,10 @@ func followCandidates(kinds []historypb.EventKind, args *[]any) (string, error) 
 		ORDER BY candidate.cursor LIMIT %d`, strings.Join(parameters, ","), base, FollowEntriesLimit+1, FollowEntriesLimit+1), nil
 }
 
-// ReadFollowEntries reads only matching payloads, bounded before they cross the database connection.
-// Size accounting reserves room for the response envelope and each repeated entry's wire header;
-// an oversized entry is returned alone. No database transaction is held while the caller sends it.
-func (s *Store) ReadFollowEntries(ctx context.Context, sessionID uuid.UUID, after uint64, kinds []historypb.EventKind) (FollowPage, error) {
+// ReadFollowEntries reads a bounded page and its settlements from one snapshot. Size accounting
+// reserves room for the response envelope and each repeated entry's wire header; an oversized
+// entry is returned alone. No database transaction is held while the caller sends the page.
+func (s *Store) ReadFollowEntries(ctx context.Context, sessionID uuid.UUID, after uint64, kinds []historypb.EventKind, includeSettlements bool) (FollowPage, error) {
 	var page FollowPage
 	err := transaction(ctx, s.db, snapshot, func(tx *sql.Tx) error {
 		var err error
@@ -173,49 +175,78 @@ func (s *Store) ReadFollowEntries(ctx context.Context, sessionID uuid.UUID, afte
 				page.ThroughCursor = cursor
 			}
 		}
-		return rows.Err()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		if includeSettlements {
+			settlements, err := tx.QueryContext(ctx, `SELECT completion_cursor, payload FROM session_event_settlement
+				WHERE session_id = $1 AND completion_cursor > $2 AND completion_cursor <= $3
+				ORDER BY completion_cursor LIMIT $4`, sessionID, after, page.ThroughCursor, FollowSettlementsLimit+1)
+			if err != nil {
+				return err
+			}
+			var overflowCursor uint64
+			for settlements.Next() {
+				var completionCursor uint64
+				var payload []byte
+				if err := settlements.Scan(&completionCursor, &payload); err != nil {
+					settlements.Close()
+					return err
+				}
+				if len(page.Settlements) == FollowSettlementsLimit {
+					overflowCursor = completionCursor
+					break
+				}
+				settled := &historypb.SettledDeltas{}
+				if err := proto.Unmarshal(payload, settled); err != nil {
+					settlements.Close()
+					return err
+				}
+				page.Settlements = append(page.Settlements, settled)
+			}
+			if err := settlements.Err(); err != nil {
+				settlements.Close()
+				return err
+			}
+			if err := settlements.Close(); err != nil {
+				return err
+			}
+			if overflowCursor != 0 {
+				page.ThroughCursor = overflowCursor - 1
+				entries := page.Entries[:0]
+				for _, entry := range page.Entries {
+					if entry.GetCursor() <= page.ThroughCursor {
+						entries = append(entries, entry)
+					}
+				}
+				page.Entries = entries
+			}
+		}
+		return nil
 	})
 	return page, err
 }
 
-// ReadFollowSettlement returns the next settlement whose completion or range intersects the covered
-// window (coveredAfter, through]. Restart afterCompletion at zero on each refresh: settlements can
-// remove entries a previous page already sent. Replays are idempotent and require no growing cache.
-func (s *Store) ReadFollowSettlement(ctx context.Context, sessionID uuid.UUID, coveredAfter, through, afterCompletion uint64) (*historypb.SettledDeltas, error) {
-	var payload []byte
-	err := s.db.QueryRowContext(ctx, `SELECT payload FROM session_event_settlement settlement
-		WHERE session_id = $1 AND completion_cursor > $4 AND (
-			(completion_cursor > $2 AND completion_cursor <= $3) OR EXISTS (
-				SELECT 1 FROM session_event_settled_range ranges
-				WHERE ranges.session_id = settlement.session_id
-					AND ranges.completion_cursor = settlement.completion_cursor
-					AND ranges.first_cursor <= $3 AND ranges.last_cursor > $2))
-		ORDER BY completion_cursor LIMIT 1`, sessionID, coveredAfter, through, afterCompletion).Scan(&payload)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
+// ReadFollowRemoved returns every removal intersecting the covered window in one query. Cleanup can
+// remove a range behind the stream's cursor at any time, so each catch-up checks the full window.
+func (s *Store) ReadFollowRemoved(ctx context.Context, sessionID uuid.UUID, coveredAfter, through uint64) ([]*historypb.CursorRange, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT first_cursor, last_cursor FROM session_event_removed_range
+		WHERE session_id = $1 AND first_cursor <= $3 AND last_cursor > $2
+		ORDER BY first_cursor`, sessionID, coveredAfter, through)
 	if err != nil {
 		return nil, err
 	}
-	settled := &historypb.SettledDeltas{}
-	if err := proto.Unmarshal(payload, settled); err != nil {
-		return nil, err
+	defer rows.Close()
+	var removed []*historypb.CursorRange
+	for rows.Next() {
+		cursorRange := &historypb.CursorRange{}
+		if err := rows.Scan(&cursorRange.First, &cursorRange.Last); err != nil {
+			return nil, err
+		}
+		removed = append(removed, cursorRange)
 	}
-	return settled, nil
-}
-
-// ReadFollowRemoved returns the next removal intersecting the covered window. Restart afterFirst at
-// zero on each refresh, since cleanup can remove a range behind the stream's cursor at any time.
-func (s *Store) ReadFollowRemoved(ctx context.Context, sessionID uuid.UUID, coveredAfter, through, afterFirst uint64) (*historypb.CursorRange, error) {
-	removed := &historypb.CursorRange{}
-	err := s.db.QueryRowContext(ctx, `SELECT first_cursor, last_cursor FROM session_event_removed_range
-		WHERE session_id = $1 AND first_cursor > $4 AND first_cursor <= $3 AND last_cursor > $2
-		ORDER BY first_cursor LIMIT 1`, sessionID, coveredAfter, through, afterFirst).Scan(&removed.First, &removed.Last)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return removed, nil
+	return removed, rows.Err()
 }
