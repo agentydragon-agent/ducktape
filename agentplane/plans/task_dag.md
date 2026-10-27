@@ -709,6 +709,12 @@ experiment. The required common surface includes compaction, wait, stdin and int
 direction is part of this decision, not a gate for the current Codex extension; the existing Messages
 `append_file` experiment does not establish it. See [shared runtime scope](sampling_outside_sandboxes.md#shared-code-mode-runtime-across-providers).
 
+Operator constraint, 2026-10-27: preserve wrapped official/external harness support alongside any custom
+sampler, at least during transition. Keep the Session/control/history adapter boundary viable for a
+harness whose protocol and persistence we do not own, analogous to the MCP edge for external clients
+and hosted agents. The design names each backend's state owner and capabilities; adopting direct
+Postgres sampling must not implicitly retire the native-harness path. See [coexistence scope](sampling_outside_sandboxes.md#coexistence-with-wrapped-harnesses).
+
 ### `SANDBOX_FORM_TERMINOLOGY` — distinguish launch presets from runtime templates
 
 **Unscheduled; operator, 2026-10-17 PDT: the new Sandbox form's “Preset” and “Sandbox template”

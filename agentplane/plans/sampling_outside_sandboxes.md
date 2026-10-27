@@ -362,6 +362,26 @@ uses an ordinary `append_file` tool and does not establish code-mode model behav
 This is a future direction within the placement decision, independent of the gated native remote-tools
 investigation. It does not add a prerequisite to the current Codex implementation or authorize a cutover.
 
+### Coexistence with wrapped harnesses
+
+Operator constraint, 2026-10-27: preserve the ability to wrap harnesses we do not own while custom
+sampling loops develop, at least through a transition period. Official-client requirements were one
+reason for the original architecture; retain an official binary path where it is needed. This is
+a compatibility requirement, not a conclusion about any provider's current terms or account eligibility.
+
+Treat custom sampling and wrapped native harnesses as alternative backends behind Agentplane's
+Session admission, control and retained-event interfaces. A custom loop can own its conversation
+directly in Postgres, while a wrapped harness can retain native persistence and expose it through its
+adapter. Do not make every backend emulate the custom loop's internal storage or remove the harness
+adapter merely because the custom loop has fewer persistence layers. Define each mode's state owner,
+interrupt/recovery behavior and supported capabilities explicitly; preserve identities and history
+when selecting or changing a mode.
+
+Wrapping an external harness remains useful beyond migration, much as the MCP edge accommodates
+MCP clients and externally hosted agents. Keep that boundary viable without requiring external
+harnesses to adopt Agentplane's sampler, code-mode host or provider adapter. Any later retirement of
+the wrapped mode needs a separate decision; these experiments do not select one.
+
 ## Next
 
 The completed [combined custom sampler evidence](../debug/postgres_codex_spike.md#combined-compaction-and-controls)
