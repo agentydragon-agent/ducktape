@@ -1,6 +1,6 @@
 # Postgres Codex sampler spike
 
-In flight, 2026-10-27 07:50 PDT: `/root/postgres_harness_spike` implements the operator-dispatched
+Implemented for review, 2026-10-27 07:54 PDT: `/root/postgres_harness_spike` implements the operator-dispatched
 code-mode-only experiment in `agentplane/x/postgres_codex`, branch `x/postgres-codex-20261027`.
 This report describes a custom outer loop reusing upstream components; it is not a persistence fork
 or a production replacement. No staging changes or live inference were requested or performed.
@@ -14,17 +14,28 @@ of their runtime or patch implementation. The same SSE fixture also drives the f
 Tests cover encrypted reasoning continuation, stale-owner rejection, lost replies after a real append,
 a truncated provider stream, sampler SIGKILL while sampling, and executor SIGKILL mid-tool.
 
-Validation is in progress; a test's presence does not yet establish its result. Initial RBE execution
-confirmed database fencing and truncated-stream handling, then exposed exec-server's interleaved
-`process/output` and `process/exited` notifications. The adapter now consumes these push hints and
-collects retained output through `process/read`, whose `nextSeq` is an exclusive cursor.
+All seven integration cases passed in **51.9 seconds** on RBE, invocation
+[`8a1a2810-b81f-45ea-b971-ad6cec41e15a`](https://app.buildbuddy.io/invocation/8a1a2810-b81f-45ea-b971-ad6cec41e15a).
+The invocation also named all five runtime libraries so their mypy and Ruff aspects ran:
+
+```sh
+bbr test //agentplane/x/postgres_codex:test_sampler \
+  //agentplane/x/postgres_codex:store //agentplane/x/postgres_codex:executor \
+  //agentplane/x/postgres_codex:code_mode //agentplane/x/postgres_codex:sampler \
+  //agentplane/x/postgres_codex:main --test_output=errors
+```
+
+Normal pre-commit hooks passed on the implementation commit. The adapter consumes upstream's
+`process/output`, `process/exited` and `process/closed` push hints and collects retained output
+through `process/read`, whose `nextSeq` is an exclusive cursor. The real binary tests exposed these
+interleaved events; a request/response-only fake would have missed them.
 
 ## Cost accounting
 
-At the first complete draft, physical lines including comments and blanks were: `store.py` 143,
+At the passing implementation, physical lines including comments and blanks were: `store.py` 143,
 `executor.py` 81, `code_mode.py` 153, `sampler.py` 103 and `main.py` 83: **563 new runtime lines**.
-Test/support code was 515 lines. These are source counts, not a claim that a complete harness fits
-in that size. The final counts and successful test invocation will replace this draft measurement.
+Test/support code is 511 lines. These are source counts, not a claim that a complete harness fits
+in that size. BUILD and documentation lines are excluded.
 
 The direct Python runtime dependencies are existing `aiohttp`, `SQLAlchemy` and `asyncpg`; the
 test-only executable also uses the existing managed-engine helper. Tests add existing pytest,

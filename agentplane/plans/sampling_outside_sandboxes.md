@@ -255,6 +255,8 @@ Sessions, identities, history and native state under the staging data-preservati
 Operator, 2026-10-27: investigate whether our own "Codex" is small enough to justify tighter tracking
 of OpenAI APIs. **In flight, `/root/postgres_harness_spike`, 2026-10-27 07:50 PDT:** the operator
 authorized a code-mode-only Codex implementation, isolated under `agentplane/x/postgres_codex`.
+The [runnable experiment and measured findings](../debug/postgres_codex_spike.md) now have seven
+passing RBE cases, including the real upstream runtime/executor and crash/uncertainty checks.
 Compare a persistence-focused
 Codex fork with a custom loop that reuses useful upstream components. Count new code, reused code,
 dependencies and the ongoing provider-API surface separately; no unsupported line-count estimate.
