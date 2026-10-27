@@ -59,7 +59,9 @@ lost.
 - The runner and the `agentplane` command are not in the guest image. They arrive on the runner disk,
   a read-only erofs on a second `containerDisk` (`//agentplane/runner:disk_image`, [`runner/BUILD.bazel`](../runner/BUILD.bazel)),
   mounted at `/run/agentplane/runner`, and the harness `PATH` lists its `bin` after the system
-  profile. A runner or CLI release republishes only that small disk. The harnesses and tools are
+  profile. The guest system profile also installs the same `preCommitPackages` as the
+  `runner-ducktape` Pod image, so the repository hooks and build clients are available on either
+  runner type. A runner or CLI release republishes only that small disk. The harnesses and tools are
   still in the guest image.
 - The deployed `runner-vm` template declares a Sandbox-owned `BlockFilesystem` workspace with ext4
   directly on a block PVC. `RawDiskImage` remains supported for custom VM workspace claims backed
