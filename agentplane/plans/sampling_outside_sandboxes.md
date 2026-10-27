@@ -325,24 +325,33 @@ serving path uses per-caller read state and the tool pipeline, but full nested `
 to the remote model request is unverified. Enabling the local predicate does not prove a self-hostable
 backend. A shell proxy alone leaves filesystem tools, instruction loading and related state local.
 
-The operator-dispatched local/MCP comparison is complete and in review in
+The operator-dispatched native feature experiment is in review in
 [PR #12210](https://github.com/agentydragon/ducktape/pull/12210) (Codex report, 2026-10-27 PDT;
-[versioned captures and checks](../debug/claude_remote_tools_20261027.md)). With unmodified 2.1.296,
-local native Read adds nested `CLAUDE.md` to the next model request; a generic driver MCP Read does
-not, and does not satisfy native Edit's prior-read requirement. Native resume retains read/edit
-state, independent sessions do not, and explicit denial/path checks pass. Neither forwarding
-startup variant attempted a bridge handshake under the synthetic account/provider setup.
+[versioned captures and checks](../debug/claude_remote_tools_20261027.md)). Extracted 2.1.296 source with
+logging taps exercises native gates, registration, bridge transport, registry and Read/Edit pipeline.
+Temporary synthetic entitlement/account cache inputs make the default gates pass, then the native
+bridge announces get_device_info, Bash, Read, Edit and Write. Requests require the native forwarding
+envelope; edits wait for approval. An approved unread Edit succeeds, Read updates native server read
+state, replay returns cached content and attached-session mismatch is refused.
 
-Actual native serving eligibility, transport and instruction delivery in the remote caller's next
-model request remain open; these local/MCP comparators do not establish remote parity. Custom-sampler
-and provider compatibility work is separately delegated and is not part of PR #12210.
+The served Read payload contains neither fixture root nor nested instruction marker. That observation
+does not establish how the full cloud caller independently discovers or synchronizes instructions;
+its next model request remains unobserved. One unmodified local comparator separately captures native
+Read adding nested `CLAUDE.md` to the next model request. Real account eligibility, supported cloud
+attachment and production bridge acceptance also remain unobserved; the unmodified unauthenticated
+`--cloud` probe refuses until claude.ai sign-in.
+
+Custom-sampler/provider compatibility is separately in review in
+[PR #12211](https://github.com/agentydragon/ducktape/pull/12211). Its scripted provider checks the pinned
+CLIProxyAPI profile; live subscription/provider acceptance remains outside that evidence.
 
 Alternatives to compare:
 
 - **Codex-only central mode.** Use its upstream execution-environment API; Claude remains local.
   Claude investigation does not block that mode.
-- **Claude native remote tools.** Characterize the newer binary's gate, transport and built-in
-  semantics with a scripted peer before committing to integration.
+- **Claude native remote tools.** The scripted peer establishes native serving under simulated
+  entitlement/account inputs. Observe the full caller's instruction/state contract and supported
+  eligibility before committing to integration.
 - **Central Claude CLI plus custom tools.** Disable built-ins with `--tools ""`, supply remote tools
   through the tested driver MCP seam, and explicitly reproduce wanted behavior such as nested
   instructions and read-before-edit state. Existing MCP tests do not establish full parity.

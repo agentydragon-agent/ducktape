@@ -666,23 +666,24 @@ research plan. Changes no deployed mode.
 
 ### `CLAUDE_REMOTE_EXECUTION_SPIKE` — Claude remote tools and custom sampler compatibility
 
-**In review for local/MCP characterization; native serving remains open.** Operator dispatched the native
-investigation on 2026-10-27 PDT; Codex reported the completed comparison in
-[PR #12210](https://github.com/agentydragon/ducktape/pull/12210). Independent of both Codex spikes.
-The [captured evidence](../debug/claude_remote_tools_20261027.md) establishes local native versus generic MCP
-instruction propagation, native read/edit state across resume and independent sessions, and explicit denial/path
-checks. It records zero bridge attempts under the synthetic account/provider setup, not native serving parity.
+**Native source-path characterization in review.** Operator dispatched the investigation on 2026-10-27 PDT;
+Codex reports [PR #12210](https://github.com/agentydragon/ducktape/pull/12210), independent of both Codex spikes.
+The [captured evidence](../debug/claude_remote_tools_20261027.md) exercises 2.1.296's actual native registration,
+WebSocket transport, default tool provider, forwarding envelope, permission approval and Read/Edit behavior.
+Temporary synthetic entitlement/account cache inputs satisfy the native gates; this does not establish real
+account eligibility. An approved unread Edit succeeds, Read updates server read state, replay returns cached
+content, and mismatched attached sessions are refused. The served Read payload contains no fixture instruction
+markers; one unmodified local comparator captures root/nested instructions in its next model request.
 
-Remaining native work: establish eligible serving and a scripted peer's transport handshake, or a reproducible
-blocker. Capture root/nested `CLAUDE.md` in the remote caller's next model request, including resume, caller
-isolation and read-before-edit behavior; local file-operation success does not establish that contract. The
-[gate inventory](../debug/claude_execution_placement.md) distinguishes the compiled-off 2.1.252 entry gate from
-2.1.296's local forwarding switch, account flags and bridge requirements.
+Remaining native question: capture a full cloud caller's next model request, including independent instruction
+discovery/synchronization, resume and caller isolation, or record a reproducible blocker. Server-side read state
+and returned payload do not establish that contract. Supported real-account attachment and hosted bridge
+acceptance remain unobserved; the unmodified unauthenticated `--cloud` probe requires claude.ai sign-in.
 
-Custom-sampler/provider compatibility is separately delegated, outside PR #12210: compare CLIProxyAPI
-translation/cloaking or CLI/SDK-shaped requests, distinguishing model-wire identity from Claude controller
-protocol compatibility. Streaming, tool names, continuation, cache behavior and provider/subscription acceptance
-remain unverified there. The central CLI with built-ins disabled and driver MCP also still needs an explicit
+Custom-sampler/provider compatibility is separately in review in
+[PR #12211](https://github.com/agentydragon/ducktape/pull/12211): a scripted provider exercises the pinned
+CLIProxyAPI profile's streaming, tool-name translation, continuation and cache behavior. Live subscription/provider
+acceptance remains unobserved. The central CLI with built-ins disabled and driver MCP also still needs an explicit
 instruction/state contract. Exit: versioned captures or a reproducible blocker and a recommendation for the
 Claude branch. No live account feature changes or runtime cutover implied.
 

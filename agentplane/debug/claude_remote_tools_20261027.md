@@ -1,134 +1,150 @@
-# Claude native remote-tool characterization, 2026-10-27
+# Claude native remote tools, 2026-10-27
 
-## Scope and result
+## Result and evidence boundary
 
-This investigation separates ordinary local native tool behavior, driver-hosted
-MCP behavior, and native remote-tool serving. The executable is the unchanged npm
-Linux x86-64 Claude Code **2.1.296** archive, pinned independently in
-`MODULE.bazel` by its registry SHA-512 integrity. No production pin or deployment
-changes.
+Claude Code 2.1.296's native device bridge can serve its own Read/Edit implementation to a loopback
+peer when supplied **simulated entitlement and account state**. The maintained experiment now exercises
+that feature's registration, WebSocket protocol, native registry, request envelope, approval and tool
+pipeline. It does not establish availability for a real account or a complete self-hosted cloud caller.
 
-The reproducible fixture is
-[`agentplane/native/claude/x/remote_tools`](../native/claude/x/remote_tools/README.md).
-It uses a scripted loopback Messages endpoint and real native stream-json/MCP
-control messages. It does not impersonate an account, seed feature caches, inject
-embedded exports, or contact the real Anthropic bridge. The configured model and
-bridge origins are loopback. Nonessential traffic is disabled; unexpected proxy
-traffic goes to a loopback rejecting endpoint.
+The [fixture](../native/claude/x/remote_tools/README.md) pins the npm Linux x86-64 executable independently
+of production. Its SHA-256 is `24972e3bc859fab2b46ed4c1e51f7d6130f06d3bd550811a114640de3370d0de`.
+The previously inspected Nix executable is also version 2.1.296 but has a different executable hash;
+these captures and source modules come from the pinned npm artifact itself.
 
-Local native reads delivered nested instructions to the next model request;
-generic MCP reads did not. Native resume retained read-before-edit state, while
-an independent session did not. Explicit hook denial blocked both native and
-MCP reads. Both forwarding startup variants made zero requests to the loopback
-bridge destination.
+There are two distinct evidence paths:
 
-Native serving is not established merely by enabling its local forwarding
-switch: this fixture has a synthetic API token and custom provider endpoint,
-without an eligible account or organization. The absence of a bridge connection
-under these conditions cannot identify one particular gate as the cause.
+- **Unmodified CLI:** one local Read comparator captures the next scripted model request. Root
+  `CLAUDE.md` appears before access; reading `nested/editable.txt` adds nested `CLAUDE.md` in the next
+  request, with no sibling instruction. A separate supported `--cloud` startup probe records its
+  unauthenticated refusal. There is no live inference.
+- **Instrumented source entry:** the existing Bun standalone extractor preserves the npm artifact's
+  embedded modules. The experiment relocates virtual imports and runs their source under pinned
+  Bun 1.3.14. Three insertions expose existing debug/error logging and the existing startup catch;
+  they do not change outcomes. The native transport, provider, MCP handler, permission checks,
+  serving kit and tool implementations are retained. `source-provenance.json` records the binary
+  hash and each logging insertion. This is source-path evidence, not an unchanged-binary run.
 
-## Captured ordinary CLI behavior
+All identities and tokens in the source probe are synthetic. HOME/config and file contents are
+fixtures. External HTTP(S) proxies point at a rejecting loopback port. No real account, provider,
+bridge, deployed service or feature eligibility is changed.
 
-[RBE invocation 71a785c2](https://app.buildbuddy.io/invocation/71a785c2-51e4-428e-ba91-677e6ac92087)
-ran all six pytest cases successfully (17.5 seconds including process startup and
-teardown). The fixture uses the normal CLI entry point and real native tool
-implementation. Its deterministic model selects calls; no model inference
-quality is being tested.
+## Actual enablement path
 
-| Observation                                              | On-wire or file evidence                                                                                                                                                |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Root instruction before file access                      | `native-forward-{False,True}-before-read.json`: root marker once; nested and sibling markers absent.                                                                    |
-| Native Read of `nested/editable.txt`                     | Next request's `native_read` tool result includes file contents and a `<system-reminder>` containing `nested/CLAUDE.md`; nested marker once; root once; sibling absent. |
-| Generic driver MCP read of the same file                 | `mcp-after-read.json`: successful file contents, root once, nested and sibling markers absent.                                                                          |
-| Generic MCP Read then native Edit                        | `mcp-read-native-edit.json`: `File has not been read yet. Read it first before writing to it.`; file unchanged.                                                         |
-| MCP traversal and symlink escape                         | `mcp-outside-denial.json`: both return the fixture's explicit `outside fixture workspace` error; outside contents absent and unchanged.                                 |
-| Native Edit without a prior Read                         | `state-unread-edit.json`: error and unchanged `before` file.                                                                                                            |
-| Native Read followed by Edit                             | `state-read-edit.json`: successful edit and `after` file.                                                                                                               |
-| Native `--resume` then Edit without a new Read           | `state-resume-edit.json` and `state-outcomes.json`: success; file becomes `resume`.                                                                                     |
-| Independent session, same config and workspace           | `state-independent-edit.json`: error; file remains `resume`.                                                                                                            |
-| Explicit PreToolUse denial                               | `denial-Read.json` and `denial-mcp__fixture__read_file.json`: error containing the denial reason; no nested marker; MCP function never called.                          |
-| Local forwarding switch off/on, bridge channel requested | `native-forward-{False,True}-bridge.json` are both `[]`; native local Read still works.                                                                                 |
+The ordinary stream-json command used by the earlier comparison did not exercise registration.
+Setting `CLAUDE_CODE_REMOTE_TOOLS_FORWARD=1` is insufficient to turn that command into a native
+remote-tools server. The cloud-attach implementation in `chunk-ha9v64hy.js` imports
+`startDeviceRegistration` from `chunk-qa76rgxj.js`, which re-exports `V0t` from
+`chunk-6b4khzmf.js`. It calls registration only when its bound device ID exists, supplying the cloud
+session ID, organization UUID and OAuth-token getter. `VIr`/`chunk-7pgqkwz7.js` is another bound-session
+attach path. Public `--help` exposes `--cloud [description|session_id|url]`; this is separate from
+ordinary local print/stream-json and from the Remote Control/RemoteIO experiment.
 
-Enabling `--setting-sources=project` restored project instruction loading in
-this SDK fixture. The shared harness default `--setting-sources=` produced no root
-marker in the first model request. That initial failure is recorded in
-[RBE invocation 70039d46](https://app.buildbuddy.io/invocation/70039d46-b3df-4e81-ab60-8191a9629cae).
-The experimental launcher enables only the fixture's project source; it does not
-change shared launch defaults. Hooks remain enabled so the same fixture can
-exercise actual native PreToolUse denial.
+These are version-specific predicates, not a promise of a supported public server API:
 
-The distinguishing native payload is the _next model request_, not merely a
-user-visible read log: the `tool_result` for `native_read` includes
-`Contents of .../nested/CLAUDE.md` and the nested marker inside a system reminder.
-The root marker lives in an earlier user system reminder. Both are present once
-in that next request. The MCP server returns only file contents, and the CLI
-does not augment it with the nested instruction reminder.
+| Decision                    | Native callsite and input                                             | Observation / way to satisfy it                                                                                                                                                                                                                                                |
+| --------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Local forwarding            | `R2`/`fW` in `chunk-qwvy7ma3.js`; `hh` → `zre` in `chunk-4r70ar86.js` | Parsed `CLAUDE_CODE_REMOTE_TOOLS_FORWARD=true` plus wood flag. It controls forwarding, not registration by itself.                                                                                                                                                             |
+| Registration eligibility    | `V0t` → `CLr` in `chunk-ztdmpyqt.js` → `dR` in `chunk-md7g8y4m.js`    | `tengu_violin_wood`; cloud-client registration additionally requires `tengu_violin_willow`.                                                                                                                                                                                    |
+| Feature input               | `Fe`/`checkGateCachedOrBlocking` in `chunk-0ycjphb5.js`               | When feature fetching is enabled, a cached boolean `true` is accepted before fetching. Public `getEnvironmentOverrides` and `readConfigOverrides` are stubs; an internal override env var does not enable this build.                                                          |
+| Traffic/provider/org policy | `V0t` → `age`/`fbt` in `chunk-7zrhxtr7.js`                            | Refuses essential-traffic mode, non-`firstParty` provider classification, or denied `allow_remote_sessions`. The former fixture explicitly set `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, disabling flags and egress. Remove that setting to evaluate the feature normally. |
+| Bridge trust                | `V0t` → `pmo` in `chunk-5s4qvyjz.js`                                  | When `tengu_sessions_elevated_auth_enforcement` is active, enforced/refused-cache/unknown `require_trusted_devices` policy can refuse a bridge that cannot verify proof. The synthetic feature cache does not enable that flag.                                                |
+| Account and organization    | `V0t` → `lae` in `chunk-nc91yayz.js`; explicit `orgUuid`              | Stored `oauthAccount.accountUuid` or an accepted env/fd-auth account UUID must resolve; an org UUID must be supplied. Missing/mismatched account and missing org return false. A real cloud attachment also needs its real OAuth/session/device setup.                         |
+| Serving scope               | `p4`/`qO` in `chunk-qwvy7ma3.js`                                      | Serve switch defaults on; `CLAUDE_CODE_REMOTE_TOOLS_SERVE=0` disables it. Home-directory launch and unreadable mount/profile discovery can withdraw native tools. This Linux fixture launches outside its isolated HOME.                                                       |
+| Readiness                   | `createServingReadiness` in `chunk-ywx1r1yk.js`                       | Normal startup waits for hooks/plugins/settings/policies and bounded first flag fetch. The source entry calls native config initialization `gct()` then supplies an already-ready fixture. It does not test full readiness or hooks.                                           |
+| Transport                   | `AL` and `V0t`                                                        | `CLAUDE_CODE_REMOTE_TOOLS_SESSION_CHANNEL=false` selects bridge; the source entry selects `transport:"bridge"` explicitly. `CLAUDE_REMOTE_TOOLS_BRIDGE_URL` supplies an origin, not eligibility.                                                                               |
 
-This means a generic driver-hosted MCP file service needs an explicit instruction
-contract and read/edit-state policy if it is to preserve native behavior. It
-cannot inherit native nested instruction loading or native prior-read state
-merely by reading the same path. These observations do not
-answer whether the native _remote serving kit_ preserves that behavior.
+The observed default source trace is `enabled=false`, `egress="egress"`, account `missing`, and both
+feature values `false` with source `disabled`. This identifies actual predicates rather than inferring
+a blocker from zero bridge requests. The source probe then clears the traffic-disable variable and
+uses native config saving to put boolean wood/willow flags and a synthetic `oauthAccount` into its
+temporary `.claude.json`. The second trace is `enabled=true`, `egress=null`, account `resolved` with
+source `stored`, and both flags `true` with source `disk`. Registration then uses the **default**
+eligibility, account, egress and bridge-trust functions; none is replaced with an always-allow callback.
 
-## Version-specific startup gates from embedded source
+That demonstrates how the cache input reaches these gates, not how to obtain real entitlement.
+No real account is available in this experiment. Supported availability still needs an eligible
+cloud/OAuth account, bound session/device and the policies above. Synthetic cache values are a
+controlled simulation and must not be treated as a production enablement procedure.
 
-The broader [execution-placement investigation](claude_execution_placement.md)
-records the source-inspection context. Static inspection of the installed
-2.1.296 executable identified the following
-sequence. This describes code paths, not evidence that the account can use them.
-The installed binary SHA-256 was
-`8ae9374664a714e8c56d18c6ed22aa024325e7d4b753ff0a69727a2571425537`.
+The unchanged `--cloud session_synthetic_remote_tools_probe` command, supplied a prompt on stdin,
+exits 1 without an account: `Cloud sessions need a claude.ai sign-in. Run claude auth login`.
+That supported-entry refusal is separate from the source probe's simulated stored account and token getter.
 
-1. `CLAUDE_CODE_REMOTE_TOOLS_FORWARD` enables the local path. The native policy
-   also asks for the `tengu_violin_wood` feature; cloud-client registration adds
-   `tengu_violin_willow`.
-2. Serving readiness must settle. The device bridge then checks feature
-   eligibility and egress/provider policy. Its diagnostic combines nonessential
-   egress, non-first-party provider, and remote-session policy denial.
-3. Bridge transport can additionally refuse when device proof cannot be checked
-   and trusted devices are required or unknown. Account resolution and an
-   organization UUID are required before tool-group registration.
-4. `CLAUDE_CODE_REMOTE_TOOLS_SESSION_CHANNEL=false` selects bridge transport.
-   `CLAUDE_REMOTE_TOOLS_BRIDGE_URL` can supply the bridge destination; this does
-   not bypass eligibility, account, provider, or trust checks.
+## Bridge and call protocol
 
-The public feature client has stub `getEnvironmentOverrides()` and
-`readConfigOverrides()` methods. A declared internal feature-override environment
-variable therefore does not establish a supported override route. Disk feature
-cache values are another input in the implementation; fabricating those values
-would be a source experiment, not entitlement evidence.
+The native dial path is
+`/devices/<org_uuid>_<account_uuid>/<hostname>-cc-<session_suffix>/bridge`.
+The source fixture supplies a loopback origin, synthetic hostname and token getter, and captures the
+actual native WebSocket connection. The first frame has `type:"connect"`, `oauth_token`, native tool
+schemas, `rtb_protocol_version:2`, `hb_capable:true`, `cancel_capable:true`, `device_id` and `session_id`.
+The peer replies with `type:"connected"`, its protocol version and heartbeat support. Native transport
+then injects its own MCP initialize message; that initialize response is consumed locally. Heartbeat
+frames use `hb`/`hb_ack`. Subsequent traffic is JSON-RPC over that socket.
 
-The serving implementation advertises native tools through a serving kit, then
-uses the native tool execution pipeline. Its per-caller context carries
-`readFileState` and `toolState`, but starts with `messages: []` and a no-op
-`enqueuePendingMemoryUpdate`. Its attachment collector skips non-hook
-attachments other than read-truncation notices, including `nested_memory`.
-Those facts raise an instruction-propagation question; they do not prove what a
-hosted caller receives, because another synchronization path could provide it.
-That question needs a real served tool call and inspection of the caller's next
-model request.
+The actual default roster is **get_device_info, Bash, Read, Edit, Write**. The fixture implements the
+bridge peer only; it has no file-operation handler and supplies no custom tool provider.
 
-## Optional embedded-module probe
+A bare `tools/call` Read is refused with `invalid_request`. Native `createDeviceMcpServer` strips the
+bridge-asserted `session_id`/`trigger_id`, checks the attached session, and dispatches to the registry.
+The native serving handler requires an additional `__remote_tool_call` envelope containing `v:1`,
+`call_id`, `caller` (including kind and permission mode), and positive `expires_in_ms`.
+`structuredContent["anthropic/remoteToolExecution"]` carries the result outcome. An approval request
+returns `needs_approval` and `ask_id`; a second leg repeats the call with `approval:{ask_id,decision}`.
+The fixture answers those explicit requests with synthetic approval decisions rather than replacing
+native permission evaluation.
 
-A bounded source-entry experiment tried `BUN_BE_BUN=1` with a script importing
-`/$bunfs/root/chunk-bxhcgs7p.js` from the unchanged pinned binary. It did not
-execute the script: the binary exited 1 with
-`Not logged in · Please run /login`. No exports or tool execution were observed.
-The optional probe is absent from the maintained suite; ordinary CLI captures
-are the supported experiment entry point.
+## Native tool state versus caller instructions
 
-Evidence: [RBE invocation d1b76645](https://app.buildbuddy.io/invocation/d1b76645-9268-40b2-ba56-1a9b3d12a38d),
-`test.outputs/embedded-runtime.json`:
+The source captures establish real native dispatch. An unread Edit first asks for approval and then
+succeeds after the fixture's allow answer. The subsequent Read returns numbered file contents.
+This differs from the ordinary local CLI's prior-read validation; do not assume that native remote
+serving reproduces every local controller precondition. The suite also checks a later Edit, replayed
+call identity and a mismatched attached-session refusal, and captures native server-side read state.
 
-```json
-{ "returncode": 1, "stdout": "Not logged in · Please run /login\n", "stderr": "" }
-```
+The approval requests leave the fixture file unchanged until answered. After the unread Edit succeeds,
+server read state contains `unread\n` with `contentNotInModelContext:true`. Read returns numbered
+`unread` contents and changes that state to `offset:1`, without `contentNotInModelContext`. The later
+approved Edit records `after\n`. Repeating the original Read call ID returns the original `unread`
+contents with `replayed:true`; the file and server read state remain `after\n`.
 
-## What remains unverified
+The served Read response contains neither fixture root nor nested `CLAUDE.md` marker. Its native
+context constructor `ro` in `chunk-n9tjv0a2.js` carries the serving session's `readFileState`/`toolState`,
+but uses `messages:[]` and a no-op `enqueuePendingMemoryUpdate`. Its result collector admits
+read-truncation and hook attachments, and skips other attachments. These facts describe server-side
+execution and the returned payload.
 
-An eligible native serving handshake, the actual served tool roster and schemas,
-remote caller read/edit state and resume behavior, remote denial/path policy,
-and root/nested instruction delivery in the remote caller's next model request
-remain unverified. Ordinary local native behavior and generic MCP behavior are
-comparators, not substitutes for these observations. No production architecture
-or permission-policy change follows from this spike alone.
+**The full cloud caller's next model request remains unobserved.** We have not run its repository
+synchronization, caller instruction discovery, cloud conversation, resume or compaction. Absence of
+instructions in the served response does not prove that those other caller paths omit them. Conversely,
+successful Read/Edit and server read state do not establish caller instruction parity. The maintained
+local comparator shows the local next-model contract separately.
+
+## Reproduction and remaining scope
+
+Run the two Bazel targets in the fixture README. Diagnostics and complete wire captures are Bazel
+undeclared outputs, including `native-source-stdout.jsonl`, `native-source-stderr.log`,
+`source-provenance.json`, `unmodified-cloud-startup.json` and local before/after model requests.
+
+The [acceptance run](https://app.buildbuddy.io/invocation/d31d9bb0-43c3-44cd-b80b-29d015355f18)
+passed both test targets (three pytest cases): native serving and unauthenticated cloud startup ran
+in 21.8 seconds; the unchanged local comparator reused its 17.9-second passing result. The same
+invocation named the changed `:probe` library, so its build and lint aspects also passed. The native
+serving case asserts gates, registration, approval-before-write, Read/Edit results, server state,
+cached replay, attached-session refusal and the limited instruction-payload observation above.
+
+Earlier iterations are retained in BuildBuddy: [first native handshake](https://app.buildbuddy.io/invocation/40ae2510-72f7-44b6-89ee-5677e986671e),
+[native dispatch after config initialization](https://app.buildbuddy.io/invocation/9eaf1db3-7592-4850-abdf-752414c9282a),
+and [synthetic cache/account gates](https://app.buildbuddy.io/invocation/2b790cb4-9f52-4c62-a914-7e2d68ca78ee).
+Those diagnostic invocations include incomplete assertions or a failing cloud-startup fixture; they
+are evidence for their captures, not the final acceptance run. Initial module-entry calls lacked
+`gct()` and returned native `Config accessed before allowed`; initializing the native config removed
+that fixture error without changing the tool implementation.
+
+The previous generic MCP, local resume and hook comparison was reduced to one local instruction
+comparator because it did not answer native remote availability. Its historical six-case run is
+[71a785c2](https://app.buildbuddy.io/invocation/71a785c2-51e4-428e-ba91-677e6ac92087).
+
+An actual eligible-account launch, production bridge acceptance and full caller instruction/resume
+contract remain outside the evidence. This spike does not select a production transport or authorize
+a runtime cutover. It makes native protocol/semantics reviewable while keeping those gaps explicit.
