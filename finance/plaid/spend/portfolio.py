@@ -88,7 +88,12 @@ async def _read_plaid(
     except asyncpg.PostgresError, OSError, TimeoutError:
         return unavailable_source("plaid", "The Plaid mirror could not be read."), 0, 0, 0
 
-    return value_plaid_rows(policy, account_rows=account_rows, holding_rows=holding_rows, now=now)
+    return value_plaid_rows(
+        policy,
+        account_rows=[dict(row) for row in account_rows],
+        holding_rows=[dict(row) for row in holding_rows],
+        now=now,
+    )
 
 
 def _coinbase_jwt(api_key: SecretStr, api_secret: SecretStr, *, now: datetime, method: str, path: str) -> str:
