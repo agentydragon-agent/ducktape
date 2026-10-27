@@ -12,7 +12,16 @@ import httpx
 import jwt
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 
-from finance.plaid.spend.plaid_valuation import decimal_amount, unavailable_source, usd_minor_units, value_plaid_rows
+from finance.plaid.spend.plaid_valuation import (
+    AccountObservation,
+    HoldingObservation,
+    PlaidValuation,
+    PlaidValuationError,
+    decimal_amount,
+    unavailable_source,
+    usd_minor_units,
+    value_plaid_rows,
+)
 from finance.plaid.spend.portfolio_models import PortfolioPolicy, PortfolioView, SourceValuation
 from finance.plaid.spend.portfolio_queries import compile_asyncpg, select_account_balances, select_holding_batches
 
@@ -61,16 +70,14 @@ class _CoinbaseSpotPrice(BaseModel):
     data: _CoinbaseSpotPriceData
 
 
-async def _read_plaid(
-    pool: asyncpg.Pool, policy: PortfolioPolicy, *, now: datetime
-) -> tuple[SourceValuation, int, int, int]:
+async def _read_plaid(pool: asyncpg.Pool, policy: PortfolioPolicy, *, now: datetime) -> PlaidValuation:
     plaid = policy.sources.plaid
     selected_ids = [*plaid.asset_account_ids, *plaid.liability_account_ids]
     required_holding_accounts = {exclusion.account_id for exclusion in policy.excluded_securities} | {
         correction.account_id for correction in plaid.holding_value_corrections
     }
     if not selected_ids:
-        return unavailable_source("plaid", "No Plaid accounts are selected."), 0, 0, 0
+        raise PlaidValuationError("No Plaid accounts are selected.")
 
     try:
         async with pool.acquire() as connection:
@@ -81,15 +88,15 @@ async def _read_plaid(
                 account_ids = sorted(required_holding_accounts)
                 holding_query, holding_args = compile_asyncpg(select_holding_batches(account_ids))
                 holding_rows = await connection.fetch(holding_query, *holding_args)
-    except asyncpg.PostgresError, OSError, TimeoutError:
-        return unavailable_source("plaid", "The Plaid mirror could not be read."), 0, 0, 0
+    except (asyncpg.PostgresError, OSError, TimeoutError) as exc:
+        raise PlaidValuationError("The Plaid mirror could not be read.") from exc
 
-    return value_plaid_rows(
-        policy,
-        account_rows=[dict(row) for row in account_rows],
-        holding_rows=[dict(row) for row in holding_rows],
-        now=now,
-    )
+    try:
+        accounts = [AccountObservation.model_validate(dict(row)) for row in account_rows]
+        holdings = [HoldingObservation.model_validate(dict(row)) for row in holding_rows]
+    except ValidationError as exc:
+        raise PlaidValuationError("The Plaid mirror returned malformed valuation observations.") from exc
+    return value_plaid_rows(policy, account_rows=accounts, holding_rows=holdings, now=now)
 
 
 def _coinbase_jwt(api_key: SecretStr, api_secret: SecretStr, *, now: datetime, method: str, path: str) -> str:
@@ -206,14 +213,16 @@ async def read_portfolio(
     sources_ready = True
     selected = bool(policy.sources.plaid.asset_account_ids or policy.sources.plaid.liability_account_ids)
     if selected:
-        plaid_source, plaid_assets, plaid_liabilities, plaid_excluded = await _read_plaid(pool, policy, now=now)
-        sources.append(plaid_source)
-        if plaid_source.status == "unavailable":
+        try:
+            valuation = await _read_plaid(pool, policy, now=now)
+        except PlaidValuationError as exc:
+            sources.append(unavailable_source("plaid", str(exc)))
             sources_ready = False
         else:
-            assets_minor_units += plaid_assets
-            liabilities_minor_units += plaid_liabilities
-            excluded_minor_units += plaid_excluded
+            sources.append(valuation.source())
+            assets_minor_units += valuation.assets_minor_units
+            liabilities_minor_units += valuation.liabilities_minor_units
+            excluded_minor_units += valuation.excluded_minor_units
 
     if policy.sources.coinbase.enabled:
         coinbase_source, coinbase_assets = await _read_coinbase(now=now, coinbase_client=coinbase_client)

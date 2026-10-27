@@ -16,7 +16,12 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from pydantic import SecretStr, ValidationError
 
 from finance.plaid.spend import portfolio
-from finance.plaid.spend.plaid_valuation import corrected_holding_value, value_plaid_rows
+from finance.plaid.spend.plaid_valuation import (
+    AccountObservation,
+    PlaidValuationError,
+    corrected_holding_value,
+    value_plaid_rows,
+)
 from finance.plaid.spend.portfolio import CoinbaseClient, read_portfolio
 from finance.plaid.spend.portfolio_models import PortfolioPolicy
 
@@ -619,9 +624,13 @@ def test_plaid_row_valuation_accepts_transport_numeric_strings_and_extra_metadat
         _balance("card-account", -5, now, account_type="credit"),
     ]
     balances[0].update(current="10.005", label="ignored metadata")
-    source, assets, liabilities, excluded = value_plaid_rows(_policy(), account_rows=balances, holding_rows=[], now=now)
-    assert source.status == "ready"
-    assert (assets, liabilities, excluded) == (3001, -500, 0)
+    result = value_plaid_rows(
+        _policy(), account_rows=[AccountObservation.model_validate(row) for row in balances], holding_rows=[], now=now
+    )
+    assert result.assets_minor_units == 3001
+    assert result.liabilities_minor_units == -500
+    assert result.excluded_minor_units == 0
+    assert result.as_of == now
 
 
 def test_holding_value_correction_applies_only_to_exact_policy_positions() -> None:
@@ -642,6 +651,19 @@ def test_holding_value_correction_applies_only_to_exact_policy_positions() -> No
 def test_plaid_row_valuation_requires_aware_valuation_time() -> None:
     with pytest.raises(ValueError, match="timezone-aware"):
         value_plaid_rows(_policy(), account_rows=[], holding_rows=[], now=datetime(2026, 1, 2))
+
+
+def test_plaid_valuation_failure_does_not_return_zero_totals() -> None:
+    with pytest.raises(PlaidValuationError, match="missing or inactive"):
+        value_plaid_rows(_policy(), account_rows=[], holding_rows=[], now=datetime(2026, 1, 2, tzinfo=UTC))
+
+
+@pytest.mark.parametrize("amount", ["invalid", "NaN", "Infinity", True])
+def test_account_observation_rejects_malformed_amounts(amount: object) -> None:
+    row = _balance("asset-checking", 10, datetime(2026, 1, 2, tzinfo=UTC))
+    row["current"] = amount
+    with pytest.raises(ValidationError):
+        AccountObservation.model_validate(row)
 
 
 if __name__ == "__main__":
