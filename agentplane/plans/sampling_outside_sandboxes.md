@@ -253,30 +253,35 @@ Sessions, identities, history and native state under the staging data-preservati
 ### Bounded spike: measure the headless subset we need
 
 Operator, 2026-10-27: investigate whether our own "Codex" is small enough to justify tighter tracking
-of OpenAI APIs. **In flight, `/root/postgres_harness_spike`, 2026-10-27 07:50 PDT:** the operator
-authorized a code-mode-only Codex implementation, isolated under `agentplane/x/postgres_codex`.
-The [runnable experiment and measured findings](../debug/postgres_codex_spike.md) now have seven
-passing RBE cases, including the real upstream runtime/executor and crash/uncertainty checks.
-Compare a persistence-focused
-Codex fork with a custom loop that reuses useful upstream components. Count new code, reused code,
-dependencies and the ongoing provider-API surface separately; no unsupported line-count estimate.
+of OpenAI APIs. **Prototype complete, pending merge in
+[PR #12207](https://github.com/agentydragon/ducktape/pull/12207), `/root/postgres_harness_spike`,
+2026-10-27.** The operator-authorized code-mode-only implementation is isolated under
+`agentplane/x/postgres_codex`. The [runnable experiment and measured findings](../debug/postgres_codex_spike.md)
+record 563 physical Python runtime lines, a separate upstream source/dependency inventory, and seven
+passing RBE cases. It reuses real pinned upstream code-mode host, exec-server and apply-patch binaries.
+A persistence-focused Codex fork was not implemented or measured.
 
-The first end-to-end slice is a scripted model turn, remote shell and patch, and continuation from
-Postgres after sampler restart, without a native rollout or second Runner conversation journal.
-Use the same tool semantics and code-mode model surface as the upstream comparison. Capture the
-actual model request/response in the experiment database. A frontend trace is not an acceptance gate:
-the operator clarified that existing Langfuse links already provide partial visibility. Measure the extra
-work for yielding/stdin, interrupts, compaction, instruction loading and resume rather than hiding it
-behind a successful text/tool loop. Distinguish features exercised, reused but unverified, and omitted;
-interactive CLI rendering and unrelated CLI commands need no equivalent. Specify the minimal intended
-support for subagents, skills/MCP, approvals and hooks before claiming the subset is sufficient.
+The scripted model turn exercises remote shell and patch, then continues in a fresh sampler process
+from Postgres, without a native rollout or second Runner conversation journal. The database retains
+actual provider requests/responses, including opaque encrypted reasoning, and correlated tool intents
+and results. An independent full upstream Codex consumer also accepts the scripted wire. This does
+not establish live provider or subscription compatibility. The recommendation favors central upstream
+Codex for broad compatibility today; the custom loop is a candidate if its bounded completed-cell
+checkpoints and tool contract suffice.
 
-Crash checks must distinguish committed tool intent, dispatch, effect and returned result. Postgres
-cannot atomically commit a shell side effect: loss after dispatch remains uncertain and must not
-blindly replay a mutating command. Persist turn ownership with fencing across sampler replicas; show
-that a stale owner cannot advance a resumed turn. Kill the executor or its state backend mid-call:
-conversation state remains readable and the sampler reports a bounded failure with honest effect
-uncertainty ([incident #12203](https://github.com/agentydragon/ducktape/issues/12203)).
+Crash checks distinguish committed intent, dispatch, effect and returned result. Database-clock leases
+and ownership generations fence stale sampler writes. Postgres cannot atomically commit a shell side
+effect: a real append followed by a lost reply remains uncertain and is not automatically replayed.
+Sampler and executor SIGKILL cases preserve readable conversation state and bound failure reporting
+([incident #12203](https://github.com/agentydragon/ducktape/issues/12203)). A dispatch can race after
+committed intent; database fencing does not guarantee exactly-once remote effects. There is no
+reconciliation interface yet.
+
+The experiment SPEC explicitly omits yielding and yielded-cell continuation, stdin, interrupts,
+compaction, instruction discovery, persistent JavaScript storage, subagents, skills/MCP, approvals,
+hooks, memory, History export and frontend tracing. A frontend trace was not an acceptance gate:
+the operator clarified that existing Langfuse links already provide partial visibility. These omissions
+remain work for a production contract; this spike establishes no production replacement or deployment.
 
 ### Model exchange visibility
 
