@@ -1,0 +1,32 @@
+load("//devinfra/python:defs.bzl", "py_test")
+
+package(default_testonly = True)
+
+py_test(
+    name = "test_characterization",
+    srcs = ["test_characterization.py"],
+    data = ["@claude_remote_tools_cli_linux_x64//:claude"],  # keep: independent native experiment pin
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",  # keep: native CLI platform
+        "@platforms//os:linux",  # keep: native CLI platform
+    ],
+    deps = [
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "//agentplane/native/claude:conftest",
+        "//agentplane/native/claude:scenarios",
+        "//agentplane/native/claude:wire",
+        "//agentplane/native/claude/testing:anthropic_sse",
+        "//agentplane/native/claude/testing:async_run",
+        "//agentplane/native/claude/testing:mcp",
+        "//agentplane/native/claude/testing:messages",
+        "//agentplane/native/claude/testing:model",
+        "//agentplane/native/claude/testing:requests",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//aiohttp",
+        "@pypi//fastmcp_slim",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
