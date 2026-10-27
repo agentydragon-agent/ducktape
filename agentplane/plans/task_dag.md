@@ -607,7 +607,7 @@ flowchart LR
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
     CENTRAL_CODEX_SPIKE[Unscheduled: Codex outside the Sandbox drives its exec-server]
     CENTRAL_CODEX_SPIKE --> HARNESS_PLACEMENT_DESIGN[Decision, unscheduled: sampler placement and state authority]
-    POSTGRES_HARNESS_SPIKE[Unscheduled: measure a Postgres-backed headless Codex subset]
+    POSTGRES_HARNESS_SPIKE[In flight: measure a Postgres-backed code-mode Codex subset]
     POSTGRES_HARNESS_SPIKE --> HARNESS_PLACEMENT_DESIGN
     CLAUDE_REMOTE_EXECUTION_SPIKE[Unscheduled: Claude remote tools and custom sampler compatibility]
     CLAUDE_REMOTE_EXECUTION_SPIKE -. optional Claude branch evidence .-> HARNESS_PLACEMENT_DESIGN
@@ -650,15 +650,17 @@ research plan. Changes no deployed mode.
 
 ### `POSTGRES_HARNESS_SPIKE` — measure a Postgres-backed headless Codex subset
 
-**Unscheduled spike; operator, 2026-10-27 PDT.** Independent of
+**In flight; `/root/postgres_harness_spike`, 2026-10-27 07:50 PDT; operator-dispatched code-mode-only
+Codex experiment under `agentplane/x/postgres_codex`, branch `x/postgres-codex-20261027`.** Independent of
 `CENTRAL_CODEX_SPIKE`. Compare a Codex persistence fork with a custom sampler using only the headless
 features Agentplane needs ([scope](sampling_outside_sandboxes.md#bounded-spike-measure-the-headless-subset-we-need)).
 Run a scripted model/tool/continuation slice with Postgres as the conversation authority and a remote executor,
 without a native rollout or second Runner conversation journal. Keep code-mode and shell/patch contracts
 comparable to upstream. Measure new/reused code, dependencies, provider API maintenance and remaining gaps
 in interrupts, compaction, instructions, recovery and other selected features. Include replica ownership fencing,
-executor-loss uncertainty and no blind replay of effects. Capture actual model request/response parts with
-turn/tool correlation and a frontend-readable trace; record the visibility gained over app-server events.
+executor-loss uncertainty and no blind replay of effects. Retain provider requests/responses and tool
+correlation in the isolated database. Frontend tracing is not a gate (operator clarification,
+2026-10-27; existing Langfuse links provide partial visibility).
 Exit: runnable prototype, measured size and dependency inventory, failure evidence, explicit omissions and a
 fork-versus-custom recommendation. No CLI rendering, production replacement or deployment in this spike.
 

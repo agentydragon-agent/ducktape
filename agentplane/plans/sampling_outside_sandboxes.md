@@ -253,14 +253,17 @@ Sessions, identities, history and native state under the staging data-preservati
 ### Bounded spike: measure the headless subset we need
 
 Operator, 2026-10-27: investigate whether our own "Codex" is small enough to justify tighter tracking
-of OpenAI APIs. **Unscheduled; no implementation yet.** Compare a persistence-focused
+of OpenAI APIs. **In flight, `/root/postgres_harness_spike`, 2026-10-27 07:50 PDT:** the operator
+authorized a code-mode-only Codex implementation, isolated under `agentplane/x/postgres_codex`.
+Compare a persistence-focused
 Codex fork with a custom loop that reuses useful upstream components. Count new code, reused code,
 dependencies and the ongoing provider-API surface separately; no unsupported line-count estimate.
 
 The first end-to-end slice is a scripted model turn, remote shell and patch, and continuation from
 Postgres after sampler restart, without a native rollout or second Runner conversation journal.
 Use the same tool semantics and code-mode model surface as the upstream comparison. Capture the
-actual model request/response and demonstrate a minimal frontend-readable trace. Measure the extra
+actual model request/response in the experiment database. A frontend trace is not an acceptance gate:
+the operator clarified that existing Langfuse links already provide partial visibility. Measure the extra
 work for yielding/stdin, interrupts, compaction, instruction loading and resume rather than hiding it
 behind a successful text/tool loop. Distinguish features exercised, reused but unverified, and omitted;
 interactive CLI rendering and unrelated CLI commands need no equivalent. Specify the minimal intended
