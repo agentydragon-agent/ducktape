@@ -739,7 +739,7 @@ async def watch_dispatches(
     )
 
 
-def _action_states(states: list[str] | None) -> list[action_service_pb2.ActionState.ValueType]:
+def _action_states(states: list[str] | None) -> list[action_service_pb2.ActionState]:
     try:
         return [action_service_pb2.ActionState.Value(value) for value in states or []]
     except ValueError as error:

@@ -6,6 +6,8 @@ the bindings that feed it are the app's own PolicyBinding view, which every read
 
 from __future__ import annotations
 
+# Generated service annotations need the grpcio typing dependency.
+# gazelle:include_dep @pypi//grpcio
 from collections.abc import Mapping
 from typing import Literal
 

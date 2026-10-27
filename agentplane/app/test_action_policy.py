@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+# Generated service annotations need the grpcio typing dependency.
+# gazelle:include_dep @pypi//grpcio
 # Generated protobuf annotations need the protobuf typing dependency.
 # gazelle:include_dep @pypi//protobuf
 import pytest_bazel
@@ -32,6 +34,7 @@ async def test_for_subject_asks_the_service_about_the_account_and_passes_on_its_
 
     assert len(fake.calls) == 1
     assert fake.calls[0].method == "GetActionPolicy"
+    assert isinstance(fake.calls[0].request, action_service_pb2.GetActionPolicyRequest)
     assert fake.calls[0].request.subject.namespace == "test-sandboxes"
     assert fake.calls[0].request.subject.name == "live"
     assert fake.calls[0].bearer_token == "Bearer test-federated-token"

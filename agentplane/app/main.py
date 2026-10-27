@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+# Generated service annotations need the grpcio typing dependency.
+# gazelle:include_dep @pypi//grpcio
 # Generated protobuf annotations need the protobuf typing dependency.
 # gazelle:include_dep @pypi//protobuf
 import asyncio

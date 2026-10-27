@@ -6,6 +6,7 @@ from __future__ import annotations
 # gazelle:include_dep @pypi//protobuf
 import asyncio
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import override
 
@@ -14,16 +15,19 @@ import httpx
 import pytest
 import pytest_bazel
 from fastapi import FastAPI, Request
+from sqlalchemy import update
 
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import app_services, create_app
+from agentplane.app.database_updates import Channel
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.grpc_stream import OperatorGrpcClient
 from agentplane.app.live import LiveIndex
 from agentplane.app.notifications_operator_client import NotificationsOperatorClient
-from agentplane.app.operator_sessions import OperatorSessionStore
+from agentplane.app.oidc import INSECURE_COOKIE
+from agentplane.app.operator_sessions import BrowserSession, OperatorSessionStore
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.testing.dispatcher import served_dispatcher
 from agentplane.app.testing.history import SeededEventLogStore
@@ -37,7 +41,7 @@ from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc.calls import dial
 from agentplane.grpc.serving import serving
 from agentplane.mcp_edge import connection_service_pb2, connection_service_pb2_grpc
-from agentplane.postgres.wakeups import WakeupListener
+from agentplane.postgres.wakeups import WakeupListener, notify
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 
 CONNECTIONS_WATCH = "/upstream/connections/v1/operator/connections:watch"
@@ -200,7 +204,7 @@ async def test_connection_routes_use_federated_bearer_typed_requests_and_protojs
     _, peer, _ = connection_peer
     cookie = await login(app)
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url=APP_URL, cookies={"agentplane": cookie}
+        transport=httpx.ASGITransport(app=app), base_url=APP_URL, cookies={INSECURE_COOKIE: cookie}
     ) as browser:
         listed = await browser.get("/upstream/connections/v1/operator/connections")
         updated = await browser.patch(
@@ -245,7 +249,7 @@ async def test_connection_watch_uses_ndjson_and_fails_auth_before_headers(
 async def test_connection_path_field_mismatch_is_rejected_before_rpc(app: FastAPI) -> None:
     cookie = await login(app)
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url=APP_URL, cookies={"agentplane": cookie}
+        transport=httpx.ASGITransport(app=app), base_url=APP_URL, cookies={INSECURE_COOKIE: cookie}
     ) as browser:
         response = await browser.patch(
             "/upstream/connections/v1/operator/connections/path-id",
@@ -264,10 +268,15 @@ async def test_dispatcher_watch_cancellation_tracks_operator_session_and_respons
     token_file = tmp_path / "dispatcher-token"
     async with served_dispatcher(peer, token_file, request_timeout_s=2) as client:
         bridge.dispatcher = client
-        cookie = await login(app, seconds=1 if ending == "expiry" else 3600)
+        cookie = await login(app)
         browser = EventSource(app, cookie, DISPATCHES_WATCH)
         assert await browser.next_chunk() == DISPATCH_FRAME
-        if ending == "logout":
+        if ending == "expiry":
+            # Expire only after the stream is open; a subsecond cookie age would log out at login.
+            async with operator_sessions.sessions.begin() as db:
+                await db.execute(update(BrowserSession).values(expires_at=datetime.now(UTC) - timedelta(seconds=1)))
+                await notify(db, Channel.OPERATOR_SESSIONS)
+        elif ending == "logout":
             await logout(app, cookie)
         elif ending == "disconnect":
             browser.disconnect()
@@ -287,7 +296,7 @@ async def test_dispatcher_routes_preserve_filters_and_read_the_rotating_service_
         bridge.dispatcher = client
         cookie = await login(app)
         async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url=APP_URL, cookies={"agentplane": cookie}
+            transport=httpx.ASGITransport(app=app), base_url=APP_URL, cookies={INSECURE_COOKIE: cookie}
         ) as browser:
             response = await browser.get(
                 "/upstream/dispatcher/v1/dispatches",
@@ -334,7 +343,7 @@ async def test_dispatcher_watch_authentication_failure_is_an_http_error_before_h
 async def test_unmapped_facade_paths_are_not_forwarded(app: FastAPI) -> None:
     cookie = await login(app)
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url=APP_URL, cookies={"agentplane": cookie}
+        transport=httpx.ASGITransport(app=app), base_url=APP_URL, cookies={INSECURE_COOKIE: cookie}
     ) as browser:
         response = await browser.get("/upstream/connections/v1/operator/not-an-rpc")
     assert response.status_code == 404

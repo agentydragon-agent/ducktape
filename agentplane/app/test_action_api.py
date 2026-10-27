@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+# Generated service annotations need the grpcio typing dependency.
+# gazelle:include_dep @pypi//grpcio
 # Generated protobuf annotations need the protobuf typing dependency.
 # gazelle:include_dep @pypi//protobuf
 import asyncio
@@ -361,6 +363,7 @@ def _assert_policy_grpc_call(review: Review, subject: ServiceAccountRef) -> None
         call
         for call in review.action_calls
         if call.method == "GetActionPolicy"
+        and isinstance(call.request, action_service_pb2.GetActionPolicyRequest)
         and call.request.subject.namespace == subject.namespace
         and call.request.subject.name == subject.name
     ]
@@ -469,6 +472,7 @@ async def test_action_bff_builds_rpc_requests_and_rejects_invalid_proto_json(rev
     )
     assert listed.status_code == 200, listed.text
     call = next(call for call in review.action_calls if call.method == "ListActionRequests")
+    assert isinstance(call.request, action_service_pb2.ListActionRequestsRequest)
     assert list(call.request.state) == [
         action_service_pb2.ACTION_STATE_DECISION_PENDING,
         action_service_pb2.ACTION_STATE_ALLOWED,
