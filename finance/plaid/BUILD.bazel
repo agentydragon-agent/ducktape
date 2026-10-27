@@ -22,6 +22,7 @@ py_library(
         "//agentplane/egress:rule_client",
         "@pypi//httpx",
         "@pypi//pydantic",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -35,5 +36,16 @@ py_test(
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "transaction_queries",
+    srcs = ["transaction_queries.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//finance/plaid/db:models",
+        "@pypi//sqlalchemy",
     ],
 )
