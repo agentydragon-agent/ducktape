@@ -607,7 +607,7 @@ flowchart LR
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
     CENTRAL_CODEX_SPIKE[In progress: experimental central Codex process fixture]
     CENTRAL_CODEX_SPIKE --> HARNESS_PLACEMENT_DESIGN[Decision, unscheduled: sampler placement and state authority]
-    POSTGRES_HARNESS_CONTROLS[In flight: Postgres sampler wait, stdin and external interrupts]
+    POSTGRES_HARNESS_CONTROLS[Complete, pending merge: Postgres sampler wait, stdin and interrupts]
     POSTGRES_HARNESS_CONTROLS --> HARNESS_PLACEMENT_DESIGN
     CLAUDE_REMOTE_EXECUTION_SPIKE[Unscheduled: Claude remote tools and custom sampler compatibility]
     CLAUDE_REMOTE_EXECUTION_SPIKE -. optional Claude branch evidence .-> HARNESS_PLACEMENT_DESIGN
@@ -660,17 +660,18 @@ research plan. Changes no deployed mode.
 
 ### `POSTGRES_HARNESS_CONTROLS` — yielded cells, stdin and external interruption
 
-**In flight; `/root/postgres_harness_spike`, operator-dispatched, 2026-10-27.** Extend the baseline
+**Complete, pending merge in [PR #12213](https://github.com/agentydragon/ducktape/pull/12213);
+`/root/postgres_harness_spike`, operator-dispatched, 2026-10-27.** Extend the baseline
 [merged in #12207](https://github.com/agentydragon/ducktape/pull/12207) with real upstream code-mode
 `wait`, yielded shell session handles, `write_stdin` with PTY EOF/Ctrl-C, and a generation-targeted
 external interrupt command. Keep Postgres as the completed-checkpoint authority; persist process
 handles/cursors and resume the recorded upstream executor session. Live V8 cells require their retained
 host; host loss, expired executor sessions and uncertain mutating input must block automatic replay.
 
-Exit: deterministic RBE evidence for model-facing yield/wait, real interactive input, sampling and
-shell/cell interruption with observed host/process exits, stale/prequeued interrupt handling, and
-restart/loss boundaries; named runtime libraries pass Ruff/mypy. Preserve original experiment rows
-through an additive migration. Findings and remaining omissions belong in the
+All 20 RBE integration cases passed, covering model-facing yield/wait, real interactive input,
+sampling and shell/cell interruption with observed host/process exits, stale/prequeued requests,
+the native-start/before-registry-write boundary, and restart/loss. Named runtime libraries passed
+Ruff/mypy; an additive migration preserved original conversation/intent rows. Findings and remaining omissions belong in the
 [spike report](../debug/postgres_codex_spike.md#process-control-extension). Independent of the compaction
 extension; no production replacement, live inference, merge or deployment implied.
 

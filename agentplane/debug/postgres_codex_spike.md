@@ -88,7 +88,7 @@ the operator explicitly removed it as an acceptance gate because Langfuse provid
 ## Process-control extension
 
 The operator required `wait`, stdin and interrupts as minimum custom-sampler capabilities after the
-baseline merged. The extension retains the actual pinned code-mode host across model sampling and
+baseline merged. [PR #12213](https://github.com/agentydragon/ducktape/pull/12213) retains the actual pinned code-mode host across model sampling and
 `session/wait` observations in `main_bin run`. A yielded JS cell has a host-UUID-prefixed handle;
 raw native IDs restart at `1`, so they cannot be global database keys or model-facing identities.
 A separate durable process registry tracks running/terminal shell handles and retained-output cursors.
@@ -118,16 +118,38 @@ cleanup outcomes remain `effects_unknown` with a blocking intent, including an i
 between transitions. Stdin mutations and shell commands are never automatically retried. The
 [experimental SPEC](../x/postgres_codex/SPEC.md) describes deadlines and remaining omissions.
 
-The extension has **1,275 physical runtime Python lines**, including comments/blanks, across
-`store.py` 435, `executor.py` 193, `code_mode.py` 329, `sampler.py` 127, `main.py` 116 and `control.py` 75. The baseline was 563; the
-additional lifecycle and durable control code is 712 lines. New control test/support code is 737
+The extension has **1,277 physical runtime Python lines**, including comments/blanks, across
+`store.py` 435, `executor.py` 193, `code_mode.py` 331, `sampler.py` 127, `main.py` 116 and `control.py` 75. The baseline was 563; the
+additional lifecycle and durable control code is 714 lines. New control test/support code is 739
 lines. Counts exclude BUILD, SQL and docs, and do not include the reused upstream Rust inventory
 above. No new third-party runtime dependency or production caller was added.
 
-Validation is running for the final host-shutdown boundary and additive migration. An earlier
-complete run passed seven process-control cases, four interrupt cases and the original seven cases,
-with named runtime libraries' Ruff/mypy aspects:
-[`8e89959a-fff1-4e64-8be0-c52469fbb866`](https://app.buildbuddy.io/invocation/8e89959a-fff1-4e64-8be0-c52469fbb866).
-The new checks retain real binaries and Postgres. No live inference, production integration, merge
+All **20 integration cases across four targets passed** with named runtime libraries' Ruff/mypy
+aspects in [invocation 5dd30dcf-e2c5-4aa2-b4a3-12c86b470a80](https://app.buildbuddy.io/invocation/5dd30dcf-e2c5-4aa2-b4a3-12c86b470a80):
+seven control cases, five interrupt cases, one additive-schema upgrade case and the original seven.
+The final boundary case interrupts after native host execution starts but before its live-cell
+registry write; observed host exit prevents hidden V8 work from continuing. The migration starts
+with the original conversation/intent tables and verifies preserved prompt and result rows.
+Normal commit hooks passed.
+
+The final-code rerun [565aa96e](https://app.buildbuddy.io/invocation/565aa96e-ae4f-490a-aad7-04a220edd5a3)
+passed interrupt/schema checks and runtime lint, but the controls and original sampler targets hit
+their unchanged 60-second deadlines. A streamed diagnostic rerun of those two targets
+[e1991210](https://app.buildbuddy.io/invocation/e1991210-f0dc-4cb1-a1d2-8b324e18f7e3) passed all 14 cases
+in 33.2 and 42.5 seconds. Its stack dumps observed PostgreSQL image loading in
+`util.oci.push_to_daemon`; fixture setup took 19.14 and 22.50 seconds. This establishes final-code
+passes for all 20 cases across the two invocations, with a target-timeout flake still observed in
+the ordinary parallel run. No deadlines were increased.
+
+```sh
+bbr test //agentplane/x/postgres_codex:test_controls \
+  //agentplane/x/postgres_codex:test_interrupts //agentplane/x/postgres_codex:test_schema \
+  //agentplane/x/postgres_codex:test_sampler //agentplane/x/postgres_codex:store \
+  //agentplane/x/postgres_codex:executor //agentplane/x/postgres_codex:code_mode \
+  //agentplane/x/postgres_codex:control //agentplane/x/postgres_codex:sampler \
+  //agentplane/x/postgres_codex:main --test_output=errors
+```
+
+These checks use real binaries and Postgres. No live inference, production integration, merge
 or deployment is established by this extension. Compaction is independently implemented and must
 preserve the live registry prefix and interruption outputs when integrated.

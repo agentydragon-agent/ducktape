@@ -289,7 +289,7 @@ committed intent; database fencing does not guarantee exactly-once remote effect
 reconciliation interface yet.
 
 The [process-control extension](../debug/postgres_codex_spike.md#process-control-extension),
-operator-dispatched 2026-10-27, adds real yielded-cell `wait`, durable shell session handles,
+complete pending merge in [PR #12213](https://github.com/agentydragon/ducktape/pull/12213), adds real yielded-cell `wait`, durable shell session handles,
 interactive stdin, PTY EOF/Ctrl-C and external generation-targeted interruption. A retained host is
 required for live V8 state; process continuation uses the upstream executor session's 30-second
 detached retention window. These are explicit limits, not Postgres serialization of live processes.
