@@ -42,6 +42,8 @@ const dispositionText = {
   excluded: "Excluded from allowance",
   reversed: "Full reversal · excluded from allowance",
   held_refund: "Refund held for review",
+  gross_credit: "Credit outside gross purchases",
+  card_payment: "Card payment excluded from spend",
   superseded_pending: "Pending version replaced by posted charge",
   other_currency: "Different currency · outside allowance",
 } satisfies Record<NonNullable<TransactionRow["disposition"]>, string>;

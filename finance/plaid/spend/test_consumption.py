@@ -8,7 +8,6 @@ import pytest
 import pytest_bazel
 
 from finance.plaid.spend.allowance import (
-    AccountingDisposition,
     AccountingPolicy,
     AllOf,
     AllowancePolicy,
@@ -16,6 +15,7 @@ from finance.plaid.spend.allowance import (
     AnalysisCategory,
     CreditTreatment,
     DateRange,
+    Disposition,
     Kind,
     NamePrefix,
     ReversalPair,
@@ -95,11 +95,11 @@ def test_scope_purchase_day_supersession_and_coverage(mode: ConsumptionMode) -> 
     assert entries["RENT"].report_day == date(2026, 3, 10)
     assert entries["RENT"].kind == Kind.FIXED
     assert entries["SHOP posted"].amount_minor_units == 1_000
-    assert entries["TRANSFER"].disposition == AccountingDisposition.EXCLUDED
+    assert entries["TRANSFER"].disposition == Disposition.EXCLUDED
     assert entries["TAX"].amount_minor_units == 1_000
     assert entries["Unknown"].kind == Kind.REVIEW
     assert entries["Unknown"].amount_minor_units == 1_000
-    assert entries["Foreign"].disposition == AccountingDisposition.OTHER_CURRENCY
+    assert entries["Foreign"].disposition == Disposition.OTHER_CURRENCY
     assert entries["Foreign"].amount_minor_units == 0
     assert not result.issues
 
@@ -144,9 +144,9 @@ def test_full_history_reversals_and_isolated_credits(mode: ConsumptionMode) -> N
         confirmed_refund_rule_ids=set(),
         mode=mode,
     )
-    assert [entry.disposition for entry in result.entries[:2]] == [AccountingDisposition.REVERSAL] * 2
+    assert [entry.disposition for entry in result.entries[:2]] == [Disposition.REVERSED] * 2
     assert result.entries[2].disposition == (
-        AccountingDisposition.HELD_REFUND if mode == ConsumptionMode.NET else AccountingDisposition.GROSS_CREDIT
+        Disposition.HELD_REFUND if mode == ConsumptionMode.NET else Disposition.GROSS_CREDIT
     )
     assert sum(entry.amount_minor_units for entry in result.entries) == 0
     assert not result.issues
@@ -200,13 +200,13 @@ def test_ambiguous_reversal_reports_issue_and_keeps_purchase() -> None:
             True,
             False,
             [
-                AccountingDisposition.COUNTED,
-                AccountingDisposition.FIXED,
-                AccountingDisposition.EXCLUDED,
-                AccountingDisposition.HELD_REFUND,
-                AccountingDisposition.OTHER_CURRENCY,
-                AccountingDisposition.EXCLUDED,
-                AccountingDisposition.SUPERSEDED_PENDING,
+                Disposition.COUNTED,
+                Disposition.FIXED,
+                Disposition.EXCLUDED,
+                Disposition.HELD_REFUND,
+                Disposition.OTHER_CURRENCY,
+                Disposition.EXCLUDED,
+                Disposition.SUPERSEDED_PENDING,
             ],
         ),
         (
@@ -215,13 +215,13 @@ def test_ambiguous_reversal_reports_issue_and_keeps_purchase() -> None:
             True,
             False,
             [
-                AccountingDisposition.COUNTED,
-                AccountingDisposition.COUNTED,
-                AccountingDisposition.EXCLUDED,
-                AccountingDisposition.HELD_REFUND,
-                AccountingDisposition.OTHER_CURRENCY,
-                AccountingDisposition.EXCLUDED,
-                AccountingDisposition.SUPERSEDED_PENDING,
+                Disposition.COUNTED,
+                Disposition.COUNTED,
+                Disposition.EXCLUDED,
+                Disposition.HELD_REFUND,
+                Disposition.OTHER_CURRENCY,
+                Disposition.EXCLUDED,
+                Disposition.SUPERSEDED_PENDING,
             ],
         ),
         (
@@ -230,13 +230,13 @@ def test_ambiguous_reversal_reports_issue_and_keeps_purchase() -> None:
             False,
             True,
             [
-                AccountingDisposition.COUNTED,
-                AccountingDisposition.COUNTED,
-                AccountingDisposition.COUNTED,
-                AccountingDisposition.COUNTED,
-                AccountingDisposition.OTHER_CURRENCY,
-                AccountingDisposition.CARD_PAYMENT,
-                AccountingDisposition.SUPERSEDED_PENDING,
+                Disposition.COUNTED,
+                Disposition.COUNTED,
+                Disposition.COUNTED,
+                Disposition.COUNTED,
+                Disposition.OTHER_CURRENCY,
+                Disposition.CARD_PAYMENT,
+                Disposition.SUPERSEDED_PENDING,
             ],
         ),
     ],
@@ -246,7 +246,7 @@ def test_shared_decisions_preserve_allowance_consumption_and_statement_meaning(
     credits: CreditTreatment,
     honor_reversals: bool,
     exclude_card_payments: bool,
-    expected: list[AccountingDisposition],
+    expected: list[Disposition],
 ) -> None:
     prepared = prepare_accounting(
         [
@@ -313,13 +313,9 @@ def test_statement_keeps_signed_reversal_legs_and_posting_date() -> None:
         currency="USD", counted_kinds=frozenset(Kind), credits=CreditTreatment.CONFIRMED_REFUNDS
     )
     assert not prepared.issues
-    assert [accounting_disposition(entry, statement) for entry in prepared.entries] == [
-        AccountingDisposition.COUNTED
-    ] * 2
+    assert [accounting_disposition(entry, statement) for entry in prepared.entries] == [Disposition.COUNTED] * 2
     assert [entry.amount_minor_units for entry in prepared.entries] == [1000, -1000]
-    assert [accounting_disposition(entry, consumption) for entry in prepared.entries] == [
-        AccountingDisposition.REVERSAL
-    ] * 2
+    assert [accounting_disposition(entry, consumption) for entry in prepared.entries] == [Disposition.REVERSED] * 2
     assert prepared.entries[1].report_day == date(2026, 3, 9)
     assert prepared.entries[1].transaction.date == date(2026, 3, 10)
 
@@ -329,10 +325,10 @@ def test_credit_modes_and_currency_rounding() -> None:
     prepared = prepare_accounting([credit], allowance=policy(), time_zone=_ZONE, today=_TODAY)
     assert prepared.entries[0].amount_minor_units == -313
     expected = {
-        CreditTreatment.HOLD: AccountingDisposition.HELD_REFUND,
-        CreditTreatment.CONFIRMED_REFUNDS: AccountingDisposition.HELD_REFUND,
-        CreditTreatment.GROSS_PURCHASES: AccountingDisposition.GROSS_CREDIT,
-        CreditTreatment.ALL: AccountingDisposition.COUNTED,
+        CreditTreatment.HOLD: Disposition.HELD_REFUND,
+        CreditTreatment.CONFIRMED_REFUNDS: Disposition.HELD_REFUND,
+        CreditTreatment.GROSS_PURCHASES: Disposition.GROSS_CREDIT,
+        CreditTreatment.ALL: Disposition.COUNTED,
     }
     for credits, disposition in expected.items():
         view_policy = AccountingPolicy(currency="USD", counted_kinds=frozenset(Kind), credits=credits)

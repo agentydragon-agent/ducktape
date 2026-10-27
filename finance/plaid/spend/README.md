@@ -65,7 +65,8 @@ Plaid's negative sign. Spend percentage uses the configured limit; the alert bec
 
 `allowance.prepare_accounting` prepares purchase dates, currency minor units, ordered rule matches,
 pending supersession and confirmed full reversals once. `AccountingPolicy` supplies each view's choices
-for the single `accounting_disposition` function. API reason enums translate its result at the boundary.
+for the single `accounting_disposition` function. Allowance and consumption use the same `Disposition` enum. The statement API converts
+shared results to its narrower `StatementReason` vocabulary at the response boundary.
 
 | View               | Included kinds                                            | Negative credits            | Full reversals            | Reporting date |
 | ------------------ | --------------------------------------------------------- | --------------------------- | ------------------------- | -------------- |

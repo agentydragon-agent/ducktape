@@ -7,10 +7,10 @@ from enum import StrEnum
 from zoneinfo import ZoneInfo
 
 from finance.plaid.spend.allowance import (
-    AccountingDisposition,
     AccountingPolicy,
     AllowancePolicy,
     CreditTreatment,
+    Disposition,
     Kind,
     Rule,
     Transaction,
@@ -29,7 +29,7 @@ class ConsumptionEntry:
     transaction: Transaction
     report_day: date
     rule: Rule | None
-    disposition: AccountingDisposition
+    disposition: Disposition
     amount_minor_units: int
 
     @property
@@ -83,7 +83,7 @@ def prepare_consumption(
                 report_day=entry.report_day,
                 rule=entry.rule,
                 disposition=disposition,
-                amount_minor_units=entry.amount_minor_units if disposition == AccountingDisposition.COUNTED else 0,
+                amount_minor_units=entry.amount_minor_units if disposition == Disposition.COUNTED else 0,
             )
         )
     return PreparedConsumption(entries=entries, issues=prepared.issues)

@@ -454,6 +454,8 @@ class Purchase:
 class Disposition(StrEnum):
     COUNTED = "counted"
     PACE_ONLY = "pace_only"
+    GROSS_CREDIT = "gross_credit"
+    CARD_PAYMENT = "card_payment"
     FIXED = "fixed"
     EXCLUDED = "excluded"
     REVERSED = "reversed"
@@ -675,18 +677,6 @@ def resolve_reversal_pairs(
     return ResolvedReversals(pairs_by_transaction=pairs_by_transaction, resolutions=resolutions)
 
 
-class AccountingDisposition(StrEnum):
-    COUNTED = "counted"
-    FIXED = "fixed"
-    EXCLUDED = "excluded"
-    REVERSAL = "reversal"
-    HELD_REFUND = "held_refund"
-    GROSS_CREDIT = "gross_credit"
-    OTHER_CURRENCY = "other_currency"
-    SUPERSEDED_PENDING = "superseded_pending"
-    CARD_PAYMENT = "card_payment"
-
-
 class CreditTreatment(StrEnum):
     HOLD = "hold"
     CONFIRMED_REFUNDS = "confirmed_refunds"
@@ -779,42 +769,32 @@ def prepare_accounting(
     return PreparedAccounting(entries=entries, issues=reversals.issues)
 
 
-def accounting_disposition(entry: PreparedTransaction, policy: AccountingPolicy) -> AccountingDisposition:
+def accounting_disposition(entry: PreparedTransaction, policy: AccountingPolicy) -> Disposition:
     """One inclusion decision; views specify which economic effects they measure."""
     if entry.superseded_pending:
-        return AccountingDisposition.SUPERSEDED_PENDING
+        return Disposition.SUPERSEDED_PENDING
     if policy.exclude_card_payments and entry.card_payment:
-        return AccountingDisposition.CARD_PAYMENT
+        return Disposition.CARD_PAYMENT
     if entry.transaction.currency not in (None, policy.currency):
-        return AccountingDisposition.OTHER_CURRENCY
+        return Disposition.OTHER_CURRENCY
     if policy.honor_reversals and entry.reversal_pair is not None:
-        return AccountingDisposition.REVERSAL
+        return Disposition.REVERSED
     if entry.kind not in policy.counted_kinds:
         if entry.kind == Kind.FIXED:
-            return AccountingDisposition.FIXED
+            return Disposition.FIXED
         if entry.kind != Kind.EXCLUDED or (
             entry.rule is None or entry.rule.analysis_category not in policy.include_excluded_categories
         ):
-            return AccountingDisposition.EXCLUDED
+            return Disposition.EXCLUDED
     if entry.amount_minor_units < 0:
         if policy.credits == CreditTreatment.GROSS_PURCHASES:
-            return AccountingDisposition.GROSS_CREDIT
+            return Disposition.GROSS_CREDIT
         if policy.credits == CreditTreatment.HOLD or (
             policy.credits == CreditTreatment.CONFIRMED_REFUNDS
             and (entry.rule is None or entry.rule.id not in policy.confirmed_refund_rule_ids)
         ):
-            return AccountingDisposition.HELD_REFUND
-    return AccountingDisposition.COUNTED
-
-
-_ALLOWANCE_DISPOSITIONS = {
-    AccountingDisposition.FIXED: Disposition.FIXED,
-    AccountingDisposition.EXCLUDED: Disposition.EXCLUDED,
-    AccountingDisposition.REVERSAL: Disposition.REVERSED,
-    AccountingDisposition.HELD_REFUND: Disposition.HELD_REFUND,
-    AccountingDisposition.OTHER_CURRENCY: Disposition.OTHER_CURRENCY,
-    AccountingDisposition.SUPERSEDED_PENDING: Disposition.SUPERSEDED_PENDING,
-}
+            return Disposition.HELD_REFUND
+    return Disposition.COUNTED
 
 
 def calculate(
@@ -884,20 +864,18 @@ def calculate(
         disposition = accounting_disposition(entry, accounting_policy)
         amount = entry.amount_minor_units
         rule = entry.rule
-        if disposition != AccountingDisposition.COUNTED:
-            if disposition == AccountingDisposition.HELD_REFUND and day >= start.date():
+        if disposition != Disposition.COUNTED:
+            if disposition == Disposition.HELD_REFUND and day >= start.date():
                 unmatched += -amount
             # Preserve the API's absence of a rule on transport-ineligible rows.
             reported_rule = (
-                None
-                if disposition in (AccountingDisposition.SUPERSEDED_PENDING, AccountingDisposition.OTHER_CURRENCY)
-                else rule
+                None if disposition in (Disposition.SUPERSEDED_PENDING, Disposition.OTHER_CURRENCY) else rule
             )
             record(
                 entry,
                 reported_rule,
-                _ALLOWANCE_DISPOSITIONS[disposition],
-                reversal_pair=entry.reversal_pair if disposition == AccountingDisposition.REVERSAL else None,
+                disposition,
+                reversal_pair=entry.reversal_pair if disposition == Disposition.REVERSED else None,
             )
             continue
         pace_effects = {
