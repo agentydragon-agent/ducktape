@@ -626,16 +626,20 @@ async def test_launcher_drives_only_the_sandbox_it_launched(
     policy_objects: PolicyObjects,
 ) -> None:
     """An agent launches a Sandbox through orchestration_v1, which waits for the operator; the launch's
-    grants then let that agent open a Session in it, send input and read the turn's outcome without
-    asking again. The launched Sandbox's own account, another incarnation of the name, and the launcher
-    once the Sandbox is deleted still wait for the operator."""
+    grants then let that agent open a Session in it, send input, wait for its turn and read the outcome
+    without asking again. The launched Sandbox's own account, another incarnation of the name and the
+    deleted Sandbox still wait for the operator; a Session in a different Sandbox is refused."""
     launcher_view = await sandbox(f"systest-launcher-{harness}")
     launcher = await ScriptedAgent.open(client, launcher_view, harness=harness, model=offered_model, upstream=scripted)
     name = f"systest-launched-{harness}"
     launch = await launcher.submit(
         ORCHESTRATION_GROUP,
         "launch_sandbox",
-        {"name": name, "template": POD_TEMPLATE, "launcher_grants": ["open_session", "submit_input", "get_session"]},
+        {
+            "name": name,
+            "template": POD_TEMPLATE,
+            "launcher_grants": ["open_session", "submit_input", "get_session", "read_turns", "wait_for_turn"],
+        },
         title="Launch a test Sandbox",
         wait=False,
     )
@@ -664,6 +668,26 @@ async def test_launcher_drives_only_the_sandbox_it_launched(
             ORCHESTRATION_GROUP, "open_session", {**session, "spec": spec}, title="Open a test Session", wait=True
         )
         await _launcher_approved(operator_bff, opened, name)
+        await client.wait_for_thread_projection(UUID(session_id), timeout_s=RUNNER_ANSWERS_SECONDS)
+        history = await launcher.submit(
+            ORCHESTRATION_GROUP, "read_turns", {**session, "count": 1}, title="Read a test Session's turns", wait=True
+        )
+        await _launcher_approved(operator_bff, history, name)
+        before = json_format.MessageToDict(history.execution.result)
+        assert before["turns"] == []
+        resume_token = before["resume_token"]
+        early_wait = await launcher.submit(
+            ORCHESTRATION_GROUP,
+            "wait_for_turn",
+            {**session, "resume_token": resume_token, "wait_seconds": 1},
+            title="Wait briefly for a test Session's turn",
+            wait=True,
+        )
+        await _launcher_approved(operator_bff, early_wait, name)
+        pending = json_format.MessageToDict(early_wait.execution.result)
+        assert pending["completed"] is False
+        resume_token = pending["resume_token"]
+
         command_id = str(uuid4())
         sent = await launcher.submit(
             ORCHESTRATION_GROUP,
@@ -677,13 +701,43 @@ async def test_launcher_drives_only_the_sandbox_it_launched(
         # The launched Sandbox's turn asks for the same read with its own account, which no grant names.
         own = await _play_cli_turn(
             scripted.model(view.pod.name, harness),
-            *_submission(ORCHESTRATION_GROUP, "get_session", session, title="Read a test Session", wait=False),
+            *_submission(
+                ORCHESTRATION_GROUP,
+                "read_turns",
+                {**session, "count": 1},
+                title="Read a test Session's turns",
+                wait=False,
+            ),
         )
         await _decide_pending(operator_bff, own.id, action_service_pb2.VERDICT_DENY)
         async for attempt in AsyncRetrying(stop=stop_after_delay(TURN_SECONDS), wait=wait_fixed(1), reraise=True):
             with attempt:
                 thread = await client.wait_for_thread_projection(UUID(session_id), timeout_s=RUNNER_ANSWERS_SECONDS)
                 assert thread.last_turn_status == "TURN_STATUS_COMPLETED", thread
+
+        waited = await launcher.submit(
+            ORCHESTRATION_GROUP,
+            "wait_for_turn",
+            {**session, "resume_token": resume_token, "wait_seconds": 30},
+            title="Wait for a test Session's turn",
+            wait=True,
+        )
+        await _launcher_approved(operator_bff, waited, name)
+        outcome = json_format.MessageToDict(waited.execution.result)
+        assert outcome["completed"] is True
+        assert outcome["turn"]["status"] == "TURN_STATUS_COMPLETED"
+
+        read = await launcher.submit(
+            ORCHESTRATION_GROUP, "read_turns", {**session, "count": 1}, title="Read a test Session's turns", wait=True
+        )
+        await _launcher_approved(operator_bff, read, name)
+        state = json_format.MessageToDict(read.execution.result)
+        turn = state["turns"][0]
+        assert turn["turn_id"] == outcome["turn"]["turn_id"]
+        assert turn["input"] == ["Run the test command."]
+        assert turn["tool_calls"]
+        assert turn["status"] == "TURN_STATUS_COMPLETED"
+        assert turn["final_assistant_message"] == "Done."
 
         read = await launcher.submit(
             ORCHESTRATION_GROUP, "get_session", session, title="Read a test Session", wait=True
@@ -698,9 +752,21 @@ async def test_launcher_drives_only_the_sandbox_it_launched(
 
         another = {**session, "sandbox": {"name": name, "uid": str(uuid4())}}
         elsewhere = await launcher.submit(
-            ORCHESTRATION_GROUP, "get_session", another, title="Read a test Session", wait=False
+            ORCHESTRATION_GROUP, "read_turns", {**another, "count": 1}, title="Read a test Session's turns", wait=False
         )
         await _decide_pending(operator_bff, elsewhere.id, action_service_pb2.VERDICT_DENY)
+
+        other_session = await launcher.submit(
+            ORCHESTRATION_GROUP,
+            "read_turns",
+            {**session, "session_id": str(launcher.agent.thread_id), "count": 1},
+            title="Read another Session's turns",
+            wait=True,
+        )
+        refused = _bff_request(await operator_bff.get(f"/upstream/actions/v1/action-requests/{other_session.id}"))
+        assert refused.state == action_service_pb2.ACTION_STATE_FAILED, refused
+        assert refused.decision.provider == "action_policy_set"
+        assert refused.decision.policy_evidence.matched.policy_set == f"{name}.launcher"
 
         await suspend_and_delete(client, name, view.uid)
         deleted = True

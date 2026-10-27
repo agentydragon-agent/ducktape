@@ -186,7 +186,9 @@
             "change_model",
             "change_reasoning_effort",
             "get_session",
-            "list_sessions"
+            "list_sessions",
+            "read_turns",
+            "wait_for_turn"
           ],
           "type": "string"
         },
@@ -321,6 +323,43 @@
     "title": "OpenSessionArgs",
     "type": "object"
   },
+  "ReadTurnsArgs": {
+    "additionalProperties": false,
+    "properties": {
+      "sandbox": {
+        "additionalProperties": false,
+        "description": "The Sandbox as launch_sandbox returned it: its name and the UID of that incarnation. A Sandbox deleted and launched again under the name is another one, and is refused.",
+        "properties": {
+          "name": {
+            "maxLength": 57,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "type": "string"
+          },
+          "uid": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "type": "string"
+          }
+        },
+        "required": ["name", "uid"],
+        "type": "object"
+      },
+      "session_id": {
+        "description": "The Session's ID, as open_session was given it.",
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        "type": "string"
+      },
+      "count": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100,
+        "description": "How many recent turns to read, oldest first."
+      }
+    },
+    "required": ["sandbox", "session_id", "count"],
+    "title": "ReadTurnsArgs",
+    "type": "object"
+  },
   "SubmitInputArgs": {
     "additionalProperties": false,
     "properties": {
@@ -359,6 +398,49 @@
     },
     "required": ["sandbox", "session_id", "command_id", "text"],
     "title": "SubmitInputArgs",
+    "type": "object"
+  },
+  "WaitForTurnArgs": {
+    "additionalProperties": false,
+    "properties": {
+      "sandbox": {
+        "additionalProperties": false,
+        "description": "The Sandbox as launch_sandbox returned it: its name and the UID of that incarnation. A Sandbox deleted and launched again under the name is another one, and is refused.",
+        "properties": {
+          "name": {
+            "maxLength": 57,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "type": "string"
+          },
+          "uid": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "type": "string"
+          }
+        },
+        "required": ["name", "uid"],
+        "type": "object"
+      },
+      "session_id": {
+        "description": "The Session's ID, as open_session was given it.",
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        "type": "string"
+      },
+      "resume_token": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048,
+        "description": "The opaque token returned by read_turns or wait_for_turn for this Session."
+      },
+      "wait_seconds": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "maximum": 30,
+        "description": "Maximum wait, also capped below the deployment direct-tool budget."
+      }
+    },
+    "required": ["sandbox", "session_id", "resume_token", "wait_seconds"],
+    "title": "WaitForTurnArgs",
     "type": "object"
   }
 }

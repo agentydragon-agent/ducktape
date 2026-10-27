@@ -1,9 +1,9 @@
 # Orchestrating Agentplane agents from an MCP client
 
 Status: **P1 landed 2026-10-27 as the [`orchestration_v1` Action group](../action_service/orchestration_v1/README.md),
-a stopgap that acts for the operator ([ADR](../docs/adr_orchestration_v1.md)).** What remains: reading workers'
-turns (P2), moving each operation to a grant its backend checks (P3), and bounding what a launcher may let its
-workers do.
+a stopgap that acts for the operator ([ADR](../docs/adr_orchestration_v1.md)).** Turn reads and bounded waits are
+implemented in that group's contract. What remains: moving each operation to a grant its backend checks (P3),
+and bounding what a launcher may let its workers do.
 
 Claude.ai is the first client, but nothing here is specific to it: the same Actions serve any MCP Connection, and an
 orchestrator in a Session Sandbox reaches them through the [`agentplane` CLI](../docs/agent_cli.md)
@@ -11,7 +11,7 @@ orchestrator in a Session Sandbox reaches them through the [`agentplane` CLI](..
 
 ## The workflow
 
-What an orchestrating caller does; step 4's waiting and reading tools are P2.
+What an orchestrating caller does:
 
 1. **Pick a configuration.** `orchestration_v1__list_launch_presets` returns the reviewed launch presets as concrete
    launch and Session fields.
@@ -22,8 +22,8 @@ What an orchestrating caller does; step 4's waiting and reading tools are P2.
    and the Session spec, then `orchestration_v1__submit_input` with the task. The Dispatcher queues both until the
    Sandbox is Ready.
 4. **Follow it.** `orchestration_v1__get_session` says whether the Session is working or idle and where its queued
-   commands are. P2 adds `wait_for_turn`, which waits up to the instance's direct-tool wait (30 s on staging) for the
-   running turn to end, and `read_turns`, which returns completed turns' final assistant messages and outcomes.
+   commands are. `read_turns` returns recent turns and a resume token; `wait_for_turn` waits within the direct-tool
+   budget for the next completion and returns a token for the next call. Read final messages with `read_turns`.
 5. **Answer and steer.** A worker that needs something ends its turn saying so. The caller reads that in step 4 and
    answers with `orchestration_v1__submit_input`, or stops a turn going wrong with `orchestration_v1__interrupt_turn`.
 6. **Finish.** Launched with idle suspend and wake-on-send, the worker suspends once idle and a later input wakes
@@ -33,14 +33,6 @@ What an orchestrating caller does; step 4's waiting and reading tools are P2.
 A claude.ai conversation acts only while it has a turn, so following is pull-based; a Claude Code session can also
 schedule its own next check. [External inboxes](task_freezer.md#external_agent_inboxes--inboxes-for-externally-running-agents)
 stay deferred until a worker must reach a caller that has not asked.
-
-### Reading turns depends on History's read and follow design
-
-`read_turns` and `wait_for_turn` build on the implemented
-[`FollowSession`](../history_service/README.md#read-and-follow-one-session). What an
-orchestrator needs from it: a start a number of turns back, a kind filter for turn completions and final assistant
-messages, and a bounded wait for the next turn end that a caller with a 30 s tool budget can repeat without a gap or
-duplicate; [how these two tools build on it](history_read_follow.md#what-the-orchestration-executor-builds-on-it).
 
 ## Shape-matched approval is the v1 expedient
 
@@ -102,9 +94,6 @@ permissions or `bind` on it by name; the counterpart here would grant attaching 
 - **P0, configuration only (optional).** Bind `claude-ai` to the `send-to-*` sets the operator picks, so Claude
   can message existing Haku or public-coder Sessions from a box. It also exercises the agent receive, read and
   acknowledge behavior the cross-agent plan still lists as unvalidated.
-- **P2, reading turns** (`ORCHESTRATION_V1_TURN_READS`). `read_turns` and
-  `wait_for_turn` on the reviewed read and follow API. Acceptance adds waiting for and reading a turn's outcome, and
-  a wait that spans several calls.
 - **P3, backend grants, one operation at a time** (`ORCHESTRATION_V1_BACKEND_GRANTS`). As
   `THREAD_CREATE_AUTHORIZATION`, `DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`, `THREAD_READ_POLICY` and
   `AGENT_SANDBOX_LAUNCH` land, the executor calls as the caller with a token for its account minted at execution,

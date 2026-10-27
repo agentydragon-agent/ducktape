@@ -97,29 +97,9 @@ type SessionList struct {
 // Service. A Session that neither its opening nor its history ties to that incarnation is refused as not found, so a
 // grant on one Sandbox reads no other's Sessions.
 func (e *Executor) getSession(ctx context.Context, args getSessionArgs) (SessionState, error) {
-	sandbox, err := e.requireSandbox(ctx, args.Sandbox)
+	sandbox, opening, summary, err := e.sessionForRead(ctx, args.Sandbox, args.SessionID)
 	if err != nil {
 		return SessionState{}, err
-	}
-	opening, err := e.dispatcher.GetSessionOpening(ctx, &dispatcherpb.GetSessionOpeningRequest{SessionId: args.SessionID})
-	if err != nil && status.Code(err) != codes.NotFound {
-		return SessionState{}, readError("Session Dispatcher", err)
-	}
-	summary, err := e.history.GetSessionSummary(ctx, &historypb.GetSessionSummaryRequest{SessionId: args.SessionID})
-	if err != nil && status.Code(err) != codes.NotFound {
-		return SessionState{}, readError("History Service", err)
-	}
-	// The incarnations the Session's opening and its history tie it to, as far as each is known.
-	var tied []string
-	if opening != nil {
-		tied = append(tied, opening.GetOpening().GetSandboxUid())
-	}
-	if written := summary.GetSandbox(); written != nil && written.Uid != nil {
-		tied = append(tied, *written.Uid)
-	}
-	if len(tied) == 0 || slices.ContainsFunc(tied, func(uid string) bool { return uid != string(args.Sandbox.UID) }) {
-		return SessionState{}, refuse("session_not_found", "no Session %s of Sandbox %q incarnation %s is known",
-			args.SessionID, args.Sandbox.Name, args.Sandbox.UID)
 	}
 	listed, err := e.dispatcher.ListDispatches(ctx, &dispatcherpb.ListDispatchesRequest{
 		Filter: &dispatcherpb.DispatchFilter{Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: args.SessionID}},
@@ -224,4 +204,33 @@ func timeOf(timestamp *timestamppb.Timestamp) *time.Time {
 // failed, and the caller may ask again.
 func readError(service string, err error) error {
 	return refuse("read_failed", "reading the %s: %v", service, err)
+}
+
+// sessionForRead ties both authorities' evidence to the live Sandbox incarnation before reading history.
+func (e *Executor) sessionForRead(ctx context.Context, ref SandboxRef, sessionID string) (*sandboxapi.Sandbox, *dispatcherpb.GetSessionOpeningResponse, *historypb.SessionSummary, error) {
+	sandbox, err := e.requireSandbox(ctx, ref)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	opening, err := e.dispatcher.GetSessionOpening(ctx, &dispatcherpb.GetSessionOpeningRequest{SessionId: sessionID})
+	if err != nil && status.Code(err) != codes.NotFound {
+		return nil, nil, nil, readError("Session Dispatcher", err)
+	}
+	summary, err := e.history.GetSessionSummary(ctx, &historypb.GetSessionSummaryRequest{SessionId: sessionID})
+	if err != nil && status.Code(err) != codes.NotFound {
+		return nil, nil, nil, readError("History Service", err)
+	}
+	// The incarnations the Session's opening and its history tie it to, as far as each is known.
+	var tied []string
+	if opening != nil {
+		tied = append(tied, opening.GetOpening().GetSandboxUid())
+	}
+	if written := summary.GetSandbox(); written != nil && written.Uid != nil {
+		tied = append(tied, *written.Uid)
+	}
+	if len(tied) == 0 || slices.ContainsFunc(tied, func(uid string) bool { return uid != string(ref.UID) }) {
+		return nil, nil, nil, refuse("session_not_found", "no Session %s of Sandbox %q incarnation %s is known",
+			sessionID, ref.Name, ref.UID)
+	}
+	return sandbox, opening, summary, nil
 }

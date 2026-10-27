@@ -462,12 +462,6 @@ a grant its backend checks: Session open and commands after `THREAD_CREATE_AUTHO
 `send_message` joins the group. Exit: the Action Service is in neither the Dispatcher's callers and wake callers nor
 History's readers, and no launcher grant matches argument shapes.
 
-### `ORCHESTRATION_V1_TURN_READS` — read and wait for workers' turns
-
-`read_turns` and `wait_for_turn` on the implemented follow API
-([how](history_read_follow.md#what-the-orchestration-executor-builds-on-it)). Exit: the system test waits for a
-worker's turn across several bounded calls and reads its final message.
-
 ### `RUNNER_HARNESS_OBJECTS_DESIGN` — decide process diagnostics and placement policy
 
 **Placement decision remains open; lifecycle ownership approved (operator, 2026-10-17).** The runner
@@ -1469,7 +1463,6 @@ flowchart TD
     SESSION_ACTIVITY_STREAM[Unscheduled: deliver on a Session's idle time, section 7]
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history, section 2]
     THREAD_READ_POLICY[Blocked: scoped archive reads, section 3]
-    ORCHESTRATION_V1_TURN_READS[Ready: read and wait for workers' turns]
 ```
 
 [`history_read_follow.md`](history_read_follow.md) records how orchestration builds on the API and

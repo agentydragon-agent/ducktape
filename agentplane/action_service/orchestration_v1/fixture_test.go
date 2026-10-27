@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
@@ -99,7 +100,7 @@ func newFixture(t *testing.T) fixture {
 		Presets: json.RawMessage(testPresets),
 	}, kube,
 		dispatcherpb.NewSessionDispatcherClient(serve(t, func(s *grpc.Server) { dispatcherpb.RegisterSessionDispatcherServer(s, dispatcher) })),
-		historypb.NewHistoryServiceClient(serve(t, func(s *grpc.Server) { historypb.RegisterHistoryServiceServer(s, history) })))
+		historypb.NewHistoryServiceClient(serve(t, func(s *grpc.Server) { historypb.RegisterHistoryServiceServer(s, history) })), 30*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,6 +281,7 @@ type fakeHistory struct {
 	mu        sync.Mutex
 	summaries map[string]*historypb.SessionSummary
 	refusal   error
+	follow    func(*historypb.FollowSessionRequest, grpc.ServerStreamingServer[historypb.FollowSessionResponse]) error
 }
 
 func (h *fakeHistory) hold(summaries ...*historypb.SessionSummary) {
@@ -342,4 +344,17 @@ func (h *fakeHistory) FindSessions(_ context.Context, request *historypb.FindSes
 		}
 	}
 	return response, nil
+}
+
+func (h *fakeHistory) FollowSession(request *historypb.FollowSessionRequest, stream grpc.ServerStreamingServer[historypb.FollowSessionResponse]) error {
+	h.mu.Lock()
+	follow, refused := h.follow, h.refusal
+	h.mu.Unlock()
+	if refused != nil {
+		return refused
+	}
+	if follow == nil {
+		return status.Error(codes.Unimplemented, "no test follow")
+	}
+	return follow(request, stream)
 }

@@ -199,10 +199,13 @@ receipt back from what the harness sent the model.
   protected tool.
 - `test_launcher_drives_only_the_sandbox_it_launched` has an agent launch a Sandbox through the
   `orchestration_v1` group with grants on it, which the operator approves through the BFF. Its
-  `open_session`, `submit_input` and `get_session` on that incarnation then come back approved by
-  the `<sandbox>.launcher` PolicySet, and the read reports the completed turn. The launched
-  Sandbox's own request for the same read, one naming another UID, and one after the Sandbox is
-  deleted all wait for the operator, who denies them.
+  `open_session`, `submit_input`, `read_turns`, `wait_for_turn` and `get_session` on that incarnation
+  then come back approved by the `<sandbox>.launcher` PolicySet. The test reads a token before the turn,
+  checks a short wait returns without completion, then uses its updated token to wait for completion
+  and reads the recorded input, tool calls and final assistant message. The launched Sandbox's
+  own request for the same read, one naming another UID, and one after the Sandbox is deleted all
+  wait for the operator, who denies them. The launcher grant auto-approves a read of a Session from
+  another Sandbox, and the executor refuses that mismatch.
 
 These cases read only the operator Secret the k3s target publishes (`AGENTPLANE_OPERATOR_SECRET_PATH`)
 via `kubectl get --raw`, with a kubeconfig naming the k3s fixture's apiserver. No pre-issued cookie is

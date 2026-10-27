@@ -20,6 +20,8 @@ const (
 	actionInterruptTurn         = "interrupt_turn"
 	actionChangeModel           = "change_model"
 	actionChangeReasoningEffort = "change_reasoning_effort"
+	actionReadTurns             = "read_turns"
+	actionWaitForTurn           = "wait_for_turn"
 	actionGetSession            = "get_session"
 	actionListSessions          = "list_sessions"
 )
@@ -32,7 +34,7 @@ const grantSendMessage = "send_message"
 // `sandbox`.
 var sandboxActions = []string{
 	actionOpenSession, actionSubmitInput, actionInterruptTurn, actionChangeModel, actionChangeReasoningEffort,
-	actionGetSession, actionListSessions,
+	actionGetSession, actionListSessions, actionReadTurns, actionWaitForTurn,
 }
 
 // inputSchemas are the JSON Schemas of the Actions' arguments, by the name of the model they describe.
@@ -49,6 +51,8 @@ var argumentModels = map[string]string{
 	actionInterruptTurn:         "InterruptTurnArgs",
 	actionChangeModel:           "ChangeModelArgs",
 	actionChangeReasoningEffort: "ChangeReasoningEffortArgs",
+	actionReadTurns:             "ReadTurnsArgs",
+	actionWaitForTurn:           "WaitForTurnArgs",
 	actionGetSession:            "GetSessionArgs",
 	actionListSessions:          "ListSessionsArgs",
 }
@@ -115,6 +119,16 @@ func Actions() map[string]catalog.ActionDefinition {
 			Description: "Change the reasoning effort of a Session's next turns. " + commandNote,
 			Title:       new("Change Session reasoning effort"),
 			Annotations: &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(false), IdempotentHint: new(true)},
+		},
+		actionReadTurns: {
+			Description: "Read the last count turns in cursor order, including confirmed input, tool names, status and final assistant message. Returns an opaque resume_token for wait_for_turn. " + sandboxNote,
+			Title:       new("Read Session turns"),
+			Annotations: &catalog.ToolAnnotations{ReadOnlyHint: new(true), OpenWorldHint: new(false)},
+		},
+		actionWaitForTurn: {
+			Description: "Wait for the first turn completion after resume_token, for at most wait_seconds within this deployment's direct-tool budget. Returns completed=false with the newest token when still running; repeat with that token. Read full messages with read_turns. " + sandboxNote,
+			Title:       new("Wait for Session turn"),
+			Annotations: &catalog.ToolAnnotations{ReadOnlyHint: new(true), OpenWorldHint: new(false)},
 		},
 		actionGetSession: {
 			Description: fmt.Sprintf("A Session in a launched Sandbox: whether the Sandbox is Ready; the Session as its "+

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
@@ -28,13 +29,14 @@ type Executor struct {
 	dispatcher dispatcherpb.SessionDispatcherClient
 	history    historypb.HistoryServiceClient
 	arguments  map[string]*jsonschema.Schema
+	readBudget time.Duration
 }
 
 // NewExecutor is the Executor of the group under key. kube reaches binding.Namespace with a scheme that holds Sandboxes,
 // PolicySets and PolicyBindings.
 func NewExecutor(
 	group string, binding catalog.OrchestrationBinding, kube client.Client, dispatcher dispatcherpb.SessionDispatcherClient,
-	history historypb.HistoryServiceClient,
+	history historypb.HistoryServiceClient, directWait time.Duration,
 ) (*Executor, error) {
 	presets, err := parsePresets(binding.Presets)
 	if err != nil {
@@ -50,7 +52,7 @@ func NewExecutor(
 	}
 	return &Executor{
 		group: group, binding: binding, presets: presets, kube: kube, dispatcher: dispatcher, history: history,
-		arguments: arguments,
+		arguments: arguments, readBudget: directWait - time.Second,
 	}, nil
 }
 
@@ -111,6 +113,18 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 			return store.ExecutionOutcome{}, err
 		}
 		return worker.Succeeded(e.command(ctx, action, args))
+	case actionReadTurns:
+		var args readTurnsArgs
+		if err := e.decode(action, request.Arguments, &args); err != nil {
+			return store.ExecutionOutcome{}, err
+		}
+		return worker.Succeeded(e.readTurns(ctx, args))
+	case actionWaitForTurn:
+		var args waitForTurnArgs
+		if err := e.decode(action, request.Arguments, &args); err != nil {
+			return store.ExecutionOutcome{}, err
+		}
+		return worker.Succeeded(e.waitForTurn(ctx, args))
 	case actionGetSession:
 		var args getSessionArgs
 		if err := e.decode(action, request.Arguments, &args); err != nil {
