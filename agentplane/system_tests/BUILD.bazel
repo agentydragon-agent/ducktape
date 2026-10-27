@@ -512,9 +512,7 @@ system_test(
 system_test(
     name = "test_storage",
     srcs = ["test_storage.py"],
-    # Opens Codex Sessions, so its runner image carries the harnesses: `model_free` has none, and
-    # every activation there fails in the executor companion instead of on the runner path.
-    k3s = "scripted",
+    k3s = "model_free",
     vm_sandboxes = "manual",
     deps = [
         ":cluster",
