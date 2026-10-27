@@ -11,8 +11,8 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
-from finance.plaid.spend.allowance import AllowancePolicy, Kind, Transaction
-from finance.plaid.spend.consumption import ConsumptionDisposition, ConsumptionMode, prepare_consumption
+from finance.plaid.spend.allowance import AccountingDisposition, AllowancePolicy, Kind, Transaction
+from finance.plaid.spend.consumption import ConsumptionMode, prepare_consumption
 from finance.plaid.spend.portfolio_models import PortfolioPolicy, PortfolioView
 
 _YEAR_DAYS = Decimal("365.2425")
@@ -274,11 +274,11 @@ def calculate_sustainability(
             contradictory_accounts.add(transaction.account_id)
         if day > end:
             continue
-        if entry.disposition == ConsumptionDisposition.OTHER_CURRENCY:
+        if entry.disposition == AccountingDisposition.OTHER_CURRENCY:
             other_currency += int(requested_start <= day <= end)
-        elif entry.disposition == ConsumptionDisposition.HELD_REFUND:
+        elif entry.disposition == AccountingDisposition.HELD_REFUND:
             held_refunds += int(requested_start <= day <= end)
-        elif entry.disposition == ConsumptionDisposition.COUNTED:
+        elif entry.disposition == AccountingDisposition.COUNTED:
             daily[day][entry.kind] += entry.amount_minor_units
 
     account_coverage = []

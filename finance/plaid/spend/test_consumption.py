@@ -25,7 +25,7 @@ from finance.plaid.spend.allowance import (
     prepare_accounting,
     round_minor_units,
 )
-from finance.plaid.spend.consumption import ConsumptionDisposition, ConsumptionMode, prepare_consumption
+from finance.plaid.spend.consumption import ConsumptionMode, prepare_consumption
 
 _TODAY = date(2026, 4, 1)
 _ZONE = ZoneInfo("America/Los_Angeles")
@@ -95,11 +95,11 @@ def test_scope_purchase_day_supersession_and_coverage(mode: ConsumptionMode) -> 
     assert entries["RENT"].report_day == date(2026, 3, 10)
     assert entries["RENT"].kind == Kind.FIXED
     assert entries["SHOP posted"].amount_minor_units == 1_000
-    assert entries["TRANSFER"].disposition == ConsumptionDisposition.EXCLUDED
+    assert entries["TRANSFER"].disposition == AccountingDisposition.EXCLUDED
     assert entries["TAX"].amount_minor_units == 1_000
     assert entries["Unknown"].kind == Kind.REVIEW
     assert entries["Unknown"].amount_minor_units == 1_000
-    assert entries["Foreign"].disposition == ConsumptionDisposition.OTHER_CURRENCY
+    assert entries["Foreign"].disposition == AccountingDisposition.OTHER_CURRENCY
     assert entries["Foreign"].amount_minor_units == 0
     assert not result.issues
 
@@ -144,9 +144,9 @@ def test_full_history_reversals_and_isolated_credits(mode: ConsumptionMode) -> N
         confirmed_refund_rule_ids=set(),
         mode=mode,
     )
-    assert [entry.disposition for entry in result.entries[:2]] == [ConsumptionDisposition.REVERSAL] * 2
+    assert [entry.disposition for entry in result.entries[:2]] == [AccountingDisposition.REVERSAL] * 2
     assert result.entries[2].disposition == (
-        ConsumptionDisposition.HELD_REFUND if mode == ConsumptionMode.NET else ConsumptionDisposition.GROSS_CREDIT
+        AccountingDisposition.HELD_REFUND if mode == ConsumptionMode.NET else AccountingDisposition.GROSS_CREDIT
     )
     assert sum(entry.amount_minor_units for entry in result.entries) == 0
     assert not result.issues

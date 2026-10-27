@@ -18,9 +18,6 @@ from finance.plaid.spend.allowance import (
     prepare_accounting,
 )
 
-# Compatibility name for callers; all views use the same decision enum.
-ConsumptionDisposition = AccountingDisposition
-
 
 class ConsumptionMode(StrEnum):
     NET = "net"
@@ -32,7 +29,7 @@ class ConsumptionEntry:
     transaction: Transaction
     report_day: date
     rule: Rule | None
-    disposition: ConsumptionDisposition
+    disposition: AccountingDisposition
     amount_minor_units: int
 
     @property
@@ -86,7 +83,7 @@ def prepare_consumption(
                 report_day=entry.report_day,
                 rule=entry.rule,
                 disposition=disposition,
-                amount_minor_units=entry.amount_minor_units if disposition == ConsumptionDisposition.COUNTED else 0,
+                amount_minor_units=entry.amount_minor_units if disposition == AccountingDisposition.COUNTED else 0,
             )
         )
     return PreparedConsumption(entries=entries, issues=prepared.issues)

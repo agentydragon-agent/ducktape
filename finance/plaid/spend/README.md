@@ -61,6 +61,23 @@ payment transactions are excluded, and transactions with an explicit different c
 Plaid's negative sign. Spend percentage uses the configured limit; the alert becomes `warning` at its threshold and
 `exceeded` at 100 percent. Card views identify both the Plaid account name and its institution when available.
 
+## Shared transaction accounting
+
+`allowance.prepare_accounting` prepares purchase dates, currency minor units, ordered rule matches,
+pending supersession and confirmed full reversals once. `AccountingPolicy` supplies each view's choices
+for the single `accounting_disposition` function. API reason enums translate its result at the boundary.
+
+| View | Included kinds | Negative credits | Full reversals | Reporting date |
+| --- | --- | --- | --- | --- |
+| Flexible allowance | Flexible and review | Held outside spend | Excluded | Purchase date |
+| Net consumption | Fixed, flexible and review; configured category overrides | Confirmed refund rules only | Excluded | Purchase date |
+| Gross consumption | Same as net consumption | Held outside spend | Excluded | Purchase date |
+| Card statement | All; card repayments excluded | Signed credits | Both signed legs retained | Posting date |
+
+For example, a confirmed purchase reversal contributes neither leg to consumption; a card statement
+still reports each signed leg in its posting cycle. Projection windows and totals remain specific to
+each view. Private reports call the same preparation and disposition functions as the app.
+
 ## Shared card configuration
 
 The private policy file follows `SpendConfiguration` in [`models.py`](models.py). Its `cards` list is required;
