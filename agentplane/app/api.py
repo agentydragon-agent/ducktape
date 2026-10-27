@@ -739,13 +739,15 @@ async def watch_dispatches(
     )
 
 
-def _action_states(states: list[str] | None) -> list[action_service_pb2.ActionState]:
+def _action_states(states: list[str] | None) -> list[str]:
     try:
-        return [action_service_pb2.ActionState.Value(value) for value in states or []]
+        for value in states or []:
+            action_service_pb2.ActionState.Value(value)
     except ValueError as error:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, {"code": "INVALID_ARGUMENT", "message": "Unknown Action state"}
         ) from error
+    return states or []
 
 
 @upstream_router.get("/actions/v1/action-requests", dependencies=[OperatorLogin], include_in_schema=False)
