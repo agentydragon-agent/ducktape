@@ -637,8 +637,10 @@ cell output likely needs `STRUCTURED_TOOL_OUTPUT`.
 ### `CENTRAL_CODEX_SPIKE` — a Codex app-server outside the Sandbox drives its exec-server
 
 **In progress; dispatched by operator, 2026-10-27.** Worker `/root/central_codex_spike`,
-2026-10-27: implementing the first runnable slice under `runner/x/central_codex` with real pinned upstream
-processes and a test-only WebSocket relay. The operator selected experimental `x/` scope; flag gating is
+2026-10-27: the first runnable slice under `runner/x/central_codex` passed on RBE with real pinned upstream
+processes and a test-only WebSocket relay ([evidence](../debug/central_codex_sampling.md)). An explicit host
+loss policy records unknown effects and interrupts the turn; upstream yielded output alone is not terminal
+failure evidence. The operator selected experimental `x/` scope; flag gating is
 optional and Codex code-mode-only support is acceptable. This slice covers routing, instruction loading,
 credential environment separation and retained conversation reads after executor process loss. It does not
 complete the separate failure-domain, Gateway authorization, spend-attribution or latency gates below.

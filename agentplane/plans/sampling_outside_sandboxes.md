@@ -65,6 +65,17 @@ What stays on the harness host:
 - the network credential broker, which unified exec turns off for remote environments
   ([unified_exec.rs][ue-remote]).
 
+### First runnable slice
+
+Worker `/root/central_codex_spike`, 2026-10-27: the experimental
+[`runner/x/central_codex`](../runner/x/central_codex/README.md) subprocess/relay fixture passed on RBE
+in 16.3 seconds ([evidence](../debug/central_codex_sampling.md)). It drives real code-mode shell, patch,
+image and remote instruction loading, keeps native state outside the executor directory, and reads
+conversation history after executor loss and sampler restart. The host explicitly records unknown
+effects and interrupts a disconnected turn: a yielded shell session is not terminal failure evidence.
+The separate Pod/VM failure domain, real fence, authenticated Gateway path, spend attribution and
+comparable nested-call latency remain open. No deployment changes.
+
 ### Reaching a Sandbox's exec-server
 
 The app-server dials each exec-server over WebSocket; a bearer needs `wss://` or loopback. The other

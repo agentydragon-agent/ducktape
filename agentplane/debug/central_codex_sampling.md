@@ -21,8 +21,9 @@ Observed on RBE:
   app-server survives, and a later app-server process reads the retained conversation without
   starting inference. The append is not repeated.
 
-The first complete image/tool/history run passed in 20.7 seconds:
-[BuildBuddy invocation](https://app.buildbuddy.io/invocation/0ddcc0d5-6e0f-455b-a74d-aaa437b505fc).
+The image/tool/history and explicit-loss-policy test passed in 16.3 seconds, with Ruff and mypy
+on the changed libraries:
+[BuildBuddy invocation](https://app.buildbuddy.io/invocation/3fc68191-0bb3-440a-a67c-0bb98d0c5c3f).
 This is whole-test duration, not nested-call latency.
 
 ## Loss observation matters
