@@ -41,9 +41,8 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
 - [Orchestrating agents from an MCP client](mcp_orchestration.md) — what remains after the `orchestration_v1`
   Action group: reading workers' turns, moving each operation to a grant its backend checks, and bounding what a
   launcher may let its workers do
-- [History read and follow](history_read_follow.md) — proposed `FollowSession` call reading one Session's raw
-  entries from a cursor, a number of entries of a kind back, or the tail, with a kind filter and an optional follow,
-  for Notifications and orchestration; awaiting operator review
+- [History read and follow consumers](history_read_follow.md) — orchestration turn reads and other
+  consumers still to build on the implemented `FollowSession` API
 - [Scoped Session reads](scoped_session_reads.md) — proposed ServiceAccount read policy for
   retained Session history
 - [KubeVirt execution environments](kubevirt_environments.md) — the live gates for VM Sandboxes that no

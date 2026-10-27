@@ -106,7 +106,7 @@ func (s *Service) send(stream watchStream, response *historypb.WatchSessionSumma
 	return sendWithin(stream, s.requestTimeout, response)
 }
 
-func sendWithin(stream watchStream, timeout time.Duration, response *historypb.WatchSessionSummariesResponse) error {
+func sendWithin[Response any](stream interface{ Send(*Response) error }, timeout time.Duration, response *Response) error {
 	sent := make(chan error, 1)
 	// A write that outlives the timeout returns when the handler does, which ends the stream.
 	go func() { sent <- stream.Send(response) }()
@@ -116,6 +116,6 @@ func sendWithin(stream watchStream, timeout time.Duration, response *historypb.W
 	case err := <-sent:
 		return err
 	case <-timer.C:
-		return status.Error(codes.DeadlineExceeded, "history watch write deadline expired")
+		return status.Error(codes.DeadlineExceeded, "history stream write deadline expired")
 	}
 }

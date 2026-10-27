@@ -75,7 +75,7 @@ func newServerTimingOut(t *testing.T, lease, requestTimeout time.Duration) testS
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, projection.ChannelSummaries, storage.ChannelSessions)
+	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, storage.ChannelHistory, projection.ChannelSummaries, storage.ChannelSessions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,6 +157,17 @@ func TestEveryRPCAdmitsOnlyTheConfiguredCallers(t *testing.T) {
 		"ReadThreadEntities":       unary(server.client.ReadThreadEntities),
 		"ReadEntityEvidence":       unary(server.client.ReadEntityEvidence),
 		"ReadNativeFrames":         unary(server.client.ReadNativeFrames),
+		"FollowSession": func(ctx context.Context) error {
+			sessionID, _ := server.record(t)
+			stream, err := server.client.FollowSession(ctx, &historypb.FollowSessionRequest{
+				SessionId: sessionID.String(), Start: &historypb.FollowSessionRequest_AfterCursor{AfterCursor: 0},
+			})
+			if err != nil {
+				return err
+			}
+			_, err = stream.Recv()
+			return err
+		},
 		"WatchSessionSummaries": func(ctx context.Context) error {
 			stream, err := server.client.WatchSessionSummaries(ctx, &historypb.WatchSessionSummariesRequest{})
 			if err != nil {

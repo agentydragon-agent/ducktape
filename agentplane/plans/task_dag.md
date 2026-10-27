@@ -464,7 +464,7 @@ History's readers, and no launcher grant matches argument shapes.
 
 ### `ORCHESTRATION_V1_TURN_READS` — read and wait for workers' turns
 
-**Blocked on `HISTORY_READ_FOLLOW_API`.** `read_turns` and `wait_for_turn` on the follow API
+`read_turns` and `wait_for_turn` on the implemented follow API
 ([how](history_read_follow.md#what-the-orchestration-executor-builds-on-it)). Exit: the system test waits for a
 worker's turn across several bounded calls and reads its final message.
 
@@ -1458,34 +1458,23 @@ resumed harness or a lost push reads back) once acknowledged entries are gone, i
 
 ## 11. History reads and follows
 
-The History Service serves paged reads (`ReadSessionEvents` over raw entries by cursor, `ReadThreadEntities`
-over fold rows) and `WatchSessionSummaries`, one payload-free `changed` for every Session at once
-([README](../history_service/README.md#thread-fold)). Nothing reads one Session's history from a position and
-then follows it, so each consumer builds its own loop on that signal; the browser follows Threads through
-Electric instead ([thread sync](thread_sync/README.md)).
+The History Service's [`FollowSession`](../history_service/README.md#read-and-follow-one-session)
+reads raw entries from a cursor, the tail or a number of matching observations back, with a kind
+filter and optional live follow. The browser follows Threads through Electric
+([thread sync](thread_sync/README.md)). Remaining consumers and decisions:
 
 ```mermaid
 flowchart TD
-    HISTORY_READ_FOLLOW_API[In progress: implement the reviewed read/follow API]
     HISTORY_READS_FACADE[Candidate: History reads as a generated browser API, section 13]
     SESSION_ACTIVITY_STREAM[Unscheduled: deliver on a Session's idle time, section 7]
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history, section 2]
     THREAD_READ_POLICY[Blocked: scoped archive reads, section 3]
-    HISTORY_READ_FOLLOW_API -. browser watch .-> HISTORY_READS_FACADE
-    HISTORY_READ_FOLLOW_API -. possible consumer .-> SESSION_ACTIVITY_STREAM
-    HISTORY_READ_FOLLOW_API --> ORCHESTRATION_V1_TURN_READS[Blocked: read and wait for workers' turns]
-    HISTORY_READ_FOLLOW_API -. related .- NOTIFICATION_COMMAND_OUTCOME_DESIGN
-    HISTORY_READ_FOLLOW_API -. a feed it must authorize .-> THREAD_READ_POLICY
+    ORCHESTRATION_V1_TURN_READS[Ready: read and wait for workers' turns]
 ```
 
-### `HISTORY_READ_FOLLOW_API` — implement the reviewed read/follow API
-
-**In progress; the design is [History read and follow](history_read_follow.md)'s `FollowSession`, accepted by the
-operator 2026-10-27 04:01 UTC: "Yeah let's add those APIs".** Add the call to the Go History Service with its
-facade and client, and move the first consumers the design names onto it. Test a follow that starts mid-history and
-catches up to live, a reconnect from the last cursor with no gap or duplicate, a settlement and a removed
-range arriving while following, a projection epoch replaced under a follower, replica failover, and a
-denied caller.
+[`history_read_follow.md`](history_read_follow.md) records how orchestration builds on the API and
+which other consumers may move to it. Automatic titles remain deferred under
+[`THREAD_TITLE_GENERATION`](task_freezer.md#thread_title_generation).
 
 ## 12. The Runner Gateway serves the runner's own service
 
@@ -1710,7 +1699,6 @@ contract is [HTTP/JSON facades](../docs/grpc_services.md#httpjson-facades); what
 ```mermaid
 flowchart LR
     HISTORY_READS_FACADE[Candidate: History reads as a generated browser API]
-    HISTORY_READ_FOLLOW_API[Blocked: read/follow API, section 11] -. browser watch .-> HISTORY_READS_FACADE
     WEB_PUSH_SERVICE[Decision, unscheduled: Web Push as its own sender]
     ACTION_MCP_EDGE_SPLIT[Active: retire Actions' integrated Connection ownership]
 ```
@@ -1720,7 +1708,7 @@ flowchart LR
 **Candidate.** Annotate the browser's History
 reads and replace the app's mirror models (`app/threads/view/content.py`,
 `app/threads/events/debug.py`) with the generic proxy. `WatchSessionSummaries` says only that something
-changed; the browser-facing watch is the follow stream of `HISTORY_READ_FOLLOW_API` (section 11). Decide on purpose whether the app's Thread
+changed; a browser-facing watch could use `FollowSession` (section 11). Decide on purpose whether the app's Thread
 check on `thread_observations` (404 for a Session no Thread links) is kept or dropped.
 
 ### `ACTION_MCP_EDGE_SPLIT` — finish the MCP edge handoff
