@@ -156,6 +156,51 @@ func TestLiveSandboxStreamSendsInitialUpdateAndStaleHealth(t *testing.T) {
 	}
 }
 
+func TestSandboxThreadsUseCurrentSandboxUID(t *testing.T) {
+	const oldUID = "11111111-1111-4111-8111-111111111111"
+	const currentUID = "22222222-2222-4222-8222-222222222222"
+	oldID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	currentID := uuid.MustParse("00000000-0000-0000-0000-000000000002")
+	store := &streamTestThreadStore{rows: []threads.Thread{{ID: oldID}, {ID: currentID}}}
+	history := &streamTestHistory{
+		summaries: map[uuid.UUID]historydata.FoldSummary{
+			oldID:     {Present: true, Sandbox: "reused-name", SandboxUID: oldUID},
+			currentID: {Present: true, Sandbox: "reused-name", SandboxUID: currentUID},
+		},
+		sandboxes:   map[uuid.UUID]string{oldID: "reused-name", currentID: "reused-name"},
+		sandboxUIDs: map[uuid.UUID]string{oldID: oldUID, currentID: currentUID},
+	}
+	routes := &streamingRoutes{deps: StreamingDependencies{
+		Threads: store,
+		History: history,
+	}}
+	replacement := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{
+		Name: "reused-name", UID: currentUID,
+	}}
+	got, err := routes.sandboxThreads(context.Background(), replacement, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	views := got.([]threadView)
+	if len(views) != 1 || views[0].ID != currentID {
+		t.Fatalf("replacement Sandbox threads = %+v, want only %s", views, currentID)
+	}
+
+	for _, sandbox := range []*sandboxapi.Sandbox{
+		nil,
+		{ObjectMeta: metav1.ObjectMeta{Name: "reused-name"}},
+	} {
+		got, err := routes.sandboxThreads(context.Background(), sandbox, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		views := got.([]threadView)
+		if len(views) != 0 {
+			t.Fatalf("threads without a current Sandbox UID = %+v, want an empty list", views)
+		}
+	}
+}
+
 type decisionTestStream struct {
 	grpc.ServerStreamingClient[egress_adminpb.WatchDecisionsResponse]
 	messages []*egress_adminpb.WatchDecisionsResponse
@@ -328,11 +373,16 @@ func TestConsoleRelayStreamsBase64OutputAndClosesOnCancellation(t *testing.T) {
 
 type streamTestThreadStore struct {
 	threadReadStore
-	row *threads.Thread
+	row  *threads.Thread
+	rows []threads.Thread
 }
 
 func (f *streamTestThreadStore) GetThread(context.Context, uuid.UUID) (*threads.Thread, error) {
 	return f.row, nil
+}
+
+func (f *streamTestThreadStore) ListPage(context.Context, int, *threads.PageCursor, bool) (threads.Page, error) {
+	return threads.Page{Threads: f.rows}, nil
 }
 
 func (f *streamTestThreadStore) ArchivedCount(context.Context) (int, error) { return 0, nil }
@@ -343,10 +393,37 @@ type streamTestHistory struct {
 	firstRead   chan struct{}
 	thirdReady  bool
 	feedSummary historydata.FoldSummary
+	summaries   map[uuid.UUID]historydata.FoldSummary
+	sandboxes   map[uuid.UUID]string
+	sandboxUIDs map[uuid.UUID]string
 }
 
 func (f *streamTestHistory) GetSummary(context.Context, uuid.UUID) (historydata.FoldSummary, error) {
 	return f.feedSummary, nil
+}
+
+func (f *streamTestHistory) BatchGetSummaries(_ context.Context, ids []uuid.UUID) (map[uuid.UUID]historydata.FoldSummary, error) {
+	result := make(map[uuid.UUID]historydata.FoldSummary, len(ids))
+	for _, id := range ids {
+		result[id] = f.summaries[id]
+	}
+	return result, nil
+}
+
+func (f *streamTestHistory) FindSessions(_ context.Context, sandboxName, sandboxNameContains, sandboxUID *string) (map[uuid.UUID]string, error) {
+	result := make(map[uuid.UUID]string)
+	for id, sandbox := range f.sandboxes {
+		if sandboxName != nil && sandbox == *sandboxName {
+			result[id] = sandbox
+		}
+		if sandboxNameContains != nil && strings.Contains(strings.ToLower(sandbox), strings.ToLower(*sandboxNameContains)) {
+			result[id] = sandbox
+		}
+		if sandboxUID != nil && f.sandboxUIDs[id] == *sandboxUID {
+			result[id] = sandbox
+		}
+	}
+	return result, nil
 }
 
 func (f *streamTestHistory) ReadWatermark(context.Context, uuid.UUID) (uint64, error) {

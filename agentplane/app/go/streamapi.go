@@ -363,7 +363,7 @@ func (r *streamingRoutes) liveSandbox(w http.ResponseWriter, request *http.Reque
 				}
 			}
 		}
-		threadsView, err := r.sandboxThreads(ctx, name, includeArchived)
+		threadsView, err := r.sandboxThreads(ctx, resource, includeArchived)
 		if err != nil {
 			return nil, err
 		}
@@ -518,8 +518,12 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 	}
 }
 
-func (r *streamingRoutes) sandboxThreads(ctx context.Context, name string, includeArchived bool) (any, error) {
-	listing := threadListing{Sandbox: &name, IncludeArchived: includeArchived}
+func (r *streamingRoutes) sandboxThreads(ctx context.Context, sandbox *sandboxapi.Sandbox, includeArchived bool) (any, error) {
+	if sandbox == nil || sandbox.UID == "" {
+		return []threadView{}, nil
+	}
+	sandboxUID := string(sandbox.UID)
+	listing := threadListing{SandboxUID: &sandboxUID, IncludeArchived: includeArchived}
 	var all []threadView
 	var token *string
 	for {
