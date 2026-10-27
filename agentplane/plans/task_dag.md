@@ -607,7 +607,7 @@ flowchart LR
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
     CENTRAL_CODEX_SPIKE[In progress: experimental central Codex process fixture]
     CENTRAL_CODEX_SPIKE --> HARNESS_PLACEMENT_DESIGN[Decision, unscheduled: sampler placement and state authority]
-    POSTGRES_HARNESS_SPIKE[Unscheduled: measure a Postgres-backed headless Codex subset]
+    POSTGRES_HARNESS_SPIKE[Prototype complete, pending merge: Postgres-backed code-mode Codex subset]
     POSTGRES_HARNESS_SPIKE --> HARNESS_PLACEMENT_DESIGN
     CLAUDE_REMOTE_EXECUTION_SPIKE[Unscheduled: Claude remote tools and custom sampler compatibility]
     CLAUDE_REMOTE_EXECUTION_SPIKE -. optional Claude branch evidence .-> HARNESS_PLACEMENT_DESIGN
@@ -660,17 +660,23 @@ research plan. Changes no deployed mode.
 
 ### `POSTGRES_HARNESS_SPIKE` — measure a Postgres-backed headless Codex subset
 
-**Unscheduled spike; operator, 2026-10-27 PDT.** Independent of
-`CENTRAL_CODEX_SPIKE`. Compare a Codex persistence fork with a custom sampler using only the headless
-features Agentplane needs ([scope](sampling_outside_sandboxes.md#bounded-spike-measure-the-headless-subset-we-need)).
-Run a scripted model/tool/continuation slice with Postgres as the conversation authority and a remote executor,
-without a native rollout or second Runner conversation journal. Keep code-mode and shell/patch contracts
-comparable to upstream. Measure new/reused code, dependencies, provider API maintenance and remaining gaps
-in interrupts, compaction, instructions, recovery and other selected features. Include replica ownership fencing,
-executor-loss uncertainty and no blind replay of effects. Capture actual model request/response parts with
-turn/tool correlation and a frontend-readable trace; record the visibility gained over app-server events.
-Exit: runnable prototype, measured size and dependency inventory, failure evidence, explicit omissions and a
-fork-versus-custom recommendation. No CLI rendering, production replacement or deployment in this spike.
+**Prototype complete, pending merge; `/root/postgres_harness_spike`, 2026-10-27;
+[PR #12207](https://github.com/agentydragon/ducktape/pull/12207).** The isolated experiment under
+`agentplane/x/postgres_codex` has 563 physical Python runtime lines and reuses the pinned upstream
+code-mode host, exec-server and apply-patch binaries. The [measured findings](../debug/postgres_codex_spike.md)
+record the separate upstream source/dependency inventory and seven passing RBE integration cases: scripted
+model/tool execution, fresh-process continuation from Postgres, encrypted reasoning, ownership fencing,
+and sampler/executor crashes. Postgres is the conversation authority, without a native rollout or second
+Runner conversation journal. Durable intent and fencing protect database writes; they cannot atomically
+commit remote effects. Uncertain effects block automatic replay and have no reconciliation interface yet.
+
+The recommendation favors central upstream Codex for broad compatibility today; the custom sampler is a
+candidate only if the bounded completed-cell checkpoint and tool contract is sufficient. A persistence fork
+was not implemented or measured. See the [scope](sampling_outside_sandboxes.md#bounded-spike-measure-the-headless-subset-we-need)
+and experiment SPEC for omitted yielding/stdin, interrupts, compaction, instruction discovery, subagents,
+skills/MCP, approvals, hooks, memory, History export and frontend tracing. Frontend tracing was not a gate
+(operator clarification, 2026-10-27; existing Langfuse links provide partial visibility). Independent of
+`CENTRAL_CODEX_SPIKE`; no live provider compatibility, production replacement or deployment is established.
 
 ### `CLAUDE_REMOTE_EXECUTION_SPIKE` — Claude remote tools and custom sampler compatibility
 
