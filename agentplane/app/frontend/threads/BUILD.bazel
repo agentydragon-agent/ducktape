@@ -226,6 +226,16 @@ ts_library(
 )
 
 ts_library(
+    name = "sandbox_autosuspend",
+    srcs = ["sandbox_autosuspend.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:sandbox_status",
+    ],
+)
+
+ts_library(
     name = "conversation",
     srcs = ["conversation.tsx"],
     tsconfig = TSCONFIG,
@@ -235,6 +245,7 @@ ts_library(
         ":history_rows",
         ":live",
         ":retained_disclosures",
+        ":sandbox_autosuspend",
         ":thread_cards",
         ":thread_commands",
         ":thread_status",
