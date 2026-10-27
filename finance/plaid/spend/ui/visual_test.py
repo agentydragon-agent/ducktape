@@ -1387,7 +1387,7 @@ async def test_sustainability_shorter_curve_survives_missing_yearly_history(
             json=_sustainability_dashboard(_example_sustainability_window(30), _example_sustainability(), yearly)
         )
 
-    await page.route("**/api/v1/sustainability*", serve_windows)
+    await page.route("**/api/v1/sustainability/windows", serve_windows)
     await page.set_viewport_size({"width": width, "height": 960})
     await page.goto(f"{dashboard_url}/#/sustainability?window_days=365", wait_until="domcontentloaded")
     history = page.get_by_role("region", name="Spending and funding history")
@@ -1415,7 +1415,7 @@ async def test_sustainability_shared_history_tooltip_dates(
             window["history"] = history[-1:]
         await route.fulfill(json=_sustainability_dashboard(*windows))
 
-    await page.route("**/api/v1/sustainability*", serve_single_endpoint)
+    await page.route("**/api/v1/sustainability/windows", serve_single_endpoint)
     await page.set_viewport_size({"width": width, "height": 960})
     await page.goto(f"{dashboard_url}/#/sustainability", wait_until="domcontentloaded")
     canvas = page.get_by_role("img", name="Annual funding including taxes by day")
@@ -1481,7 +1481,7 @@ async def test_sustainability_loading_preserves_layout(
         await response_ready.wait()
         await route.continue_()
 
-    await page.route("**/api/v1/sustainability*", delay_estimate)
+    await page.route("**/api/v1/sustainability/windows", delay_estimate)
     await page.set_viewport_size({"width": width, "height": 960})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
@@ -1534,7 +1534,7 @@ async def test_sustainability_partial_window_has_no_startup_chart(
         result["history"] = []
         await route.fulfill(json=_sustainability_dashboard(result))
 
-    await page.route("**/api/v1/sustainability*", serve_partial)
+    await page.route("**/api/v1/sustainability/windows", serve_partial)
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
@@ -1559,7 +1559,7 @@ async def test_sustainability_account_history_coverage_render(
     async def serve_partial_coverage(route: Route) -> None:
         await route.fulfill(json=_sustainability_dashboard(_example_sustainability_with_partial_account_history()))
 
-    await page.route("**/api/v1/sustainability*", serve_partial_coverage)
+    await page.route("**/api/v1/sustainability/windows", serve_partial_coverage)
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
@@ -1612,7 +1612,7 @@ async def test_sustainability_history_survives_current_coverage_gap(
     async def serve_historical_gap(route: Route) -> None:
         await route.fulfill(json=_sustainability_dashboard(_example_sustainability_with_historical_coverage_gap()))
 
-    await page.route("**/api/v1/sustainability*", serve_historical_gap)
+    await page.route("**/api/v1/sustainability/windows", serve_historical_gap)
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
@@ -1640,7 +1640,7 @@ async def test_sustainability_scenario_marker_supports_touch(touch_page: Page, d
     async def serve_ready(route: Route) -> None:
         await route.fulfill(json=_sustainability_dashboard(_example_sustainability()))
 
-    await touch_page.route("**/api/v1/sustainability*", serve_ready)
+    await touch_page.route("**/api/v1/sustainability/windows", serve_ready)
     await touch_page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(touch_page, "Sustainability")
     marker = touch_page.get_by_role("button", name="Scenario 1: 3% draw rate")
@@ -1673,7 +1673,7 @@ async def test_sustainability_short_gauge_fill_render(page: Page, view: VisualPa
     async def serve_low_draw(route: Route) -> None:
         await route.fulfill(json=_sustainability_dashboard(_example_sustainability("low_draw")))
 
-    await page.route("**/api/v1/sustainability*", serve_low_draw)
+    await page.route("**/api/v1/sustainability/windows", serve_low_draw)
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
     gauge = page.get_by_role("region", name="Tax-adjusted implied draw rate")
@@ -1694,7 +1694,7 @@ async def test_sustainability_scenario_tooltip_explains_unmodeled_tax(
     async def serve_tax_unmodeled(route: Route) -> None:
         await route.fulfill(json=_sustainability_dashboard(_example_sustainability("tax_unmodeled")))
 
-    await page.route("**/api/v1/sustainability*", serve_tax_unmodeled)
+    await page.route("**/api/v1/sustainability/windows", serve_tax_unmodeled)
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
     gauge = page.get_by_role("region", name="Tax-adjusted implied draw rate")
@@ -1730,7 +1730,7 @@ async def test_sustainability_stale_and_unavailable_render(
     async def serve_variant(route: Route) -> None:
         await route.fulfill(json=_sustainability_dashboard(_example_sustainability(variant)))
 
-    await page.route("**/api/v1/sustainability*", serve_variant)
+    await page.route("**/api/v1/sustainability/windows", serve_variant)
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
