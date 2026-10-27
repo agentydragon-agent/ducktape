@@ -45,6 +45,60 @@ acknowledgement follows its commit. The ingress queues at most 16 decoded frames
 at most 128 entries or 1 MiB of serialized entries per transaction (one oversized entry forms its
 own transaction); a full queue applies backpressure to the stream.
 
+## Read and follow one Session
+
+`FollowSession` reads raw runner entries in cursor order and can keep sending them as they commit.
+Go callers use the generated `historypb.HistoryServiceClient`, as for the other History RPCs.
+The browser continues following fold tables through Electric.
+
+Each request chooses exactly one start:
+
+- `after_cursor`: exclusive, with zero naming the beginning;
+- `back { kind, count }`: includes the count-th most recent retained entry of that kind, or starts
+  at the beginning if there are fewer;
+- `tail`: only entries committed after the opening snapshot.
+
+An empty `kinds` filter sends every observation. `EventKind` numbers match the fields of the runner's
+`Event.observation` oneof. Ingest stores that number in `session_event.kind` (zero for no known
+observation); `(session_id, kind, cursor)` indexes filtered reads and back starts. The separate kind
+backfill migration must deploy only after every History replica writes the column.
+
+Every response reports `through_cursor`, the highest cursor covered by sent entries or the filter.
+Resume with `after_cursor` equal to the last received `through_cursor`: entries have no gaps or
+duplicates. `caught_up` marks the committed tail of a read snapshot, including when every new entry
+was filtered out. With `follow = false`, the stream ends successfully after its first `caught_up`.
+With `follow = true`, it ends with `reconnect_required` when `watch_lease_s` expires or the replica
+drains; reconnect with fresh authorization. Bare EOF before either terminal frame is a failure.
+
+`settled` carries the same `SettledDeltas` as `ReadSessionEvents`, including settlements whose ranges
+were already passed. It is sent only for an empty kind filter or one containing `text_delta`,
+`tool_arguments_delta`, `tool_output_delta` or `native`; all other kinds are retained.
+`removed` tells readers to discard a deliberately deleted range. Corrections are idempotent and
+replayed on refresh and reconnect, including below the requested starting cursor, so losing a
+connection between an entries frame and its correction cannot lose the correction. Readers apply
+these even when `through_cursor` does not advance. Raw cursors survive a projection epoch rebuild;
+the stream neither resets nor follows the fold's epoch.
+
+Each entries frame holds at most 128 entries or 1 MiB of encoded response, with an oversized entry
+sent alone. Filtering and byte bounds are applied in the database before payloads are transferred.
+The server reads one frame, waits for its `Send` to finish, then reads the next; a slow reader holds
+one frame and no open database transaction. Backend reads and writes to the stream have
+`request_timeout_s` deadlines. Each replica subscribes followers to the wakeup hub's
+`agentplane_session_history_changes` before the first read. A payload-free notification wakes all
+followers; reconnecting the LISTEN connection also wakes them to cover lost notifications.
+Cleanup writers must record removed ranges and notify that channel in the same transaction.
+
+Authorization checks `reader_accounts` on opening; the lease bounds continued reading after a
+reader is revoked. Errors carry a gRPC status and fixed detail:
+
+| Status              | Cause                                                                             |
+| ------------------- | --------------------------------------------------------------------------------- |
+| `NOT_FOUND`         | History never recorded the Session.                                               |
+| `OUT_OF_RANGE`      | `after_cursor` exceeds the committed tail.                                        |
+| `INVALID_ARGUMENT`  | Invalid Session UUID, absent start, zero back count, or unspecified/unknown kind. |
+| `PERMISSION_DENIED` | The authenticated caller is outside `reader_accounts`.                            |
+| `UNAUTHENTICATED`   | Missing or invalid caller credentials.                                            |
+
 ## Which Sandbox wrote a Session
 
 The History Service never routes to, reads or manages Sandboxes; it records and reports the

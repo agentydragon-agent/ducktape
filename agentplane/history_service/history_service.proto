@@ -11,6 +11,8 @@ import "google/protobuf/timestamp.proto";
 
 service HistoryService {
   rpc ReadSessionEvents(ReadSessionEventsRequest) returns (ReadSessionEventsResponse);
+  // Reads committed raw entries, optionally continuing as new entries commit.
+  rpc FollowSession(FollowSessionRequest) returns (stream FollowSessionResponse);
   rpc ReadSessionObservations(ReadSessionObservationsRequest) returns (ReadSessionObservationsResponse);
   // Newest first by `first_event_at`, Sessions with nothing folded yet ahead of the rest.
   rpc GetSessionSummary(GetSessionSummaryRequest) returns (SessionSummary);
@@ -27,6 +29,80 @@ service HistoryService {
   // Tells the caller when fold state it may hold changed, which names nothing: re-read what you hold.
   // On request it also names each Session the History Service records.
   rpc WatchSessionSummaries(WatchSessionSummariesRequest) returns (stream WatchSessionSummariesResponse);
+}
+
+message FollowSessionRequest {
+  string session_id = 1;
+  oneof start {
+    // Exclusive. Zero starts at the beginning; above the committed tail is OUT_OF_RANGE.
+    uint64 after_cursor = 2;
+    StartBack back = 3;
+    // Only entries committed after the opening snapshot.
+    google.protobuf.Empty tail = 4;
+  }
+  // Empty sends every kind. Unspecified and unknown kinds are INVALID_ARGUMENT.
+  repeated EventKind kinds = 5;
+  // False ends successfully after caught_up; true ends with reconnect_required.
+  bool follow = 6;
+}
+
+message StartBack {
+  EventKind kind = 1;
+  // Start at the count-th most recent retained entry of kind, inclusively; fewer starts at zero.
+  // Zero is INVALID_ARGUMENT.
+  uint32 count = 2;
+}
+
+// Event.observation's wire field numbers. Keep in sync when adding observation cases.
+enum EventKind {
+  EVENT_KIND_UNSPECIFIED = 0;
+  EVENT_KIND_HARNESS_STARTED = 4;
+  EVENT_KIND_HARNESS_EXITED = 5;
+  EVENT_KIND_HARNESS_LOST = 6;
+  EVENT_KIND_HARNESS_STDERR = 7;
+  EVENT_KIND_COMMAND_ADMITTED = 8;
+  EVENT_KIND_COMMAND_FAILED = 9;
+  EVENT_KIND_COMMAND_NOOP = 10;
+  EVENT_KIND_HARNESS_USER_MESSAGE_CONFIRMED = 11;
+  EVENT_KIND_TURN_STARTED = 12;
+  EVENT_KIND_TURN_COMPLETED = 13;
+  EVENT_KIND_ITEM_STARTED = 14;
+  EVENT_KIND_TEXT_DELTA = 15;
+  EVENT_KIND_TOOL_ARGUMENTS_DELTA = 16;
+  EVENT_KIND_TOOL_ARGUMENTS = 17;
+  EVENT_KIND_TOOL_OUTPUT_DELTA = 18;
+  EVENT_KIND_ITEM_COMPLETED = 19;
+  EVENT_KIND_NATIVE = 20;
+  EVENT_KIND_MODEL_CHANGED = 21;
+  EVENT_KIND_DEBUG_CHECKPOINT = 22;
+  EVENT_KIND_CONVERSATION_RECONCILED = 23;
+  EVENT_KIND_REASONING_EFFORT_CHANGED = 24;
+  EVENT_KIND_SETUP_STARTED = 25;
+  EVENT_KIND_SETUP_OUTPUT = 26;
+  EVENT_KIND_SETUP_FINISHED = 27;
+  EVENT_KIND_SETUP_INTERRUPTED = 28;
+  EVENT_KIND_HARNESS_LAUNCH_FAILED = 29;
+  EVENT_KIND_JOURNAL_REOPENED = 30;
+}
+
+message Entries {
+  // Ascending cursors; at most 128 entries or 1 MiB per frame, one oversized entry alone.
+  repeated .agentplane.proto.EventEntry entries = 1;
+}
+
+message FollowSessionResponse {
+  oneof frame {
+    Entries entries = 1;
+    // All entries through through_cursor have been sent or filtered out.
+    google.protobuf.Empty caught_up = 2;
+    // Idempotent corrections may repeat, including ranges below the starting cursor.
+    SettledDeltas settled = 3;
+    CursorRange removed = 4;
+    // Planned renewal on lease expiry or drain: resume after through_cursor with fresh auth.
+    google.protobuf.Empty reconnect_required = 5;
+  }
+  // Highest cursor covered, including filtered entries. Retain this to resume without gaps or duplicates.
+  uint64 through_cursor = 6;
 }
 
 message ReadSessionEventsRequest {

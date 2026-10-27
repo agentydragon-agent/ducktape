@@ -33,7 +33,7 @@ type config struct {
 	// FoldPageSize is how many entries a cycle folds per Session; the history store serves at most 1000.
 	FoldPageSize        int     `mapstructure:"fold_page_size"`
 	FoldIntervalSeconds float64 `mapstructure:"fold_interval_s"`
-	// WatchLeaseSeconds is how long a WatchSessionSummaries stream lasts before planned renewal.
+	// WatchLeaseSeconds is how long a watch or follow stream lasts before planned renewal.
 	WatchLeaseSeconds float64 `mapstructure:"watch_lease_s"`
 }
 

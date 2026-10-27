@@ -1,5 +1,5 @@
 // Package api serves the History Service's HistoryService gRPC API: the reads of retained Session history and
-// of its folded Threads, and the stream that tells a caller when summaries changed.
+// of its folded Threads, raw entry follows and summary change watches.
 //
 // Every RPC admits only the configured callers, each proving a ServiceAccount by a bearer reviewed on that call
 // (agentplane/docs/grpc_services.md): a public Session UUID is not itself authority to read a transcript.
@@ -36,15 +36,15 @@ type Service struct {
 // Options are what a Service reads and whom it admits.
 type Options struct {
 	Reader *reads.Reader
-	// Wakeups must listen to the channels WatchSessionSummaries follows.
+	// Wakeups listens to raw history, summary changes and Session openings.
 	Wakeups *wakeups.Hub
 	// Resolver and Callers admit a call: the caller proves a ServiceAccount by a bearer Resolver reviews, and
 	// the ServiceAccount must be one of Callers.
 	Resolver *auth.Resolver
 	Callers  []auth.Account
-	// RequestTimeout bounds a call's backend work and each write to a watch stream.
+	// RequestTimeout bounds a call's backend work and each write to a watch or follow stream.
 	RequestTimeout time.Duration
-	// WatchLease ends each WatchSessionSummaries after this long: a stream is admitted once, so the lease bounds
+	// WatchLease ends each watch and follow after this long: a stream is admitted once, so the lease bounds
 	// how long a revoked token keeps reading.
 	WatchLease time.Duration
 }
@@ -61,7 +61,7 @@ func NewService(options Options) *Service {
 	}
 }
 
-// Drain ends every open watch, so a shutdown that waits for open calls is not held up until their leases.
+// Drain ends every open watch and follow, so a shutdown that waits for open calls is not held up until their leases.
 func (s *Service) Drain() { s.drain() }
 
 // authenticate admits the configured callers only.
@@ -137,6 +137,8 @@ func failure(ctx context.Context, err error) error {
 		return status.Error(codes.Internal, "stored thread entity is invalid")
 	case errors.Is(err, storage.ErrInvalidArgument):
 		return status.Error(codes.InvalidArgument, "invalid session history request")
+	case errors.Is(err, storage.ErrOutOfRange):
+		return status.Error(codes.OutOfRange, "cursor beyond committed session history")
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		return status.Error(codes.DeadlineExceeded, "history read deadline expired")
 	case ctx.Err() != nil:

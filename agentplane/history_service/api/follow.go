@@ -1,0 +1,164 @@
+package api
+
+import (
+	"context"
+
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
+	"github.com/google/uuid"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
+)
+
+type followStream = grpc.ServerStreamingServer[historypb.FollowSessionResponse]
+
+func (s *Service) FollowSession(request *historypb.FollowSessionRequest, stream followStream) error {
+	ctx := stream.Context()
+	if err := s.admit(ctx); err != nil {
+		return err
+	}
+	sessionID, err := uuid.Parse(request.GetSessionId())
+	if err != nil {
+		return status.Error(codes.InvalidArgument, "invalid session ID")
+	}
+	leased, endLease := context.WithTimeout(ctx, s.lease)
+	defer endLease()
+	defer context.AfterFunc(s.draining, endLease)()
+	// Subscribe before the opening snapshot: every intervening commit leaves a pending re-read.
+	changed, unsubscribe, err := s.wakeups.Subscribe(storage.ChannelHistory)
+	if err != nil {
+		return failure(ctx, err)
+	}
+	defer unsubscribe()
+	readCtx, cancel := context.WithTimeout(leased, s.requestTimeout)
+	after, err := s.reader.History.ResolveFollowStart(readCtx, sessionID, request)
+	if err != nil {
+		err = failure(readCtx, err)
+	}
+	cancel()
+	if err != nil {
+		return err
+	}
+	call := &followCall{service: s, stream: stream, sessionID: sessionID, request: request, through: after}
+	for {
+		if leased.Err() != nil {
+			return call.reconnect()
+		}
+		if err := call.catchUp(leased); err != nil {
+			if leased.Err() != nil && ctx.Err() == nil {
+				return call.reconnect()
+			}
+			return err
+		}
+		if !request.GetFollow() {
+			return nil
+		}
+		select {
+		case <-changed:
+		case <-leased.Done():
+			return call.reconnect()
+		}
+	}
+}
+
+type followCall struct {
+	service   *Service
+	stream    followStream
+	sessionID uuid.UUID
+	request   *historypb.FollowSessionRequest
+	through   uint64
+}
+
+func (c *followCall) send(response *historypb.FollowSessionResponse) error {
+	response.ThroughCursor = c.through
+	return sendWithin(c.stream, c.service.requestTimeout, response)
+}
+
+func (c *followCall) reconnect() error {
+	if err := c.stream.Context().Err(); err != nil {
+		return status.FromContextError(err).Err()
+	}
+	return c.send(&historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}}})
+}
+
+func (c *followCall) catchUp(ctx context.Context) error {
+	for {
+		readCtx, cancel := context.WithTimeout(ctx, c.service.requestTimeout)
+		page, err := c.service.reader.History.ReadFollowEntries(readCtx, c.sessionID, c.through, c.request.GetKinds())
+		if err != nil {
+			err = failure(readCtx, err)
+		}
+		cancel()
+		if err != nil {
+			return err
+		}
+		if len(page.Entries) > 0 {
+			response := &historypb.FollowSessionResponse{ThroughCursor: page.ThroughCursor, Frame: &historypb.FollowSessionResponse_Entries{Entries: &historypb.Entries{Entries: page.Entries}}}
+			if err := sendWithin(c.stream, c.service.requestTimeout, response); err != nil {
+				return err
+			}
+		}
+		c.through = page.ThroughCursor
+		if c.through == page.LastCursor {
+			break
+		}
+	}
+	// Corrections are idempotent and replayed, including below the resume cursor: a disconnect
+	// after an entries frame must not lose a correction that was not sent yet. Each read holds
+	// one correction, with no database transaction kept open while the client consumes it.
+	if wantsSettlements(c.request.GetKinds()) {
+		for after := uint64(0); ; {
+			readCtx, cancel := context.WithTimeout(ctx, c.service.requestTimeout)
+			settled, err := c.service.reader.History.ReadFollowSettlement(readCtx, c.sessionID, 0, c.through, after)
+			if err != nil {
+				err = failure(readCtx, err)
+			}
+			cancel()
+			if err != nil {
+				return err
+			}
+			if settled == nil {
+				break
+			}
+			if err := c.send(&historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_Settled{Settled: settled}}); err != nil {
+				return err
+			}
+			after = settled.GetCompletionCursor()
+		}
+	}
+	for after := uint64(0); ; {
+		readCtx, cancel := context.WithTimeout(ctx, c.service.requestTimeout)
+		removed, err := c.service.reader.History.ReadFollowRemoved(readCtx, c.sessionID, 0, c.through, after)
+		if err != nil {
+			err = failure(readCtx, err)
+		}
+		cancel()
+		if err != nil {
+			return err
+		}
+		if removed == nil {
+			break
+		}
+		if err := c.send(&historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_Removed{Removed: removed}}); err != nil {
+			return err
+		}
+		after = removed.GetFirst()
+	}
+	return c.send(&historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}})
+}
+
+func wantsSettlements(kinds []historypb.EventKind) bool {
+	if len(kinds) == 0 {
+		return true
+	}
+	for _, kind := range kinds {
+		switch kind {
+		case historypb.EventKind_EVENT_KIND_TEXT_DELTA, historypb.EventKind_EVENT_KIND_TOOL_ARGUMENTS_DELTA,
+			historypb.EventKind_EVENT_KIND_TOOL_OUTPUT_DELTA, historypb.EventKind_EVENT_KIND_NATIVE:
+			return true
+		}
+	}
+	return false
+}
