@@ -607,8 +607,6 @@ flowchart LR
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
     CENTRAL_CODEX_SPIKE[In progress: experimental central Codex process fixture]
     CENTRAL_CODEX_SPIKE --> HARNESS_PLACEMENT_DESIGN[Decision, unscheduled: sampler placement and state authority]
-    POSTGRES_HARNESS_CONTROLS[In flight: Postgres sampler wait, stdin and external interrupts]
-    POSTGRES_HARNESS_CONTROLS --> HARNESS_PLACEMENT_DESIGN
     CLAUDE_REMOTE_EXECUTION_SPIKE[Unscheduled: Claude remote tools and custom sampler compatibility]
     CLAUDE_REMOTE_EXECUTION_SPIKE -. optional Claude branch evidence .-> HARNESS_PLACEMENT_DESIGN
 ```
@@ -658,24 +656,6 @@ readable, the turn reaches a bounded failure, and unknown effects are not replay
 ([incident #12203](https://github.com/agentydragon/ducktape/issues/12203)). Exit: the test and its numbers in the
 research plan. Changes no deployed mode.
 
-### `POSTGRES_HARNESS_CONTROLS` — yielded cells, stdin and external interruption
-
-**In flight; `/root/postgres_harness_spike`, operator-dispatched, 2026-10-27.** Extend the baseline
-[merged in #12207](https://github.com/agentydragon/ducktape/pull/12207) with real upstream code-mode
-`wait`, yielded shell session handles, `write_stdin` with PTY EOF/Ctrl-C, and a generation-targeted
-external interrupt command. Keep Postgres as the completed-checkpoint authority; persist process
-handles/cursors and resume the recorded upstream executor session. Live V8 cells require their retained
-host; host loss, expired executor sessions and uncertain mutating input must block automatic replay.
-
-Exit: deterministic RBE evidence for model-facing yield/wait, real interactive input, sampling and
-shell/cell interruption with observed host/process exits, stale/prequeued interrupt handling, and
-restart/loss boundaries; named runtime libraries pass Ruff/mypy. Preserve original experiment rows
-through an additive migration. Findings and remaining omissions belong in the
-[spike report](../debug/postgres_codex_spike.md#process-control-extension). Combined validation with the compaction extension is in progress in the root integration branch: defer
-automatic compaction over live cells, retain stdin handles, preserve interrupt outputs in the active
-context, and upgrade both schemas without losing original rows. No production replacement, live inference,
-merge or deployment implied.
-
 ### `CLAUDE_REMOTE_EXECUTION_SPIKE` — Claude remote tools and custom sampler compatibility
 
 **Unscheduled investigation/spike; operator, 2026-10-27 PDT.** Independent of both Codex spikes.
@@ -692,7 +672,7 @@ for the Claude branch. No live account feature changes or runtime cutover implie
 
 ### `HARNESS_PLACEMENT_DESIGN` — sampler placement and state authority
 
-**Decision, unscheduled; after `CENTRAL_CODEX_SPIKE` and `POSTGRES_HARNESS_CONTROLS`.** Claude evidence is optional
+**Decision, unscheduled; after `CENTRAL_CODEX_SPIKE`.** Claude evidence is optional
 and must not block a Codex-only choice. Compare upstream central Codex (per-Sandbox harness Pod or shared
 app-server), a Postgres-backed Codex fork, a custom central sampler, and no change. Recommendation to review:
 measure the smaller headless subset before choosing a rewrite; upstream per-Sandbox hosting remains the

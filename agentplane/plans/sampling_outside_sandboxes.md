@@ -289,7 +289,7 @@ committed intent; database fencing does not guarantee exactly-once remote effect
 reconciliation interface yet.
 
 The [process-control extension](../debug/postgres_codex_spike.md#process-control-extension),
-operator-dispatched 2026-10-27, adds real yielded-cell `wait`, durable shell session handles,
+in [PR #12213](https://github.com/agentydragon/ducktape/pull/12213), adds real yielded-cell `wait`, durable shell session handles,
 interactive stdin, PTY EOF/Ctrl-C and external generation-targeted interruption. A retained host is
 required for live V8 state; process continuation uses the upstream executor session's 30-second
 detached retention window. These are explicit limits, not Postgres serialization of live processes.
@@ -341,7 +341,8 @@ Alternatives to compare:
 
 ## Next
 
-`CENTRAL_CODEX_SPIKE` and `POSTGRES_HARNESS_SPIKE` supply `HARNESS_PLACEMENT_DESIGN` in
+The completed [combined custom sampler evidence](../debug/postgres_codex_spike.md#combined-compaction-and-controls)
+and remaining `CENTRAL_CODEX_SPIKE` gates inform `HARNESS_PLACEMENT_DESIGN` in
 [task DAG](task_dag.md) section 5. `CLAUDE_REMOTE_EXECUTION_SPIKE` supplies optional Claude evidence;
 it is not a prerequisite for choosing a Codex-only mode. No runtime cutover is selected.
 
