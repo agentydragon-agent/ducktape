@@ -102,6 +102,14 @@ This differs from the ordinary local CLI's prior-read validation; do not assume 
 serving reproduces every local controller precondition. The suite also checks a later Edit, replayed
 call identity and a mismatched attached-session refusal, and captures native server-side read state.
 
+The mismatched request includes a complete forwarding envelope with a fresh `call_id`; its caller
+`conversation_id` agrees with its requested session, which differs from the device's attached session.
+`createDeviceMcpServer` in `chunk-f1j5pmqs.js` rejects it before registry dispatch by comparing the normalized
+outer `session_id` against the attached session. This layer returns MCP `isError:true` with a specific
+“different Claude Code cloud session” text detail, without a structured error code. The assertion checks that detail and the
+native diagnostic naming both asserted and attached IDs, distinguishing this refusal from the raw
+Read's `invalid_request` envelope denial. Its analytics reason in the source is `session_mismatch`.
+
 The approval requests leave the fixture file unchanged until answered. After the unread Edit succeeds,
 server read state contains `unread\n` with `contentNotInModelContext:true`. Read returns numbered
 `unread` contents and changes that state to `offset:1`, without `contentNotInModelContext`. The later
@@ -132,6 +140,12 @@ in 21.8 seconds; the unchanged local comparator reused its 17.9-second passing r
 invocation named the changed `:probe` library, so its build and lint aspects also passed. The native
 serving case asserts gates, registration, approval-before-write, Read/Edit results, server state,
 cached replay, attached-session refusal and the limited instruction-payload observation above.
+
+The [focused session-refusal follow-up](https://app.buildbuddy.io/invocation/b027178a-c086-4b8c-8f17-4407106d677e)
+passed both `test_native_serving` pytest cases in a 19.0-second Bazel action. Its
+`native-source-stdout.jsonl` records the valid mismatched request and refusal; `native-source-stderr.log`
+records the native asserted/attached-session diagnostic. An earlier follow-up failed only because
+the diagnostic assertion omitted the native logger's quotes around the asserted session ID.
 
 Earlier iterations are retained in BuildBuddy: [first native handshake](https://app.buildbuddy.io/invocation/40ae2510-72f7-44b6-89ee-5677e986671e),
 [native dispatch after config initialization](https://app.buildbuddy.io/invocation/9eaf1db3-7592-4850-abdf-752414c9282a),

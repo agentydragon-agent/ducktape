@@ -103,18 +103,21 @@ emit(
   "raw-read",
   await rpc("tools/call", { name: "Read", arguments: { session_id: sessionId, file_path: process.env.PROBE_TARGET } })
 );
-async function tool(name, args, callId) {
-  const envelope = {
+function remoteCallEnvelope(callId, conversationId) {
+  return {
     v: 1,
     call_id: callId,
     caller: {
       kind: "ccr_container",
       permission_mode: "default",
       instance_id: "synthetic-caller",
-      conversation_id: sessionId,
+      conversation_id: conversationId,
     },
     expires_in_ms: 10000,
   };
+}
+async function tool(name, args, callId) {
+  const envelope = remoteCallEnvelope(callId, sessionId);
   let result = await rpc("tools/call", {
     name,
     arguments: { session_id: sessionId, ...args, __remote_tool_call: envelope },
@@ -147,11 +150,18 @@ await tool(
   "edit-after-read"
 );
 await tool("Read", { file_path: process.env.PROBE_TARGET }, "read-native");
+const mismatchedSessionId = "00000000-0000-4000-8000-000000000099";
+const mismatchArguments = {
+  session_id: mismatchedSessionId,
+  file_path: process.env.PROBE_TARGET,
+  __remote_tool_call: remoteCallEnvelope("read-other-session", mismatchedSessionId),
+};
+emit("mismatch-read-request", mismatchArguments);
 emit(
   "mismatch-read",
   await rpc("tools/call", {
     name: "Read",
-    arguments: { session_id: "00000000-0000-4000-8000-000000000099", file_path: process.env.PROBE_TARGET },
+    arguments: mismatchArguments,
   })
 );
 await bridge.stop();

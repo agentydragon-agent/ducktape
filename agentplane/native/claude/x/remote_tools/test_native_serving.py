@@ -84,7 +84,14 @@ def test_native_serving(tmp_path: Path) -> None:
     assert states[2]["content"] == "after\n"
     assert states[3] == states[2]  # A replay returns cached content without rereading the file.
     assert target.read_text() == "after\n"
-    assert events["mismatch-read"][0]["result"]["isError"] is True
+    mismatch = events["mismatch-read"][0]["result"]
+    assert mismatch["isError"] is True
+    # This MCP-layer denial has no structured error code; assert its specific detail and native trace.
+    assert "different Claude Code cloud session" in mismatch["content"][0]["text"]
+    assert (
+        '[deviceBridge] refused Read: call asserted for session "00000000-0000-4000-8000-000000000099", '
+        "this device serves 00000000-0000-4000-8000-000000000001"
+    ) in completed.stderr
 
 
 def test_unmodified_cloud_startup_requires_login(tmp_path: Path, base_environment: dict[str, str]) -> None:
