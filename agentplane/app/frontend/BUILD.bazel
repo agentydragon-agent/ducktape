@@ -83,11 +83,20 @@ ts_library(
     deps = [":client"],
 )
 
+ts_library(
+    name = "langfuse_search_fixture",
+    testonly = True,
+    srcs = ["langfuse_search_fixture.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":client"],
+)
+
 agentplane_vitest_test(
     name = "langfuse_search_test",
     srcs = ["langfuse_search.test.ts"],
     deps = [
         ":langfuse_search",
+        ":langfuse_search_fixture",
         "//:node_modules/vitest",
     ],
 )

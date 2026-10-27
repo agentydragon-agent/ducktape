@@ -233,6 +233,7 @@ agentplane_vitest_test(
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:langfuse_search_fixture",
         "//agentplane/app/frontend:status_mark",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:test_model_catalog",
