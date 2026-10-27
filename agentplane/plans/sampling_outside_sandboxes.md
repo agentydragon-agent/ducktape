@@ -398,12 +398,19 @@ and nested tool events directly; a wrapper may have only public harness events, 
 versioned integration to obtain richer evidence. Missing evidence means unknown, not that an operation
 did not happen. Preserve provider-specific opaque continuation state without treating it as display text.
 
-Evaluate retaining original evidence with provenance and building frontend/control projections from
-it, rather than requiring a universal transcript that discards detail or invents unavailable events.
-Correlate turns, cells, nested calls and tool results only where the source supports those relationships.
-Keep replayable provider context, human-visible conversation history and execution-effect evidence
-distinct: compaction can replace the first without deleting the others. This is a design requirement;
-these experiments do not select a new History schema or replace its current authority.
+Operator clarification: a common representation is necessary for one frontend. The existing
+[Thread form](../docs/thread_layering.md#authorities-and-representations) is already a deliberately
+lossy fold of Session history for that purpose. Design and extend that common contract rather than
+requiring every frontend to interpret each provider or harness independently. Specify which user-visible
+items, statuses and controls it guarantees, which details it can preserve, and how it represents
+unavailable information. Some source gaps cannot be bridged; that does not eliminate the common fold.
+
+Evaluate richer source evidence with provenance beneath that projection. Correlate turns, cells,
+nested calls and tool results where the source supports those relationships. Keep replayable provider
+context, human-visible conversation history and execution-effect evidence distinct: compaction can
+replace the first without deleting the others. The Thread is one purpose-specific projection, not a
+claim that every source detail is equivalent or present. This is design work; these experiments do
+not select a new History schema or replace its current authority.
 
 ## Next
 

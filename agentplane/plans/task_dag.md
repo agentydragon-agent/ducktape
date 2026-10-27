@@ -717,8 +717,9 @@ Postgres sampling must not implicitly retire the native-harness path. See [coexi
 
 Operator clarification, 2026-10-27: design history fidelity explicitly across provider APIs and wrapped
 harness JSON APIs. Inventory available evidence and gaps, source authority, IDs/order and recovery detail;
-evaluate raw evidence with provenance plus projections instead of assuming an equivalent universal
-transcript. `CODEX_CODE_MODE_CELLS` is a concrete missing-detail case, independent of placement. Separate
+extend the common Thread contract needed for one frontend, backed by evidence with provenance. The
+Thread form is a purpose-specific lossy fold; define its guarantees and explicit gaps rather than
+assuming equivalent source detail. `CODEX_CODE_MODE_CELLS` is a concrete missing-detail case, independent of placement. Separate
 provider replay context from conversation history and effect evidence, and preserve opaque native blocks.
 See [history scope](sampling_outside_sandboxes.md#history-across-providers-and-harnesses). This does not
 select a new History schema or add frontend tracing to the current spike's acceptance.
