@@ -47,6 +47,8 @@ from agentplane.proto import event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
+# Generated service annotations need the grpcio typing dependency.
+# gazelle:include_dep @pypi//grpcio
 
 APP_URL = "http://test-app.invalid"
 OIDC = OIDCSettings(

@@ -1353,6 +1353,7 @@ py_test(
         "//agentplane/postgres:wakeups",
         "//agentplane/proto:event_pb2",
         "@pypi//fastapi",
+        "@pypi//grpcio",
         "@pypi//httpx",
         "@pypi//more_itertools",
         "@pypi//protobuf",
