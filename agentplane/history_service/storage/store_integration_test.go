@@ -234,10 +234,6 @@ func TestAppendStoresObservationFieldNumbers(t *testing.T) {
 			t.Errorf("cursor %d kind = %d, want %d", cursor+1, kind, want)
 		}
 	}
-	// An old replica can keep writing while the nullable column rolls out.
-	if _, err := db.ExecContext(t.Context(), "INSERT INTO session_event (session_id, cursor, payload) VALUES ($1, 4, $2)", sessionID, []byte{}); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestTwoReplicaWritersSerializeOnTheHistoryRow(t *testing.T) {

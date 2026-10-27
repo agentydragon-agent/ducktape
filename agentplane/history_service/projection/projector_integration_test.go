@@ -486,7 +486,7 @@ func appendRaw(t *testing.T, db *sql.DB, sessionID uuid.UUID, raw *eventlogpb.Ev
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("INSERT INTO session_event (session_id, cursor, payload) VALUES ($1, $2, $3)", sessionID, raw.Cursor, payload); err != nil {
+	if _, err := db.Exec("INSERT INTO session_event (session_id, cursor, payload, kind) VALUES ($1, $2, $3, 0)", sessionID, raw.Cursor, payload); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec("UPDATE session_history SET last_cursor = $2 WHERE id = $1", sessionID, raw.Cursor); err != nil {
