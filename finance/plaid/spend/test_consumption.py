@@ -8,8 +8,11 @@ import pytest
 import pytest_bazel
 
 from finance.plaid.spend.allowance import (
+    AllOf,
     AllowancePolicy,
+    AmountExact,
     AnalysisCategory,
+    DateRange,
     Kind,
     NamePrefix,
     ReversalPair,
@@ -103,8 +106,20 @@ def test_full_history_reversals_and_isolated_credits(mode: ConsumptionMode) -> N
                 ReversalPair(
                     id="synthetic-return",
                     description="Synthetic confirmed full reversal.",
-                    original=NamePrefix(field="name", prefix="SHOP original"),
-                    reversal=NamePrefix(field="name", prefix="SHOP return"),
+                    original=AllOf(
+                        conditions=[
+                            DateRange(start=date(2026, 1, 1), end=date(2026, 1, 1)),
+                            NamePrefix(field="name", prefix="SHOP original"),
+                            AmountExact(value="10.00"),
+                        ]
+                    ),
+                    reversal=AllOf(
+                        conditions=[
+                            DateRange(start=date(2026, 3, 10), end=date(2026, 3, 10)),
+                            NamePrefix(field="name", prefix="SHOP return"),
+                            AmountExact(value="-10.00"),
+                        ]
+                    ),
                 )
             ]
         }
@@ -138,15 +153,27 @@ def test_ambiguous_reversal_reports_issue_and_keeps_purchase() -> None:
                 ReversalPair(
                     id="synthetic-return",
                     description="Synthetic incomplete full reversal.",
-                    original=NamePrefix(field="name", prefix="SHOP original"),
-                    reversal=NamePrefix(field="name", prefix="SHOP return"),
+                    original=AllOf(
+                        conditions=[
+                            DateRange(start=date(2026, 1, 1), end=date(2026, 1, 1)),
+                            NamePrefix(field="name", prefix="SHOP original"),
+                            AmountExact(value="10.00"),
+                        ]
+                    ),
+                    reversal=AllOf(
+                        conditions=[
+                            DateRange(start=date(2026, 3, 10), end=date(2026, 3, 10)),
+                            NamePrefix(field="name", prefix="SHOP return"),
+                            AmountExact(value="-10.00"),
+                        ]
+                    ),
                 )
             ]
         }
     )
     result = prepare_consumption(
         allowance,
-        [transaction("SHOP original")],
+        [transaction("SHOP original", date=date(2026, 1, 1))],
         time_zone=_ZONE,
         today=_TODAY,
         currency="USD",
