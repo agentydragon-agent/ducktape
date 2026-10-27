@@ -15,6 +15,7 @@ function sandboxView(name: string, overrides: Partial<SandboxView> = {}): Sandbo
     service_account: { namespace: "agentplane-test", name },
     status: {},
     idle_suspend_after_seconds: null,
+    idle_suspend_at: null,
     suspended_by: null,
     phase: "Creating",
     pod: null,

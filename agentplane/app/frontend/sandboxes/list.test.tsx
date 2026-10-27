@@ -44,6 +44,7 @@ const CREATED: SandboxView = {
   wake_on_send: false,
   idle_suspend_after_seconds: null,
   preset: null,
+  idle_suspend_at: null,
   suspended_by: null,
 };
 

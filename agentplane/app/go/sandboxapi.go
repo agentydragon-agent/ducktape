@@ -29,6 +29,7 @@ type SandboxView struct {
 	Preset                  *string               `json:"preset"`
 	WakeOnSend              bool                  `json:"wake_on_send"`
 	IdleSuspendAfterSeconds *int64                `json:"idle_suspend_after_seconds"`
+	IdleSuspendAt           *time.Time            `json:"idle_suspend_at"`
 	SuspendedBy             *string               `json:"suspended_by"`
 	Phase                   string                `json:"phase"`
 	Pod                     *SandboxPodView       `json:"pod"`
@@ -229,6 +230,10 @@ func sandboxView(value *sandboxespb.Sandbox) SandboxView {
 	}
 	if value.CreatedAt != nil && value.CreatedAt.IsValid() {
 		view.CreatedAt = value.CreatedAt.AsTime()
+	}
+	if value.IdleSuspendAt != nil && value.IdleSuspendAt.IsValid() {
+		at := value.IdleSuspendAt.AsTime()
+		view.IdleSuspendAt = &at
 	}
 	if account := value.GetServiceAccount(); account != nil {
 		view.ServiceAccount = SandboxServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()}

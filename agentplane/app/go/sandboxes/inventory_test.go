@@ -79,6 +79,8 @@ func TestListGetAndTemplatesUseCRDsAndOnlyJoinCurrentPodUID(t *testing.T) {
 	first.Spec.Bootstrap = "echo boot"
 	first.Spec.WakeOnSend = true
 	first.Spec.IdleSuspendAfter = &metav1.Duration{Duration: 2 * time.Minute}
+	deadline := metav1.NewTime(time.Date(2026, 10, 20, 1, 4, 3, 0, time.UTC))
+	first.Status.IdleSuspendAt = &deadline
 	first.Labels = map[string]string{PresetLabel: "preset-a"}
 	first.Status.Incarnation = &sandboxapi.Incarnation{Name: "alpha", UID: "pod-alpha"}
 	first.Status.Conditions = []metav1.Condition{{Type: sandboxapi.ConditionReady, Status: metav1.ConditionTrue, Reason: "PodReady"}}
@@ -119,6 +121,9 @@ func TestListGetAndTemplatesUseCRDsAndOnlyJoinCurrentPodUID(t *testing.T) {
 	if views[0].GetPod() == nil || views[0].GetPod().GetUid() != "pod-alpha" || views[0].GetPod().GetStatus().GetFields()["podIP"].GetStringValue() != "10.0.0.7" {
 		t.Fatalf("alpha Pod view = %#v", views[0].GetPod())
 	}
+	if views[0].GetIdleSuspendAt() == nil || !views[0].GetIdleSuspendAt().AsTime().Equal(deadline.Time) || views[1].GetIdleSuspendAt() != nil {
+		t.Fatalf("Sandbox idle deadlines = %v, %v", views[0].GetIdleSuspendAt(), views[1].GetIdleSuspendAt())
+	}
 	if views[1].GetPod() != nil {
 		t.Fatalf("stale Pod UID was joined: %#v", views[1].GetPod())
 	}
@@ -134,7 +139,7 @@ func TestListGetAndTemplatesUseCRDsAndOnlyJoinCurrentPodUID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.GetUid() != "sandbox-alpha" || got.GetPod().GetUid() != "pod-alpha" {
+	if got.GetUid() != "sandbox-alpha" || got.GetPod().GetUid() != "pod-alpha" || got.GetIdleSuspendAt() == nil || !got.GetIdleSuspendAt().AsTime().Equal(deadline.Time) {
 		t.Fatalf("Get(alpha) = %#v", got)
 	}
 	if _, err := access.Get(context.Background(), "absent"); !isNotFound(err) {

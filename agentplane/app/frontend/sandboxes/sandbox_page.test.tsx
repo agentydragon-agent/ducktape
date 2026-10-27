@@ -43,6 +43,7 @@ const live = vi.hoisted(
           binding: null,
           preset: "test-preset",
           idle_suspend_after_seconds: null,
+          idle_suspend_at: null,
           suspended_by: null,
           status: { conditions: [{ type: "Ready", status: "True" }] },
           phase: "Running",

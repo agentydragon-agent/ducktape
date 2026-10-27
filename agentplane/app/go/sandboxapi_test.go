@@ -53,7 +53,8 @@ func TestSandboxViewKeepsBrowserFieldNamesAndDerivedValues(t *testing.T) {
 		ServiceAccount: &sandboxespb.ServiceAccount{Namespace: "sandboxes", Name: "worker"},
 		Binding:        &sandboxespb.SandboxBinding{Bootstrap: "echo ready"},
 		Preset:         sandboxString("Default"), WakeOnSend: true, IdleSuspendAfter: durationpb.New(90 * time.Second),
-		SuspendedBy: sandboxString("Idle"), Phase: sandboxespb.SandboxPhase_SANDBOX_PHASE_RUNNING,
+		IdleSuspendAt: timestamppb.New(time.Date(2026, 10, 1, 2, 5, 4, 0, time.UTC)),
+		SuspendedBy:   sandboxString("Idle"), Phase: sandboxespb.SandboxPhase_SANDBOX_PHASE_RUNNING,
 		Pod: &sandboxespb.SandboxPod{
 			Name: "worker-pod", Namespace: "sandboxes", Uid: "pod-uid",
 			OwnerReferences: []*sandboxespb.OwnerReference{{ApiVersion: "agentplane.allegedly.works/v1alpha1", Kind: "Sandbox", Name: "worker", Uid: "sandbox-uid", Controller: true}},
@@ -78,6 +79,9 @@ func TestSandboxViewKeepsBrowserFieldNamesAndDerivedValues(t *testing.T) {
 		if _, ok := object[key]; !ok {
 			t.Errorf("browser JSON lacks %q: %s", key, body)
 		}
+	}
+	if object["idle_suspend_at"] != "2026-10-01T02:05:04Z" {
+		t.Fatalf("browser idle deadline = %v", object["idle_suspend_at"])
 	}
 	if _, ok := object["createdAt"]; ok {
 		t.Fatalf("browser JSON unexpectedly uses protobuf camelCase: %s", body)

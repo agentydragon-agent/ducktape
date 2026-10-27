@@ -79,6 +79,7 @@ function inventorySandbox(operating_mode: "Running" | "Suspended" = "Running", w
     operating_mode,
     wake_on_send,
     idle_suspend_after_seconds: null,
+    idle_suspend_at: null,
     suspended_by: null,
     status: operating_mode === "Running" ? { conditions: [{ type: "Ready", status: "True" }] } : {},
     service_account: { namespace: "agentplane-test", name: THREAD.sandbox },

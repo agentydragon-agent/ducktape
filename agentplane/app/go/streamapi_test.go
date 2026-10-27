@@ -122,9 +122,10 @@ func (f *streamTestLive) Subscribe() (<-chan struct{}, func()) {
 }
 
 func TestLiveSandboxStreamSendsInitialUpdateAndStaleHealth(t *testing.T) {
+	deadline := metav1.NewTime(time.Date(2026, 10, 20, 1, 4, 3, 0, time.UTC))
 	live := &streamTestLive{
 		snapshots: []liveinventory.Snapshot{
-			{Sandboxes: []sandboxapi.Sandbox{{ObjectMeta: metav1.ObjectMeta{Namespace: "tools", Name: "demo"}}}, Watch: liveinventory.WatchHealth{Fresh: true, StaleAfterSeconds: 30}},
+			{Sandboxes: []sandboxapi.Sandbox{{ObjectMeta: metav1.ObjectMeta{Namespace: "tools", Name: "demo"}, Status: sandboxapi.SandboxStatus{IdleSuspendAt: &deadline}}}, Watch: liveinventory.WatchHealth{Fresh: true, StaleAfterSeconds: 30}},
 			{Sandboxes: []sandboxapi.Sandbox{{ObjectMeta: metav1.ObjectMeta{Namespace: "tools", Name: "demo"}}}, Watch: liveinventory.WatchHealth{Fresh: false, StaleAfterSeconds: 30}},
 		},
 		changes: make(chan struct{}, 1),
@@ -140,9 +141,10 @@ func TestLiveSandboxStreamSendsInitialUpdateAndStaleHealth(t *testing.T) {
 		routes.liveSandboxes(response, request)
 		close(done)
 	}()
-	waitForStreamText(t, response, `"fresh":true`)
+	waitForStreamText(t, response, `"idle_suspend_at":"2026-10-20T01:04:03Z"`)
 	live.changes <- struct{}{}
 	waitForStreamText(t, response, `"fresh":false`)
+	waitForStreamText(t, response, `"idle_suspend_at":null`)
 	cancel()
 	select {
 	case <-done:

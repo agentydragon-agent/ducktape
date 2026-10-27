@@ -84,7 +84,13 @@ localStorage.clear();
 // The visual harness freezes the wall clock before this bundle runs, so relative ages stay put.
 const NOW = Date.now();
 const HOUR = 3_600_000;
-const NULL_SANDBOX_FIELDS = { binding: null, preset: null, idle_suspend_after_seconds: null, suspended_by: null };
+const NULL_SANDBOX_FIELDS = {
+  binding: null,
+  preset: null,
+  idle_suspend_after_seconds: null,
+  suspended_by: null,
+  idle_suspend_at: null,
+};
 const NULL_THREAD_FIELDS = {
   sandbox_uid: null,
   last_model_activity_at: null,

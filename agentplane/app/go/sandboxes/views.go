@@ -37,6 +37,9 @@ func sandboxView(resource *sandboxapi.Sandbox, pod *corev1.Pod) (*sandboxespb.Sa
 		suspendedBy := string(*resource.Status.SuspendedBy)
 		view.SuspendedBy = &suspendedBy
 	}
+	if resource.Status.IdleSuspendAt != nil {
+		view.IdleSuspendAt = timestamppb.New(resource.Status.IdleSuspendAt.Time)
+	}
 	if resource.Spec.IdleSuspendAfter != nil {
 		view.IdleSuspendAfter = durationpb.New(resource.Spec.IdleSuspendAfter.Duration)
 	}

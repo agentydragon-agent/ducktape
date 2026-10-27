@@ -17,6 +17,7 @@ const READY_SANDBOX: SandboxView = {
   operating_mode: "Running",
   wake_on_send: false,
   idle_suspend_after_seconds: null,
+  idle_suspend_at: null,
   suspended_by: null,
   service_account: { namespace: "agentplane-test", name: "test-sandbox" },
   status: { conditions: [{ type: "Ready", status: "True" }] },
