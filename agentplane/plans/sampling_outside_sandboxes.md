@@ -11,7 +11,8 @@ Codex evidence is read from [`openai/codex` at `rust-v0.162.1`][tag] (commit `09
 `agentplane_codex_cli_linux_x64` scripted-test pin. Claude evidence includes static inspection of
 the 2.1.252 test pin and this session's installed 2.1.296, plus existing scripted-test source
 ([versioned evidence](../debug/claude_execution_placement.md)). The runner image uses independently
-pinned nixpkgs harnesses. No new inference or execution-placement probe was run for this research.
+pinned nixpkgs harnesses. The initial research was source-only; subsequent scripted custom-Claude
+sampler evidence is linked below. No live inference was submitted for that experiment.
 
 ## Today
 
@@ -335,8 +336,11 @@ Alternatives to compare:
   through the tested driver MCP seam, and explicitly reproduce wanted behavior such as nested
   instructions and read-before-edit state. Existing MCP tests do not establish full parity.
 - **Custom sampler through CLIProxyAPI.** Send model API requests using its translation/cloaking or
-  a required CLI/SDK-shaped identity. The pinned proxy implements those mechanisms, but no live
-  compatibility was tested here. Agentplane owns the tool/context loop and persistence; presenting
+  a required CLI/SDK-shaped identity. A [subsequent runnable experiment](../debug/claude_custom_sampler.md)
+  completed a scripted Messages/tool/continuation loop through the pinned CLI fingerprint profile,
+  with a separate file executor and stable identity, cache prefix and opaque thinking/signature data.
+  The sampler is in-memory only; live provider and subscription compatibility remain untested.
+  Agentplane owns the tool/context loop and persistence; presenting
   a Claude identity does not supply Claude's built-in tool behavior.
 
 ## Next

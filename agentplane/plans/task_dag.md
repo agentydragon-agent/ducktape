@@ -615,7 +615,7 @@ flowchart LR
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
     CENTRAL_CODEX_SPIKE[In progress: experimental central Codex process fixture]
     CENTRAL_CODEX_SPIKE --> HARNESS_PLACEMENT_DESIGN[Decision, unscheduled: sampler placement and state authority]
-    CLAUDE_REMOTE_EXECUTION_SPIKE[Unscheduled: Claude remote tools and custom sampler compatibility]
+    CLAUDE_REMOTE_EXECUTION_SPIKE[Partial evidence: Claude remote tools and custom sampler compatibility]
     CLAUDE_REMOTE_EXECUTION_SPIKE -. optional Claude branch evidence .-> HARNESS_PLACEMENT_DESIGN
 ```
 
@@ -666,7 +666,13 @@ research plan. Changes no deployed mode.
 
 ### `CLAUDE_REMOTE_EXECUTION_SPIKE` — Claude remote tools and custom sampler compatibility
 
-**Unscheduled investigation/spike; operator, 2026-10-27 PDT.** Independent of both Codex spikes.
+**Partial experimental evidence; operator, 2026-10-27 PDT.** Independent of both Codex spikes.
+Worker `/root/central_codex_spike`, 2026-10-27 08:15 PDT: a separate-process custom Messages sampler
+completed a scripted tool/continuation round trip through the pinned CLIProxyAPI CLI fingerprint profile;
+12 RBE cases passed ([evidence and limits](../debug/claude_custom_sampler.md)). Identity/system prefix,
+tool alias and thinking/signature continuation were captured. Persistence is volatile; native serving,
+Claude built-in semantics, durable recovery and live provider/subscription acceptance remain open.
+
 Start from [versioned evidence](../debug/claude_execution_placement.md): the 2.1.252 test pin's gate is compiled
 off; installed 2.1.296 has a local forwarding switch, account flags and native tool serving. Establish which
 gates are locally settable, which require account support, and whether a scripted Agentplane peer can implement
