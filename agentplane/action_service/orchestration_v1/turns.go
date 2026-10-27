@@ -83,16 +83,16 @@ type TurnWait struct {
 	ResumeToken string          `json:"resume_token"`
 }
 
-func (e *Executor) turnReadContext(ctx context.Context, wait time.Duration) (context.Context, context.CancelFunc, error) {
+func (e *Executor) turnReadContext(ctx context.Context) (context.Context, context.CancelFunc, error) {
 	if e.readBudget <= 0 {
 		return nil, nil, refuse("wait_unavailable", "direct-tool budget must exceed one second for turn reads")
 	}
-	bounded, cancel := context.WithTimeout(ctx, min(wait, e.readBudget))
+	bounded, cancel := context.WithTimeout(ctx, e.readBudget)
 	return bounded, cancel, nil
 }
 
 func (e *Executor) readTurns(ctx context.Context, args readTurnsArgs) (Turns, error) {
-	ctx, cancel, err := e.turnReadContext(ctx, e.readBudget)
+	ctx, cancel, err := e.turnReadContext(ctx)
 	if err != nil {
 		return Turns{}, err
 	}
@@ -178,14 +178,17 @@ func (e *Executor) waitForTurn(parent context.Context, args waitForTurnArgs) (Tu
 	if err != nil {
 		return TurnWait{}, err
 	}
-	ctx, cancel, err := e.turnReadContext(parent, time.Duration(args.WaitSeconds*float64(time.Second)))
+	readCtx, cancelRead, err := e.turnReadContext(parent)
 	if err != nil {
 		return TurnWait{}, err
 	}
-	defer cancel()
-	if _, _, _, err := e.sessionForRead(ctx, args.Sandbox, args.SessionID); err != nil {
+	defer cancelRead()
+	if _, _, _, err := e.sessionForRead(readCtx, args.Sandbox, args.SessionID); err != nil {
 		return TurnWait{}, err
 	}
+	ctx, cancel := context.WithTimeout(readCtx, time.Duration(args.WaitSeconds*float64(time.Second)))
+	defer cancel()
+	deadline, _ := ctx.Deadline()
 	result := TurnWait{ResumeToken: resumeToken(args.Sandbox, args.SessionID, cursor)}
 	for {
 		stream, err := e.history.FollowSession(ctx, &historypb.FollowSessionRequest{SessionId: args.SessionID, Start: &historypb.FollowSessionRequest_AfterCursor{AfterCursor: cursor}, Kinds: []historypb.EventKind{historypb.EventKind_EVENT_KIND_TURN_COMPLETED}, Follow: true})
@@ -214,11 +217,17 @@ func (e *Executor) waitForTurn(parent context.Context, args waitForTurnArgs) (Tu
 				}
 			}
 		}
+		// History can exhaust the propagated deadline before the local context timer fires.
+		if ctx.Err() != nil || (status.Code(err) == codes.DeadlineExceeded && !time.Now().Before(deadline)) {
+			if parent.Err() == nil {
+				return result, nil
+			}
+			if err == nil {
+				err = ctx.Err()
+			}
+		}
 		if err == nil {
 			continue
-		}
-		if ctx.Err() == context.DeadlineExceeded && parent.Err() == nil {
-			return result, nil
 		}
 		if err == io.EOF {
 			err = status.Error(codes.Unavailable, "History follow ended without reconnect")
