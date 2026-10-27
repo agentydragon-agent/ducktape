@@ -312,6 +312,7 @@ ts_library(
         ":client",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/threads:client",
