@@ -14,6 +14,7 @@ import {
   type ThreadView,
   type TraceSearchSettings,
 } from "../client";
+import { LANGFUSE_SEARCH_SETTINGS } from "../langfuse_search_fixture";
 import type * as LiveModule from "../live";
 import type { Live, SandboxSnapshot } from "../live";
 import { SandboxRoute } from "../app";
@@ -111,12 +112,6 @@ const TRACE_SEARCH_SETTINGS: TraceSearchSettings = {
   deployment_environment: "agentplane-test",
 };
 let traceSearchSettings: TraceSearchSettings | null = TRACE_SEARCH_SETTINGS;
-const LANGFUSE_SEARCH_SETTINGS: LangfuseSearchSettings = {
-  base_url: "https://langfuse.test.invalid",
-  project_id: "test-project",
-  sandbox_namespace_metadata_key: "attributes.agentplane.namespace",
-  sandbox_service_account_metadata_key: "attributes.agentplane.service_account",
-};
 let langfuseSearchSettings: LangfuseSearchSettings | null = LANGFUSE_SEARCH_SETTINGS;
 afterEach(async () => {
   await act(async () => root.unmount());

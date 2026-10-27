@@ -11,6 +11,7 @@ import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import type * as ClientModule from "../client";
+import { LANGFUSE_SEARCH_SETTINGS } from "../langfuse_search_fixture";
 import {
   api,
   submitInput,
@@ -119,12 +120,6 @@ const TRACE_SEARCH_SETTINGS: TraceSearchSettings = {
   deployment_environment: "agentplane-test",
 };
 let traceSearchSettings: TraceSearchSettings | null = TRACE_SEARCH_SETTINGS;
-const LANGFUSE_SEARCH_SETTINGS: LangfuseSearchSettings = {
-  base_url: "https://langfuse.test.invalid",
-  project_id: "test-project",
-  sandbox_namespace_metadata_key: "attributes.agentplane.namespace",
-  sandbox_service_account_metadata_key: "attributes.agentplane.service_account",
-};
 let langfuseSearchSettings: LangfuseSearchSettings | null = LANGFUSE_SEARCH_SETTINGS;
 // The Dispatcher watches the page opened, which a test answers itself.
 let dispatchWatches: ServedWatch[] = [];
