@@ -715,6 +715,14 @@ harness whose protocol and persistence we do not own, analogous to the MCP edge 
 and hosted agents. The design names each backend's state owner and capabilities; adopting direct
 Postgres sampling must not implicitly retire the native-harness path. See [coexistence scope](sampling_outside_sandboxes.md#coexistence-with-wrapped-harnesses).
 
+Operator clarification, 2026-10-27: design history fidelity explicitly across provider APIs and wrapped
+harness JSON APIs. Inventory available evidence and gaps, source authority, IDs/order and recovery detail;
+evaluate raw evidence with provenance plus projections instead of assuming an equivalent universal
+transcript. `CODEX_CODE_MODE_CELLS` is a concrete missing-detail case, independent of placement. Separate
+provider replay context from conversation history and effect evidence, and preserve opaque native blocks.
+See [history scope](sampling_outside_sandboxes.md#history-across-providers-and-harnesses). This does not
+select a new History schema or add frontend tracing to the current spike's acceptance.
+
 ### `SANDBOX_FORM_TERMINOLOGY` — distinguish launch presets from runtime templates
 
 **Unscheduled; operator, 2026-10-17 PDT: the new Sandbox form's “Preset” and “Sandbox template”

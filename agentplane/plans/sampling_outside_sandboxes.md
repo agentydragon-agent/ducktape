@@ -382,6 +382,29 @@ MCP clients and externally hosted agents. Keep that boundary viable without requ
 harnesses to adopt Agentplane's sampler, code-mode host or provider adapter. Any later retirement of
 the wrapped mode needs a separate decision; these experiments do not select one.
 
+### History across providers and harnesses
+
+Operator clarification, 2026-10-27: shared hosting or execution does not imply equivalent history.
+OpenAI Responses and Anthropic Messages have different item/block, tool-result, reasoning and
+compaction contracts. Native harness JSON interfaces expose different subsets again. The existing
+`CODEX_CODE_MODE_CELLS` investigation in the task DAG records the concrete gap: the app-server's
+public items expose nested command execution without the enclosing JavaScript cell and its emissions.
+Do not infer that script from the commands it happened to invoke.
+
+The placement decision must also design the history boundary. Inventory what each backend actually
+exposes, its source authority, native IDs/order, live-versus-recovered detail and explicit gaps before
+selecting a common projection. A custom sampler can capture raw model exchanges, cell source/output
+and nested tool events directly; a wrapper may have only public harness events, or require a separate
+versioned integration to obtain richer evidence. Missing evidence means unknown, not that an operation
+did not happen. Preserve provider-specific opaque continuation state without treating it as display text.
+
+Evaluate retaining original evidence with provenance and building frontend/control projections from
+it, rather than requiring a universal transcript that discards detail or invents unavailable events.
+Correlate turns, cells, nested calls and tool results only where the source supports those relationships.
+Keep replayable provider context, human-visible conversation history and execution-effect evidence
+distinct: compaction can replace the first without deleting the others. This is a design requirement;
+these experiments do not select a new History schema or replace its current authority.
+
 ## Next
 
 The completed [combined custom sampler evidence](../debug/postgres_codex_spike.md#combined-compaction-and-controls)
