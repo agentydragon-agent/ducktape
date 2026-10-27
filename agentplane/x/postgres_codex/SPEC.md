@@ -36,8 +36,42 @@ The sampler performs no local shell or filesystem tool fallback when the executo
 reads and sampling do not require an executor connection. The CLI bounds failures but does not certify
 that executor descendants were killed; that belongs to executor supervision.
 
-There is no `wait`, yielded-cell continuation, interactive stdin, interrupt API, compaction,
+There is no `wait`, yielded-cell continuation, interactive stdin, interrupt API,
 instruction discovery, persistent JavaScript `store`/`load`, subagents, skills, MCP, approvals, hooks,
 memory retrieval, History export or frontend trace. A fresh upstream JS host is created for every
 cell. Unsupported provider item types and non-`exec` tools fail explicitly. The full native harness
 remains responsible for every capability outside this experiment.
+
+## Compaction
+
+`init --instructions` persists optional standing developer instructions. Every request regenerates
+those instructions, the current tool definitions and Postgres's active process handles. These are
+outside the replaceable context and cannot be removed by a model summary. Any live JavaScript cell,
+unresolved outer/nested intent, unmatched tool call, orphan output or duplicate call ID blocks
+compaction before dispatch. The same database fence and pending-intent check apply at installation.
+
+`compact` requests pinned Codex 0.162.1's remote Responses v2 protocol: the configured ordinary
+Responses endpoint, `x-codex-beta-features: remote_compaction_v2`, and a final `compaction_trigger`
+input. This experiment does not implement upstream's local natural-language summarization fallback
+or its legacy compact endpoint. It accepts exactly one `compaction` item with nonempty opaque
+`encrypted_content`, after `response.completed`; calls returned during compaction are rejected.
+Unknown fields and the encrypted string are retained unchanged. Completed streamed items are
+collected even when the terminal event has no `output` array, as in pinned upstream fixtures.
+
+The full ordered conversation stays in `items`; every request and successful raw response/events
+stay in its intent. A successful compaction atomically replaces only `context_items` and clears its
+pending intent. New conversation/tool items subsequently append to both histories. The replacement
+must be strictly smaller in canonical serialized UTF-8 bytes than the replaced context. This is a
+payload-size guarantee, not a tokenizer guarantee. The regenerated prefix is excluded from this comparison.
+
+`advance --auto-compact-tokens N` requests compaction before the next sample when the most recent
+completed sampling response reported `usage.total_tokens >= N`. A tool call still executes before
+that check, and an assistant final remains `done`. Compaction clears the usage checkpoint to prevent
+repeated compaction without another sample. This opt-in threshold uses observed provider usage;
+unmeasured tool-output growth can cross a model window before another observation. It is not a hard
+context-window bound or a default derived from an unverified model catalog.
+
+Failed, partial, malformed, nonshrinking or canceled compaction preserves the original context and
+leaves its intent unresolved. Ownership loss fences installation. These cases block future automatic
+advance and have no reconciliation interface yet. Compaction never dispatches or replays a tool.
+The process registry foundation preserves handles but this slice does not add process-control tools.

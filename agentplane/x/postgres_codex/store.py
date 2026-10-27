@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, select
+from sqlalchemy import DateTime, ForeignKey, Integer, Text, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -26,6 +26,12 @@ class Conversation(Base):
     items: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
     pending: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     stopped: Mapped[bool] = mapped_column(default=False)
+    context_items: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
+    instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    context_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    def context(self) -> list[dict[str, Any]]:
+        return self.items if self.context_items is None else self.context_items
 
 
 class Intent(Base):
@@ -87,10 +93,16 @@ class Store:
     def __init__(self, engine: AsyncEngine):
         self.sessions = async_sessionmaker(engine, expire_on_commit=False)
 
-    async def create(self, prompt: str) -> UUID:
+    async def create(self, prompt: str, *, instructions: str | None = None) -> UUID:
         conversation_id = uuid4()
         async with self.sessions.begin() as db:
-            db.add(Conversation(id=conversation_id, items=[{"type": "message", "role": "user", "content": prompt}]))
+            db.add(
+                Conversation(
+                    id=conversation_id,
+                    instructions=instructions,
+                    items=[{"type": "message", "role": "user", "content": prompt}],
+                )
+            )
         return conversation_id
 
     async def claim(self, conversation_id: UUID, *, lease: timedelta) -> Owner:
@@ -149,7 +161,15 @@ class Store:
             row.pending = {"id": str(intent_id), "kind": request["kind"]}
             return intent_id
 
-    async def finish(self, owner: Owner, intent_id: UUID, result: dict[str, Any], items: list[dict[str, Any]]) -> None:
+    async def finish(
+        self,
+        owner: Owner,
+        intent_id: UUID,
+        result: dict[str, Any],
+        items: list[dict[str, Any]],
+        *,
+        context_tokens: int | None = None,
+    ) -> None:
         async with self.sessions.begin() as db:
             row = await self._lock(db, owner)
             if row.pending is None or row.pending["id"] != str(intent_id):
@@ -157,11 +177,60 @@ class Store:
             intent = (await db.scalars(select(Intent).where(Intent.id == intent_id))).one()
             intent.result = result
             row.items = [*row.items, *items]
+            if row.context_items is not None:
+                row.context_items = [*row.context_items, *items]
+            if intent.request["kind"] == "sampling":
+                row.context_tokens = context_tokens
+            row.pending = None
+
+    async def begin_compaction(self, owner: Owner, request: dict[str, Any], original: list[dict[str, Any]]) -> UUID:
+        async with self.sessions.begin() as db:
+            row = await self._lock(db, owner)
+            if row.pending is not None:
+                raise UnknownEffectError("unresolved intent; cannot compact")
+            if row.context() != original:
+                raise ValueError("compaction context changed before intent commit")
+            live_cell = await db.scalar(
+                select(LiveCell.id).where(LiveCell.conversation_id == row.id, LiveCell.status == "live").limit(1)
+            )
+            if live_cell is not None:
+                raise UnknownEffectError("cannot compact over live JavaScript cells")
+            unresolved = await db.scalar(
+                select(Intent.id).where(Intent.conversation_id == row.id, Intent.result.is_(None)).limit(1)
+            )
+            if unresolved is not None:
+                raise UnknownEffectError(f"unresolved nested intent {unresolved}; cannot compact")
+            intent_id = uuid4()
+            db.add(Intent(id=intent_id, conversation_id=row.id, generation=owner.generation, request=request))
+            row.pending = {"id": str(intent_id), "kind": "compaction"}
+            return intent_id
+
+    async def finish_compaction(
+        self,
+        owner: Owner,
+        intent_id: UUID,
+        result: dict[str, Any],
+        original: list[dict[str, Any]],
+        replacement: list[dict[str, Any]],
+    ) -> None:
+        """Install context and audit response in the same fenced transaction."""
+        async with self.sessions.begin() as db:
+            row = await self._lock(db, owner)
+            if row.pending != {"id": str(intent_id), "kind": "compaction"}:
+                raise ValueError("result does not match pending compaction")
+            if row.context() != original:
+                raise ValueError("compaction context changed while request was in flight")
+            intent = (await db.scalars(select(Intent).where(Intent.id == intent_id))).one()
+            intent.result = result
+            row.context_items = replacement
+            row.context_tokens = None
             row.pending = None
 
     async def record_nested(self, owner: Owner, request: dict[str, Any]) -> UUID:
         async with self.sessions.begin() as db:
-            await self._lock(db, owner)
+            row = await self._lock(db, owner)
+            if row.pending is not None and row.pending["kind"] == "compaction":
+                raise UnknownEffectError("cannot start a nested effect during compaction")
             intent_id = uuid4()
             db.add(
                 Intent(
@@ -304,19 +373,19 @@ class Store:
                 intent.result = {"status": "interrupted", **result}
                 if result["cleanup_complete"]:
                     if intent.request["kind"] == "cell":
-                        row.items = [
-                            *row.items,
-                            {
-                                "type": "custom_tool_call_output",
-                                "call_id": intent.request["call"]["call_id"],
-                                "output": [
-                                    {
-                                        "type": "input_text",
-                                        "text": "Interrupted by user. Partial effects may have occurred.",
-                                    }
-                                ],
-                            },
-                        ]
+                        output = {
+                            "type": "custom_tool_call_output",
+                            "call_id": intent.request["call"]["call_id"],
+                            "output": [
+                                {
+                                    "type": "input_text",
+                                    "text": "Interrupted by user. Partial effects may have occurred.",
+                                }
+                            ],
+                        }
+                        row.items = [*row.items, output]
+                        if row.context_items is not None:
+                            row.context_items = [*row.context_items, output]
                     row.pending = None
             row.stopped = True
 
@@ -325,7 +394,10 @@ class Store:
             row = await self._lock(db, owner)
             if row.pending is not None:
                 raise UnknownEffectError("unresolved intent blocks new input; no automatic replay")
-            row.items = [*row.items, {"type": "message", "role": "user", "content": prompt}]
+            item = {"type": "message", "role": "user", "content": prompt}
+            row.items = [*row.items, item]
+            if row.context_items is not None:
+                row.context_items = [*row.context_items, item]
             row.stopped = False
 
     @staticmethod
