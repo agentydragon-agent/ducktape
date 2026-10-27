@@ -11,6 +11,7 @@ from aiohttp import ClientSession, ClientTimeout
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.x.postgres_codex.code_mode import code_mode
+from agentplane.x.postgres_codex.compaction import compact
 from agentplane.x.postgres_codex.executor import Executor
 from agentplane.x.postgres_codex.sampler import advance, pending_call
 from agentplane.x.postgres_codex.store import Base, Store
@@ -26,14 +27,24 @@ async def run(args: argparse.Namespace) -> None:
         if args.command == "init":
             async with engine.begin() as db:
                 await db.run_sync(Base.metadata.create_all)
-            print(await store.create(args.prompt))
+            print(await store.create(args.prompt, instructions=args.instructions))
             return
         owner = await store.claim(args.conversation_id, lease=timedelta(seconds=120))
         # The advance operation is bounded below the lease; no silent renewal or takeover retry.
         async with asyncio.timeout(90):
             async with ClientSession(timeout=ClientTimeout(total=80)) as http:
                 row = await store.read(owner)
-                if row.pending is None and pending_call(row.items) is not None:
+                if args.command == "compact":
+                    await compact(
+                        store,
+                        owner,
+                        http,
+                        endpoint=args.endpoint,
+                        credential=os.environ["SPIKE_MODEL_CREDENTIAL"],
+                        model=args.model,
+                    )
+                    result = "compact"
+                elif row.pending is None and pending_call(row.items) is not None:
                     async with http.ws_connect(args.executor_url) as socket:
                         executor = Executor(socket, cwd=args.cwd, codex_path=args.executor_codex)
                         await executor.initialize()
@@ -46,6 +57,7 @@ async def run(args: argparse.Namespace) -> None:
                                 endpoint=args.endpoint,
                                 credential=os.environ["SPIKE_MODEL_CREDENTIAL"],
                                 model=args.model,
+                                auto_compact_tokens=args.auto_compact_tokens,
                             )
                 else:
                     result = await advance(
@@ -56,6 +68,7 @@ async def run(args: argparse.Namespace) -> None:
                         endpoint=args.endpoint,
                         credential=os.environ["SPIKE_MODEL_CREDENTIAL"],
                         model=args.model,
+                        auto_compact_tokens=args.auto_compact_tokens,
                     )
         await store.release(owner)
         print(result)
@@ -67,8 +80,18 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     init = sub.add_parser("init")
     init.add_argument("prompt")
+    init.add_argument("--instructions", help="Standing developer instructions persisted across compaction")
+    compact_step = sub.add_parser("compact")
+    compact_step.add_argument("conversation_id", type=UUID)
+    compact_step.add_argument("--endpoint", required=True)
+    compact_step.add_argument("--model", required=True)
     step = sub.add_parser("advance")
     step.add_argument("conversation_id", type=UUID)
+    step.add_argument(
+        "--auto-compact-tokens",
+        type=int,
+        help="Trigger before sampling when last provider total_tokens reaches this threshold",
+    )
     step.add_argument("--executor-url", required=True)
     step.add_argument("--executor-codex", required=True, help="Absolute codex binary path on the executor")
     step.add_argument("--code-mode-host", required=True)

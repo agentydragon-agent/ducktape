@@ -1,0 +1,99 @@
+"""Responses Lite request assembly and terminal streaming transport."""
+
+import json
+from dataclasses import dataclass
+from typing import Any
+
+from aiohttp import ClientSession
+
+from agentplane.x.postgres_codex.code_mode import tool_definitions
+
+
+def request_body(
+    model: str,
+    conversation_id: str,
+    items: list[dict[str, Any]],
+    *,
+    instructions: str | None = None,
+    execution_state: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    description = (
+        "Run raw JavaScript as an async module in a fresh V8 isolate. Call tools.exec_command({cmd, workdir?}) "
+        "or tools.apply_patch(patch). Emit results with text(value). No Node, filesystem, network or console. "
+        "This experiment has no wait, yielding, notify or persistent JS store. Await all tool calls. "
+        + json.dumps(tool_definitions())
+    )
+    return {
+        "model": model,
+        "input": [
+            {
+                "type": "additional_tools",
+                "role": "developer",
+                "tools": [{"type": "custom", "name": "exec", "description": description, "format": {"type": "text"}}],
+            },
+            *([{"type": "message", "role": "developer", "content": instructions}] if instructions else []),
+            *(
+                [
+                    {
+                        "type": "message",
+                        "role": "developer",
+                        "content": "Active execution handles: " + json.dumps(execution_state, sort_keys=True),
+                    }
+                ]
+                if execution_state and (execution_state["processes"] or execution_state["cells"])
+                else []
+            ),
+            *items,
+        ],
+        "stream": True,
+        "store": False,
+        "include": ["reasoning.encrypted_content"],
+        "prompt_cache_key": conversation_id,
+        "client_metadata": {"session_id": conversation_id, "thread_id": conversation_id, "turn_id": conversation_id},
+    }
+
+
+@dataclass(frozen=True)
+class ProviderResponse:
+    terminal: dict[str, Any]
+    output: list[dict[str, Any]]
+    events: list[dict[str, Any]]
+
+    def audit(self) -> dict[str, Any]:
+        return {"response": self.terminal, "events": self.events}
+
+
+async def sample(
+    http: ClientSession, endpoint: str, credential: str, body: dict[str, Any], *, compaction: bool = False
+) -> ProviderResponse:
+    """Require the provider terminal event; never continue from partially streamed items."""
+    headers = {"Authorization": f"Bearer {credential}", "x-openai-internal-codex-responses-lite": "true"}
+    if compaction:
+        headers["x-codex-beta-features"] = "remote_compaction_v2"
+    async with http.post(endpoint, json=body, headers=headers) as response:
+        response.raise_for_status()
+        data: list[str] = []
+        events: list[dict[str, Any]] = []
+        output: list[dict[str, Any]] = []
+        async for line_bytes in response.content:
+            line = line_bytes.decode().rstrip("\r\n")
+            if line.startswith("data:"):
+                data.append(line[5:].lstrip())
+            elif not line and data:
+                event = json.loads("\n".join(data))
+                data.clear()
+                events.append(event)
+                if event["type"] == "response.output_item.done":
+                    output.append(event["item"])
+                if event["type"] == "response.completed":
+                    terminal: dict[str, Any] = event["response"]
+                    if terminal.get("status", "completed") != "completed":
+                        raise ValueError(f"unexpected terminal status: {terminal['status']}")
+                    if "output" in terminal:
+                        if output and output != terminal["output"]:
+                            raise ValueError("terminal output disagrees with streamed completed items")
+                        output = terminal["output"]
+                    return ProviderResponse(terminal, output, events)
+                if event["type"] in {"response.failed", "response.incomplete", "error"}:
+                    raise RuntimeError(event)
+    raise ConnectionError("provider stream ended without response.completed; sampling outcome unknown")
