@@ -230,6 +230,12 @@ correction/exclusion accounts. Successful calls return `PlaidValuation` with nam
 and exclusions in USD cents. Unavailable data raises `PlaidValuationError`; it never returns a zero-valued portfolio.
 `corrected_holding_value` applies the same exact-position policy corrections to allocation detail rows.
 
+For each account with corrections or exclusions, its latest balance and complete holding batch must have exactly
+the same `captured_at`. A full mirror sync assigns that shared timestamp; a partial or in-progress sync can leave
+the portfolio unavailable until the next coherent full sync. No older holding batch is substituted. Accounts at
+different institutions may have different capture times. This checks mirror sync alignment, not whether the
+institution's underlying balance and position values were updated atomically.
+
 Every historical spending point uses **today's** eligible portfolio; historical asset values are not reconstructed.
 Partial windows annualize only their contiguous covered days and are labeled. Inferred transaction boundaries are
 not proof of complete linked spending. Asset
