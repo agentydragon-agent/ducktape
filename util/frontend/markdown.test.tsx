@@ -162,6 +162,50 @@ describe("Markdown", () => {
     expect(table?.parentElement?.className).toBe("agentplane-markdown-table-scroll");
   });
 
+  it("keeps list, table, and quote cues in compact previews while expanded Markdown stays semantic", async () => {
+    const source = [
+      "> Check",
+      "",
+      "- Parsed",
+      "- Ready",
+      "- Outer",
+      "  - Inner",
+      "",
+      "1. First step",
+      "2. Second step",
+      "",
+      "| Stage | Value |",
+      "| --- | --- |",
+      "| Parsed | 12.3456 |",
+      "| Complete | 2 |",
+    ].join("\n");
+
+    const preview = await render(source, false, true);
+    const previewText = preview.querySelector(".agentplane-markdown--single-line")?.textContent?.replace(/\s+/gu, " ");
+
+    expect(previewText).toContain("> Check");
+    expect(previewText).toContain("• Parsed • Ready");
+    expect(previewText).toContain("• Outer • Inner");
+    expect(previewText).toContain("1. First step 2. Second step");
+    expect(previewText).toContain("Stage | Value ; Parsed | 12.3456 ; Complete | 2");
+
+    const expanded = await rerender(source);
+    expect(expanded.querySelector("blockquote")?.textContent?.trim()).toBe("Check");
+    expect([...expanded.querySelectorAll("li")].map((item) => item.textContent?.replace(/\s+/gu, " ").trim())).toEqual([
+      "Parsed",
+      "Ready",
+      "Outer Inner",
+      "Inner",
+      "First step",
+      "Second step",
+    ]);
+    expect([...expanded.querySelectorAll("tr")].map((row) => row.textContent?.replace(/\s+/gu, ""))).toEqual([
+      "StageValue",
+      "Parsed12.3456",
+      "Complete2",
+    ]);
+  });
+
   it("sanitizes hostile HTML and URL schemes while keeping safe Markdown links", async () => {
     const rendered = await render(
       [
