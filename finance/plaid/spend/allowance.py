@@ -15,14 +15,12 @@ from pydantic import BaseModel, ConfigDict, Field, Json, TypeAdapter, Validation
 
 from finance.plaid.spend.reconciliation import (
     ReconciliationReport,
-    ReportStatus,
     ReversalIssue,
     ReversalIssueCode,
     ReversalLeg,
     ReversalMatch,
     ReversalPairResolution,
     ReversalRole,
-    describe_reconciliation,
 )
 
 
@@ -513,6 +511,12 @@ class AllowanceView(BaseModel):
     prior_carry_minor_units: int = 0
 
 
+@dataclass(frozen=True)
+class AllowanceCalculation:
+    view: AllowanceView
+    reconciliation: ReconciliationReport
+
+
 def month_anniversary(start: datetime, months: int) -> datetime:
     year, month = divmod(start.year * 12 + start.month - 1 + months, 12)
     month += 1
@@ -830,7 +834,7 @@ def calculate(
     last_synced_at: datetime | None,
     decisions: list[TransactionDecision] | None = None,
     estimate_period_id: EstimatePeriodId | None = None,
-) -> AllowanceView:
+) -> AllowanceCalculation:
     if now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
     now = now.astimezone(UTC)
@@ -995,7 +999,7 @@ def calculate(
         report.spend_minor_units for report in spend_periods if report.period.id == PeriodId.CREDIT_CYCLE
     )
     reconciliation = prepared.reconciliation.for_period(start=min(start.date(), *rolling_starts.values()), end=today)
-    return AllowanceView(
+    view = AllowanceView(
         status=Status.ACTIVE,
         currency=policy.currency,
         monthly_minor_units=policy.monthly_minor_units,
@@ -1020,11 +1024,5 @@ def calculate(
         spending_signal=signal,
         last_synced_at=last_synced_at,
         prior_carry_minor_units=(credits - 1) * policy.monthly_minor_units - (posted + pending - current_cycle_spend),
-        # Preserve the active/unavailable lifecycle and strict terminal-client
-        # wire shape. The existing note explicitly communicates result quality.
-        note=(
-            "Provisional: " + " ".join(describe_reconciliation(reconciliation))
-            if reconciliation.status == ReportStatus.PROVISIONAL
-            else None
-        ),
     )
+    return AllowanceCalculation(view=view, reconciliation=reconciliation)

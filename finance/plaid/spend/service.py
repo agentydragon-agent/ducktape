@@ -57,6 +57,7 @@ from finance.plaid.spend.models import (
 )
 from finance.plaid.spend.portfolio import CoinbaseClient, read_portfolio
 from finance.plaid.spend.portfolio_models import PortfolioView, SourceValuation
+from finance.plaid.spend.reconciliation_views import allowance_view, sustainability_view
 from finance.plaid.spend.sustainability import (
     SustainabilityDashboard,
     SustainabilityView,
@@ -669,14 +670,16 @@ class SpendService:
                 transaction_details.update(
                     {(row["account_id"], row["transaction_id"]): _plaid_details(row["raw_json"]) for row in rows}
                 )
-        return calculate(
-            policy,
-            [Transaction.model_validate(dict(row)) for row in rows],
-            time_zone=self._configuration.time_zone,
-            now=now,
-            last_synced_at=last_synced,
-            decisions=decisions,
-            estimate_period_id=estimate_period_id,
+        return allowance_view(
+            calculate(
+                policy,
+                [Transaction.model_validate(dict(row)) for row in rows],
+                time_zone=self._configuration.time_zone,
+                now=now,
+                last_synced_at=last_synced,
+                decisions=decisions,
+                estimate_period_id=estimate_period_id,
+            )
         )
 
     async def _read_current_portfolio(self, now: datetime) -> PortfolioView:
@@ -778,16 +781,18 @@ class SpendService:
             issues.append("The spending source could not be read; totals are unavailable.")
         portfolio = await self._read_current_portfolio(now)
         return [
-            calculate_sustainability(
-                policy,
-                allowance,
-                transactions,
-                portfolio,
-                time_zone=self._configuration.time_zone,
-                now=now,
-                window_days=days,
-                source_issues=issues,
-                account_labels=account_labels,
+            sustainability_view(
+                calculate_sustainability(
+                    policy,
+                    allowance,
+                    transactions,
+                    portfolio,
+                    time_zone=self._configuration.time_zone,
+                    now=now,
+                    window_days=days,
+                    source_issues=issues,
+                    account_labels=account_labels,
+                )
             )
             for days in windows_days
         ]

@@ -168,6 +168,8 @@ Missing legs have unknown purchase-day scope, so posting bounds alone cannot est
 Source/unit failures still block valid calculation. `ready` means no relevant unresolved reversal assertion in
 addition to the existing readiness checks; it is not an assurance that all financial assumptions are verified.
 Historical points carry their own status, and historical-only issues are labeled separately from the current estimate.
+Calculators return typed reconciliation evidence alongside their numeric view. API and terminal presentation adapters
+render the explanatory messages; the allowance adapter uses its existing note field for strict terminal clients.
 
 `GET /api/v1/sustainability/windows` returns all configured windows from one transaction snapshot,
 portfolio valuation and observation time. The page overlays their annualized trailing simple moving averages;

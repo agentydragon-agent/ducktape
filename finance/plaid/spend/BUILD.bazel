@@ -50,6 +50,7 @@ py_library(
         ":models",
         ":portfolio",
         ":portfolio_models",
+        ":reconciliation_views",
         ":sustainability",
         "@pypi//anyio",
         "@pypi//asyncpg",
@@ -104,6 +105,7 @@ py_test(
         ":allowance",
         ":conftest",
         ":models",
+        ":reconciliation_views",
         "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//pydantic",
@@ -278,6 +280,7 @@ py_test(
         ":conftest",
         ":portfolio_models",
         ":reconciliation",
+        ":reconciliation_views",
         ":sustainability",
         "//:conftest",
         "@pypi//pydantic",
@@ -294,6 +297,7 @@ py_test(
         ":conftest",
         ":models",
         ":portfolio_models",
+        ":reconciliation_views",
         ":sustainability",
         "//:conftest",
         "@pypi//pydantic",
@@ -350,4 +354,14 @@ py_test(
 py_library(
     name = "reconciliation",
     srcs = ["reconciliation.py"],
+)
+
+py_library(
+    name = "reconciliation_views",
+    srcs = ["reconciliation_views.py"],
+    deps = [
+        ":allowance",
+        ":reconciliation",
+        ":sustainability",
+    ],
 )

@@ -25,13 +25,8 @@ from finance.plaid.spend.allowance import (
     resolve_reversal_pairs,
 )
 from finance.plaid.spend.portfolio_models import PlaidSourcePolicy, PortfolioPolicy, PortfolioSources, PortfolioView
-from finance.plaid.spend.reconciliation import (
-    ReconciliationReport,
-    ReportStatus,
-    ReversalIssueCode,
-    ReversalRole,
-    describe_reconciliation,
-)
+from finance.plaid.spend.reconciliation import ReconciliationReport, ReportStatus, ReversalIssueCode, ReversalRole
+from finance.plaid.spend.reconciliation_views import allowance_view, describe_reconciliation, sustainability_view
 from finance.plaid.spend.sustainability import (
     SustainabilityPolicy,
     SustainabilityView,
@@ -100,17 +95,19 @@ def legs() -> list[Transaction]:
 
 def test_reversal_removes_both_legs_but_keeps_replacement_and_normal_refunds() -> None:
     decisions: list[TransactionDecision] = []
-    result = calculate(
-        policy([pair()]),
-        [
-            *legs(),
-            transaction(date(2026, 3, 6), "90", "EXAMPLE DEBIT", "replacement"),
-            transaction(date(2026, 3, 7), "-4", "OTHER CREDIT", "unconfirmed"),
-        ],
-        time_zone=_ZONE,
-        now=_NOW,
-        last_synced_at=_NOW,
-        decisions=decisions,
+    result = allowance_view(
+        calculate(
+            policy([pair()]),
+            [
+                *legs(),
+                transaction(date(2026, 3, 6), "90", "EXAMPLE DEBIT", "replacement"),
+                transaction(date(2026, 3, 7), "-4", "OTHER CREDIT", "unconfirmed"),
+            ],
+            time_zone=_ZONE,
+            now=_NOW,
+            last_synced_at=_NOW,
+            decisions=decisions,
+        )
     )
     assert result.posted_minor_units == 9_000
     assert result.unmatched_refunds_minor_units == 400
@@ -132,7 +129,7 @@ def test_reversal_removes_both_legs_but_keeps_replacement_and_normal_refunds() -
 def test_missing_leg_preserves_conservative_accounting(missing_leg: int) -> None:
     rows = legs()
     rows.pop(missing_leg)
-    result = calculate(policy([pair()]), rows, time_zone=_ZONE, now=_NOW, last_synced_at=_NOW)
+    result = allowance_view(calculate(policy([pair()]), rows, time_zone=_ZONE, now=_NOW, last_synced_at=_NOW))
     assert result.note is not None
     assert "Reversal pair example-return" in result.note
     assert "matched 0" in result.note
@@ -246,15 +243,27 @@ def test_missing_leg_scope_is_unknown_and_messages_omit_record_identifiers() -> 
 
 def test_old_issue_still_marks_allowance_carryforward_provisional() -> None:
     now = datetime(2026, 6, 1, tzinfo=UTC)
-    result = calculate(policy([mismatched_pair()]), mismatched_rows(), time_zone=_ZONE, now=now, last_synced_at=now)
+    result = allowance_view(
+        calculate(policy([mismatched_pair()]), mismatched_rows(), time_zone=_ZONE, now=now, last_synced_at=now)
+    )
     assert result.available_minor_units == 392_000
     assert result.note is not None
     assert result.note.startswith("Provisional:")
     # Moving activation past both legs also moves them outside every dependency.
     configured = policy([mismatched_pair()]).model_copy(update={"activation_at": date(2026, 5, 1)})
-    unrelated = calculate(configured, mismatched_rows(), time_zone=_ZONE, now=now, last_synced_at=now)
+    unrelated = allowance_view(calculate(configured, mismatched_rows(), time_zone=_ZONE, now=now, last_synced_at=now))
     assert unrelated.note is None
     assert unrelated.posted_minor_units == 0
+
+
+def test_calculator_returns_evidence_and_view_adapter_renders_legacy_note() -> None:
+    calculation = calculate(policy([pair()]), [legs()[0]], time_zone=_ZONE, now=_NOW, last_synced_at=_NOW)
+    assert calculation.reconciliation.status == ReportStatus.PROVISIONAL
+    assert calculation.view.note is None
+    presented = allowance_view(calculation)
+    assert presented.note is not None
+    assert presented.note.startswith("Provisional:")
+    assert presented.available_minor_units == calculation.view.available_minor_units
 
 
 @pytest.mark.parametrize("missing", [False, True])
@@ -300,25 +309,29 @@ def sustainability_result(
     now: datetime = _NOW,
     source_issues: list[str] | None = None,
 ) -> SustainabilityView:
-    return calculate_sustainability(
-        SustainabilityPolicy(
-            portfolio=PortfolioPolicy(sources=PortfolioSources(plaid=PlaidSourcePolicy(asset_account_ids=["assets"]))),
-            withdrawal_tax=WithdrawalTax(rate=0.2, assumption_note="Synthetic assumption", as_of=date(2026, 1, 1)),
-        ),
-        configured.model_copy(update={"spending_account_ids": {"card"}}),
-        [transaction(date(2026, 1, 1), "0", "HISTORY", "coverage"), *rows],
-        PortfolioView(
-            status="ready",
-            assets_minor_units=1_000_000,
-            liabilities_minor_units=0,
-            excluded_minor_units=0,
-            net_minor_units=1_000_000,
-            sources=[],
-        ),
-        time_zone=_ZONE,
-        now=now,
-        window_days=30,
-        source_issues=source_issues or [],
+    return sustainability_view(
+        calculate_sustainability(
+            SustainabilityPolicy(
+                portfolio=PortfolioPolicy(
+                    sources=PortfolioSources(plaid=PlaidSourcePolicy(asset_account_ids=["assets"]))
+                ),
+                withdrawal_tax=WithdrawalTax(rate=0.2, assumption_note="Synthetic assumption", as_of=date(2026, 1, 1)),
+            ),
+            configured.model_copy(update={"spending_account_ids": {"card"}}),
+            [transaction(date(2026, 1, 1), "0", "HISTORY", "coverage"), *rows],
+            PortfolioView(
+                status="ready",
+                assets_minor_units=1_000_000,
+                liabilities_minor_units=0,
+                excluded_minor_units=0,
+                net_minor_units=1_000_000,
+                sources=[],
+            ),
+            time_zone=_ZONE,
+            now=now,
+            window_days=30,
+            source_issues=source_issues or [],
+        )
     )
 
 
@@ -329,25 +342,29 @@ def test_reconciled_history_has_no_artificial_credit_dip_or_original_spike(origi
     rows.append(transaction(date(2026, 1, 1), "0", "HISTORY", "coverage"))
     configured = policy([pair(original_day=original_day)])
     configured = configured.model_copy(update={"spending_account_ids": {"card"}})
-    result = calculate_sustainability(
-        SustainabilityPolicy(
-            portfolio=PortfolioPolicy(sources=PortfolioSources(plaid=PlaidSourcePolicy(asset_account_ids=["assets"]))),
-            withdrawal_tax=WithdrawalTax(rate=0.2, assumption_note="Synthetic assumption", as_of=date(2026, 1, 1)),
-        ),
-        configured,
-        rows,
-        PortfolioView(
-            status="ready",
-            assets_minor_units=1_000_000,
-            liabilities_minor_units=0,
-            excluded_minor_units=0,
-            net_minor_units=1_000_000,
-            sources=[],
-        ),
-        time_zone=_ZONE,
-        now=_NOW,
-        window_days=30,
-        source_issues=[],
+    result = sustainability_view(
+        calculate_sustainability(
+            SustainabilityPolicy(
+                portfolio=PortfolioPolicy(
+                    sources=PortfolioSources(plaid=PlaidSourcePolicy(asset_account_ids=["assets"]))
+                ),
+                withdrawal_tax=WithdrawalTax(rate=0.2, assumption_note="Synthetic assumption", as_of=date(2026, 1, 1)),
+            ),
+            configured,
+            rows,
+            PortfolioView(
+                status="ready",
+                assets_minor_units=1_000_000,
+                liabilities_minor_units=0,
+                excluded_minor_units=0,
+                net_minor_units=1_000_000,
+                sources=[],
+            ),
+            time_zone=_ZONE,
+            now=_NOW,
+            window_days=30,
+            source_issues=[],
+        )
     )
     assert result.status == "ready"
     assert result.spending_minor_units == 0
