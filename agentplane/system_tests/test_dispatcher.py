@@ -26,6 +26,7 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 SERVICE = "session-dispatcher"
 WORKLOAD = "runner-gateway"
 BOUND_SECONDS = 300
+CLEANUP_DIAGNOSTICS_SECONDS = 30
 type Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub
 
 
@@ -76,6 +77,40 @@ async def _delete(kind: str, name: str, uid: str) -> None:
     await kubectl("wait", f"{kind}/{name}", "--for=delete", "--timeout=120s")
 
 
+async def _capture_cleanup_diagnostics(name: str) -> None:
+    diagnostics: dict[str, object] = {}
+    commands = {
+        "sandbox": ("get", "sandbox", name, "-o", "json"),
+        "runner_lease": ("get", "lease", f"{name}-runner", "-o", "json"),
+        "pod": ("get", "pod", name, "-o", "json"),
+        "runner_log": ("logs", f"pod/{name}", "-c", "runner", "--tail=200"),
+        "previous_runner_log": ("logs", f"pod/{name}", "-c", "runner", "--previous", "--tail=200"),
+        "sandbox_controller_log": (
+            "logs",
+            "deployment/sandbox-controller",
+            "--all-containers",
+            "--since=10m",
+            "--tail=200",
+        ),
+    }
+
+    async def capture(key: str, args: tuple[str, ...]) -> None:
+        try:
+            async with asyncio.timeout(CLEANUP_DIAGNOSTICS_SECONDS):
+                value = await kubectl(*args)
+            try:
+                diagnostics[key] = json.loads(value)
+            except json.JSONDecodeError:
+                diagnostics[key] = value
+        except TimeoutError:
+            diagnostics[key] = f"TimeoutError: exceeded {CLEANUP_DIAGNOSTICS_SECONDS}s diagnostic deadline"
+        except Exception as error:
+            diagnostics[key] = f"{type(error).__name__}: {error}"
+
+    await asyncio.gather(*(capture(key, args) for key, args in commands.items()))
+    (undeclared_outputs_dir() / "dispatcher-cleanup.json").write_text(json.dumps(diagnostics, indent=2) + "\n")
+
+
 async def _cleanup_sandbox(name: str, uid: str) -> None:
     await kubectl(
         "patch",
@@ -91,12 +126,16 @@ async def _cleanup_sandbox(name: str, uid: str) -> None:
         "--for=jsonpath={.status.operatingMode}=Suspended",
         "--timeout=300s",
     )
-    await kubectl(
-        "wait",
-        f"sandbox.agentplane.allegedly.works/{name}",
-        '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
-        "--timeout=300s",
-    )
+    try:
+        await kubectl(
+            "wait",
+            f"sandbox.agentplane.allegedly.works/{name}",
+            '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
+            "--timeout=300s",
+        )
+    except RuntimeError:
+        await _capture_cleanup_diagnostics(name)
+        raise
     await _delete("sandbox.agentplane.allegedly.works", name, uid)
 
 
