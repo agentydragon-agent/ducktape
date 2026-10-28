@@ -12,6 +12,7 @@ import (
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
+	codexadapter "github.com/agentydragon/ducktape/agentplane/runner/codex"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
@@ -29,12 +30,240 @@ import (
 	"go.uber.org/zap"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
+	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 )
 
 type frameTestAdapter struct {
 	harness.Adapter
 	onFrame func(context.Context, json.RawMessage, uint64) error
+}
+
+func TestStaleNativeCodexCompletionRetainsFrameAndSuccessor(t *testing.T) {
+	s, _, m := frameTestSessionWithController(t, []string{"/bin/cat"}, true)
+	ctx := context.Background()
+	setRuntimeReady(t, m, s)
+	threadID := "thread-1"
+	s.mu.Lock()
+	s.record.NativeSessionID = &threadID
+	s.mu.Unlock()
+	ptr := componentResource(s.id, Runtime{}).Metadata()
+	if _, err := safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[Runtime, componentExtension[Runtime]]) error {
+		value.TypedSpec().Resuming = true
+		return nil
+	}, state.WithUpdateOwner(ControllerName)); err != nil {
+		t.Fatal(err)
+	}
+	adapter := codexadapter.New(s)
+	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "finished-turn"}), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Emit(ctx, observation(&eventpb.TurnCompleted{TurnId: "finished-turn", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "active-successor"}), nil); err != nil {
+		t.Fatal(err)
+	}
+	before := s.journal.LastCursor()
+	frame := []byte(`{"method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"finished-turn","status":"completed"}}}`)
+	if err := s.receive(ctx, frame, adapter); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := s.journal.Since(ctx, before, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Event.GetNative() == nil || entries[0].Event.GetNative().GetLine() != string(frame) {
+		t.Fatalf("stale native frame entries = %v, want its raw Native frame only", entries)
+	}
+	s.mu.Lock()
+	activeTurn := s.activeTurn
+	s.mu.Unlock()
+	if activeTurn != "active-successor" || s.journal.RecoveryState().ActiveTurnID != "active-successor" {
+		t.Fatalf("stale completion cleared successor: session=%q journal=%+v", activeTurn, s.journal.RecoveryState())
+	}
+}
+
+func TestStaleTurnCompletionsHaveNoSessionSideEffects(t *testing.T) {
+	s, _, _ := frameTestSession(t, []string{"/bin/cat"})
+	ctx := context.Background()
+	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "active-successor"}), nil); err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	s.adapter = frameTestAdapter{}
+	s.interrupts["finished-turn"] = "interrupt-command"
+	s.nativeStop = stopQuiesce
+	s.mu.Unlock()
+	before := s.journal.LastCursor()
+	staleInterrupt := &eventpb.TurnCompleted{TurnId: "finished-turn", Status: eventpb.TurnStatus_TURN_STATUS_INTERRUPTED}
+	if err := s.Emit(ctx, observation(staleInterrupt), nil); err != nil {
+		t.Fatal(err)
+	}
+	staleLoss := &eventpb.TurnCompleted{TurnId: "unknown-turn", Status: eventpb.TurnStatus_TURN_STATUS_PROCESS_LOST}
+	if err := s.Emit(ctx, observation(staleLoss), nil); err != nil {
+		t.Fatal(err)
+	}
+	if s.journal.LastCursor() != before {
+		t.Fatalf("stale completions advanced cursor from %d to %d", before, s.journal.LastCursor())
+	}
+	s.mu.Lock()
+	activeTurn := s.activeTurn
+	interrupt := s.interrupts["finished-turn"]
+	reconciliations := len(s.reconciliations)
+	s.mu.Unlock()
+	if activeTurn != "active-successor" || interrupt != "interrupt-command" || reconciliations != 0 {
+		t.Fatalf("stale completion side effects: active=%q interrupt=%q reconciliations=%d", activeTurn, interrupt, reconciliations)
+	}
+	if staleInterrupt.GetInterruptedByCommandId() != "" || staleInterrupt.GetEndedByTeardown() || staleLoss.GetInterruptedByCommandId() != "" || staleLoss.GetEndedByTeardown() {
+		t.Fatalf("stale completion messages were mutated: interrupted=%v lost=%v", staleInterrupt, staleLoss)
+	}
+	entries, err := s.journal.Since(ctx, before, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Event.GetConversationReconciled() != nil || entry.Event.GetTurnCompleted() != nil {
+			t.Fatalf("stale completion created a derived event: %v", entry)
+		}
+	}
+}
+
+func TestConcurrentCompletionAndSuccessorStartPreserveSuccessor(t *testing.T) {
+	s, _, _ := frameTestSession(t, []string{"/bin/cat"})
+	ctx := context.Background()
+	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "current"}), nil); err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var workers sync.WaitGroup
+	workers.Add(2)
+	go func() {
+		defer workers.Done()
+		<-start
+		errs <- s.Emit(ctx, observation(&eventpb.TurnCompleted{TurnId: "current", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}), nil)
+	}()
+	go func() {
+		defer workers.Done()
+		<-start
+		errs <- s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "successor"}), nil)
+	}()
+	close(start)
+	workers.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.mu.Lock()
+	activeTurn := s.activeTurn
+	s.mu.Unlock()
+	if activeTurn != "successor" || s.journal.RecoveryState().ActiveTurnID != "successor" {
+		t.Fatalf("concurrent transition lost successor: session=%q journal=%+v", activeTurn, s.journal.RecoveryState())
+	}
+}
+
+func TestTurnStartedReceiveBatchDoesNotDeadlockCompletion(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "journal.sqlite")
+	j, err := journal.Open(ctx, path, "source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadlocked := false
+	defer func() {
+		if !deadlocked {
+			if err := j.Close(); err != nil {
+				t.Error(err)
+			}
+		}
+	}()
+	s := newSession(sessionDependencies{
+		ctx: ctx, publish: func(*Session, bool) {}, changed: func() {}, fail: func(err error) { t.Error(err) },
+	}, "session", &retained.Record{}, j)
+	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "current"}), nil); err != nil {
+		t.Fatal(err)
+	}
+	inAdapter, resumeAdapter := make(chan struct{}), make(chan struct{})
+	adapter := frameTestAdapter{onFrame: func(batchCtx context.Context, _ json.RawMessage, sequence uint64) error {
+		close(inAdapter)
+		<-resumeAdapter
+		return s.Emit(batchCtx, observation(&eventpb.TurnStarted{TurnId: "successor"}), []uint64{sequence})
+	}}
+	frame := []byte(`{"type":"turn/started"}`)
+	receiveDone := make(chan error, 1)
+	go func() {
+		receiveDone <- s.connection.receiveBatch(ctx, [][]byte{frame}, func(batchCtx context.Context, line []byte) error {
+			return s.receive(batchCtx, line, adapter)
+		})
+	}()
+	select {
+	case <-inAdapter: // receiveBatch owns the journal lock after appending the raw Native frame.
+	case <-time.After(2 * time.Second):
+		deadlocked = true
+		t.Fatal("native receive did not reach adapter barrier")
+	}
+	completionDone := make(chan error, 1)
+	go func() {
+		completionDone <- s.completeTurn(ctx, &eventpb.TurnCompleted{TurnId: "current", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}, nil)
+	}()
+	lockDeadline := time.NewTimer(2 * time.Second)
+	defer lockDeadline.Stop()
+	for {
+		if s.writeMu.TryLock() {
+			s.writeMu.Unlock()
+		} else {
+			break // completeTurn owns writeMu and is blocked on the journal batch.
+		}
+		select {
+		case <-lockDeadline.C:
+			deadlocked = true
+			t.Fatal("completion did not reach the write gate")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	close(resumeAdapter)
+	select {
+	case err := <-receiveDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		deadlocked = true
+		t.Fatal("native receive batch deadlocked against completion")
+	}
+	select {
+	case err := <-completionDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		deadlocked = true
+		t.Fatal("turn completion deadlocked against native receive batch")
+	}
+	if got := j.RecoveryState().ActiveTurnID; got != "successor" {
+		t.Fatalf("active turn after concurrent transitions = %q, want successor", got)
+	}
+	entries, err := j.Since(ctx, 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var nativeCursor uint64
+	var successor *eventlogpb.EventEntry
+	for _, entry := range entries {
+		if entry.Event.GetNative() != nil && entry.Event.GetNative().GetLine() == string(frame) {
+			nativeCursor = entry.Cursor
+		}
+		if entry.Event.GetTurnStarted() != nil && entry.Event.GetTurnStarted().GetTurnId() == "successor" {
+			successor = entry
+		}
+	}
+	if nativeCursor == 0 || successor == nil || len(successor.Event.GetSourceSequences()) != 1 || successor.Event.GetSourceSequences()[0] != nativeCursor {
+		t.Fatalf("raw Native/source attribution lost: native_cursor=%d successor=%v", nativeCursor, successor)
+	}
 }
 
 type pendingSubmitAdapter struct {

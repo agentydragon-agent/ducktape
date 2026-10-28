@@ -545,6 +545,167 @@ func TestJournalBatchPublishesAtCommitBoundary(t *testing.T) {
 	}
 }
 
+func TestApplyCheckpointIgnoresMismatchedTurnCompletion(t *testing.T) {
+	state := RecoveryState{ActiveTurnID: "active-successor"}
+	applyCheckpoint(&state, &eventlogpb.EventEntry{
+		Cursor: 7,
+		Event: &eventpb.Event{Observation: &eventpb.Event_TurnCompleted{TurnCompleted: &eventpb.TurnCompleted{
+			TurnId: "finished-turn", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED,
+		}}},
+	})
+	if state.ThroughCursor != 7 || state.ActiveTurnID != "active-successor" {
+		t.Fatalf("checkpoint after mismatched completion = %+v", state)
+	}
+}
+
+func TestStaleTurnCompletionsDoNotClearCurrentTurnOrPoisonBatch(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "journal.sqlite")
+	journal, err := Open(ctx, path, "test-source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := journal.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	appendTurn := func(turnID string) {
+		t.Helper()
+		if _, err := journal.Append(ctx, &eventpb.Event{
+			Observation: &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: turnID}},
+		}, AppendOptions{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	completeTurn := func(turnID string) {
+		t.Helper()
+		if _, err := journal.Append(ctx, &eventpb.Event{
+			Observation: &eventpb.Event_TurnCompleted{TurnCompleted: &eventpb.TurnCompleted{
+				TurnId: turnID, Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED,
+			}},
+		}, AppendOptions{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	appendTurn("finished-turn")
+	completeTurn("finished-turn")
+	appendTurn("active-successor")
+
+	// A duplicate completion can arrive inside the generic frame batch. It must
+	// leave the successor checkpoint intact and be a no-op, not fail the batch.
+	if err := journal.WithBatch(ctx, func(batchCtx context.Context) error {
+		for _, turnID := range []string{"finished-turn", "unknown-turn"} {
+			entry, err := journal.Append(batchCtx, &eventpb.Event{
+				Observation: &eventpb.Event_TurnCompleted{TurnCompleted: &eventpb.TurnCompleted{
+					TurnId: turnID, Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED,
+				}},
+			}, AppendOptions{})
+			if err != nil {
+				return err
+			}
+			if entry != nil {
+				return errors.New("stale completion was appended")
+			}
+		}
+		entry, err := journal.Append(batchCtx, &eventpb.Event{
+			Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: "still writable"}},
+		}, AppendOptions{})
+		if err != nil {
+			return err
+		}
+		if entry == nil {
+			return errors.New("ordinary Event was not appended after duplicate completion")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := journal.RecoveryState().ActiveTurnID; got != "active-successor" {
+		t.Fatalf("active turn after stale completion = %q, want active-successor", got)
+	}
+	var successorEnd sql.NullInt64
+	if err := journal.conn.QueryRowContext(ctx, "SELECT end_cursor FROM turn_boundary WHERE turn_id = ?", "active-successor").Scan(&successorEnd); err != nil {
+		t.Fatal(err)
+	}
+	if successorEnd.Valid {
+		t.Fatalf("successor turn ended at cursor %d after stale completion", successorEnd.Int64)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+	journal, err = Open(ctx, path, "test-source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := journal.RecoveryState().ActiveTurnID; got != "active-successor" {
+		t.Fatalf("recovered active turn after stale completion = %q, want active-successor", got)
+	}
+
+	completeTurn("active-successor")
+	beforeDuplicate := journal.LastCursor()
+	entry, err := journal.Append(ctx, &eventpb.Event{
+		Observation: &eventpb.Event_TurnCompleted{TurnCompleted: &eventpb.TurnCompleted{
+			TurnId: "active-successor", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED,
+		}},
+	}, AppendOptions{})
+	if err != nil || entry != nil {
+		t.Fatalf("duplicate completion entry = %v, err = %v", entry, err)
+	}
+	if journal.LastCursor() != beforeDuplicate || journal.RecoveryState().ActiveTurnID != "" {
+		t.Fatalf("duplicate final completion changed journal: cursor=%d state=%+v", journal.LastCursor(), journal.RecoveryState())
+	}
+}
+
+func TestCompletionWithCorruptTurnBoundaryDoesNotPublishCheckpoint(t *testing.T) {
+	for _, corruption := range []string{"missing", "already closed"} {
+		t.Run(corruption, func(t *testing.T) {
+			journal := openTestJournal(t)
+			ctx := context.Background()
+			if _, err := journal.Append(ctx, &eventpb.Event{
+				Observation: &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: "active-turn"}},
+			}, AppendOptions{}); err != nil {
+				t.Fatal(err)
+			}
+			statement := "DELETE FROM turn_boundary WHERE turn_id = ?"
+			if corruption == "already closed" {
+				statement = "UPDATE turn_boundary SET end_cursor = 1, status = ? WHERE turn_id = ?"
+				if _, err := journal.conn.ExecContext(ctx, statement, eventpb.TurnStatus_TURN_STATUS_COMPLETED, "active-turn"); err != nil {
+					t.Fatal(err)
+				}
+			} else if _, err := journal.conn.ExecContext(ctx, statement, "active-turn"); err != nil {
+				t.Fatal(err)
+			}
+
+			entry, err := journal.Append(ctx, &eventpb.Event{
+				Observation: &eventpb.Event_TurnCompleted{TurnCompleted: &eventpb.TurnCompleted{
+					TurnId: "active-turn", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED,
+				}},
+			}, AppendOptions{})
+			var storageErr *StorageError
+			if entry != nil || !errors.As(err, &storageErr) {
+				t.Fatalf("completion with %s boundary = entry %v, err %v; want storage error", corruption, entry, err)
+			}
+			if journal.LastCursor() != 1 || journal.RecoveryState().ThroughCursor != 1 || journal.RecoveryState().ActiveTurnID != "active-turn" {
+				t.Fatalf("failed completion published checkpoint: cursor=%d state=%+v", journal.LastCursor(), journal.RecoveryState())
+			}
+			var entries int
+			var through int64
+			var active string
+			if err := journal.conn.QueryRowContext(ctx, "SELECT count(*) FROM event_entry").Scan(&entries); err != nil {
+				t.Fatal(err)
+			}
+			if err := journal.conn.QueryRowContext(ctx, "SELECT through_cursor, active_turn_id FROM checkpoint WHERE id = 1").Scan(&through, &active); err != nil {
+				t.Fatal(err)
+			}
+			if entries != 1 || through != 1 || active != "active-turn" {
+				t.Fatalf("failed completion changed durable checkpoint: entries=%d through=%d active=%q", entries, through, active)
+			}
+		})
+	}
+}
+
 func TestFailedJournalWriteDoesNotPublishCursor(t *testing.T) {
 	journal := openTestJournal(t)
 	ctx := context.Background()
