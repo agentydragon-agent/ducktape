@@ -205,10 +205,30 @@ Kustomization for the Policy Controller's RoleBinding management Role and RoleBi
 does not block the Agentplane app Kustomization. Keep an external delegation while its
 namespace is in the retained cleanup scopes, even if its catalog entry is removed.
 
-Kubernetes RBAC does not constrain a ClusterRole's `bind` permission to namespaced
-RoleBindings. Because the Policy Controller can create ClusterRoleBindings for assignable cluster
-grants, a compromised Policy Controller identity could bind any of its named ClusterRoles cluster-wide
-too. This is a delegation limit of its ServiceAccount's Kubernetes permissions.
+The Policy Controller's exact-name `bind` rules limit which assignable ClusterRoles it can grant,
+but not their subjects. Kubernetes RBAC cannot scope top-level ClusterRoleBinding creation by
+`resourceNames`; the controller's ClusterRoleBinding `create`, `patch`, and `delete` permissions
+are unscoped. A compromised controller identity could therefore bind an assignable ClusterRole to
+any subject and delete any ClusterRoleBinding. Generated names and labels guide normal
+reconciliation; they do not limit this ServiceAccount's authority. This cluster-wide binding
+authority is part of the current trusted-controller boundary.
+
+Putting ClusterRoleBinding writes in a separate controller would isolate the Policy Controller's
+credential, but would not contain compromise of the new writer: it would need the same unscoped
+cluster-wide ClusterRoleBinding `create`, `patch`, and `delete` permissions and the same `bind`
+authority for assignable ClusterRoles. Without an admission guard, a compromised writer could still
+grant those roles to any subject and delete any ClusterRoleBinding. Static bindings avoid a runtime
+writer but give up PolicyBindings' runtime ServiceAccount subjects.
+
+Containment after writer compromise would require admission to check each ClusterRoleBinding's
+subject and role against its PolicyBinding and PolicySets. Expiry deletes the PolicyBinding first;
+the subsequent NotFound reconciliation deletes its native bindings. The cleanup check must therefore
+authorize deletion from ownership data on the old ClusterRoleBinding after its source PolicyBinding
+has disappeared. A `ValidatingAdmissionPolicy` evaluates the admission object and its old object, plus
+an explicitly selected parameter resource; it does not fetch arbitrary related objects. This dynamic
+cross-object check needs a validating webhook or another authoritative server-side source. See
+Kubernetes' [RBAC resource-name and bind rules](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
+and [ValidatingAdmissionPolicy CEL inputs](https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/).
 
 ### Shared deployment definitions and parity contract
 
