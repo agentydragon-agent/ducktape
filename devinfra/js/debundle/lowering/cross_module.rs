@@ -57,6 +57,8 @@ struct ReparsedEntry {
     imports: Vec<ImportRecord>,
     export_aliases: Vec<ExportAliasRecord>,
     primitive_exports: BTreeSet<String>,
+    primitive_export_import_dependencies: BTreeMap<String, BTreeSet<String>>,
+    primitive_export_reexports: BTreeMap<String, (String, String)>,
 }
 
 /// Output of the program-level purity pass, keyed by chunk name.
@@ -148,6 +150,15 @@ fn chunk_allowed(chunk_id: ChunkId, chunk_filter: Option<&BTreeSet<ChunkId>>) ->
     chunk_filter.is_none_or(|filter| filter.contains(&chunk_id))
 }
 
+fn resolved_target_is_entry(
+    artifact: &ChunkBundle,
+    target: &artifact::ResolvedImportReference,
+) -> bool {
+    artifact
+        .find_chunk(target.target_chunk_id)
+        .is_some_and(|chunk| chunk.analysis.entry_file == target.target_file)
+}
+
 /// Per-chunk-name imported-binding purity maps for the whole artifact.
 /// A chunk whose entry can neither be reused (retained AST) nor re-parsed
 /// stays opaque: its exports get no verdicts and imports of it stay
@@ -200,6 +211,12 @@ pub(super) fn collect_cross_module_imported_purities(
                         imports: analysis.imports,
                         export_aliases: analysis.export_aliases,
                         primitive_exports: analysis.runtime_facts.stable_primitive_exports,
+                        primitive_export_import_dependencies: analysis
+                            .runtime_facts
+                            .stable_primitive_export_import_dependencies,
+                        primitive_export_reexports: analysis
+                            .runtime_facts
+                            .stable_primitive_export_reexports,
                     },
                 );
             }
@@ -216,6 +233,10 @@ pub(super) fn collect_cross_module_imported_purities(
     // available (retained AST or re-parsed entry).
     let mut modules = BTreeMap::new();
     let mut primitive_exports = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut primitive_export_import_candidates =
+        BTreeMap::<String, BTreeMap<String, BTreeSet<String>>>::new();
+    let mut primitive_export_reexport_dependencies =
+        BTreeMap::<(String, String), ResolvedImport>::new();
     for chunk_artifact in &artifact.chunks {
         if !chunk_allowed(chunk_artifact.chunk_id, chunk_filter) {
             continue;
@@ -244,16 +265,51 @@ pub(super) fn collect_cross_module_imported_purities(
                 (None, None) => continue,
             };
         if !primitive_opaque_chunks.contains(&chunk_artifact.chunk_id) {
-            let exports = match reparsed.get(&chunk_artifact.chunk_id) {
-                Some(entry) => &entry.primitive_exports,
-                None => {
-                    &chunk_artifact
-                        .analysis
-                        .runtime_facts
-                        .stable_primitive_exports
-                }
-            };
+            let (exports, import_candidates, reexport_candidates) =
+                match reparsed.get(&chunk_artifact.chunk_id) {
+                    Some(entry) => (
+                        &entry.primitive_exports,
+                        &entry.primitive_export_import_dependencies,
+                        &entry.primitive_export_reexports,
+                    ),
+                    None => {
+                        let facts = &chunk_artifact.analysis.runtime_facts;
+                        (
+                            &facts.stable_primitive_exports,
+                            &facts.stable_primitive_export_import_dependencies,
+                            &facts.stable_primitive_export_reexports,
+                        )
+                    }
+                };
             primitive_exports.insert(chunk_name.to_string(), exports.clone());
+            primitive_export_import_candidates
+                .insert(chunk_name.to_string(), import_candidates.clone());
+            for (export, (source, imported_export)) in reexport_candidates {
+                let Some(target) = indexes.resolve_runtime_import_reference(
+                    source,
+                    chunk_artifact.chunk_id,
+                    entry_file,
+                    &artifact.chunk_table,
+                ) else {
+                    continue;
+                };
+                if excluded_chunks.contains(&target.target_chunk_id)
+                    || !chunk_allowed(target.target_chunk_id, chunk_filter)
+                    || !resolved_target_is_entry(artifact, &target)
+                {
+                    continue;
+                }
+                primitive_export_reexport_dependencies.insert(
+                    (chunk_name.to_string(), export.clone()),
+                    ResolvedImport {
+                        module: artifact
+                            .chunk_table
+                            .name(target.target_chunk_id)
+                            .to_string(),
+                        export: imported_export.clone(),
+                    },
+                );
+            }
         }
         let body = &parsed.module.body;
         let mut imports = BTreeMap::new();
@@ -271,6 +327,7 @@ pub(super) fn collect_cross_module_imported_purities(
             };
             if excluded_chunks.contains(&target.target_chunk_id)
                 || !chunk_allowed(target.target_chunk_id, chunk_filter)
+                || !resolved_target_is_entry(artifact, &target)
             {
                 continue;
             }
@@ -330,6 +387,55 @@ pub(super) fn collect_cross_module_imported_purities(
                 )),
             },
         );
+    }
+
+    let mut primitive_export_import_dependencies =
+        BTreeMap::<(String, String), Vec<ResolvedImport>>::new();
+    for (chunk, candidates) in primitive_export_import_candidates {
+        let Some(module) = modules.get(&chunk) else {
+            continue;
+        };
+        for (export, local_imports) in candidates {
+            let dependencies: Option<Vec<_>> = local_imports
+                .iter()
+                .map(|local| module.imports.get(local).cloned())
+                .collect();
+            if let Some(dependencies) = dependencies {
+                primitive_export_import_dependencies.insert((chunk.clone(), export), dependencies);
+            }
+        }
+    }
+
+    // Primitive values are source facts only when supported by a direct
+    // expression or a chain that reaches one. Start from those direct seeds
+    // and add an alias only when every dependency is already proven. An
+    // unsupported alias cycle therefore stays unknown.
+    let mut primitive_exports_changed = true;
+    while primitive_exports_changed {
+        primitive_exports_changed = false;
+        let mut additions = Vec::new();
+        for ((chunk, export), dependencies) in &primitive_export_import_dependencies {
+            if dependencies.iter().all(|dependency| {
+                primitive_exports
+                    .get(&dependency.module)
+                    .is_some_and(|exports| exports.contains(&dependency.export))
+            }) {
+                additions.push((chunk.clone(), export.clone()));
+            }
+        }
+        for (key, dependency) in &primitive_export_reexport_dependencies {
+            if primitive_exports
+                .get(&dependency.module)
+                .is_some_and(|exports| exports.contains(&dependency.export))
+            {
+                additions.push(key.clone());
+            }
+        }
+        for (chunk, export) in additions {
+            if primitive_exports.entry(chunk).or_default().insert(export) {
+                primitive_exports_changed = true;
+            }
+        }
     }
     let asserted_pure: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
         .iter()
@@ -594,6 +700,32 @@ mod tests {
         })
     }
 
+    fn add_non_entry_file(artifact: &mut ChunkBundle, chunk_name: &str, path: &str, source: &str) {
+        let chunk_id = artifact.chunk_table.get(chunk_name).expect("test chunk");
+        let chunk = artifact
+            .chunks
+            .iter_mut()
+            .find(|chunk| chunk.chunk_id == chunk_id)
+            .expect("test artifact chunk");
+        chunk.js.files.push(JsFile {
+            path: path.to_string(),
+            body: JsFileBody::Source(source.to_string()),
+            header_lines: Vec::new(),
+            binding_comments: BTreeMap::new(),
+            leading_item_comments: BTreeMap::new(),
+            metadata: FileMetadata {
+                chunk_id: chunk_name.to_string(),
+                chunk_file: path.to_string(),
+                role: FileRole::Module,
+                source_path: format!("{chunk_name}/{path}"),
+            },
+        });
+        chunk.analysis.files.push(ChunkFileRecord {
+            file: path.to_string(),
+            role: FileRole::Module,
+        });
+    }
+
     fn closure_names(artifact: &ChunkBundle, closure: &BTreeSet<ChunkId>) -> BTreeSet<String> {
         closure
             .iter()
@@ -635,5 +767,128 @@ export function callWrap(f) { return wrap(f); }\n",
             closure_names(&artifact, &closure),
             BTreeSet::from(["static/app".to_string()])
         );
+    }
+
+    #[test]
+    fn request_only_host_loading_preserves_direct_esm_primitive_facts() {
+        js_ast::with_swc_globals(|| {
+            let parsed = js_ast::parse_js_module(
+                "request-only.js",
+                "if (false) import.meta.require('./deferred.js');\nexport const label = `tool_${2}`;",
+            )
+            .expect("request-only ESM source parses");
+            let facts = analyze_program_shallow(&parsed).runtime_facts;
+
+            assert!(facts.has_cjs_interop, "the full runtime guard remains set");
+            assert!(
+                !facts.has_own_cjs_export_surface,
+                "request-only loading does not create a CommonJS export surface"
+            );
+            assert!(facts.stable_primitive_exports.contains("label"));
+
+            let parsed = js_ast::parse_js_module(
+                "cjs-surface.js",
+                "if (false) import.meta.require('./deferred.js');\ntypeof module;\nexport const label = 'tool';",
+            )
+            .expect("hybrid module source parses");
+            let facts = analyze_program_shallow(&parsed).runtime_facts;
+            assert!(facts.has_cjs_interop);
+            assert!(facts.has_own_cjs_export_surface);
+            assert!(!facts.stable_primitive_exports.contains("label"));
+        });
+    }
+
+    #[test]
+    fn primitive_import_facts_do_not_project_through_non_entry_files() {
+        js_ast::with_swc_globals(|| {
+            let mut artifact = test_bundle(&[
+                (
+                    "static/app",
+                    "import { value as alias } from '../peer/internal.js';\n\
+                     export const copied = alias;\n\
+                     export { value as forwarded } from '../peer/internal.js';",
+                ),
+                ("static/peer", "export const value = 4;"),
+            ]);
+            add_non_entry_file(
+                &mut artifact,
+                "static/peer",
+                "internal.js",
+                "export const value = {};",
+            );
+            let indexes = ArtifactIndexes::build(&artifact).expect("build indexes");
+            let facts = collect_cross_module_imported_purities(
+                &artifact,
+                &indexes,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeSet::new(),
+                &BTreeSet::new(),
+                None,
+            );
+
+            let app_primitives = facts
+                .primitives
+                .get("static/app")
+                .expect("app primitive fact set");
+            assert!(!app_primitives.contains("copied"));
+            assert!(!app_primitives.contains("forwarded"));
+        });
+    }
+
+    #[test]
+    fn non_entry_synchronous_callback_export_does_not_inherit_entry_summaries() {
+        js_ast::with_swc_globals(|| {
+            let mut artifact = test_bundle(&[
+                (
+                    "static/app",
+                    "import { factory } from '../peer/unsafe.js';\n\
+                     let later = 0;\n\
+                     const callback = () => later;\n\
+                     const result = factory(callback);\n\
+                     later = 42;\n\
+                     console.log(result(), later);",
+                ),
+                (
+                    "static/peer",
+                    "export function factory(callback) { return () => callback(); }",
+                ),
+            ]);
+            add_non_entry_file(
+                &mut artifact,
+                "static/peer",
+                "unsafe.js",
+                "export function factory(callback) { callback(); return () => undefined; }",
+            );
+            let mut assertion = ChunkExportPurity::default();
+            assertion.pure_exports.insert("factory".to_string());
+            assertion
+                .callback_factory_exports
+                .insert("factory".to_string());
+            let assertions = BTreeMap::from([("static/peer".to_string(), assertion)]);
+            let indexes = ArtifactIndexes::build(&artifact).expect("build indexes");
+            let facts = collect_cross_module_imported_purities(
+                &artifact,
+                &indexes,
+                &assertions,
+                &BTreeMap::new(),
+                &BTreeSet::new(),
+                &BTreeSet::new(),
+                None,
+            );
+
+            assert!(
+                facts
+                    .bindings
+                    .get("static/app")
+                    .is_none_or(|bindings| !bindings.contains_key("factory"))
+            );
+            assert!(
+                facts
+                    .imported_callables
+                    .get("static/app")
+                    .is_none_or(|bindings| !bindings.contains_key("factory"))
+            );
+        });
     }
 }
