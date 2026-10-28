@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import { displayUsedPercent, formatWindowLabel } from "./format";
 import cases from "./fixtures/format_cases.json";
 import {
+  bindingSummary,
   computePace,
   formatDuration,
   formatPace,
@@ -19,6 +20,7 @@ import {
   isExhausted,
   roundHalfToEven,
   tintFor,
+  type Tint,
 } from "../shared/presentation.js";
 
 type FormatCase = {
@@ -62,11 +64,58 @@ describe("the Python renderers' output", () => {
   }
 });
 
-describe("formatWindowLabel", () => {
-  // No scenario names its windows, so the named form has no generated case above; Codex's
-  // real response does name them ("primary").
-  it("qualifies a named window with its length", () => {
-    expect(formatWindowLabel({ name: "primary", window_seconds: 3600 })).toBe("primary (1h)");
+describe("compact binding summary", () => {
+  type BindingWindow = { name: string | null; tint: Tint };
+  type BindingSummaryCase = {
+    windows: BindingWindow[];
+    expected: { tint: Tint; index: number | null };
+  };
+
+  const bindingSummaryCases: BindingSummaryCase[] = [
+    {
+      windows: [
+        { name: "burst", tint: "warn" },
+        { name: "weekly", tint: "cool" },
+      ],
+      expected: { tint: "warn", index: 0 },
+    },
+    {
+      windows: [
+        { name: "primary", tint: "ok" },
+        { name: "secondary", tint: "hot" },
+      ],
+      expected: { tint: "hot", index: 1 },
+    },
+    {
+      windows: [
+        { name: "burst", tint: "cool" },
+        { name: "weekly", tint: "ok" },
+      ],
+      expected: { tint: "cool", index: 0 },
+    },
+    {
+      windows: [
+        { name: "primary", tint: "ok" },
+        { name: "secondary", tint: "ok" },
+      ],
+      expected: { tint: "ok", index: 1 },
+    },
+    {
+      windows: [
+        { name: "primary", tint: "ok" },
+        { name: null, tint: "ok" },
+        { name: "secondary", tint: "ok" },
+      ],
+      expected: { tint: "ok", index: 1 },
+    },
+    {
+      windows: [{ name: "stale", tint: "stale" }],
+      expected: { tint: "unknown", index: null },
+    },
+  ];
+
+  it.each(bindingSummaryCases)("keeps pace on a window with the summary tint", ({ windows, expected }) => {
+    expect(bindingSummary(windows)).toEqual(expected);
   });
 });
 
