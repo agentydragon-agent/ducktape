@@ -1240,7 +1240,7 @@ async def _open_transaction_details(page: Page, rows: Locator, width: int) -> No
     await page.get_by_text("Allowance bridge", exact=True).wait_for()
     if width >= 992:
         await rows.locator("tbody tr[data-transaction-row]").filter(has_text="UPS").click()
-        await expect(rows.locator("tbody tr")).to_have_count(7)
+        await expect(rows.locator("tbody tr")).to_have_count(11)
     else:
         await _expand_accordion(rows.get_by_role("button", name="UPS", exact=False))
     await rows.get_by_text("Required document shipping for a synthetic example.").wait_for()
