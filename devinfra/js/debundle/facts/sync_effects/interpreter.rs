@@ -4,17 +4,18 @@ use super::super::value_model::{
     AbstractValue, ArrayIteration, ArrayIterationMethod, CallSite, Captured, CapturedContext,
     Context, DenseArray, FrozenNamespaceProof, OwnPropertyDescriptorSyntax, ValueExpr, Values,
 };
-use super::native_calls::{CallInputs, CallReturn, NativeCallModel, native_call_model};
+use super::native_calls::{CallInputs, CallReturn, NativeCallModel};
 use super::{
     Call, CallKind, Callable, CallbackResultWrite, ExecutionIndex, IntrinsicRoot, LocalConstructor,
     RetainedCallbackCall,
 };
 use crate::analysis_inputs::AnalysisInputs;
 use crate::facts::ExportReentryPolicy;
-use crate::facts::construction_inference::{ConstructionFacts, ConstructionRules};
+use crate::facts::callable_inference::CallableInferenceInputs;
 use crate::facts::fresh_receiver::fresh_mutation_callables;
 use crate::facts::item_views::TopLevelItemView;
 use crate::facts::local_effect_targets::MetadataDecorateCall;
+use crate::facts::semantic_inference::SemanticKey;
 use crate::facts::source_unit_read_closure::SourceUnitReadClosure;
 use crate::facts::statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, CallbackFactoryUseFact,
@@ -341,6 +342,9 @@ impl Executor<'_> {
         let Some(evidence) = self.index.returned_record_summaries.get(imported_local) else {
             return;
         };
+        self.inference_uses
+            .borrow_mut()
+            .insert(evidence.inference.clone());
         let proof_use = ReturnedRecordUseFact {
             imported_local: imported_local.0.to_string(),
             evidence: evidence.clone(),
@@ -355,15 +359,26 @@ impl Executor<'_> {
     }
 
     fn native_guard_intact(&self, guard: NativeIntegrityGuard, roots: &[IntrinsicRoot]) -> bool {
+        let Some(facts) = self.index.semantic_facts.as_ref() else {
+            return false;
+        };
+        let mut intact = true;
+        for root in roots {
+            let key = SemanticKey::NativeIntegrity(*root);
+            if let Some(proof) = facts.inference_use(&key) {
+                self.record_inference_use(guard, proof);
+            } else {
+                intact = false;
+            }
+        }
+        if intact {
+            return true;
+        }
         let affected_roots: BTreeSet<_> = roots
             .iter()
             .filter(|root| self.index.mutated_intrinsic_roots.contains(root))
             .copied()
             .collect();
-        if affected_roots.is_empty() {
-            self.record_native_integrity_use(guard);
-            return true;
-        }
         self.native_integrity_checks
             .borrow_mut()
             .insert(NativeIntegrityCheck {
@@ -700,39 +715,9 @@ impl Executor<'_> {
         kind: CallKind,
         callee: &ValueExpr,
     ) -> Option<NativeCallModel> {
-        let (binding, receiver, member, global_this_qualified) = match callee {
-            ValueExpr::Binding(binding) => (binding, binding.0.as_ref(), None, false),
-            ValueExpr::Member(receiver, Some(member), true) => match receiver.as_ref() {
-                ValueExpr::Binding(binding) if binding.0.as_ref() == "globalThis" => {
-                    (binding, member.as_str(), None, true)
-                }
-                ValueExpr::Binding(binding) => {
-                    (binding, binding.0.as_ref(), Some(member.as_str()), false)
-                }
-                ValueExpr::Member(global, Some(receiver), true) => {
-                    let ValueExpr::Binding(binding) = global.as_ref() else {
-                        return None;
-                    };
-                    if binding.0.as_ref() != "globalThis" {
-                        return None;
-                    }
-                    (binding, receiver.as_str(), Some(member.as_str()), true)
-                }
-                _ => return None,
-            },
-            _ => return None,
-        };
-        let model = native_call_model(receiver, member, kind)?;
-        if !self.index.native_call_identity_is_unmodified(
-            binding,
-            model.intrinsic,
-            self.flow,
-            self.shadowed,
-            global_this_qualified,
-        ) {
-            return None;
-        }
-        self.record_native_integrity_use(NativeIntegrityGuard::NativeCallIdentity);
+        let (model, key) = super::native_call_identity_key(kind, callee)?;
+        let proof = self.index.semantic_facts.as_ref()?.inference_use(&key)?;
+        self.record_inference_use(NativeIntegrityGuard::NativeCallIdentity, proof);
         Some(model)
     }
 
@@ -3931,7 +3916,7 @@ impl Executor<'_> {
         args.is_empty()
             && matches!(callee, ValueExpr::Binding(id)
             if self.index.returned_record_summaries.contains_key(id)
-                && self.index.collection_intrinsic_is_unmodified("Map"))
+                && self.index.native_integrity_is_proven(IntrinsicRoot::Map))
     }
 
     fn promote_foreign_record(&mut self, outcome: &mut Outcome) {
@@ -5446,31 +5431,17 @@ pub(crate) fn prepare_synchronous_call_index(
         plain_array_bindings,
         local_class_construction,
     );
-    // The census is now complete. Publish it into a single immutable rule
-    // context, with binding identity separated from native mutation premises.
+    // The census is now complete. Publish its binding and mutation premises
+    // into one immutable context shared by timing, purity and heap consumers.
     let classes = std::mem::take(&mut index.local_class_construction_shapes);
-    let collection_bindings = classes
-        .classes
-        .values()
-        .flatten()
-        .filter_map(|id| {
-            let model = native_call_model(id.0.as_ref(), None, CallKind::New)?;
-            (model.heap_effect == super::native_calls::NativeHeapEffect::FreshAllocation
-                && !flow.is_declared(id)
-                && !shadowed.contains(id.0.as_ref()))
-            .then(|| (id.clone(), model.intrinsic))
-        })
-        .collect();
-    let facts = Arc::new(ConstructionFacts::solve(ConstructionRules {
+    let facts = index.prepare_semantic_facts(
+        flow,
+        shadowed,
         classes,
-        sets: set_iterable_shapes,
-        collection_bindings,
-        mutated_intrinsics: index.mutated_intrinsic_roots.clone(),
-        dynamic_scope: !index.dynamic_scope_owners.is_empty(),
-        native_dependencies: crate::analysis_inputs::ProofDependencies {
-            value_inputs: index.native_integrity_value_input_refs.clone(),
-        },
-    }));
+        set_iterable_shapes,
+        CallableInferenceInputs::default(),
+    );
+    index.semantic_facts = Some(Arc::clone(&facts));
     index.local_class_construction_proof = LocalClassConstructionProof::new(Arc::clone(&facts));
     let set_iterable_proof = SetIterableProof::new(facts);
     index.local_constructors.retain(|key, constructor| {

@@ -563,8 +563,9 @@ pub fn resolve_imported_callable_summaries(
                         defining_module: module.clone(),
                         export: export.clone(),
                         local: local.clone(),
-                        source_location: locate(record.function_start),
+                        source_location: locate(record.facts.function_start),
                         members: record
+                            .facts
                             .members
                             .iter()
                             .map(|(name, start, captures)| DeferredRecordMember {
@@ -573,9 +574,7 @@ pub fn resolve_imported_callable_summaries(
                                 captures: captures.clone(),
                             })
                             .collect(),
-                        native_integrity_value_inputs: native_integrity
-                            .consumed_value_inputs
-                            .clone(),
+                        inference: record.inference.clone(),
                     }));
             }
         }

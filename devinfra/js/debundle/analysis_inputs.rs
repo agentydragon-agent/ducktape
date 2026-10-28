@@ -67,10 +67,8 @@ pub struct ReturnedRecordSummary {
     pub local: String,
     pub source_location: Option<SourceLocation>,
     pub members: Vec<DeferredRecordMember>,
-    /// Native-integrity inputs consumed to admit the Map/collection protocol
-    /// premise used by this inferred record shape.
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub native_integrity_value_inputs: BTreeSet<ValueInputRef>,
+    /// Composed source/native proof, including its captured-input dependencies.
+    pub inference: crate::reports::schema::InferenceUse,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -159,6 +157,7 @@ pub enum NativeIntrinsic {
     UnknownGlobalValue,
     Error,
     FinalizationRegistry,
+    Function,
     Object,
     Array,
     Math,
@@ -169,6 +168,28 @@ pub enum NativeIntrinsic {
     Set,
     WeakMap,
     WeakSet,
+}
+
+impl NativeIntrinsic {
+    pub(crate) fn for_global_binding(property: &str) -> Option<Self> {
+        match property {
+            "Error" => Some(Self::Error),
+            "Function" => Some(Self::Function),
+            "Object" => Some(Self::Object),
+            "Array" => Some(Self::Array),
+            "Math" => Some(Self::Math),
+            "RegExp" => Some(Self::RegExp),
+            "Symbol" => Some(Self::Symbol),
+            "Promise" => Some(Self::Promise),
+            "Map" => Some(Self::Map),
+            "Set" => Some(Self::Set),
+            "WeakMap" => Some(Self::WeakMap),
+            "WeakSet" => Some(Self::WeakSet),
+            "FinalizationRegistry" => Some(Self::FinalizationRegistry),
+            "globalThis" | "window" | "self" | "frames" | "top" => Some(Self::GlobalObject),
+            _ => None,
+        }
+    }
 }
 
 /// Stable reference to one exact author input in one provider chunk.

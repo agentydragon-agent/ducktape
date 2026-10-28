@@ -1,39 +1,59 @@
 # Shared inference
 
 `inference.rs` computes positive certificates over an immutable analysis context.
-`facts/construction_inference.rs` is its first production rule set. Structural
-analysis supplies candidates; candidates alone cannot certify an operation.
+`facts/semantic_inference.rs` owns the shared rule set. Structural analysis
+supplies candidates; candidates alone cannot certify an operation.
 
 The current rules compose as follows:
 
 ```mermaid
 flowchart LR
     census[Completed native census] --> native[Native integrity]
-    native --> empty[Empty collection construction]
+    native --> identity[Native call identity]
+    identity --> empty[Empty collection construction]
+    identity --> calls[Guarded native call summaries]
     empty --> class[Local class construction]
     native --> set[Primitive Set iteration]
-    shape[Canonical source shapes] --> empty
+    shape[Canonical source shapes] --> function[Stable function identity]
+    function --> callback[Callback factory]
+    function --> record[Returned record construction]
+    empty --> record
+    shape --> empty
     shape --> class
     shape --> set
     class --> consumers[Purity, synchronous execution, heap ordering]
     set --> consumers
+    callback --> consumers
+    record --> consumers
 ```
 
 Native integrity checks the completed census, including dynamic scope and
-global-object mutations. Empty collection construction also requires the exact
-unshadowed global binding and the native operation's fresh-allocation model.
-Local class construction requires every native field allocation. Primitive Set
-iteration requires both Set and Array integrity and a checked source shape.
-The original restrictions on class identity, construction sites, arguments,
-primitive elements, mutation and escape remain in their structural analyses.
+global-object mutations. The `Function` family is included so source-visible
+changes to `Function.prototype.call` can invalidate only proofs that consume
+that capability. Native call identity also checks the exact binding,
+shadowing, and `globalThis` qualification before requiring both the global
+object and operation roots. Empty collection construction uses that identity
+judgment with the native operation's fresh-allocation model. Local class
+construction requires every native field allocation. Primitive Set iteration
+requires both Set and Array integrity and a checked source shape. The original
+restrictions on class identity, construction sites, arguments, primitive
+elements, mutation and escape remain in their structural analyses.
+
+Stable function identity requires one exact function value for the binding.
+Callback-factory conclusions compose that identity with an admitted source
+body. Returned-record conclusions additionally require an unchanged hoisted
+function and a fresh empty collection constructor; their summaries retain the
+member and capture provenance. These are timing and retained-capability facts,
+not purity or no-throw claims.
 
 ## Context and results
 
 The rule context owns compact source facts and the resolved native census from
 the same preparation. It does not parse or walk source again. A changed program,
 author input, import summary or analysis policy requires a new context; no cache
-is shared by path or module name. Prepared Set and class proofs share one
-`Arc<ConstructionFacts>`, including the heap projection of the class proof.
+is shared by path or module name. Prepared native-call, Set, class, and callable
+proofs share one `Arc<SemanticFacts>`, including the heap projection of the
+class proof.
 
 A `Judgment` has private construction. It contains a fact, direct premise keys,
 and the union of captured-input dependencies used to establish it. Reading a
@@ -79,9 +99,10 @@ Use matched optimized CPU and heap profiles before changing the value arenas,
 bitmap representation or cross-module preparation caches.
 
 `synchronous_execution.inference_uses` expands the rule names and captured-input
-references for certificates actually consumed by timing analysis. Purity and
-heap reports keep their existing dependency fields. Saved dependency graphs are
-diagnostic artifacts, not reusable internal inference contexts.
+references for certificates actually consumed by timing analysis, including
+native call identity and callable conclusions. Purity and heap reports keep
+their existing dependency fields. Saved dependency graphs are diagnostic
+artifacts, not reusable internal inference contexts.
 
 Tests cover queue order, dependency unions, shared prerequisites, unrelated
 rules, cycles, separate contexts and incomplete producers. Real CLI fixtures

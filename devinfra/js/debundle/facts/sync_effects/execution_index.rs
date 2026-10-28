@@ -16,15 +16,22 @@ use crate::analysis_inputs::{
 use crate::facts::at_init_fallback::{
     is_no_sync_callback_member_call, is_static_event_listener_registration,
 };
+use crate::facts::callable_inference::{
+    CallableInferenceInputs, FunctionBindingFacts, ReturnedRecordCandidateFacts,
+    ReturnedRecordFacts,
+};
 use crate::facts::global_object::unshadowed_global_object_aliases;
 use crate::facts::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
 use crate::facts::lazy_boundary::visit_eager_member_parts;
 use crate::facts::local_effect_targets::{MetadataDecorateCall, metadata_decorate_call};
+use crate::facts::semantic_inference::{
+    NativeBindingContext, SemanticFact, SemanticFacts, SemanticKey, SemanticRules,
+};
 use crate::facts::statement_facts::{
     CallbackFactoryCallArgumentWitness, CallbackFactoryWriteWitness, StatementFacts,
 };
 use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin};
-use crate::facts::{LocalClassConstructionProof, LocalClassConstructionShapes};
+use crate::facts::{LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableShapes};
 use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
     NativeMutationOperation, NativeMutationWitness, NativePrototypeMutation,
@@ -929,6 +936,43 @@ enum CallKind {
     DeepDestructuringProtocol,
 }
 
+fn native_call_identity_key(
+    kind: CallKind,
+    callee: &ValueExpr,
+) -> Option<(native_calls::NativeCallModel, SemanticKey)> {
+    let (binding, receiver, member, global_this_qualified) = match callee {
+        ValueExpr::Binding(binding) => (binding, binding.0.as_ref(), None, false),
+        ValueExpr::Member(receiver, Some(member), true) => match receiver.as_ref() {
+            ValueExpr::Binding(binding) if binding.0.as_ref() == "globalThis" => {
+                (binding, member.as_str(), None, true)
+            }
+            ValueExpr::Binding(binding) => {
+                (binding, binding.0.as_ref(), Some(member.as_str()), false)
+            }
+            ValueExpr::Member(global, Some(receiver), true) => {
+                let ValueExpr::Binding(binding) = global.as_ref() else {
+                    return None;
+                };
+                if binding.0.as_ref() != "globalThis" {
+                    return None;
+                }
+                (binding, receiver.as_str(), Some(member.as_str()), true)
+            }
+            _ => return None,
+        },
+        _ => return None,
+    };
+    let model = native_calls::native_call_model(receiver, member, kind)?;
+    Some((
+        model,
+        SemanticKey::NativeCallIdentity {
+            binding: binding.clone(),
+            intrinsic: model.intrinsic,
+            global_this_qualified,
+        },
+    ))
+}
+
 fn shallow_data_pattern(pattern: &Pat) -> bool {
     fn leaf(pattern: &Pat) -> bool {
         matches!(pattern, Pat::Ident(_))
@@ -1426,25 +1470,6 @@ fn captured_callable_return_shape_is_supported(
 
 /// The named native binding a write on a proved global object can replace.
 /// Reading an unrelated global slot instead yields an unknown value identity.
-fn named_global_intrinsic(property: &str) -> Option<IntrinsicRoot> {
-    match property {
-        "Error" => Some(IntrinsicRoot::Error),
-        "Object" => Some(IntrinsicRoot::Object),
-        "Array" => Some(IntrinsicRoot::Array),
-        "Math" => Some(IntrinsicRoot::Math),
-        "RegExp" => Some(IntrinsicRoot::RegExp),
-        "Symbol" => Some(IntrinsicRoot::Symbol),
-        "Promise" => Some(IntrinsicRoot::Promise),
-        "Map" => Some(IntrinsicRoot::Map),
-        "Set" => Some(IntrinsicRoot::Set),
-        "WeakMap" => Some(IntrinsicRoot::WeakMap),
-        "WeakSet" => Some(IntrinsicRoot::WeakSet),
-        "FinalizationRegistry" => Some(IntrinsicRoot::FinalizationRegistry),
-        "globalThis" | "window" | "self" | "frames" | "top" => Some(IntrinsicRoot::GlobalObject),
-        _ => None,
-    }
-}
-
 /// Any mutation through an unresolved global-slot value can reach a native
 /// object. Preserve that uncertainty instead of treating it as the global
 /// object itself and discarding an unrelated descendant property name.
@@ -1575,6 +1600,9 @@ fn intrinsic_roots(
         ValueExpr::Binding(id) if id.0.as_ref() == "Error" => {
             BTreeSet::from([intrinsic(IntrinsicRoot::Error)])
         }
+        ValueExpr::Binding(id) if id.0.as_ref() == "Function" => {
+            BTreeSet::from([intrinsic(IntrinsicRoot::Function)])
+        }
         ValueExpr::Binding(id) if id.0.as_ref() == "Object" => {
             BTreeSet::from([intrinsic(IntrinsicRoot::Object)])
         }
@@ -1685,7 +1713,7 @@ fn intrinsic_roots(
                         out.insert(intrinsic(
                             property
                                 .as_deref()
-                                .and_then(named_global_intrinsic)
+                                .and_then(IntrinsicRoot::for_global_binding)
                                 .unwrap_or(IntrinsicRoot::UnknownGlobalValue),
                         ));
                     }
@@ -2571,6 +2599,7 @@ struct ExecutionIndex {
     local_constructors: BTreeMap<u32, LocalConstructor>,
     local_class_construction_shapes: LocalClassConstructionShapes,
     local_class_construction_proof: LocalClassConstructionProof,
+    semantic_facts: Option<Arc<SemanticFacts>>,
     class_values: BTreeMap<u32, ClassValueFacts>,
     class_owners: BTreeMap<u32, SourceUnitOrdinal>,
     class_bindings: BTreeMap<u32, Id>,
@@ -2715,6 +2744,7 @@ impl Default for ExecutionIndex {
             local_constructors: BTreeMap::new(),
             local_class_construction_shapes: LocalClassConstructionShapes::default(),
             local_class_construction_proof: LocalClassConstructionProof::default(),
+            semantic_facts: None,
             class_values: BTreeMap::new(),
             class_owners: BTreeMap::new(),
             class_bindings: BTreeMap::new(),
@@ -2830,6 +2860,96 @@ impl Default for ExecutionIndex {
 }
 
 impl ExecutionIndex {
+    /// Build one immutable context from the canonical source index and the
+    /// completed native-write census. Callable candidates are input facts;
+    /// their returned-record constructors participate in the same native
+    /// identity and integrity proofs as local-class fields.
+    fn completed_native_rules(&self) -> SemanticRules {
+        SemanticRules {
+            native_census_complete: true,
+            mutated_intrinsics: self.mutated_intrinsic_roots.clone(),
+            dynamic_scope: !self.dynamic_scope_owners.is_empty(),
+            native_dependencies: crate::analysis_inputs::ProofDependencies {
+                value_inputs: self.native_integrity_value_input_refs.clone(),
+            },
+            ..SemanticRules::default()
+        }
+    }
+
+    pub(crate) fn prepare_semantic_facts(
+        &self,
+        flow: &ChunkValueFlow,
+        shadowed: &BTreeSet<&'static str>,
+        classes: LocalClassConstructionShapes,
+        sets: SetIterableShapes,
+        callables: CallableInferenceInputs,
+    ) -> Arc<SemanticFacts> {
+        let mut collection_bindings = BTreeMap::new();
+        let constructors = classes.classes.values().flatten().cloned().chain(
+            callables
+                .records
+                .values()
+                .map(|candidate| candidate.constructor.clone()),
+        );
+        for binding in constructors {
+            let Some(model) =
+                native_calls::native_call_model(binding.0.as_ref(), None, CallKind::New)
+            else {
+                continue;
+            };
+            if model.heap_effect == native_calls::NativeHeapEffect::FreshAllocation {
+                collection_bindings.insert(binding, model.intrinsic);
+            }
+        }
+
+        let native_call_identity_candidates: BTreeSet<_> = self
+            .top_calls
+            .iter()
+            .flatten()
+            .chain(self.callables.values().flat_map(|callable| &callable.calls))
+            .filter_map(|call| {
+                native_call_identity_key(call.kind, &call.callee).map(|(_, key)| key)
+            })
+            .chain(callables.records.values().filter_map(|candidate| {
+                native_call_identity_key(
+                    CallKind::New,
+                    &ValueExpr::Binding(candidate.constructor.clone()),
+                )
+                .map(|(_, key)| key)
+            }))
+            .chain(collection_bindings.iter().map(|(binding, intrinsic)| {
+                SemanticKey::NativeCallIdentity {
+                    binding: binding.clone(),
+                    intrinsic: *intrinsic,
+                    global_this_qualified: false,
+                }
+            }))
+            .collect();
+        let declared_bindings = native_call_identity_candidates
+            .iter()
+            .filter_map(|key| match key {
+                SemanticKey::NativeCallIdentity { binding, .. } => Some(binding.clone()),
+                _ => None,
+            })
+            .chain(collection_bindings.keys().cloned())
+            .filter(|binding| flow.is_declared(binding))
+            .collect();
+
+        Arc::new(SemanticFacts::solve(SemanticRules {
+            classes,
+            sets,
+            collection_bindings,
+            binding_context: NativeBindingContext {
+                declared_bindings,
+                shadowed_globals: shadowed.clone(),
+                global_object_names: self.global_object_names.clone(),
+            },
+            native_call_identity_candidates,
+            callables,
+            ..self.completed_native_rules()
+        }))
+    }
+
     fn validate_value_inputs(
         &mut self,
         selected: &[SelectedBindingValueInput],
@@ -3657,6 +3777,9 @@ impl ExecutionIndex {
                     "Error" => {
                         mutated_intrinsics.insert(IntrinsicRoot::Error);
                     }
+                    "Function" => {
+                        mutated_intrinsics.insert(IntrinsicRoot::Function);
+                    }
                     "Object" => {
                         mutated_intrinsics.insert(IntrinsicRoot::Object);
                     }
@@ -3692,7 +3815,7 @@ impl ExecutionIndex {
                     }
                     _ => {}
                 }
-                if let Some(root) = named_global_intrinsic(id.0.as_ref())
+                if let Some(root) = IntrinsicRoot::for_global_binding(id.0.as_ref())
                     .filter(|root| *root != IntrinsicRoot::GlobalObject)
                     && binding_write_sites.insert((owner, root))
                 {
@@ -3833,7 +3956,7 @@ impl ExecutionIndex {
                 match &evidence.domain {
                     PropertyKeyDomain::FiniteStrings(keys) => {
                         for key in keys {
-                            refined.extend(named_global_intrinsic(key));
+                            refined.extend(IntrinsicRoot::for_global_binding(key));
                         }
                     }
                     PropertyKeyDomain::Symbol => {}
@@ -4474,57 +4597,10 @@ impl ExecutionIndex {
         index
     }
 
-    fn collection_intrinsic_is_unmodified(&self, constructor: &str) -> bool {
-        let root = match constructor {
-            "Map" => IntrinsicRoot::Map,
-            "Set" => IntrinsicRoot::Set,
-            "WeakMap" => IntrinsicRoot::WeakMap,
-            "WeakSet" => IntrinsicRoot::WeakSet,
-            _ => return false,
-        };
-        self.dynamic_scope_owners.is_empty()
-            && !self
-                .mutated_intrinsic_roots
-                .contains(&IntrinsicRoot::GlobalObject)
-            && !self.mutated_intrinsic_roots.contains(&root)
-    }
-
-    fn native_call_identity_is_unmodified(
-        &self,
-        id: &Id,
-        intrinsic: IntrinsicRoot,
-        flow: &ChunkValueFlow,
-        shadowed: &BTreeSet<&'static str>,
-        global_this_qualified: bool,
-    ) -> bool {
-        !flow.is_declared(id)
-            && !shadowed.contains(id.0.as_ref())
-            && (!global_this_qualified
-                || (id.0.as_ref() == "globalThis"
-                    && self.global_object_names.contains("globalThis")))
-            && self.dynamic_scope_owners.is_empty()
-            && !self
-                .mutated_intrinsic_roots
-                .contains(&IntrinsicRoot::GlobalObject)
-            && !self.mutated_intrinsic_roots.contains(&intrinsic)
-    }
-
-    fn empty_collection_constructor_is_unmodified(
-        &self,
-        id: &Id,
-        flow: &ChunkValueFlow,
-        shadowed: &BTreeSet<&'static str>,
-    ) -> bool {
-        native_calls::native_call_model(id.0.as_ref(), None, CallKind::New).is_some_and(|model| {
-            model.heap_effect == native_calls::NativeHeapEffect::FreshAllocation
-                && self.native_call_identity_is_unmodified(
-                    id,
-                    model.intrinsic,
-                    flow,
-                    shadowed,
-                    false,
-                )
-        })
+    fn native_integrity_is_proven(&self, root: IntrinsicRoot) -> bool {
+        self.semantic_facts
+            .as_ref()
+            .is_some_and(|facts| facts.fact(&SemanticKey::NativeIntegrity(root)).is_some())
     }
 
     pub(crate) fn locate_native_integrity_witnesses(
@@ -6443,7 +6519,7 @@ impl Visit for ExecutionIndex {
             self.member_write_sites.insert(member.span.into());
         }
 
-        if matches!(expression.arg.unwrap_parens(), Expr::Ident(id) if matches!(id.sym.as_ref(), "Error" | "Object" | "Array" | "Math" | "RegExp" | "Symbol" | "Promise" | "Map" | "Set" | "WeakMap" | "WeakSet" | "FinalizationRegistry"))
+        if matches!(expression.arg.unwrap_parens(), Expr::Ident(id) if matches!(id.sym.as_ref(), "Error" | "Function" | "Object" | "Array" | "Math" | "RegExp" | "Symbol" | "Promise" | "Map" | "Set" | "WeakMap" | "WeakSet" | "FinalizationRegistry"))
         {
             self.intrinsic_writes.push(IntrinsicWriteTarget {
                 owner: self.owner,
@@ -7034,8 +7110,8 @@ fn returned_callback_factory(index: &ExecutionIndex, key: u32) -> bool {
 }
 
 pub(crate) struct InferredReturnedRecord {
-    pub function_start: u32,
-    pub members: Vec<(String, u32, BTreeSet<String>)>,
+    pub facts: Arc<ReturnedRecordFacts>,
+    pub inference: crate::reports::schema::InferenceUse,
 }
 
 pub(crate) struct InferredCallableCapabilities {
@@ -7173,7 +7249,14 @@ impl PreparedCallableCapabilities {
             return BTreeMap::new();
         }
         let flow = ChunkValueFlow::analyze(body);
-        infer_returned_callback_factories(&self.index, &flow, &self.exported_locals)
+        // Only source identity is complete here: callback argument coverage
+        // helps resolve native writes, so no native certificate is available.
+        let source_facts = SemanticFacts::solve(SemanticRules {
+            dynamic_scope: !self.index.dynamic_scope_owners.is_empty(),
+            callables: callable_inference_inputs(&self.index, &flow, &self.exported_locals),
+            ..SemanticRules::default()
+        });
+        infer_returned_callback_factories(&self.index, &self.exported_locals, &source_facts)
             .into_iter()
             .filter_map(|(local, key)| {
                 candidates
@@ -7218,8 +7301,9 @@ pub(crate) fn infer_callable_capabilities(
         flow: prepared_flow,
     } = prepared;
     index.mutated_intrinsic_roots = integrity.mutated.clone();
+    index.native_integrity_value_input_refs = integrity.consumed_value_inputs.clone();
     let mut result = InferredCallableCapabilities {
-        map_integrity: index.collection_intrinsic_is_unmodified("Map"),
+        map_integrity: false,
         callback_factories: BTreeMap::new(),
         returned_records: BTreeMap::new(),
     };
@@ -7236,59 +7320,108 @@ pub(crate) fn infer_callable_capabilities(
     if has_candidate {
         let flow = prepared_flow.unwrap_or_else(|| ChunkValueFlow::analyze(body));
         let shadowed = crate::facts::compute_shadowed_globals(body);
-        result.callback_factories =
-            infer_returned_callback_factories(&index, &flow, &exported_locals);
-        result.returned_records =
-            infer_returned_records(&index, &flow, &shadowed, &exported_locals);
+        let callables = callable_inference_inputs(&index, &flow, &exported_locals);
+        index.semantic_facts = Some(index.prepare_semantic_facts(
+            &flow,
+            &shadowed,
+            LocalClassConstructionShapes::default(),
+            SetIterableShapes::default(),
+            callables,
+        ));
+        result.callback_factories = infer_returned_callback_factories(
+            &index,
+            &exported_locals,
+            index.semantic_facts.as_deref().unwrap(),
+        );
+        result.returned_records = infer_returned_records(&index, &exported_locals);
+    } else {
+        index.semantic_facts = Some(Arc::new(SemanticFacts::solve(
+            index.completed_native_rules(),
+        )));
     }
+    result.map_integrity = index.native_integrity_is_proven(IntrinsicRoot::Map);
     result
 }
 
-fn infer_returned_records(
+/// Retain canonical candidates without granting their semantic conclusions.
+fn callable_inference_inputs(
     index: &ExecutionIndex,
     flow: &ChunkValueFlow,
-    shadowed: &BTreeSet<&'static str>,
     exported_locals: &BTreeSet<String>,
-) -> BTreeMap<String, InferredReturnedRecord> {
-    let mut inferred = BTreeMap::new();
-    for local in exported_locals {
-        let Some((binding, &key)) = index
-            .hoisted_bindings
-            .iter()
-            .find(|(id, _)| id.0.as_ref() == local)
-        else {
-            continue;
-        };
-        if flow
-            .values_of_binding(binding)
-            .iter()
-            .ne([ValueOrigin::Function(key)])
-        {
-            continue;
-        }
-        let Some(candidate) = index.returned_record_candidates.get(&key) else {
-            continue;
-        };
-        // This first milestone uses hoisted declarations only. Rebinding the
-        // exported cell, including from a deferred body, defeats the identity.
-        let rebound = index
-            .top_assignments
-            .iter()
-            .flatten()
-            .any(|(id, _)| id == binding)
-            || index
+) -> CallableInferenceInputs {
+    let mut inputs = CallableInferenceInputs::default();
+    let rebound: BTreeSet<_> = index
+        .top_assignments
+        .iter()
+        .flatten()
+        .map(|(binding, _)| binding.clone())
+        .chain(
+            index
                 .callables
                 .values()
-                .any(|callable| callable.rebinds.contains(binding));
-        if rebound
-            || !index.empty_collection_constructor_is_unmodified(
-                &candidate.constructor,
-                flow,
-                shadowed,
-            )
+                .flat_map(|callable| callable.rebinds.iter().cloned()),
+        )
+        .collect();
+    for binding in index
+        .hoisted_bindings
+        .keys()
+        .filter(|binding| exported_locals.contains(binding.0.as_ref()))
+    {
+        inputs.functions.insert(
+            binding.clone(),
+            FunctionBindingFacts {
+                values: flow.values_of_binding(binding),
+                hoisted: true,
+                definite_initializer: false,
+                rebound: rebound.contains(binding),
+            },
+        );
+    }
+    let mut assignments: BTreeMap<Id, Vec<(SourceUnitOrdinal, &ValueExpr)>> = BTreeMap::new();
+    for (ordinal, writes) in index.top_assignments.iter().enumerate() {
+        for (binding, value) in writes {
+            assignments
+                .entry(binding.clone())
+                .or_default()
+                .push((SourceUnitOrdinal(ordinal), value));
+        }
+    }
+    for (binding, writes) in assignments {
+        if !exported_locals.contains(binding.0.as_ref()) || inputs.functions.contains_key(&binding)
         {
             continue;
         }
+        let definite_initializer = matches!(writes.as_slice(),
+            [(owner, ValueExpr::Origin(ValueOrigin::Function(_)))]
+                if index.top_definite_initializers[owner.0].contains(&binding));
+        inputs.functions.insert(
+            binding.clone(),
+            FunctionBindingFacts {
+                values: flow.values_of_binding(&binding),
+                hoisted: false,
+                definite_initializer,
+                rebound: rebound.contains(&binding),
+            },
+        );
+    }
+    let required_functions: BTreeSet<_> = inputs
+        .functions
+        .values()
+        .flat_map(|facts| facts.values.iter())
+        .filter_map(|origin| match origin {
+            ValueOrigin::Function(function) => Some(function),
+            _ => None,
+        })
+        .collect();
+    inputs.callback_factories = required_functions
+        .iter()
+        .filter(|function| returned_callback_factory(index, **function))
+        .copied()
+        .collect();
+    for function in required_functions {
+        let Some(candidate) = index.returned_record_candidates.get(&function) else {
+            continue;
+        };
         let members = candidate
             .members
             .iter()
@@ -7302,71 +7435,94 @@ fn infer_returned_records(
                 let captures = callable
                     .reads
                     .difference(&callable.declared_locals)
-                    .filter(|id| !parameters.contains(*id))
-                    .map(|id| id.0.to_string())
+                    .filter(|binding| !parameters.contains(*binding))
+                    .map(|binding| binding.0.to_string())
                     .collect();
                 (name.clone(), span.lo.0, captures)
             })
             .collect();
-        inferred.insert(
-            local.clone(),
-            InferredReturnedRecord {
-                function_start: key,
-                members,
+        inputs.records.insert(
+            function,
+            ReturnedRecordCandidateFacts {
+                constructor: candidate.constructor.clone(),
+                members: Arc::new(ReturnedRecordFacts {
+                    function_start: function,
+                    members,
+                }),
             },
         );
     }
-    inferred
+    inputs
+}
+
+fn infer_returned_records(
+    index: &ExecutionIndex,
+    exported_locals: &BTreeSet<String>,
+) -> BTreeMap<String, InferredReturnedRecord> {
+    index
+        .hoisted_bindings
+        .iter()
+        .filter_map(|(binding, &function)| {
+            if !exported_locals.contains(binding.0.as_ref()) {
+                return None;
+            }
+            let key = SemanticKey::ReturnedRecord {
+                binding: binding.clone(),
+                function,
+            };
+            let semantic_facts = index.semantic_facts.as_ref()?;
+            let SemanticFact::ReturnedRecord(facts) = semantic_facts.fact(&key)? else {
+                return None;
+            };
+            Some((
+                binding.0.to_string(),
+                InferredReturnedRecord {
+                    facts: Arc::clone(facts),
+                    inference: semantic_facts.inference_use(&key)?,
+                },
+            ))
+        })
+        .collect()
 }
 
 fn infer_returned_callback_factories(
     index: &ExecutionIndex,
-    flow: &ChunkValueFlow,
     exported_locals: &BTreeSet<String>,
+    semantic_facts: &SemanticFacts,
 ) -> BTreeMap<String, u32> {
-    if !index.dynamic_scope_owners.is_empty() {
-        return BTreeMap::new();
-    }
-    let mut assignments: BTreeMap<Id, Vec<(SourceUnitOrdinal, &ValueExpr)>> = BTreeMap::new();
-    for (ordinal, writes) in index.top_assignments.iter().enumerate() {
-        for (id, value) in writes {
-            assignments
-                .entry(id.clone())
-                .or_default()
-                .push((SourceUnitOrdinal(ordinal), value));
-        }
-    }
-    let mut candidates: Vec<_> = index
+    index
         .hoisted_bindings
         .iter()
-        .filter(|(id, key)| {
-            exported_locals.contains(id.0.as_ref()) && returned_callback_factory(index, **key)
-        })
-        .map(|(id, key)| (id.clone(), *key))
-        .collect();
-    candidates.extend(assignments.into_iter().filter_map(|(id, writes)| {
-        let [(owner, ValueExpr::Origin(ValueOrigin::Function(key)))] = writes.as_slice() else {
-            return None;
-        };
-        (exported_locals.contains(id.0.as_ref())
-            && index.top_definite_initializers[owner.0].contains(&id)
-            && returned_callback_factory(index, *key))
-        .then_some((id, *key))
-    }));
-    if candidates.is_empty() {
-        return BTreeMap::new();
-    }
-    candidates
-        .into_iter()
-        .filter_map(|(id, key)| {
-            let values = flow.values_of_binding(&id);
-            values
+        .map(|(binding, &function)| (binding, function))
+        .chain(
+            index
+                .top_assignments
                 .iter()
-                .eq([ValueOrigin::Function(key)])
-                .then(|| (id.0.to_string(), key))
+                .flatten()
+                .filter_map(|(binding, value)| {
+                    let ValueExpr::Origin(ValueOrigin::Function(function)) = value else {
+                        return None;
+                    };
+                    Some((binding, *function))
+                }),
+        )
+        .filter_map(|(binding, function)| {
+            if !exported_locals.contains(binding.0.as_ref()) {
+                return None;
+            }
+            let SemanticFact::CallbackFactory(function) =
+                semantic_facts.fact(&SemanticKey::CallbackFactory {
+                    binding: binding.clone(),
+                    function,
+                })?
+            else {
+                return None;
+            };
+            Some((binding.0.to_string(), *function))
         })
         .collect()
 }
+
 pub(crate) fn stable_ts_enum_named_data_members(
     graph: &ChunkCodeGraph,
     facts: &[StatementFacts],
