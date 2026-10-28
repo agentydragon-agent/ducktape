@@ -1,5 +1,17 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
+filegroup(
+    name = "cluster_yaml_files",
+    srcs = glob(["*.yaml"]),
+    visibility = ["//cluster/k8s:__pkg__"],
+)
+
+filegroup(
+    name = "cluster_all_files",
+    srcs = glob(["**"]),
+    visibility = ["//cluster/k8s:__pkg__"],
+)
+
 py_library(
     name = "conftest",
     testonly = True,

@@ -3,7 +3,7 @@ filegroup(
     srcs = glob(
         ["**/*.yaml"],
         exclude = ["flux/flux-system/**"],
-    ),
+    ) + ["//cluster/k8s/agents/plaid-mcp:cluster_yaml_files"],
     visibility = ["//cluster:__subpackages__"],
 )
 
@@ -12,7 +12,7 @@ filegroup(
     srcs = glob(
         ["**"],
         exclude = ["flux/flux-system/**"],
-    ),
+    ) + ["//cluster/k8s/agents/plaid-mcp:cluster_all_files"],
     visibility = ["//cluster:__subpackages__"],
 )
 
