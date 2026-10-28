@@ -31,13 +31,14 @@ from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import telemetry
 from cluster.cdk8s.agentplane.codex_models import codex_catalog
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import checked_value, env_name
+from util.settings_contract import checked_value, env_name, validate_settings_fragment
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "llm-ingress"
@@ -117,18 +118,18 @@ class LlmIngress(Construct):
             )
         )
         # Settings this deployment supplies as YAML rather than flags, so a list is a list.
+        content = {
+            "allowed_service_account_namespaces": [env.namespace],
+            "log_llm_requests": env.llm_ingress.log_llm_requests,
+            "models": [item.model_dump(mode="json") for item in env.llm_ingress.models],
+            "attribution": env.llm_ingress.attribution.model_dump(mode="json"),
+            **({} if catalog_map is None else {"codex_model_catalog_file": str(_CODEX_CATALOG_PATH)}),
+        }
         settings = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{_NAME}-settings", namespace=env.namespace),
-            model=Settings,
-            content={
-                "allowed_service_account_namespaces": [env.namespace],
-                "log_llm_requests": env.llm_ingress.log_llm_requests,
-                "models": [item.model_dump(mode="json") for item in env.llm_ingress.models],
-                "attribution": env.llm_ingress.attribution.model_dump(mode="json"),
-                **({} if catalog_map is None else {"codex_model_catalog_file": str(_CODEX_CATALOG_PATH)}),
-            },
+            content=yaml_config(validate_settings_fragment(Settings, content)),
             path="/etc/agentplane-llm-ingress/settings.yaml",
         )
         deployment = self._add_deployment(service_account, settings, catalog_map)

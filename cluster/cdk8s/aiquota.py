@@ -41,7 +41,10 @@ from external_secrets_crds.io.external_secrets import (
 )
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from aiquota.config import Config
+from aiquota.config import CLIProxyAPISettings, Config
+from aiquota.providers.claude import ClaudeSettings
+from aiquota.providers.codex import CodexSettings
+from aiquota.providers.zai import ZaiSettings
 from aiquota.settings import Settings
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_CREDENTIALS_NAMESPACE
@@ -65,7 +68,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSec
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from util.settings_contract import checked_value, env_name, settings_file
+from util.settings_contract import checked_value, env_name
 
 NAME = "aiquota"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/aiquota"
@@ -81,17 +84,16 @@ _CONFIG_HEADER = textwrap.dedent(
 
     """
 )
-_CONFIG = settings_file(
-    Config,
-    {
-        "cli_proxy_api": {"url": f"{cli_proxy_api_app.SERVICE.url}/v0/management"},
-        "claude": {"enabled": True},
-        "codex": {"enabled": True},
-        "zai": {"enabled": False},
-    },
+_CONFIG = Config(
+    cli_proxy_api=CLIProxyAPISettings(url=f"{cli_proxy_api_app.SERVICE.url}/v0/management"),
+    claude=ClaudeSettings(enabled=True),
+    codex=CodexSettings(enabled=True),
+    zai=ZaiSettings(enabled=False),
 )
 CONFIG_CONFIG_MAP = ConfigMapArgs(
-    name="aiquota-api-config", namespace=NAMESPACE, data={_CONFIG_PATH.name: _CONFIG_HEADER + tomli_w.dumps(_CONFIG)}
+    name="aiquota-api-config",
+    namespace=NAMESPACE,
+    data={_CONFIG_PATH.name: _CONFIG_HEADER + tomli_w.dumps(_CONFIG.model_dump(mode="json", exclude_unset=True))},
 )
 
 _API_NAME = "aiquota-api"

@@ -280,7 +280,26 @@ py_library(
         "//agentplane/system_tests/k3s:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
-    deps = ["@pypi//cdk8s"],
+    deps = [
+        "@pypi//cdk8s",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_config_format",
+    srcs = ["test_config_format.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":config_format",
+        "//:conftest",
+        "//util:settings_contract",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
 )
 
 py_library(
@@ -499,12 +518,9 @@ py_library(
     srcs = ["settings_file.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        ":config_format",
-        "//util:settings_contract",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
-        "@pypi//pydantic",
     ],
 )
 
@@ -518,9 +534,7 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//more_itertools",
-        "@pypi//pydantic",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -918,6 +932,9 @@ py_library(
         ":service_ref",
         "//aiquota:config",
         "//aiquota:settings",
+        "//aiquota/providers:claude_lib",
+        "//aiquota/providers:codex_lib",
+        "//aiquota/providers:zai_lib",
         "//cluster/cdk8s/agentplane:egress_credentials",
         "//cluster/cdk8s/claude_session_sync:app",
         "//cluster/cdk8s/cli_proxy_api",

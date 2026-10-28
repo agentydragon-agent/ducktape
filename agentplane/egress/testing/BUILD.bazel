@@ -9,9 +9,9 @@ py_library(
     name = "sidecar_process",
     srcs = ["sidecar_process.py"],
     deps = [
+        "//agentplane/egress:platform_routes",
         "//agentplane/egress:sidecar_config",
         "//util:net",
-        "//util:settings_contract",
         "//util/bazel:runfiles",
         "@pypi//aiohttp",
         "@pypi//pyyaml",

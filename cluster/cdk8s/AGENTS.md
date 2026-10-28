@@ -65,10 +65,22 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   Valkey, VolSync source) keep their name until moved for another reason — renaming
   migrates data (<../AGENTS.md> § Migrating stateful Flux Kustomizations).
 - **The service's `Settings` is its deployment contract.** Render flags, env vars and
-  settings files through the binary's pydantic-settings model (`util/settings_contract.py`:
-  `cli_args`, `env_name`, `settings_file`, `checked_value`) so a renamed field fails at
-  synth. The code package owns `Settings` and its `config_file_env`; `cluster/cdk8s` owns
-  where it runs. Nothing under `x/` or `haku/` imports `cluster/`. A project's `deploy/`
+  settings files through the consumer's model (`util/settings_contract.py`:
+  `cli_args`, `env_name`, `validate_settings_fragment`, `checked_value`) so a renamed
+  field fails at synth. For a complete settings file, construct the full model with
+  typed keyword arguments and pass it to `yaml_config` before `SettingsFile`.
+  `yaml_config` and `json_config` serialize models recursively, including models nested in
+  source mappings and lists, emitting only explicitly set model fields. Keep models typed
+  until this text boundary; use `model_dump` only for an explicit field projection or
+  different serialization policy.
+  For a file fragment whose other values come from runtime sources, check the present
+  keys and values with `yaml_config(validate_settings_fragment(Settings, content))`;
+  the helper returns the original mapping unchanged. Fragment checks do not establish
+  completeness or cross-field consistency; runtime settings validation checks the
+  effective file-plus-environment configuration. `SettingsFile` only creates the
+  ConfigMap and wires its mount and path env var. The code package owns `Settings` and
+  its `config_file_env`; `cluster/cdk8s` owns where it runs.
+  Nothing under `x/` or `haku/` imports `cluster/`. A project's `deploy/`
   may hold a props-driven construct (tested with synthetic props); the cluster's
   instantiation lives here. Generally, config is typed by its consumer's schema; where
   that schema is another artifact, mirror it in a model tied by a test — e.g. a

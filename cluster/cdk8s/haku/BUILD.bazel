@@ -13,6 +13,7 @@ py_library(
         "//cluster/cdk8s/haku:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
+    deps = ["//haku/console/identity:config"],
 )
 
 py_library(
@@ -42,6 +43,7 @@ py_library(
         ":console_config",
         ":database",
         "//cluster/cdk8s:agent_access_profiles",
+        "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_policy",
@@ -54,7 +56,6 @@ py_library(
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "//haku/console:config",
         "//haku/console:settings",
-        "//haku/console/identity:config",
         "//util:settings_contract",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

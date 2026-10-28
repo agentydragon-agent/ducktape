@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from ipaddress import IPv4Address
+from pathlib import Path
 
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from ssh_mcp_server.server import SshSettings
+from ssh_mcp_server.server import SshSettings, TargetConfig
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "ssh-mcp"
@@ -63,16 +64,16 @@ Destination = NebulaDestination | LanDestination
 class Target:
     destination: Destination
     user: str
-    identity_file: str
+    identity_file: Path
 
-    def ssh_settings(self) -> dict[str, str]:
-        return {"host": self.destination.host, "user": self.user, "identity_file": self.identity_file}
+    def ssh_settings(self) -> TargetConfig:
+        return TargetConfig(host=self.destination.host, user=self.user, identity_file=self.identity_file)
 
 
 @dataclass(frozen=True)
 class SshMcpConfig:
     targets: tuple[Target, ...]
-    settings: dict[str, object]
+    settings: SshSettings
     known_hosts: str
     switch_agent_public_key: str
 
@@ -91,7 +92,7 @@ def _targets() -> tuple[Target, ...]:
         Target(
             LanDestination(HOME_LAN.switch, SWITCH_HOST_KEY),
             "agentplane",
-            f"{CONFIG_DIR}/keys-agentplane/home-switch-agentplane",
+            Path(CONFIG_DIR) / "keys-agentplane/home-switch-agentplane",
         ),
     )
 
@@ -101,7 +102,7 @@ def _targets_for(
 ) -> tuple[Target, ...]:
     """Build account targets whose identity paths share a directory and filename prefix."""
     return tuple(
-        Target(destination, user, f"{CONFIG_DIR}/{identity_directory}/{identity_prefix}-{user}") for user in users
+        Target(destination, user, Path(CONFIG_DIR) / identity_directory / f"{identity_prefix}-{user}") for user in users
     )
 
 
@@ -125,15 +126,14 @@ def _host_key(relative: str) -> str:
 def load() -> SshMcpConfig:
     """Read canonical host and identity keys and build the validated SSH target roster."""
     targets = _targets()
-    settings: dict[str, object] = {
-        "known_hosts_file": f"{CONFIG_DIR}/known_hosts",
-        "command_timeout_seconds": 300,
-        "connect_timeout_seconds": 10,
-        "output_limit_bytes": 65536,
-        "max_concurrent_executions": 4,
-        "targets": [target.ssh_settings() for target in targets],
-    }
-    SshSettings.model_validate(settings)
+    settings = SshSettings(
+        known_hosts_file=Path(CONFIG_DIR) / "known_hosts",
+        command_timeout_seconds=300,
+        connect_timeout_seconds=10,
+        output_limit_bytes=65536,
+        max_concurrent_executions=4,
+        targets=[target.ssh_settings() for target in targets],
+    )
     destinations = _ordered_destinations(targets)
     known_hosts = "".join(
         f"{destination.host} {_host_key(destination.host_key_file)}\n" for destination in destinations
