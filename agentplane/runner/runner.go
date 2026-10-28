@@ -43,6 +43,7 @@ type Runner struct {
 	bootstrapHost       *bootstrap.Host
 	codexAppServer      *codexappserver.Host
 	codexExecServer     *codexexecserver.Host
+	executorRelays      map[string]*executorRelay
 	changes             chan struct{}
 	fatal               chan error
 	idleSince           *timestamppb.Timestamp
@@ -130,7 +131,7 @@ func newRunner(config Config, adapters *codexexecserver.Adapters, lifecycleState
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &Runner{config: config, owner: owner, supervisor: supervisor, workspaceSupervisor: workspaceSupervisor, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, changes: make(chan struct{}), fatal: make(chan error, 1)}
+	r := &Runner{config: config, owner: owner, supervisor: supervisor, workspaceSupervisor: workspaceSupervisor, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, executorRelays: map[string]*executorRelay{}, changes: make(chan struct{}), fatal: make(chan error, 1)}
 	r.scripts, err = scripts.New(scripts.Config{
 		HarnessEnvironment: config.HarnessEnvironment,
 		LaunchProcess: func(ctx context.Context, owner string, processConfig supervision.ProcessConfig) (*supervision.ManagedProcess, error) {

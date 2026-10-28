@@ -1447,7 +1447,8 @@ function entity(
 function viewState(
   throughCursor: number,
   activeTurn: string | null,
-  operational: Record<string, unknown> = {}
+  operational: Record<string, unknown> = {},
+  appliedModel: string | null = "harness-claude-model"
 ): Record<string, unknown> {
   return entity(
     "view_state",
@@ -1455,7 +1456,7 @@ function viewState(
     throughCursor,
     {
       controls: {
-        applied_model: "harness-claude-model",
+        applied_model: appliedModel,
         applied_reasoning_effort: null,
         active_turn_id: activeTurn,
         harness_state: activeTurn === null ? "stopped" : "running",
@@ -1560,8 +1561,10 @@ function standardRows(
   longReasoningBody: boolean
 ): Record<string, unknown>[] {
   const suspended = threadId === SUSPENDED_THREAD;
+  const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.id === threadId);
+  if (!thread) throw new Error(`Unknown fixture Thread: ${threadId}`);
   const rows = [
-    viewState(34, suspended ? null : "turn-visual", suspended ? { status: "ended" } : {}),
+    viewState(34, suspended ? null : "turn-visual", suspended ? { status: "ended" } : {}, thread.model),
     entity(
       "confirmed_input",
       "user-1",
@@ -2473,6 +2476,7 @@ let receiptActionGroup: ActionGroupView | undefined;
 
 /** Switches a test sets on the mock services, before mounting or (`publish`) while a stream is open. */
 type Flag =
+  | "centralSamplerEnabled"
   | "claudePaused"
   | "watchStale"
   | "threadDatabaseDisconnected"
@@ -2549,6 +2553,7 @@ routes.push(
       langfuse_search: {
         base_url: "https://langfuse.test.invalid",
         project_id: "langfuse-visual-test",
+        session_metadata_key: "attributes.litellm.metadata.spend_logs_metadata.agentplane.session_id",
         sandbox_namespace_metadata_key: "attributes.agentplane.namespace",
         sandbox_service_account_metadata_key: "attributes.agentplane.service_account",
       },
@@ -2558,6 +2563,7 @@ routes.push(
     "GET",
     /^\/models$/,
     () => ({
+      central_sampler: flags.has("centralSamplerEnabled") ? { service: "central", provider: "responses" } : null,
       models: [
         {
           model: "harness-claude-model",
@@ -2574,6 +2580,7 @@ routes.push(
       harnesses: {
         HARNESS_CLAUDE: flags.has("claudePaused") ? [] : ["harness-claude-model", "next-model"],
         HARNESS_CODEX: ["harness-codex-model"],
+        ...(flags.has("centralSamplerEnabled") ? { HARNESS_CENTRAL_SAMPLER: ["harness-codex-model"] } : {}),
       },
     }),
   ],
@@ -3395,6 +3402,11 @@ const visualHarness = {
     const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.id === threadId);
     if (!thread) throw new Error(`Missing thread fixture ${threadId}`);
     thread.name = name;
+  },
+  updateThread(threadId: string, changes: Partial<ThreadView>): void {
+    const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.id === threadId);
+    if (!thread) throw new Error(`Missing thread fixture ${threadId}`);
+    Object.assign(thread, changes);
   },
   mountDisclosure(props: Parameters<typeof DisclosureVisual>[0]): void {
     mount(<DisclosureVisual {...props} />);

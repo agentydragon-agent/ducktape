@@ -19,6 +19,8 @@ message InterruptTurn {
   string turn_id = 1;
 }
 
+message Compact {}
+
 message Command {
   reserved 5;
   reserved "stop_runner_session", "historical_harness_stop";
@@ -30,5 +32,6 @@ message Command {
     ChangeModel change_model = 3;
     InterruptTurn interrupt_turn = 4;
     ChangeReasoningEffort change_reasoning_effort = 6;
+    Compact compact = 7;
   }
 }

@@ -13,11 +13,13 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/baggage"
 )
 
@@ -48,6 +50,8 @@ type ingressHandler struct {
 	logBody     bool
 	logger      *slog.Logger
 	pool        chan struct{}
+
+	centralSamplerAccounts []string
 }
 
 func newIngressHandler(c config, resolver *auth.Resolver, logger *slog.Logger) (*ingressHandler, error) {
@@ -100,6 +104,8 @@ func newIngressHandler(c config, resolver *auth.Resolver, logger *slog.Logger) (
 		logBody:     c.LogLLMRequests,
 		logger:      logger,
 		pool:        make(chan struct{}, 100),
+
+		centralSamplerAccounts: c.CentralSamplerAccounts,
 	}, nil
 }
 
@@ -209,6 +215,19 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 		return
 	}
 
+	sessionID := incoming.Header.Get("x-agentplane-session-id")
+	if sessionID != "" {
+		if !slices.Contains(h.centralSamplerAccounts, principal.Account.Namespace+"/"+principal.Account.Name) {
+			writeJSONError(writer, http.StatusForbidden, "Session attribution requires an authorized central sampler", "")
+			return
+		}
+		parsed, err := uuid.Parse(sessionID)
+		if err != nil || parsed.String() != sessionID {
+			writeJSONError(writer, http.StatusBadRequest, "Session attribution requires a canonical UUID", "")
+			return
+		}
+	}
+
 	body, err := io.ReadAll(incoming.Body)
 	if err != nil {
 		if incoming.Context().Err() == nil {
@@ -248,6 +267,39 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 		writeJSONError(writer, http.StatusInternalServerError, "Could not attach verified attribution", "")
 		return
 	}
+	if sessionID != "" {
+		// This claim is supplied by an explicitly trusted sampler, not inferred from
+		// its shared Pod. Existing workload attribution stays bound to TokenReview.
+		members := map[string]string{}
+		if value := outgoing.Header.Get("x-litellm-spend-logs-metadata"); value != "" {
+			if err := json.Unmarshal([]byte(value), &members); err != nil {
+				writeJSONError(writer, http.StatusInternalServerError, "Invalid attribution metadata", "")
+				return
+			}
+		}
+		members["agentplane.session_id"] = sessionID
+		encoded, _ := json.Marshal(members)
+		outgoing.Header.Set("x-litellm-spend-logs-metadata", string(encoded))
+		// LiteLLM creates its pre-call span before spend-log metadata promotion.
+		// Extend only the freshly verified baggage; caller baggage was stripped.
+		verifiedBaggage, err := baggage.Parse(outgoing.Header.Get("baggage"))
+		if err != nil {
+			writeJSONError(writer, http.StatusInternalServerError, "Invalid attribution baggage", "")
+			return
+		}
+		member, err := baggage.NewMemberRaw("litellm.metadata.spend_logs_metadata.agentplane.session_id", sessionID)
+		if err != nil {
+			writeJSONError(writer, http.StatusInternalServerError, "Invalid Session attribution", "")
+			return
+		}
+		verifiedBaggage, err = verifiedBaggage.SetMember(member)
+		if err != nil {
+			writeJSONError(writer, http.StatusInternalServerError, "Could not attach Session attribution", "")
+			return
+		}
+		outgoing.Header.Set("baggage", verifiedBaggage.String())
+	}
+
 	response, err := h.backend.Do(outgoing)
 	if err != nil {
 		if incoming.Context().Err() == nil {

@@ -1,0 +1,712 @@
+package centralsampler
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
+
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
+	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	samplerpb "github.com/agentydragon/ducktape/agentplane/x/central_sampler/samplerpb"
+)
+
+func openSessionForStore(t *testing.T, store *Store, setup string) *Session {
+	t.Helper()
+	request := &samplerpb.OpenSessionRequest{
+		SessionId: uuid.NewString(),
+		Spec: &runnerpb.SessionSpec{
+			Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
+			CentralSampler: &runnerpb.CentralSamplerConfig{Service: "fixture", Provider: "responses"},
+		},
+		SetupScript: &setup,
+	}
+	session, err := store.OpenSession(t.Context(), request, "fixture-account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return session
+}
+
+func TestStoreFencesEveryWriteToTheLiveLeaseGeneration(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling", "input": "first"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Renew(t.Context(), owner, time.Minute); !errors.As(err, new(*LostOwnershipError)) {
+		t.Fatalf("expired owner renewed lease: %v", err)
+	}
+	newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if newOwner.Generation != owner.Generation+1 {
+		t.Fatalf("generation=%d old=%d", newOwner.Generation, owner.Generation)
+	}
+	if err := store.AppendInput(t.Context(), owner, "stale input"); !errors.As(err, new(*LostOwnershipError)) {
+		t.Fatalf("stale generation mutated conversation: %v", err)
+	}
+	if err := store.Release(t.Context(), newOwner); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Renew(t.Context(), newOwner, time.Minute); !errors.As(err, new(*LostOwnershipError)) {
+		t.Fatalf("released owner was not reported as stale: %v", err)
+	}
+}
+
+func TestStoreIntentJournalBlocksReplayAndPersistsKnownRejection(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling", "turn": "turn-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling", "turn": "turn-1"}); !errors.As(err, new(*UnknownEffectError)) {
+		t.Fatalf("pending intent was replayable: %v", err)
+	}
+	call := ResponsesItem{Type: ResponsesItemCustomToolCall, CallID: "call-1", Name: "exec", Input: "{}", ID: "item-1"}
+	if err := store.Finish(t.Context(), owner, first, map[string]any{"id": "response-1"}, []ResponsesItem{call}, nil); err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling", "turn": "turn-2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Reject(t.Context(), owner, second, &KnownFailureError{Evidence: map[string]any{"code": "invalid_request"}}); err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := store.Read(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !conversation.Stopped || conversation.Pending != nil {
+		t.Fatalf("rejection left conversation live or pending: stopped=%v pending=%v", conversation.Stopped, conversation.Pending)
+	}
+	if len(conversation.Items) != 2 || conversation.Items[1].Type != ResponsesItemCustomToolOutput {
+		t.Fatalf("unstarted call output was not durably settled: %#v", conversation.Items)
+	}
+	result, err := intentResultForDB(t, store, second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["status"] != "rejected" || result["code"] != "invalid_request" {
+		t.Fatalf("known rejection result=%v", result)
+	}
+}
+
+func TestStoreLargeEvidenceIsFragmentedAndReconstructed(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := store.GetSession(t.Context(), session.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := map[string]any{"type": "diagnostic", "body": strings.Repeat("界", BoundaryBytes/3+1)}
+	if err := store.ProtocolEvent(t.Context(), owner, "operation-large", "executor", "received", payload); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := store.Events(t.Context(), session.ID, before.Cursor, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fragments []*eventpb.BoundaryRecord
+	for _, entry := range entries {
+		if boundary := entry.GetEvent().GetBoundaryRecord(); boundary != nil {
+			fragments = append(fragments, boundary)
+		}
+	}
+	if len(fragments) < 2 {
+		t.Fatalf("large payload was not fragmented: %d records", len(fragments))
+	}
+	for index, fragment := range fragments {
+		if fragment.GetRecordId() != fragments[0].GetRecordId() || int(fragment.GetFragmentIndex()) != index || int(fragment.GetFragmentCount()) != len(fragments) {
+			t.Fatalf("fragment %d metadata=%v", index, fragment)
+		}
+	}
+	reconstructed := bytes.Join(func() [][]byte {
+		parts := make([][]byte, len(fragments))
+		for i, fragment := range fragments {
+			parts[i] = fragment.GetPayload()
+		}
+		return parts
+	}(), nil)
+	want, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(reconstructed, want) {
+		t.Fatalf("reconstructed boundary has %d bytes, expected %d", len(reconstructed), len(want))
+	}
+}
+
+func TestStoreUnreadProcessOutputLimitDoesNotAdvanceCursorOnOverflow(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RegisterProcess(t.Context(), owner, "process-output", false); err != nil {
+		t.Fatal(err)
+	}
+	large := bytes.Repeat([]byte("x"), maxProcessOutputBytes)
+	if err := store.RetainProcessOutput(t.Context(), owner, "process-output", 7, large, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RetainProcessOutput(t.Context(), owner, "process-output", 8, []byte("y"), false, nil); !errors.Is(err, ErrPrecondition) {
+		t.Fatalf("unread output exceeded its bound: %v", err)
+	}
+	process, err := store.Process(t.Context(), owner, "process-output")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if process.AfterSequence == nil || *process.AfterSequence != 7 || len(process.BufferedOutput) != maxProcessOutputBytes {
+		t.Fatalf("overflow advanced or dropped output: cursor=%v bytes=%d", process.AfterSequence, len(process.BufferedOutput))
+	}
+}
+
+func TestCompletedCompactionReleasesCommandBeforeNextInput(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "compact", Operation: &commandpb.Command_Compact{Compact: &commandpb.Compact{}}}, "fixture-account"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := store.Read(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent, err := store.BeginCompaction(t.Context(), owner, map[string]any{"kind": "compaction"}, conversation.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement := []ResponsesItem{{Type: ResponsesItemCompaction, EncryptedContent: "test-opaque"}}
+	if err := store.FinishCompaction(t.Context(), owner, intent, map[string]any{"response": "completed"}, conversation.Context(), replacement); err != nil {
+		t.Fatal(err)
+	}
+	// No FinishCommand call: the context and command outcome must commit together.
+	if err := store.Release(t.Context(), owner); err != nil {
+		t.Fatal(err)
+	}
+	owner, err = store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "after", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "Continue"}}}, "fixture-account"); err != nil {
+		t.Fatal(err)
+	}
+	command, err := store.NextCommand(t.Context(), owner, session.ID)
+	if err != nil || command == nil || command.ID != "after" {
+		t.Fatalf("next command=%+v err=%v", command, err)
+	}
+}
+
+func TestRetainedTerminalOutputCanBeConsumedAfterTakeover(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RegisterProcess(t.Context(), owner, "retained", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RetainProcessOutput(t.Context(), owner, "retained", 7, []byte("retained-output"), true, ptrInt(0)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Release(t.Context(), owner); err != nil {
+		t.Fatal(err)
+	}
+	successor, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ProcessResult(t.Context(), successor, "retained", nil, "running", nil, false); !errors.As(err, new(*LostOwnershipError)) {
+		t.Fatalf("successor changed old remote process state: %v", err)
+	}
+	executor := &Executor{store: store, owner: successor, processLocks: map[string]*sync.Mutex{}}
+	result, err := executor.Invoke(t.Context(), "write_stdin", json.RawMessage(`{"session_id":"retained"}`))
+	if err != nil || result.Output != "retained-output" || result.ExitCode == nil || *result.ExitCode != 0 {
+		t.Fatalf("retained process result=%v err=%v", result, err)
+	}
+	process, err := store.Process(t.Context(), successor, "retained")
+	if err != nil || process.Status != "exited" || len(process.BufferedOutput) != 0 {
+		t.Fatalf("consumed process=%+v err=%v", process, err)
+	}
+}
+
+func TestStoreInterruptIsFencedToItsTurnAndSettledAtomically(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "turn-1", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}, "fixture-account"); err != nil {
+		t.Fatal(err)
+	}
+	command, err := store.NextCommand(t.Context(), owner, session.ID)
+	if err != nil || command.ID != "turn-1" {
+		t.Fatalf("turn command=%v err=%v", command, err)
+	}
+	interrupt := &commandpb.Command{CommandId: "interrupt-1", Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: "turn-1"}}}
+	if _, err := store.Admit(t.Context(), session.ID, interrupt, "fixture-account"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	requests, err := store.PendingInterrupts(t.Context(), owner)
+	if err != nil || len(requests) != 1 {
+		t.Fatalf("pending interrupts=%v err=%v", requests, err)
+	}
+	if err := store.FinishCommand(t.Context(), owner, session.ID, "turn-1", "done"); err != nil {
+		t.Fatal(err)
+	}
+	response, err := store.GetCommand(t.Context(), session.ID, "interrupt-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.GetOutcome() != samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED {
+		t.Fatalf("interrupt outcome=%v", response.GetOutcome())
+	}
+	if pending, err := store.PendingInterrupts(t.Context(), owner); err != nil || len(pending) != 0 {
+		t.Fatalf("turn completion left interrupt pending: %v err=%v", pending, err)
+	}
+	entries, err := store.Events(t.Context(), session.ID, 0, 32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var completed bool
+	for _, entry := range entries {
+		if turn := entry.GetEvent().GetTurnCompleted(); turn != nil && turn.GetTurnId() == "turn-1" && turn.GetStatus() == eventpb.TurnStatus_TURN_STATUS_COMPLETED {
+			completed = true
+		}
+	}
+	if !completed {
+		t.Fatal("turn completion event was not committed with interrupt settlement")
+	}
+}
+
+func TestAcknowledgeCompletedInterruptDoesNotLeaveStalePendingIntent(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestID, err := store.RequestInterrupt(t.Context(), owner.ConversationID, owner.Generation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AcknowledgeInterrupt(t.Context(), owner, []string{requestID}, map[string]any{
+		"cleanup_complete": true,
+		"status":           "interrupted",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := store.Read(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conversation.Pending != nil {
+		t.Fatalf("completed interrupt left a stale pending intent: %v", conversation.Pending)
+	}
+	if pending, err := store.PendingInterrupts(t.Context(), owner); err != nil || len(pending) != 0 {
+		t.Fatalf("completed interrupt remained pending: %v err=%v", pending, err)
+	}
+}
+
+func TestAcknowledgeIncompleteInterruptPersistsBlockingIntent(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestID, err := store.RequestInterrupt(t.Context(), owner.ConversationID, owner.Generation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AcknowledgeInterrupt(t.Context(), owner, []string{requestID}, map[string]any{
+		"cleanup_complete": false,
+		"status":           "cleanup_uncertain",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := store.Read(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conversation.Pending == nil || conversation.Pending.Kind != PendingIntentInterrupt {
+		t.Fatalf("incomplete interrupt did not persist a blocking intent: %v", conversation.Pending)
+	}
+	if _, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling"}); !errors.As(err, new(*UnknownEffectError)) {
+		t.Fatalf("incomplete interrupt allowed a new effect: %v", err)
+	}
+}
+
+func TestLateInterruptIsSettledWithItsTurn(t *testing.T) {
+	for _, takeover := range []bool{false, true} {
+		for _, failure := range []bool{false, true} {
+			t.Run(fmt.Sprintf("takeover_%t/failure_%t", takeover, failure), func(t *testing.T) {
+				store := newTestStore(t)
+				session := openSessionForStore(t, store, "")
+				owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, commandID := range []string{"first", "second"} {
+					_, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
+						CommandId: commandID,
+						Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: commandID}},
+					}, "fixture-account")
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				command, err := store.NextCommand(t.Context(), owner, session.ID)
+				if err != nil || command == nil || command.ID != "first" {
+					t.Fatalf("first command=%v err=%v", command, err)
+				}
+				for _, commandID := range []string{"interrupt-one", "interrupt-two"} {
+					_, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
+						CommandId: commandID,
+						Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: "first"}},
+					}, "fixture-account")
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				if takeover {
+					if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '5 minutes' WHERE id=$1`, session.ConversationID); err != nil {
+						t.Fatal(err)
+					}
+					owner, err = store.Claim(t.Context(), session.ConversationID, time.Minute)
+					if err != nil {
+						t.Fatal(err)
+					}
+					command, err = store.NextCommand(t.Context(), owner, session.ID)
+					if err != nil || command == nil || command.ID != "first" {
+						t.Fatalf("recovered command=%v err=%v", command, err)
+					}
+				}
+				pending, err := store.PendingInterrupts(t.Context(), owner)
+				if err != nil || len(pending) == 0 {
+					t.Fatalf("active turn lost its interrupt request: %v err=%v", pending, err)
+				}
+				if failure {
+					commandID := "first"
+					err = store.FailExecution(t.Context(), owner, session.ID, &commandID, &KnownFailureError{Evidence: map[string]any{"reason": "rejected before dispatch"}})
+				} else {
+					err = store.FinishCommand(t.Context(), owner, session.ID, "first", "done")
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				command, err = store.NextCommand(t.Context(), owner, session.ID)
+				if err != nil || command == nil || command.ID != "second" {
+					t.Fatalf("queued command after turn settlement=%v err=%v", command, err)
+				}
+				if pending, err := store.PendingInterrupts(t.Context(), owner); err != nil || len(pending) != 0 {
+					t.Fatalf("turn settlement left current-generation interrupts pending: %v err=%v", pending, err)
+				}
+				var unresolved int
+				if err := store.DB().QueryRowContext(t.Context(), `SELECT count(*) FROM sampler_interrupt WHERE conversation_id=$1 AND result IS NULL`, session.ConversationID).Scan(&unresolved); err != nil || unresolved != 0 {
+					t.Fatalf("turn settlement left interrupt rows unresolved: count=%d err=%v", unresolved, err)
+				}
+				for _, commandID := range []string{"interrupt-one", "interrupt-two"} {
+					response, err := store.GetCommand(t.Context(), session.ID, commandID)
+					if err != nil || response.GetOutcome() != samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED {
+						t.Fatalf("interrupt command %q outcome=%v err=%v", commandID, response.GetOutcome(), err)
+					}
+				}
+				_, err = store.Admit(t.Context(), session.ID, &commandpb.Command{
+					CommandId: "too-late",
+					Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: "first"}},
+				}, "fixture-account")
+				if !errors.Is(err, ErrPrecondition) {
+					t.Fatalf("ended turn accepted an interrupt: %v", err)
+				}
+			})
+		}
+	}
+}
+
+func TestKnownRejectionPreservesOtherEffectUncertainty(t *testing.T) {
+	for _, uncertainty := range []string{"nested", "cell", "process"} {
+		t.Run(uncertainty, func(t *testing.T) {
+			store := newTestStore(t)
+			session := openSessionForStore(t, store, "")
+			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = store.Admit(t.Context(), session.ID, &commandpb.Command{
+				CommandId: "first",
+				Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "Start"}},
+			}, "fixture-account")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
+				t.Fatal(err)
+			}
+			switch uncertainty {
+			case "nested":
+				if _, err := store.RecordNested(t.Context(), owner, map[string]any{"kind": "tool", "name": "exec_command"}); err != nil {
+					t.Fatal(err)
+				}
+			case "cell":
+				if err := store.CellResult(t.Context(), owner, "live-cell", "live"); err != nil {
+					t.Fatal(err)
+				}
+			case "process":
+				if err := store.RegisterProcess(t.Context(), owner, "live-process", false); err != nil {
+					t.Fatal(err)
+				}
+			}
+			intentID, err := store.Begin(t.Context(), owner, map[string]any{"kind": "sampling"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Reject(t.Context(), owner, intentID, &KnownFailureError{Evidence: map[string]any{"http_status": 429}}); err != nil {
+				t.Fatal(err)
+			}
+			observed, err := store.GetSession(t.Context(), session.ID, "")
+			if err != nil || !observed.Blocked {
+				t.Fatalf("other effect uncertainty was cleared: blocked=%v err=%v", observed.Blocked, err)
+			}
+			command, err := store.GetCommand(t.Context(), session.ID, "first")
+			if err != nil || command.GetOutcome() != samplerpb.CommandOutcome_COMMAND_OUTCOME_UNKNOWN {
+				t.Fatalf("in-flight command outcome=%v err=%v", command.GetOutcome(), err)
+			}
+			_, err = store.Admit(t.Context(), session.ID, &commandpb.Command{
+				CommandId: "second",
+				Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "Continue"}},
+			}, "fixture-account")
+			if !errors.Is(err, ErrPrecondition) {
+				t.Fatalf("blocked session accepted new input: %v", err)
+			}
+		})
+	}
+}
+
+func TestRecoverableSessionsUsesBoundedRotatingPages(t *testing.T) {
+	store := newTestStore(t)
+	var sessions []*Session
+	for range 3 {
+		sessions = append(sessions, openSessionForStore(t, store, "prepare workspace"))
+	}
+	excluded := []string{sessions[0].ID}
+	first, err := store.RecoverableSessions(t.Context(), excluded, 1)
+	if err != nil || len(first) != 1 || first[0] == sessions[0].ID {
+		t.Fatalf("bounded recovery page=%v err=%v", first, err)
+	}
+	second, err := store.RecoverableSessions(t.Context(), append(excluded, first[0]), 1)
+	if err != nil || len(second) != 1 || second[0] == first[0] || second[0] == sessions[0].ID {
+		t.Fatalf("recovery did not advance within bound: %v err=%v", second, err)
+	}
+	wrapped, err := store.RecoverableSessions(t.Context(), nil, 1)
+	if err != nil || len(wrapped) != 1 {
+		t.Fatalf("recovery did not yield bounded wraparound page: %v err=%v", wrapped, err)
+	}
+}
+
+func TestGooseInitializationPreservesRetainedState(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "stored-command", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "stored input"}}}, "fixture-account"); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(t.Context(), `INSERT INTO sampler_conversation_item(conversation_id,ordinal,item) VALUES($1,1,$2::jsonb)`, session.ConversationID,
+		`{"type":"opaque","provider_id":9007199254740993}`); err != nil {
+		t.Fatal(err)
+	}
+	intentID, err := store.RecordNested(t.Context(), owner, map[string]any{"kind": "tool", "opaque_id": json.Number("9007199254740993"), "call": map[string]any{"call_id": "stored-call"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RegisterProcess(t.Context(), owner, "stored-process", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RetainProcessOutput(t.Context(), owner, "stored-process", 4, []byte("unread"), true, ptrInt(2)); err != nil {
+		t.Fatal(err)
+	}
+	beforeEvents, err := store.Events(t.Context(), session.ID, 0, 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(t.Context(), store.DB()); err != nil {
+		t.Fatal(err)
+	}
+	afterSession, err := store.GetSession(t.Context(), session.ID, "")
+	if err != nil || afterSession.ID != session.ID || afterSession.ConversationID != session.ConversationID {
+		t.Fatalf("session identity lost: %+v err=%v", afterSession, err)
+	}
+	afterConversation, err := store.Read(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retainedItem, err := decodeJSONValue(afterConversation.Items[0].Raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retainedObject, ok := retainedItem.(map[string]any)
+	if !ok {
+		t.Fatalf("provider continuation is not an object: %T", retainedItem)
+	}
+	providerID, ok := retainedObject["provider_id"].(json.Number)
+	if !ok || providerID.String() != "9007199254740993" {
+		t.Fatalf("provider continuation number changed: %#v (%T)", retainedObject["provider_id"], retainedObject["provider_id"])
+	}
+	afterEvents, err := store.Events(t.Context(), session.ID, 0, 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(afterEvents) != len(beforeEvents) {
+		t.Fatalf("event history changed: before=%d after=%d", len(beforeEvents), len(afterEvents))
+	}
+	for i := range beforeEvents {
+		if !proto.Equal(beforeEvents[i], afterEvents[i]) {
+			t.Fatalf("event %d changed during migration", i)
+		}
+	}
+	intent, err := intentRequestForDB(t, store, intentID)
+	if err != nil || intent["kind"] != "tool" {
+		t.Fatalf("intent lost: %v err=%v", intent, err)
+	}
+	opaqueID, ok := intent["opaque_id"].(json.Number)
+	if !ok || opaqueID.String() != "9007199254740993" {
+		t.Fatalf("provider request number changed: %#v (%T)", intent["opaque_id"], intent["opaque_id"])
+	}
+	process, err := store.Process(t.Context(), owner, "stored-process")
+	if err != nil || !bytes.Equal(process.BufferedOutput, []byte("unread")) || process.AfterSequence == nil || *process.AfterSequence != 4 {
+		t.Fatalf("process state lost: %+v err=%v", process, err)
+	}
+	command, err := store.GetCommand(t.Context(), session.ID, "stored-command")
+	if err != nil || command.GetAdmission().GetEvent().GetCommandAdmitted().GetCommand().GetCommandId() != "stored-command" {
+		t.Fatalf("command identity lost: %v err=%v", command, err)
+	}
+}
+
+func intentResultForDB(t *testing.T, store *Store, id string) (map[string]any, error) {
+	t.Helper()
+	var raw []byte
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT result FROM sampler_intent WHERE id=$1`, id).Scan(&raw); err != nil {
+		return nil, err
+	}
+	var result map[string]any
+	var err error
+	if result, err = decodeMap(raw); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func intentRequestForDB(t *testing.T, store *Store, id string) (map[string]any, error) {
+	t.Helper()
+	var raw []byte
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT request FROM sampler_intent WHERE id=$1`, id).Scan(&raw); err != nil {
+		return nil, err
+	}
+	var request map[string]any
+	var err error
+	if request, err = decodeMap(raw); err != nil {
+		return nil, err
+	}
+	return request, nil
+}
+
+func ptrInt(value int) *int { return &value }
+
+func TestDescribePreservesSessionConfigurationAndUpdatesModel(t *testing.T) {
+	store := newTestStore(t)
+	spec := &runnerpb.SessionSpec{
+		Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
+		ReasoningEffort: "high", Instructions: "stored instructions",
+		CentralSampler: &runnerpb.CentralSamplerConfig{Service: "fixture", Provider: "responses"},
+	}
+	executor := &sandboxespb.SandboxDestination{
+		Owner:   &sandboxespb.ServiceAccount{Namespace: "fixture", Name: "executor"},
+		Sandbox: "fixture-sandbox", SandboxUid: "fixture-sandbox-uid",
+	}
+	session, err := store.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
+		SessionId: uuid.NewString(), Spec: spec, Executor: executor, ExpectedIncarnationUid: "fixture-incarnation-uid",
+	}, "fixture-account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.Model = "updated-model"
+	response, err := Describe(session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSpec := proto.Clone(spec).(*runnerpb.SessionSpec)
+	wantSpec.Model = "updated-model"
+	if !proto.Equal(response.GetAttached().GetSpec(), wantSpec) ||
+		!proto.Equal(response.GetExecutor(), executor) ||
+		response.GetExpectedIncarnationUid() != "fixture-incarnation-uid" {
+		t.Fatalf("description lost persisted config: %v", response)
+	}
+}
+
+func TestSessionEventAppendNotifiesTransactionally(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	before := session.Cursor
+	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_session SET cursor=cursor WHERE id=$1`, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := store.Events(t.Context(), session.ID, before, 1)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("no-op update created event: %v err=%v", entries, err)
+	}
+	_, err = store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: fmt.Sprintf("event-%d", before), Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "wake"}}}, "fixture-account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err = store.Events(t.Context(), session.ID, before, 1)
+	if err != nil || len(entries) != 1 || entries[0].GetCursor() != before+1 {
+		t.Fatalf("admission event not committed: %v err=%v", entries, err)
+	}
+	var count int
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT count(*) FROM sampler_event WHERE session_id=$1 AND sequence=$2`, session.ID, entries[0].GetCursor()).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("event and cursor disagree: count=%d err=%v", count, err)
+	}
+}

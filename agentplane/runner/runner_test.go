@@ -19,6 +19,7 @@ import (
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
+	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
@@ -308,6 +309,41 @@ func TestCloseReportsTeardownOperationPublicationFailureAndRetainsOwner(t *testi
 	if err == nil {
 		_ = otherOwner.Close()
 		t.Fatal("Runner released the state owner although shutdown cleanup failed")
+	}
+}
+
+func TestExecutorRelaysBlockAutosuspendUntilClosed(t *testing.T) {
+	proxy := modelConfigServer(t)
+	r := newLifecycleRunner(t, lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false"))
+	r.mu.Lock()
+	r.executorRelays["test-relay"] = &executorRelay{}
+	r.mu.Unlock()
+	defer func() {
+		r.mu.Lock()
+		delete(r.executorRelays, "test-relay")
+		r.mu.Unlock()
+	}()
+
+	facts, err := r.facts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts.AutosuspendBlockers) != 1 || facts.AutosuspendBlockers[0].Reason != autosuspendExecutorRelay || facts.IdleSince != nil {
+		t.Fatalf("executor relay alone must block idle: %v", facts)
+	}
+	if _, err := sandboxlease.FromProto(facts); err != nil {
+		t.Fatalf("executor blocker cannot reach the connection Lease: %v", err)
+	}
+	r.mu.Lock()
+	delete(r.executorRelays, "test-relay")
+	r.mu.Unlock()
+
+	facts, err = r.facts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts.AutosuspendBlockers) != 0 || facts.IdleSince == nil {
+		t.Fatalf("closed executor relay must return to idle: %v", facts)
 	}
 }
 

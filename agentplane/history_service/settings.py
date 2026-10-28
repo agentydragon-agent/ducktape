@@ -23,10 +23,13 @@ class IngressSettings(BaseModel):
     writer_namespaces: frozenset[str] = Field(
         min_length=1, description="Namespaces whose ServiceAccounts may push: the ones Sandboxes run in."
     )
+    sampler_accounts: frozenset[ServiceAccountRef] = Field(
+        default=frozenset(), description="ServiceAccounts allowed to publish centrally hosted Sessions."
+    )
     listen_address: str = Field(
         default="0.0.0.0:8081",
         min_length=1,
-        description="The ingress listener, so the network fence admits the egress proxy to it and nothing else.",
+        description="The ingress listener; network policy must admit the egress proxy and any enabled central sampler.",
     )
     settle_deltas: bool = Field(
         default=True,

@@ -45,6 +45,14 @@ enum Harness {
   HARNESS_UNSPECIFIED = 0;
   HARNESS_CLAUDE = 1;
   HARNESS_CODEX = 2;
+  // The code-mode harness, hosted by the separately configured central sampler.
+  HARNESS_CENTRAL_SAMPLER = 3;
+}
+
+// Selects a configured central service and provider route; neither name conveys authority.
+message CentralSamplerConfig {
+  string service = 1;
+  string provider = 2;
 }
 
 message SessionSpec {
@@ -55,6 +63,8 @@ message SessionSpec {
   // Standing instructions are fixed for the session's life: a spec supplied to reopen the
   // session must equal the stored one. Empty is a session without any.
   string instructions = 5;
+  // Required exactly for HARNESS_CENTRAL_SAMPLER. Other harnesses remain Sandbox-local.
+  CentralSamplerConfig central_sampler = 6;
 }
 
 enum HarnessState {

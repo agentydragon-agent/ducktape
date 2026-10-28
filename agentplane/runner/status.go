@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	autosuspendBootstrap = "Bootstrap"
-	autosuspendAdmission = "Admission"
+	autosuspendBootstrap     = "Bootstrap"
+	autosuspendAdmission     = "Admission"
+	autosuspendExecutorRelay = "ExecutorRelay"
 )
 
 func (r *Runner) ListSessions(ctx context.Context, _ *runnerpb.ListSessionsRequest) (*runnerpb.ListSessionsResponse, error) {
@@ -210,6 +211,9 @@ func (r *Runner) facts() (*controlpb.RunnerFacts, error) {
 	}
 	if admissions > 0 {
 		blockers = append(blockers, &sandboxpb.AutosuspendBlocker{Reason: autosuspendAdmission})
+	}
+	if len(r.executorRelays) > 0 {
+		blockers = append(blockers, &sandboxpb.AutosuspendBlocker{Reason: autosuspendExecutorRelay})
 	}
 	busy := len(blockers) > 0
 	if busy {

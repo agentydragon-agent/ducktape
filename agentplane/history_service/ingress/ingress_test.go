@@ -15,6 +15,7 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/google/uuid"
@@ -69,6 +70,11 @@ func newIngress(t *testing.T) testIngress { return newIngressPacedBy(t, testTimi
 func newIngressPacedBy(t *testing.T, timing Timing) testIngress {
 	t.Helper()
 	service, _ := newService(t, timing)
+	return serveIngress(t, service)
+}
+
+func serveIngress(t *testing.T, service *Service) testIngress {
+	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -572,5 +578,56 @@ func TestALongBurstIsCommittedInOrderAndAcknowledgedThroughItsEnd(t *testing.T) 
 		if entry.GetCursor() != uint64(index)+1 {
 			t.Fatalf("entry %d has cursor %d", index, entry.GetCursor())
 		}
+	}
+}
+
+// A central producer retains its own writer identity while its execution target is
+// the Sandbox displayed in inventory. Reconnects cannot silently replace that target.
+func TestCentralSamplerWriterAndExecutorAreSeparate(t *testing.T) {
+	service, db := newService(t, testTiming)
+	account := auth.Account{Namespace: testNamespace, Name: "test-central-sampler"}
+	service.SamplerAccounts = []auth.Account{account}
+	ingress := serveIngress(t, service)
+	token := workloadToken(t, account)
+	sessionID := uuid.NewString()
+	executorUID := uuid.NewString()
+	announcement := &runneringresspb.SamplerAnnouncement{
+		Session: &runnerpb.Attached{SessionId: sessionID, Spec: &runnerpb.SessionSpec{
+			Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test-workspace",
+			CentralSampler: &runnerpb.CentralSamplerConfig{Service: "test-sampler", Provider: "test-provider"},
+		}},
+		Executor: &sandboxespb.SandboxDestination{
+			Sandbox: "test-execution-sandbox", SandboxUid: executorUID,
+			Owner: &sandboxespb.ServiceAccount{Namespace: testNamespace, Name: "test-execution-sandbox"},
+		},
+	}
+	c := ingress.open(t, token)
+	c.send(&runneringresspb.PushFrame{Frame: &runneringresspb.PushFrame_SamplerAnnounce{SamplerAnnounce: announcement}})
+	c.acknowledged(0, false)
+	var writerName, sandboxName, sandboxUID string
+	if err := db.QueryRowContext(t.Context(), "SELECT writer_name,sandbox_name,sandbox_uid::text FROM session_history WHERE id=$1", sessionID).
+		Scan(&writerName, &sandboxName, &sandboxUID); err != nil {
+		t.Fatal(err)
+	}
+	if writerName != account.Name || sandboxName != announcement.Executor.Sandbox || sandboxUID != executorUID {
+		t.Fatalf("binding writer=%s executor=%s uid=%s", writerName, sandboxName, sandboxUID)
+	}
+	c.cancel()
+	changed := proto.Clone(announcement).(*runneringresspb.SamplerAnnouncement)
+	changed.Executor.SandboxUid = uuid.NewString()
+	next := ingress.open(t, token)
+	next.send(&runneringresspb.PushFrame{Frame: &runneringresspb.PushFrame_SamplerAnnounce{SamplerAnnounce: changed}})
+	if _, err := next.stream.Recv(); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("changed executor: %v", err)
+	}
+	unauthorized := ingress.open(t, writerToken)
+	unauthorized.send(&runneringresspb.PushFrame{Frame: &runneringresspb.PushFrame_SamplerAnnounce{SamplerAnnounce: announcement}})
+	if _, err := unauthorized.stream.Recv(); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("unauthorized producer: %v", err)
+	}
+	disguised := ingress.open(t, writerToken)
+	disguised.send(&runneringresspb.PushFrame{Frame: &runneringresspb.PushFrame_Announce{Announce: announcement.Session}})
+	if _, err := disguised.stream.Recv(); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("disguised central producer: %v", err)
 	}
 }

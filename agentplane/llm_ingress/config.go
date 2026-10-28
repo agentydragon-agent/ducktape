@@ -58,6 +58,7 @@ type modelConfig struct {
 }
 
 type config struct {
+	CentralSamplerAccounts          []string          `mapstructure:"central_sampler_accounts"`
 	AllowedServiceAccountNamespaces []string          `mapstructure:"allowed_service_account_namespaces"`
 	TokenAudience                   string            `mapstructure:"token_audience"`
 	LogLLMRequests                  bool              `mapstructure:"log_llm_requests"`

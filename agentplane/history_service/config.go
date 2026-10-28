@@ -44,7 +44,9 @@ type ingressConfig struct {
 	TokenAudience string `mapstructure:"token_audience"`
 	// WriterNamespaces are the namespaces whose ServiceAccounts may push: the ones Sandboxes run in.
 	WriterNamespaces []string `mapstructure:"writer_namespaces"`
-	ListenAddress    string   `mapstructure:"listen_address"`
+	// Only these service identities may announce centrally hosted Sessions. Empty disables the mode.
+	SamplerAccounts []auth.Account `mapstructure:"sampler_accounts"`
+	ListenAddress   string         `mapstructure:"listen_address"`
 	// SettleDeltas removes an item's streamed delta entries from stored history once its retained completion
 	// provably holds their concatenation. Off keeps every entry, for debugging.
 	SettleDeltas bool `mapstructure:"settle_deltas"`

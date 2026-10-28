@@ -80,7 +80,7 @@ def _openapi_document(api_client: k8s_client.ApiClient, channel: grpc.aio.Channe
                     model="schema-model", display_name="Schema Model", reasoning_efforts=["low", "medium", "high"]
                 )
             ],
-            harnesses={harness: ["schema-model"] for harness in Harness},
+            harnesses={harness: ["schema-model"] for harness in (Harness.CLAUDE, Harness.CODEX)},
         ),
         EgressAccess(namespace="schema", custom_objects=cast(Any, None), action_policy=action_policy),
         DecisionsClient(channel, token_file=Path("/schema-unused-token"), request_timeout_s=1),

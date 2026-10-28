@@ -13,15 +13,51 @@ flowchart LR
         dispatcher[Dispatcher API and durable delivery]
         gateway[Runner proxy and control tunnel]
     end
+    central[Experimental central sampler]
     sandboxctl[Sandbox Controller]
     k8s[Kubernetes API]
     app -->|session opens + commands| dispatcher
     app -->|Dispatch watch for the browser: gRPC| dispatcher
     app -->|per-Sandbox Runner Proxy: live inventory + diagnostics| gateway
-    dispatcher -->|queued opens + commands| gateway
+    dispatcher -->|wrapped Codex and Claude opens + commands| gateway
+    dispatcher -->|central opens + commands: Sampler gRPC| central
     sandboxctl -->|Quiesce| gateway
     dispatcher -->|watch + guarded wake| k8s
 ```
+
+## Central code-mode sampling (opt in)
+
+```mermaid
+flowchart LR
+    dispatcher[Gateway Dispatcher]
+    sampler[Central sampler and per-Session JS host]
+    db[(Sampler PostgreSQL)]
+    gateway[Gateway ExecutorGateway]
+    runner[Sandbox Runner]
+    executor[Loopback Codex exec-server]
+    history[History ingress and Thread fold]
+    llm[LLM ingress]
+    provider[OpenAI-shaped Responses API]
+    dispatcher -->|Sampler gRPC: open, input, controls| sampler
+    sampler -->|continuation, commands, evidence outbox| db
+    sampler -->|authenticated exec-server frames| gateway
+    runner -.->|outbound RunnerControl.Connect| gateway
+    gateway -->|frames over existing stream| runner
+    runner -->|WebSocket| executor
+    sampler -->|acknowledged outbox: RunnerIngress.Push| history
+    sampler -->|Session identity| llm --> provider
+```
+
+The JS host runs beside the sampler, one supervised resource-limited process per live Session.
+Gateway relays the pinned upstream exec-server protocol without interpreting tools. Dispatcher
+is absent from that tool path. Sandbox UID and incarnation fence the executor binding; v1 does
+not replace an executor. An unavailable executor does not remove the sampler's persisted history
+or prevent its control RPCs. Existing Dispatcher routing still requires the bound Sandbox object.
+
+History retains source evidence and derives the lossy Thread display. Its entries are not a
+provider continuation format: the sampler owns that state in its database. Wrapped native
+harnesses keep their current local sampling, execution and persistence paths. See the
+[standalone API and recovery contract](../x/central_sampler/SPEC.md).
 
 ## Runner control tunnel
 

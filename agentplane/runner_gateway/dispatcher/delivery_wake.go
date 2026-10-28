@@ -16,6 +16,22 @@ type queuedWork struct {
 }
 
 func (w *DeliveryWorker) prepareDispatch(ctx context.Context, row *Dispatch, sandbox SandboxSnapshot, owner Owner) (bool, error) {
+	// Central sampling remains reachable while its execution VM is unready.
+	opening, err := w.Store.GetOpening(ctx, row.SessionID)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return false, err
+	}
+	if opening != nil && !sessionRequiresReadyExecutor(opening.Spec) {
+		if err := validateOpeningExecutor(opening, sandbox); err != nil {
+			return false, err
+		}
+		retry := w.retryFor(row.SessionID)
+		if delay := time.Until(retry.until); delay > 0 {
+			w.queue.AddAfter(row.SessionID, delay)
+			return false, nil
+		}
+		return true, nil
+	}
 	return w.prepare(ctx, queuedWork{
 		id: row.CommandID, key: row.SessionID, wakeEligible: row.WakeEligible,
 		wakeCaller: row.WakeCaller, wakeFrom: row.WakeFromIncarnation,

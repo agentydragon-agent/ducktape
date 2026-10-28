@@ -25,6 +25,7 @@ py_library(
         "//agentplane/app:__subpackages__",
         "//agentplane/history_service:__subpackages__",
         "//agentplane/runner/testing:__pkg__",
+        "//agentplane/system_tests:__pkg__",
     ],
     deps = [
         "//agentplane/grpc:calls",
@@ -41,6 +42,7 @@ py_library(
     srcs = ["settings.py"],
     visibility = [
         "//agentplane/history_service:__subpackages__",
+        "//agentplane/system_tests:__pkg__",
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
@@ -177,6 +179,7 @@ proto_library(
     deps = [
         "//agentplane/proto:event_log_proto",
         "//agentplane/proto:runner_proto",
+        "//agentplane/proto:sandboxes_proto",
     ],
 )
 
@@ -231,6 +234,7 @@ go_proto_library(
     deps = [
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:sandboxes_go_proto",
     ],
 )
 

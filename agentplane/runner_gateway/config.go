@@ -6,6 +6,7 @@ import (
 	"os"
 	"slices"
 
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/go-viper/mapstructure/v2"
@@ -42,6 +43,9 @@ type config struct {
 	QueueCap                    int            `mapstructure:"max_queued_per_session"`
 	WatchLeaseSeconds           int            `mapstructure:"dispatcher_watch_lease_seconds"`
 	RunnerTimeoutSeconds        int            `mapstructure:"runner_request_timeout_seconds"`
+
+	CentralSamplers map[string]dispatcher.CentralTarget `mapstructure:"central_samplers"`
+	ExecutorCallers []auth.Account                      `mapstructure:"executor_callers"`
 }
 
 func defaultConfig() config {
@@ -119,5 +123,11 @@ func (c *config) validate() error {
 			return fmt.Errorf("wake caller %s/%s is not a Dispatcher caller", account.Namespace, account.Name)
 		}
 	}
+	for name, target := range c.CentralSamplers {
+		if name == "" || target.Target == "" || target.TokenFile == "" {
+			return errors.New("central_samplers requires named targets and token files")
+		}
+	}
+
 	return nil
 }

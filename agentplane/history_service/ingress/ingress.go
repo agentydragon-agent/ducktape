@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"slices"
 	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
@@ -46,10 +47,11 @@ type Timing struct {
 // is bound to the ServiceAccount that first pushed it.
 type Service struct {
 	runneringresspb.UnimplementedRunnerIngressServer
-	Principals  *auth.Resolver
-	SandboxUIDs SandboxUIDResolver
-	History     *storage.Store
-	Timing      Timing
+	Principals      *auth.Resolver
+	SandboxUIDs     SandboxUIDResolver
+	History         *storage.Store
+	Timing          Timing
+	SamplerAccounts []auth.Account
 }
 
 type pushStream = grpc.BidiStreamingServer[runneringresspb.PushFrame, runneringresspb.Acknowledgement]
@@ -62,18 +64,11 @@ func (s *Service) Push(stream pushStream) error {
 	}
 	frames := readFrames(stream)
 	defer frames.stop()
-	c := &pushCall{history: s.History, timing: s.Timing, stream: stream, frames: frames, log: slog.Default()}
+	c := &pushCall{history: s.History, timing: s.Timing, stream: stream, frames: frames, log: slog.Default(), service: s}
 	writer := storage.Writer{
 		Namespace: principal.Account.Namespace, Name: principal.Account.Name, UID: principal.ServiceAccountUID,
 	}
-	var sandboxUID string
-	if s.SandboxUIDs != nil {
-		sandboxUID, err = s.SandboxUIDs.Resolve(ctx, writer)
-		if err != nil {
-			return c.failure(err)
-		}
-	}
-	return c.failure(c.run(ctx, writer, sandboxUID))
+	return c.failure(c.run(ctx, writer, principal.Account))
 }
 
 type pushCall struct {
@@ -82,9 +77,10 @@ type pushCall struct {
 	stream  pushStream
 	frames  *frameReader
 	log     *slog.Logger
+	service *Service
 }
 
-func (c *pushCall) run(ctx context.Context, writer storage.Writer, sandboxUID string) error {
+func (c *pushCall) run(ctx context.Context, writer storage.Writer, account auth.Account) error {
 	first, timedOut, err := c.frames.next(c.timing.SilenceLimit)
 	switch {
 	case errors.Is(err, io.EOF):
@@ -95,8 +91,37 @@ func (c *pushCall) run(ctx context.Context, writer storage.Writer, sandboxUID st
 		return status.Error(codes.Unavailable, "no announcement")
 	}
 	announce := first.GetAnnounce()
-	if announce == nil {
-		return status.Error(codes.InvalidArgument, "the first frame is not an announcement")
+	sampler := first.GetSamplerAnnounce()
+	var sandboxUID string
+	if sampler != nil {
+		if !slices.Contains(c.service.SamplerAccounts, account) {
+			return status.Error(codes.PermissionDenied, "central sampler producer is not authorized")
+		}
+		announce = sampler.GetSession()
+		executor := sampler.GetExecutor()
+		if announce == nil || announce.GetSpec().GetHarness() != runnerpb.Harness_HARNESS_CENTRAL_SAMPLER ||
+			announce.GetSpec().GetCentralSampler() == nil || executor.GetSandbox() == "" ||
+			executor.GetOwner().GetNamespace() == "" || executor.GetOwner().GetName() == "" {
+			return status.Error(codes.InvalidArgument, "central sampler announcement is incomplete")
+		}
+		if _, err := uuid.Parse(executor.GetSandboxUid()); err != nil {
+			return status.Error(codes.InvalidArgument, "executor UID is not a UUID")
+		}
+		sandboxUID = executor.GetSandboxUid()
+	} else {
+		if announce == nil {
+			return status.Error(codes.InvalidArgument, "the first frame is not an announcement")
+		}
+		if announce.GetSpec().GetHarness() == runnerpb.Harness_HARNESS_CENTRAL_SAMPLER || announce.GetSpec().GetCentralSampler() != nil {
+			return status.Error(codes.PermissionDenied, "central Sessions require a sampler announcement")
+		}
+		if c.service.SandboxUIDs != nil {
+			var err error
+			sandboxUID, err = c.service.SandboxUIDs.Resolve(ctx, writer)
+			if err != nil {
+				return err
+			}
+		}
 	}
 	sessionID, err := uuid.Parse(announce.GetSessionId())
 	if err != nil {
@@ -107,7 +132,14 @@ func (c *pushCall) run(ctx context.Context, writer storage.Writer, sandboxUID st
 		return status.Error(codes.InvalidArgument, "the Session ID is not a canonical UUID")
 	}
 	c.log = c.log.With("session_id", sessionID)
-	checkpoint, err := c.history.BindWriter(ctx, sessionID, writer, sandboxUID)
+	var checkpoint storage.Checkpoint
+	if sampler != nil {
+		executor := sampler.GetExecutor()
+		checkpoint, err = c.history.BindSamplerWriter(ctx, sessionID, writer,
+			executor.GetOwner().GetNamespace(), executor.GetSandbox(), sandboxUID)
+	} else {
+		checkpoint, err = c.history.BindWriter(ctx, sessionID, writer, sandboxUID)
+	}
 	if err != nil {
 		return err
 	}

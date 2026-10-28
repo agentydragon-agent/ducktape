@@ -35,28 +35,119 @@ type controlFrameSender struct {
 	timeout time.Duration
 	send    func(*runnercontrolpb.ServiceFrame) error
 
-	mu     sync.Mutex
-	failed error
+	priority chan *serviceFrameWrite
+	data     chan *serviceFrameWrite
+	done     chan struct{}
+	mu       sync.Mutex
+	failed   error
+}
+
+type serviceFrameWrite struct {
+	frame *runnercontrolpb.ServiceFrame
+	done  chan error
+}
+
+func newControlFrameSender(ctx context.Context, timeout time.Duration, send func(*runnercontrolpb.ServiceFrame) error) *controlFrameSender {
+	sender := &controlFrameSender{
+		ctx: ctx, timeout: timeout, send: send,
+		priority: make(chan *serviceFrameWrite, 32),
+		data:     make(chan *serviceFrameWrite, maxExecutorChannelsPerRunner*executorQueueDepth),
+		done:     make(chan struct{}),
+	}
+	go sender.run()
+	return sender
 }
 
 func (s *controlFrameSender) Send(frame *runnercontrolpb.ServiceFrame) error {
+	return s.enqueue(frame, s.priority)
+}
+
+func (s *controlFrameSender) SendExecutor(frame *runnercontrolpb.ServiceFrame) error {
+	return s.enqueue(frame, s.data)
+}
+
+func (s *controlFrameSender) enqueue(frame *runnercontrolpb.ServiceFrame, queue chan *serviceFrameWrite) error {
+	request := &serviceFrameWrite{frame: frame, done: make(chan error, 1)}
+	select {
+	case queue <- request:
+	case <-s.done:
+		return s.error()
+	case <-s.ctx.Done():
+		s.fail(status.FromContextError(s.ctx.Err()).Err())
+		return s.error()
+	}
+	select {
+	case err := <-request.done:
+		return err
+	case <-s.done:
+		return s.error()
+	case <-s.ctx.Done():
+		s.fail(status.FromContextError(s.ctx.Err()).Err())
+		return s.error()
+	}
+}
+
+func (s *controlFrameSender) run() {
+	for {
+		select {
+		case <-s.ctx.Done():
+			s.fail(status.FromContextError(s.ctx.Err()).Err())
+			return
+		case <-s.done:
+			return
+		default:
+		}
+		select {
+		case request := <-s.priority:
+			s.write(request)
+			continue
+		default:
+		}
+		select {
+		case request := <-s.priority:
+			s.write(request)
+		case request := <-s.data:
+			s.write(request)
+		case <-s.ctx.Done():
+			s.fail(status.FromContextError(s.ctx.Err()).Err())
+			return
+		}
+	}
+}
+
+func (s *controlFrameSender) write(request *serviceFrameWrite) {
+	err := streaming.SendWithin(s.ctx, s.timeout, s.send, request.frame)
+	switch {
+	case err == nil:
+	case errors.Is(err, streaming.ErrSendTimeout):
+		err = status.Error(codes.Unavailable, "runner control stream send timed out")
+	case s.ctx.Err() != nil && errors.Is(err, s.ctx.Err()):
+		err = status.FromContextError(s.ctx.Err()).Err()
+	default:
+		err = status.Error(codes.Unavailable, "runner control stream ended while sending")
+	}
+	if err != nil {
+		s.fail(err)
+	}
+	request.done <- err
+}
+
+func (s *controlFrameSender) fail(err error) {
+	s.mu.Lock()
+	if s.failed == nil {
+		s.failed = err
+		close(s.done)
+	}
+	s.mu.Unlock()
+}
+
+func (s *controlFrameSender) error() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.failed != nil {
 		return s.failed
 	}
-	err := streaming.SendWithin(s.ctx, s.timeout, s.send, frame)
-	switch {
-	case err == nil:
-		return nil
-	case errors.Is(err, streaming.ErrSendTimeout):
-		s.failed = status.Error(codes.Unavailable, "runner control stream send timed out")
-	case s.ctx.Err() != nil && errors.Is(err, s.ctx.Err()):
-		s.failed = status.FromContextError(s.ctx.Err()).Err()
-	default:
-		s.failed = status.Error(codes.Unavailable, "runner control stream ended while sending")
-	}
-	return s.failed
+	return status.Error(codes.Unavailable, "runner control stream ended")
 }
 
 func (s *runnerControlServer) Connect(stream grpc.BidiStreamingServer[runnercontrolpb.RunnerFrame, runnercontrolpb.ServiceFrame]) (returnErr error) {
@@ -89,9 +180,9 @@ func (s *runnerControlServer) Connect(stream grpc.BidiStreamingServer[runnercont
 		return unavailable(err)
 	}
 
-	sender := &controlFrameSender{ctx: ctx, timeout: timing.LivenessTimeout, send: stream.Send}
+	sender := newControlFrameSender(ctx, timing.LivenessTimeout, stream.Send)
 	send := sender.Send
-	connection := newRunnerConnection(identity, podUID, first.GetHello().GetRunnerBootId(), epoch, send)
+	connection := newRunnerConnection(identity, podUID, first.GetHello().GetRunnerBootId(), epoch, send, sender.SendExecutor)
 	// Publish the local tunnel before Welcome lets the runner start consuming calls.
 	g.connections.accept(connection)
 	defer func() {
@@ -157,6 +248,10 @@ func (s *runnerControlServer) Connect(stream grpc.BidiStreamingServer[runnercont
 				}
 			case *runnercontrolpb.RunnerFrame_Reply:
 				connection.tunnel.answer(frame.Reply)
+			case *runnercontrolpb.RunnerFrame_Executor:
+				if err := connection.routeExecutor(frame.Executor); err != nil {
+					return err
+				}
 			default:
 				return status.Error(codes.InvalidArgument, "unexpected runner control frame")
 			}
@@ -164,6 +259,8 @@ func (s *runnerControlServer) Connect(stream grpc.BidiStreamingServer[runnercont
 			sendHeartbeat = true
 		case <-ctx.Done():
 			return status.FromContextError(ctx.Err()).Err()
+		case <-sender.done:
+			return sender.error()
 		case <-connection.ended:
 			return connection.error()
 		}

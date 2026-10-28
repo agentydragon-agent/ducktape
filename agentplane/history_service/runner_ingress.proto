@@ -7,6 +7,7 @@ package agentplane.history_service;
 
 import "agentplane/proto/event_log.proto";
 import "agentplane/proto/runner.proto";
+import "agentplane/proto/sandboxes.proto";
 
 service RunnerIngress {
   // One call per Session, opened by the runner. The first response answers `announce`.
@@ -25,6 +26,8 @@ message PushFrame {
     agentplane.proto.Sealed sealed = 3;
     // Sent on an idle call every 10 s.
     Heartbeat heartbeat = 4;
+    // Alternative first frame for an explicitly authorized central sampler.
+    SamplerAnnouncement sampler_announce = 5;
   }
 }
 
@@ -34,6 +37,12 @@ message Acknowledgement {
   uint64 cursor = 1;
   // The seal at `cursor` is committed; the ingress accepts nothing more from this journal.
   bool sealed = 2;
+}
+
+message SamplerAnnouncement {
+  agentplane.proto.Attached session = 1;
+  // Execution metadata, separate from the authenticated producer identity.
+  agentplane.proto.SandboxDestination executor = 2;
 }
 
 message Heartbeat {}

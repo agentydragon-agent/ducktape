@@ -7,6 +7,7 @@ export function harnessOptions(catalog: ModelCatalog | null): { value: Harness; 
     { value: "HARNESS_CLAUDE", label: "Claude" },
     { value: "HARNESS_CODEX", label: "Codex" },
   ];
+  if (catalog?.central_sampler) harnesses.push({ value: "HARNESS_CENTRAL_SAMPLER", label: "Central sampler" });
   return harnesses.map(({ value, label }) => {
     const disabled = !catalog?.harnesses[value]?.length;
     return { value, label: disabled && catalog ? `${label} (no models offered)` : label, disabled };
@@ -20,6 +21,8 @@ export function harnessLabel(harness: Harness | null): string {
       return "Claude";
     case "HARNESS_CODEX":
       return "Codex";
+    case "HARNESS_CENTRAL_SAMPLER":
+      return "Central sampler";
     case null:
       return "Unknown harness";
   }

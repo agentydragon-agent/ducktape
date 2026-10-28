@@ -188,6 +188,12 @@ delivering, runner-admitted, or failed state, and
 `GET /sandboxes/{name}/sessions/{id}/opening` checks that durable result. Admission does not mean the
 History Service has projected a Thread yet.
 
+The optional `model_catalog.central_sampler` names a configured service and provider route;
+its `HARNESS_CENTRAL_SAMPLER` model list adds **Central sampler** to the launch form alongside the
+native harness offerings. Setup scripts run once on the bound Sandbox executor before sampling begins. For an existing
+central Session, a suspended or unready execution Sandbox leaves conversation history and central
+controls available while the bound Sandbox object remains in the current inventory.
+
 Thread names are set, changed, or cleared explicitly by operators in the thread view.
 
 The app ConfigMap groups browser-safe links under one optional `frontend_config` key.
@@ -203,11 +209,12 @@ after deletion can match traces from both Sandbox instances.
 
 `frontend_config.langfuse_search` is null unless the app configures a Langfuse base URL, project ID,
 and metadata keys for the Sandbox namespace and ServiceAccount. When configured, Sandbox and active
-Thread ellipsis menus link to the project's last-24-hour traces filtered by those two metadata values.
-The Thread menu link is explicitly Sandbox-scoped because current Langfuse attribution has no Session
-ID; these links do not isolate individual Sessions. The configured metadata keys must match the
-LiteLLM attribution settings; traces appear after that producer-side attribution is deployed. A
-same-name Sandbox replacement can match older traces.
+Thread ellipsis menus link to the project's last-24-hour traces. Native Thread and Sandbox links
+filter by those two metadata values; they can include other Sessions and older same-name Sandbox
+instances. Central Thread links instead filter by the public Session ID, using `session_metadata_key`
+(default `attributes.litellm.metadata.spend_logs_metadata.agentplane.session_id`). That attribution
+requires an explicitly trusted sampler, LLM ingress and LiteLLM metadata promotion. The configured
+keys must match the producer's exported attributes; links alone do not create trace attribution.
 
 The app copies no runner events and folds none. Each runner pushes its Sessions' events to the
 History Service's ingress, and the History Service folds them under per-Session leases

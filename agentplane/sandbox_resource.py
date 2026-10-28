@@ -65,6 +65,7 @@ class AutosuspendBlockerReason(StrEnum):
     ACTIVATION = "Activation"
     BOOTSTRAP = "Bootstrap"
     ADMISSION = "Admission"
+    EXECUTOR_RELAY = "ExecutorRelay"
 
 
 def _go_duration(value: object) -> object:

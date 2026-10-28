@@ -361,7 +361,10 @@ async def _serve(
                             reasoning_efforts=list(TEST_REASONING_EFFORTS),
                         ),
                     ],
-                    harnesses={harness: ["test-model-before", "test-model-after"] for harness in Harness},
+                    harnesses={
+                        harness: ["test-model-before", "test-model-after"]
+                        for harness in (Harness.CLAUDE, Harness.CODEX)
+                    },
                 ),
                 egress,
                 DecisionsClient(decisions_channel, token_file=Path(directory) / "egress-token", request_timeout_s=1),

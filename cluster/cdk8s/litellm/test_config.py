@@ -89,6 +89,7 @@ def test_agentplane_header_metadata_is_promoted_to_otel_baggage() -> None:
         "agentplane.service_account": "agentplane-test-runtime",
         "agentplane.pod_name": "agentplane-test-7f9c8",
         "agentplane.pod_uid": "00000000-0000-4000-8000-000000000001",
+        "agentplane.session_id": "00000000-0000-4000-8000-000000000002",
         "agentplane.debug": "unlisted-agentplane-value",
         "operator_debug": "unlisted-value",
     }
@@ -128,6 +129,7 @@ def test_agentplane_header_metadata_is_promoted_to_otel_baggage() -> None:
         "litellm.metadata.spend_logs_metadata.agentplane.service_account": "agentplane-test-runtime",
         "litellm.metadata.spend_logs_metadata.agentplane.pod_name": "agentplane-test-7f9c8",
         "litellm.metadata.spend_logs_metadata.agentplane.pod_uid": "00000000-0000-4000-8000-000000000001",
+        "litellm.metadata.spend_logs_metadata.agentplane.session_id": "00000000-0000-4000-8000-000000000002",
     }
     assert {key: promoted.get(key) for key in expected_baggage} == expected_baggage
     assert "litellm.metadata.spend_logs_metadata.agentplane.debug" not in promoted

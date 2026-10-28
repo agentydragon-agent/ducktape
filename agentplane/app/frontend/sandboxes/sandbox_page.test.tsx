@@ -105,6 +105,7 @@ const DEFAULT_PRESET_DEFAULTS = {
   model: "test-model",
   reasoning_effort: "low",
 };
+let centralSamplerEnabled = false;
 let presetDefaults = { ...DEFAULT_PRESET_DEFAULTS } as Record<string, unknown>;
 let modelCatalogResponse: Promise<Response> | null = null;
 const TRACE_SEARCH_SETTINGS: TraceSearchSettings = {
@@ -129,6 +130,7 @@ afterEach(async () => {
   (live.snapshot.sandbox as SandboxView).binding = null;
   presetDefaults = { ...DEFAULT_PRESET_DEFAULTS };
   modelCatalogResponse = null;
+  centralSamplerEnabled = false;
   traceSearchSettings = TRACE_SEARCH_SETTINGS;
   langfuseSearchSettings = LANGFUSE_SEARCH_SETTINGS;
 });
@@ -204,9 +206,12 @@ async function render(
       const codexModels = routeNavigation
         ? [{ model: "codex-model", display_name: "Codex Model", reasoning_efforts: TEST_REASONING_EFFORTS }]
         : [];
-      return Promise.resolve(
-        Response.json(testModelCatalog(claudePaused ? [] : models, claudePaused ? models : codexModels))
-      );
+      const catalog = testModelCatalog(claudePaused ? [] : models, claudePaused ? models : codexModels);
+      if (centralSamplerEnabled) {
+        catalog.harnesses.HARNESS_CENTRAL_SAMPLER = ["test-model"];
+        catalog.central_sampler = { service: "test-central", provider: "responses" };
+      }
+      return Promise.resolve(Response.json(catalog));
     }
     if (path === "/sandboxes/form") {
       return Promise.resolve(Response.json({ policy_sets: [] }));
@@ -1115,4 +1120,22 @@ it("does not state a Session's status while Thread updates are not being heard",
   } finally {
     mutableSnapshot.updates_connected = true;
   }
+});
+
+it("launches a configured central sampler while preserving the native offerings", async () => {
+  centralSamplerEnabled = true;
+  presetDefaults = { harness: "HARNESS_CENTRAL_SAMPLER", model: "test-model", setup_script: "echo executor-setup" };
+  const sessions = vi.fn<(request: Request) => Promise<Response>>(async () =>
+    Response.json({ detail: "Launch recorded" }, { status: 503 })
+  );
+  await render(sessions);
+  expect(labeledInput("Harness").value).toBe("Central sampler");
+  expect((container.querySelector('[aria-label="Thread setup script"]') as HTMLTextAreaElement).value).toBe(
+    "echo executor-setup"
+  );
+  await submitNewThread();
+  const body = await postedBody(sessions);
+  expect(body.spec.harness).toBe("HARNESS_CENTRAL_SAMPLER");
+  expect(body.spec.centralSampler).toEqual({ service: "test-central", provider: "responses" });
+  expect(body.setup_script).toBe("echo executor-setup");
 });

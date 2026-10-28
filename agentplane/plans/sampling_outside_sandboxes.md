@@ -339,12 +339,50 @@ Alternatives to compare:
   compatibility was tested here. Agentplane owns the tool/context loop and persistence; presenting
   a Claude identity does not supply Claude's built-in tool behavior.
 
-## Next
+## Accepted central sampler v1
 
-The completed [combined custom sampler evidence](../debug/postgres_codex_spike.md#combined-compaction-and-controls)
-and remaining `CENTRAL_CODEX_SPIKE` gates inform `HARNESS_PLACEMENT_DESIGN` in
-[task DAG](task_dag.md) section 5. `CLAUDE_REMOTE_EXECUTION_SPIKE` supplies optional Claude evidence;
-it is not a prerequisite for choosing a Codex-only mode. No runtime cutover is selected.
+Operator agreement, 2026-10-27: implement and open a PR for an independent central code-mode
+sampler with its own database and standalone API. The shared sampler hosts a separately supervised,
+resource-limited JS process per live Session. Dispatcher admits/routes central commands directly
+to it; tools use sampler → Gateway → outbound Runner tunnel → loopback exec-server. Wrapped Codex
+and Claude keep execution and sampling together on their existing paths. Experimental code lives
+under `x/`; no deployment, default change or native-state migration is selected.
+
+Operator request, 2026-10-28: rewrite the sampler in Go. This includes the service, provider/tool
+loop, persistence and History exporter. Preserve the prototype's API, PostgreSQL state,
+persistence/failure semantics and acceptance scenarios. The upstream JS host remains a separately
+supervised process. Opt-in deployment is a separate DAG outcome.
+
+The selected provider scope is OpenAI-shaped Responses/code mode with pinned Codex 0.162.1 host
+and executor. Compaction, wait, stdin and interrupts are required. Standing instructions are
+supported; remote AGENTS.md discovery is useful but deferred. Executor replacement is deferred:
+new Sessions bind one Sandbox UID/incarnation. See the [API](../x/central_sampler/sampler.proto),
+[service contract](../x/central_sampler/SPEC.md) and active nodes in [the DAG](task_dag.md).
+
+The sampler owns continuation not represented in History. It exports critical reasoning, text,
+tool and lifecycle Events plus underlying evidence through existing RunnerIngress. Public Session
+ID is the inference identity, with Sandbox/incarnation identifying the executor. Central requests
+can carry a trusted Session metadata claim into Langfuse. Request/response evidence and normalized
+frontend projection are distinct; Thread remains a lossy view for display.
+
+### Coexistence and history across backends
+
+Keep wrapping harnesses we do not own as an independently usable backend, including official
+Claude and native Codex. The operator selected this transitional capability independently of the
+custom loop; external hosted agents and MCP clients similarly remain useful edges. No custom
+sampler success is a reason to retire wrapped harnesses or silently migrate their state.
+
+Provider APIs and harness JSON interfaces expose different facts. A common frontend needs a common
+projection, but native Codex does not expose everything a model did inside JS cells. Preserve raw
+backend-specific evidence and opaque continuation without inventing absent details. Provider context,
+human-visible history and execution-effect evidence serve different purposes: compaction can change
+context without erasing history. Source-linked normalized Events extend the existing projection;
+they do not claim a universal lossless transcript. Broader provider/history design remains separate.
+
+The gated Claude native remote-tools investigation and custom Claude sampler experiment remain
+independent branches. A later Claude sampler could share this code-mode runtime after prompting and
+contract characterization. CLIProxyAPI translation/cloaking alone does not supply native tool,
+instruction, cache or continuation semantics or prove live provider/account support.
 
 [tag]: https://github.com/openai/codex/tree/rust-v0.162.1/codex-rs
 [env-add]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/app-server-protocol/src/protocol/v2/environment.rs#L38-L53

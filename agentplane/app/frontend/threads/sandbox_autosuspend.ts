@@ -19,6 +19,7 @@ export const AUTOSUSPEND_BLOCKER_LABELS: Record<
   Activation: "Session starting",
   Bootstrap: "Sandbox bootstrap running",
   Admission: "Command being admitted",
+  ExecutorRelay: "Executor connected",
 };
 
 function compactDuration(seconds: number): string {

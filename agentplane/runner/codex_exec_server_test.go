@@ -14,12 +14,17 @@ import (
 	"testing/synctest"
 	"time"
 
+	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	executorcontrol "github.com/agentydragon/ducktape/agentplane/runner/executor/control"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
+	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
+	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"github.com/cosi-project/runtime/pkg/resource"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const codexExecServerTestTimeout = 10 * time.Second
@@ -236,6 +241,87 @@ func TestExecutorCloseCancelsConcurrentStartupWithoutRestart(t *testing.T) {
 	}
 	if current := executorRuntimeState(r); current.Phase != codexexecserver.Stopped || current.StopError != "" {
 		t.Fatalf("executor runtime after close = %+v, want clean stopped state", current)
+	}
+}
+
+func TestExecutorRelayAdmissionClosesWhenRunnerQuiesces(t *testing.T) {
+	r := newExecutorLifecycleRunner(t, func(context.Context) (*supervision.Instance, error) {
+		return newTestExecutorInstance(&atomic.Int32{}), nil
+	}, func(context.Context) error { return nil })
+	if err := r.store.AdoptIncarnation("test-incarnation"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Quiesce(context.Background(), &runnerpb.QuiesceRequest{}); err != nil {
+		t.Fatalf("quiesce Runner: %v", err)
+	}
+
+	var workers sync.WaitGroup
+	err := r.startExecutorRelay(context.Background(), "1-1", &executorpb.ExecutorOpen{SessionId: "session-1"},
+		func(*controlpb.RunnerFrame) error { return nil },
+		func(*controlpb.RunnerFrame) error { return nil }, &workers)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("relay admission after quiesce = %v, want FailedPrecondition", err)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.executorRelays) != 0 {
+		t.Fatalf("quiescing Runner admitted relays: %v", r.executorRelays)
+	}
+}
+
+func TestExecutorShutdownDrainsRelaysBeforeFencing(t *testing.T) {
+	var relay *executorRelay
+	var stops atomic.Int32
+	var drained atomic.Bool
+	r := newExecutorLifecycleRunner(t, func(context.Context) (*supervision.Instance, error) {
+		done := make(chan error, 1)
+		return &supervision.Instance{
+			Done: done,
+			Stop: func(context.Context) error {
+				if relay == nil {
+					return errors.New("executor stopped before relay was registered")
+				}
+				select {
+				case <-relay.done:
+					drained.Store(true)
+				default:
+					return errors.New("executor stopped before relay drained")
+				}
+				stops.Add(1)
+				done <- nil
+				return nil
+			},
+		}, nil
+	}, func(context.Context) error { return nil })
+	ctx, cancel := context.WithTimeout(context.Background(), codexExecServerTestTimeout)
+	defer cancel()
+	if err := ensureExecutor(ctx, r); err != nil {
+		t.Fatalf("start executor: %v", err)
+	}
+
+	canceled := make(chan struct{})
+	var cancelOnce sync.Once
+	relay = newExecutorRelay("test-relay", "session-1", func() { cancelOnce.Do(func() { close(canceled) }) })
+	go func() {
+		<-canceled
+		r.mu.Lock()
+		if r.executorRelays[relay.id] == relay {
+			delete(r.executorRelays, relay.id)
+		}
+		r.mu.Unlock()
+		r.changed()
+		relay.finish.Do(func() { close(relay.done) })
+	}()
+	r.mu.Lock()
+	r.executorRelays[relay.id] = relay
+	r.mu.Unlock()
+	r.changed()
+
+	if err := r.Close(); err != nil {
+		t.Fatalf("close Runner: %v", err)
+	}
+	if !drained.Load() || stops.Load() != 1 {
+		t.Fatalf("executor shutdown observed drained=%t stops=%d, want true/1", drained.Load(), stops.Load())
 	}
 }
 

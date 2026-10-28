@@ -906,3 +906,59 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 		t.Fatal("binary logs contained a workload token or LiteLLM key")
 	}
 }
+
+func TestCentralSessionAttributionRequiresTrustedProducer(t *testing.T) {
+	backend := newFakeLiteLLM()
+	backendServer := newBackendServer(t, backend)
+	defer backendServer.Close()
+	server := newConfiguredIngressTestServer(t, api.TokenReviews(), config{
+		LiteLLMURL: backendServer.URL, LiteLLMKey: testBackendKey,
+		CentralSamplerAccounts: []string{testNamespace + "/trusted-sampler"},
+	})
+	const sessionID = "00000000-0000-4000-8000-000000000055"
+	for _, test := range []struct {
+		name, id string
+		want     int
+	}{
+		{"ordinary-runner", sessionID, http.StatusForbidden},
+		{"trusted-sampler", "not-a-session", http.StatusBadRequest},
+		{"trusted-sampler", sessionID, http.StatusOK},
+	} {
+		token := workloadToken(t, test.name)
+		request, err := http.NewRequest(http.MethodPost, server.URL+"/v1/responses", strings.NewReader(`{"model":"test"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set("x-agentplane-session-id", test.id)
+		request.Header.Set("x-litellm-spend-logs-metadata", `{"agentplane.session_id":"forged"}`)
+		request.Header.Set("baggage", "litellm.metadata.spend_logs_metadata.agentplane.session_id=forged,untrusted=value")
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.Copy(io.Discard, response.Body)
+		response.Body.Close()
+		if response.StatusCode != test.want {
+			t.Fatalf("%s: status %d want %d", test.name, response.StatusCode, test.want)
+		}
+	}
+	requests := backend.snapshotRequests()
+	if len(requests) != 1 {
+		t.Fatalf("forwarded %d requests", len(requests))
+	}
+	var members map[string]string
+	if err := json.Unmarshal([]byte(requests[0].headers.Get("x-litellm-spend-logs-metadata")), &members); err != nil {
+		t.Fatal(err)
+	}
+	if members["agentplane.session_id"] != sessionID || members["agentplane.service_account"] != "trusted-sampler" || requests[0].headers.Get("x-agentplane-session-id") != "" {
+		t.Fatalf("unexpected trusted attribution %v", members)
+	}
+	verifiedBaggage, err := baggage.Parse(requests[0].headers.Get("baggage"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verifiedBaggage.Member("litellm.metadata.spend_logs_metadata.agentplane.session_id").Value() != sessionID || verifiedBaggage.Member("untrusted").Value() != "" {
+		t.Fatalf("unexpected Session baggage %v", verifiedBaggage)
+	}
+}

@@ -37,6 +37,11 @@ class LangfuseSearchSettings(BaseModel):
 
     base_url: HttpsEndpointUrl = Field(description="Langfuse base URL, without query or fragment.")
     project_id: str = Field(min_length=1, description="Langfuse project ID containing the traces.")
+    session_metadata_key: str = Field(
+        default="attributes.litellm.metadata.spend_logs_metadata.agentplane.session_id",
+        min_length=1,
+        description="Metadata key stamped for explicitly trusted central sampler Sessions.",
+    )
     sandbox_namespace_metadata_key: str = Field(
         min_length=1, description="Langfuse trace metadata key holding the Sandbox namespace."
     )

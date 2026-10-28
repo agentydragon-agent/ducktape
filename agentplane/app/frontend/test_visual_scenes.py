@@ -1,5 +1,7 @@
 """Agentplane render-only checkpoints; interactions live in the feature tests."""
 
+from urllib.parse import parse_qs, urlsplit
+
 import pytest
 import pytest_bazel
 from playwright.async_api import expect
@@ -331,6 +333,56 @@ async def test_sandbox(view: VisualPage, app: AgentplaneFixture) -> None:
         await _focus(page, textarea)
         await page.mouse.move(0, 0)
         await view.capture(target=page.locator("#app"), name=f"{view.capture_name}_{checkpoint}_expanded")
+
+
+@DESKTOP_AND_MOBILE
+async def test_central_sampler_launch(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.set_flag(Flag.CENTRAL_SAMPLER_ENABLED)
+    await app.mount_app("/sandboxes/ready-sandbox")
+    page = view.page
+    await page.get_by_role("button", name="New thread", exact=True).click()
+    await page.get_by_role("combobox", name="Harness", exact=True).click()
+    await page.get_by_role("option", name="Central sampler").click()
+    await expect(page.get_by_role("combobox", name="Model")).not_to_have_value("")
+    await expect(page.get_by_role("button", name="Create thread")).to_be_enabled()
+    await page.get_by_role("button", name="Thread setup script", exact=True).click()
+    script = page.get_by_role("textbox", name="Thread setup script")
+    await expect(script).to_be_visible()
+    await script.fill("printf 'workspace ready\\n' > setup-marker.txt")
+    await _focus(page, script)
+    await page.mouse.move(0, 0)
+    await view.capture(target=page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
+@pytest.mark.parametrize("sandbox", ["suspended-sandbox", "pending-sandbox"])
+async def test_central_sampler_unavailable_executor(view: VisualPage, app: AgentplaneFixture, sandbox: str) -> None:
+    await app.set_flag(Flag.CENTRAL_SAMPLER_ENABLED)
+    await app.update_thread(
+        IDLE_THREAD, {"harness": "HARNESS_CENTRAL_SAMPLER", "model": "harness-codex-model", "sandbox": sandbox}
+    )
+    await app.mount_thread(IDLE_THREAD)
+    page = view.page
+    await expect(
+        page.get_by_text("Execution Sandbox is unavailable. Central sampling controls remain available.")
+    ).to_be_visible()
+    await expect(page.get_by_role("textbox", name="Message", exact=True)).to_be_enabled()
+    await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_enabled()
+    await expect(page.get_by_role("combobox", name="Model", exact=True)).to_have_value("Harness Codex Model")
+    await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_enabled()
+    await expect(page.get_by_role("button", name="Resume Sandbox", exact=True)).to_have_count(0)
+    await page.get_by_role("textbox", name="Message", exact=True).fill("Continue the conversation")
+    await expect(page.get_by_role("button", name="Send", exact=True)).to_be_enabled()
+    await view.capture()
+    await page.get_by_role("button", name="More", exact=True).click()
+    link = page.get_by_role("menuitem", name="Session LLM traces in Langfuse", exact=True)
+    await expect(link).to_be_visible()
+    href = await link.get_attribute("href")
+    assert href is not None
+    assert parse_qs(urlsplit(href).query)["filter"] == [
+        f"metadata;stringObject;attributes.litellm.metadata.spend_logs_metadata.agentplane.session_id;=;{IDLE_THREAD}"
+    ]
+    await view.capture(name=f"{view.capture_name}_session_trace_menu")
 
 
 @DESKTOP_AND_MOBILE

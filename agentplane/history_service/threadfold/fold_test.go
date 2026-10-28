@@ -706,3 +706,25 @@ func TestSettledRangesAreSkippedWhenCheckingContiguity(t *testing.T) {
 	_, err := Advance(store.state, batch, PriorEntities{Items: map[string]*Item{"item": nil}})
 	contractError(t, err)
 }
+
+func TestSamplerBoundariesPreserveDisplayProjection(t *testing.T) {
+	entries := []*eventlogpb.EventEntry{
+		entry(1, &eventpb.Event{Observation: &eventpb.Event_BoundaryRecord{BoundaryRecord: &eventpb.BoundaryRecord{Boundary: "provider", Direction: "response", Payload: []byte(`{"type":"response.output_item.added"}`)}}}),
+		entry(2, &eventpb.Event{Observation: &eventpb.Event_ExecutionProgress{ExecutionProgress: &eventpb.ExecutionProgress{OperationId: "request", Kind: "provider", Phase: "response"}}}, 1),
+		itemStarted(3, "answer", eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT, "", 1),
+		textCompleted(4, "answer", "central answer", 1),
+	}
+	state := replay(t, entries, len(entries))
+	if len(state.items) != 1 || state.items["answer"].Completion == nil {
+		t.Fatalf("missing normalized answer: %v", state.items)
+	}
+	found := false
+	for _, evidence := range state.evidence {
+		if len(evidence.SourceSequences) == 1 && evidence.SourceSequences[0] == 1 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("boundary source lost from display evidence")
+	}
+}

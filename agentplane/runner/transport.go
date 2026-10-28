@@ -20,6 +20,7 @@ func (r *Runner) Run(ctx context.Context, controlEndpoint, ingressEndpoint Endpo
 	}
 	controlClient, err := control.New(control.Dependencies{
 		BootID:           r.bootID,
+		OpenExecutor:     r.openExecutorConnection,
 		Server:           r,
 		AdoptIncarnation: r.adoptIncarnation,
 		Facts:            r.facts,

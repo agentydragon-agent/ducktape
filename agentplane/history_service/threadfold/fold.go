@@ -19,6 +19,7 @@ import (
 // silentObservations advance the projection without a row.
 var silentObservations = map[string]bool{
 	"native": true, "harness_stderr": true, "debug_checkpoint": true, "journal_reopened": true,
+	"boundary_record": true, "execution_progress": true,
 }
 
 // lifecycleObservations are kept whole as lifecycle segments.

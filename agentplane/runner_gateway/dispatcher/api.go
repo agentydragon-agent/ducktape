@@ -44,14 +44,15 @@ type RunnerCommands interface {
 
 type Service struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
-	Store       *Store
-	Auth        *auth.Resolver
-	Callers     map[auth.Account]struct{}
-	WakeCallers map[auth.Account]struct{}
-	Sandboxes   SandboxReader
-	Runner      RunnerCommands
-	Hub         *WatchHub
-	WatchLease  time.Duration
+	Store          *Store
+	Auth           *auth.Resolver
+	Callers        map[auth.Account]struct{}
+	WakeCallers    map[auth.Account]struct{}
+	Sandboxes      SandboxReader
+	Runner         RunnerCommands
+	Hub            *WatchHub
+	WatchLease     time.Duration
+	CentralTargets map[string]CentralTarget
 }
 
 // maxFilterCommands bounds DispatchFilter.command_ids, the size of a Session's queue.
@@ -313,6 +314,9 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 	if err := required(request.GetSessionId(), request.GetSandbox()); err != nil {
 		return nil, err
 	}
+	if err := ValidateRuntime(request.GetSpec(), request.SetupScript, s.CentralTargets); err != nil {
+		return nil, err
+	}
 	current, err := s.sandbox(ctx, request.GetSandbox())
 	if err != nil {
 		return nil, err
@@ -439,7 +443,11 @@ func (s *Service) InterruptTurn(ctx context.Context, request *dispatcherpb.Inter
 	if current.UID != request.GetSandboxUid() {
 		return nil, status.Error(codes.FailedPrecondition, "sandbox identity changed")
 	}
-	if current.Blocker != "" {
+	requiresReady, err := s.requiresReadyExecutor(ctx, request.GetSessionId(), current)
+	if err != nil {
+		return nil, err
+	}
+	if current.Blocker != "" && requiresReady {
 		return &dispatcherpb.InterruptTurnResponse{State: dispatcherpb.DeliveryState_DELIVERY_STATE_NO_OP, Reason: &current.Blocker}, nil
 	}
 	if s.Runner == nil {
@@ -453,4 +461,22 @@ func (s *Service) InterruptTurn(ctx context.Context, request *dispatcherpb.Inter
 		return nil, status.Error(status.Code(err), fmt.Sprintf("runner: %s", status.Convert(err).Message()))
 	}
 	return &dispatcherpb.InterruptTurnResponse{State: dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED, Admission: admission}, nil
+}
+
+// Delivery behavior comes from admitted Session configuration, never a command claim.
+func (s *Service) requiresReadyExecutor(ctx context.Context, id string, sandbox SandboxSnapshot) (bool, error) {
+	opening, err := s.Store.GetOpening(ctx, id)
+	if errors.Is(err, ErrNotFound) {
+		return true, nil
+	}
+	if err != nil {
+		return false, apiError(err)
+	}
+	if sessionRequiresReadyExecutor(opening.Spec) {
+		return true, nil
+	}
+	if err := validateOpeningExecutor(opening, sandbox); err != nil {
+		return false, err
+	}
+	return false, nil
 }

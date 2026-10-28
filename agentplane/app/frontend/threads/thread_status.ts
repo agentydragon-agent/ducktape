@@ -3,6 +3,7 @@ import type { SandboxView, ThreadView } from "../schema";
 import type { Live } from "../live";
 import type { ThreadTabStatus } from "../tab_metadata";
 import { sandboxReady, sandboxSummary, suspensionReason } from "../sandbox_status";
+import { harnessBehavior } from "../harness_behavior";
 import { turnErrorLabel } from "./history_rows";
 
 /** Whether the stream is current and its Thread updates are being heard, so a snapshot's Thread states are live. */
@@ -23,7 +24,8 @@ export function threadStatusFromSnapshot(
 ): ThreadTabStatus {
   if (!thread || !fresh) return { kind: "inactive", label: "No live harness confirmed", tabLabel: "Unknown" };
   if (thread.archived) return { kind: "archived", label: "Thread archived", tabLabel: "Archived" };
-  if (sandbox && sandboxSummary(sandbox).kind === "suspended") {
+  const { commandsRequireReadySandbox } = harnessBehavior(thread.harness);
+  if (commandsRequireReadySandbox && sandbox && sandboxSummary(sandbox).kind === "suspended") {
     const reason = suspensionReason(sandbox);
     return {
       kind: "suspended",
@@ -31,7 +33,8 @@ export function threadStatusFromSnapshot(
       tabLabel: "Suspended",
     };
   }
-  if (!sandboxReady(sandbox)) return { kind: "inactive", label: "Sandbox unavailable", tabLabel: "Unavailable" };
+  if (commandsRequireReadySandbox && !sandboxReady(sandbox))
+    return { kind: "inactive", label: "Sandbox unavailable", tabLabel: "Unavailable" };
   if (thread.feed_status === "failed")
     return { kind: "failed", label: "Runner feed failed", tabLabel: "Runner failed" };
   // The harness starts on first input; a pending launch outcome can mean the Session is still dormant.

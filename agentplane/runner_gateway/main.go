@@ -171,7 +171,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 		return err
 	}
 	gatewayAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.GatewayAudience,
-		accountNamespaces(c.GatewayCallers, c.ControllerAccount))
+		accountNamespaces(append(append([]auth.Account{}, c.GatewayCallers...), c.ExecutorCallers...), c.ControllerAccount))
 	if err != nil {
 		return err
 	}
@@ -180,7 +180,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 		return err
 	}
 	g, err := gateway.New(gateway.Config{
-		Namespace: c.Namespace, CallerAccounts: c.GatewayCallers,
+		Namespace: c.Namespace, CallerAccounts: c.GatewayCallers, ExecutorCallers: c.ExecutorCallers,
 		SandboxControllerAccount: c.ControllerAccount,
 		HolderName:               c.PodName, HolderIP: c.PodIP, ProxyPort: int32(c.ProxyPort),
 	}, gatewayAuth, runnerAuth, objects, kube.CoreV1(), kube.CoordinationV1(), kube.DiscoveryV1())
@@ -204,10 +204,12 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	if err := waitForListener(ctx, hub, failed); err != nil {
 		return err
 	}
-	runner := &dispatcher.ProxyRunner{
+	nativeRunner := &dispatcher.ProxyRunner{
 		Namespace: c.Namespace, TokenFile: c.RunnerTokenFile, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second,
 		TargetTemplate: c.RunnerControlTargetTemplate,
 	}
+	runner := &dispatcher.RoutingRunner{Native: nativeRunner, Store: store, Targets: c.CentralSamplers, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second}
+
 	ready := make(chan struct{})
 	worker := &dispatcher.DeliveryWorker{
 		Store: store, Catalog: catalog, Wake: catalog,
@@ -225,7 +227,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	service := &dispatcher.Service{
 		Store: store, Auth: dispatchAuth, Callers: accountSet(c.DispatcherCallers),
 		WakeCallers: accountSet(c.WakeCallers), Sandboxes: catalog, Runner: runner,
-		Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
+		CentralTargets: c.CentralSamplers, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
 	server := grpc.NewServer(
 		observability.GRPCServerOption(),
@@ -237,6 +239,9 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
 	g.RegisterProxy(server)
 	g.RegisterRunnerControl(server)
+	if len(c.ExecutorCallers) > 0 {
+		g.RegisterExecutorGateway(server)
+	}
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
 	go func() { reportUnexpected(ctx, failed, "gRPC listener", server.Serve(listener)) }()
