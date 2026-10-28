@@ -1,6 +1,7 @@
 //! AST collection for synchronous execution: callables, roots, writes, and source order.
 
 mod callback_arguments;
+mod prototype_properties;
 
 use super::receiver_identity::ReceiverIdentityFacts;
 use super::value_model::{
@@ -23,8 +24,8 @@ use crate::facts::statement_facts::{
 use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin};
 use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
-    NativeMutationOperation, NativeMutationWitness, NativeReceiverCertificate,
-    NativeReceiverOrigin, SourceLocation,
+    NativeMutationOperation, NativeMutationWitness, NativePrototypeMutation,
+    NativeReceiverCertificate, NativeReceiverOrigin, SourceLocation,
 };
 use source_identity::SourceUnitOrdinal;
 use spec::{BuiltinGlobalRoot, HostNoReentryOperation, HostNoReentryRuntime};
@@ -1445,6 +1446,21 @@ impl PropertyKeyExpr {
     fn from_expr(expression: &Expr) -> Self {
         match expression.unwrap_parens() {
             Expr::Lit(Lit::Str(value)) => Self::String(value.value.to_string_lossy().into_owned()),
+            Expr::Lit(Lit::Num(value))
+                if value.value >= 0.0
+                    && value.value <= u32::MAX as f64
+                    && value.value.fract() == 0.0 =>
+            {
+                Self::String((value.value as u32).to_string())
+            }
+            // Simple assignment returns its RHS, independent of an inherited
+            // setter's return value. Keep coercive and compound forms opaque.
+            Expr::Assign(assignment)
+                if assignment.op == AssignOp::Assign
+                    && matches!(assignment.right.unwrap_parens(), Expr::Lit(_)) =>
+            {
+                Self::from_expr(&assignment.right)
+            }
             Expr::Ident(ident) => Self::Binding(ident.to_id()),
             Expr::Call(call)
                 if call.args.len() == 1
@@ -1544,6 +1560,7 @@ struct IntrinsicWriteTarget {
     /// Only direct member operations retain the activation whose receiver read
     /// precedes the key/RHS. Destructuring and reflective calls stay opaque.
     receiver_callable: Option<u32>,
+    constructor_this: Option<u32>,
     span: Span,
     operation: NativeMutationOperation,
     receiver: ValueExpr,
@@ -1565,6 +1582,8 @@ fn intrinsic_write_target(
         owner,
         receiver_callable: receiver_callable
             .filter(|_| matches!(member.obj.unwrap_parens(), Expr::Ident(_))),
+        constructor_this: receiver_callable
+            .filter(|_| matches!(member.obj.unwrap_parens(), Expr::This(_))),
         span: member.span,
         operation,
         receiver: ValueExpr::from_expr(&member.obj),
@@ -1575,6 +1594,7 @@ fn intrinsic_write_target(
 #[derive(Default)]
 pub(crate) struct NativeWriteCensus {
     unconditional: IntrinsicRoots,
+    prototype_mutations: Arc<Vec<NativePrototypeMutation>>,
     witnesses: Arc<Vec<NativeMutationWitness>>,
     certificates: Arc<Vec<NativeReceiverCertificate>>,
     conditional: Vec<ConditionalIntrinsicWrite>,
@@ -1629,6 +1649,26 @@ pub(crate) fn resolve_native_integrity<'a>(
         }
     }
     NativeIntegrity {
+        prototype_mutations: Arc::new(
+            censuses
+                .iter()
+                .flat_map(|census| census.prototype_mutations.iter().cloned())
+                .map(|mut mutation| {
+                    if !mutation.key_dependencies.is_disjoint(&mutated)
+                        || (!mutation.key_dependencies.is_empty()
+                            && mutated.contains(&IntrinsicRoot::GlobalObject))
+                    {
+                        mutation.properties = None;
+                        if mutated.contains(&IntrinsicRoot::GlobalObject) {
+                            mutation
+                                .key_dependencies
+                                .insert(IntrinsicRoot::GlobalObject);
+                        }
+                    }
+                    mutation
+                })
+                .collect(),
+        ),
         mutated,
         witnesses: Arc::new(witnesses),
         certificates: Arc::new(
@@ -2204,11 +2244,16 @@ struct ExecutionIndex {
     plain_array_bindings: BTreeSet<String>,
     mutated_intrinsic_roots: IntrinsicRoots,
     native_integrity_witnesses: Arc<Vec<NativeMutationWitness>>,
+    native_prototype_mutations: Arc<Vec<NativePrototypeMutation>>,
     native_receiver_certificates: Arc<Vec<NativeReceiverCertificate>>,
     reassigned_map: bool,
     namespace_privacy: NamespacePrivacy,
     fresh_error_claims: Vec<FreshErrorWriteClaim>,
     intrinsic_writes: Vec<IntrinsicWriteTarget>,
+    prototype_calls: Vec<Call>,
+    prototype_field_writes: Vec<(SourceUnitOrdinal, Span, PropertyKeyExpr)>,
+    prototype_callable_reads: BTreeMap<u32, BTreeSet<Id>>,
+    prototype_capture_stack: Vec<u32>,
     property_key_assignments: BTreeMap<Id, Vec<PropertyKeyExpr>>,
     property_key_declarations: BTreeSet<Id>,
     native_write_census: NativeWriteCensus,
@@ -2325,11 +2370,16 @@ impl Default for ExecutionIndex {
             plain_array_bindings: BTreeSet::new(),
             mutated_intrinsic_roots: IntrinsicRoots::new(),
             native_integrity_witnesses: Arc::default(),
+            native_prototype_mutations: Arc::default(),
             native_receiver_certificates: Arc::default(),
             reassigned_map: false,
             namespace_privacy: NamespacePrivacy::default(),
             fresh_error_claims: Vec::new(),
             intrinsic_writes: Vec::new(),
+            prototype_calls: Vec::new(),
+            prototype_field_writes: Vec::new(),
+            prototype_callable_reads: BTreeMap::new(),
+            prototype_capture_stack: Vec::new(),
             property_key_assignments: BTreeMap::new(),
             property_key_declarations: BTreeSet::new(),
             native_write_census: NativeWriteCensus::default(),
@@ -2924,12 +2974,23 @@ impl ExecutionIndex {
                     dependencies: evidence.dependencies,
                 });
         }
+        index.native_write_census.prototype_mutations =
+            Arc::new(index.collect_prototype_mutations(
+                &intrinsic_aliases,
+                &namespace_assignments,
+                &declared,
+            ));
         let proofs = index.native_branch_proofs(&hints.imported_callables);
         for (write, proof) in index.native_write_census.conditional.iter_mut().zip(proofs) {
             write.witness.unreachable_branch = proof;
         }
         let mut censuses = vec![&index.native_write_census];
         let external = NativeWriteCensus {
+            prototype_mutations: hints
+                .native_integrity
+                .as_ref()
+                .map(|integrity| integrity.prototype_mutations.clone())
+                .unwrap_or_default(),
             certificates: hints
                 .native_integrity
                 .as_ref()
@@ -2950,11 +3011,13 @@ impl ExecutionIndex {
         censuses.push(&external);
         let mutated_intrinsics = if let Some(integrity) = &hints.native_integrity {
             index.native_integrity_witnesses = integrity.witnesses.clone();
+            index.native_prototype_mutations = integrity.prototype_mutations.clone();
             index.native_receiver_certificates = integrity.certificates.clone();
             resolve_native_integrity_roots(&censuses)
         } else {
             let integrity = resolve_native_integrity(censuses);
             index.native_integrity_witnesses = integrity.witnesses;
+            index.native_prototype_mutations = integrity.prototype_mutations;
             index.native_receiver_certificates = integrity.certificates;
             integrity.mutated
         };
@@ -3585,6 +3648,11 @@ impl ExecutionIndex {
                 }
             }
         }
+        for mutation in Arc::make_mut(&mut self.native_prototype_mutations) {
+            if mutation.chunk_id.is_empty() {
+                mutation.source_location = locate(mutation.span);
+            }
+        }
         if self
             .native_receiver_certificates
             .iter()
@@ -3761,7 +3829,9 @@ impl ExecutionIndex {
             opaque: opaque_params,
             ..Callable::default()
         });
+        self.prototype_capture_stack.push(key);
         visit(self);
+        self.prototype_capture_stack.pop();
         self.current = saved_current;
         self.past_await = saved_await;
         self.may_skip_await_depth = saved_may_skip;
@@ -3769,6 +3839,8 @@ impl ExecutionIndex {
     }
 
     fn record_call(&mut self, call: Call) {
+        // Native property integrity includes deferred and post-await bodies.
+        self.prototype_calls.push(call.clone());
         if matches!(&call.callee, ValueExpr::Binding(id) if id.0.as_ref() == "eval") {
             self.dynamic_scope_owners.insert(self.owner);
         }
@@ -4073,6 +4145,24 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_class(&mut self, class: &Class) {
+        // A derived constructor can receive a native object returned by super.
+        // Its public fields therefore do not carry the fresh-this certificate.
+        if class.super_class.is_some() {
+            for member in &class.body {
+                if let ClassMember::ClassProp(prop) = member
+                    && !prop.is_static
+                {
+                    let key = match &prop.key {
+                        PropName::Computed(key) => PropertyKeyExpr::from_expr(&key.expr),
+                        key => static_property_name(key)
+                            .map(PropertyKeyExpr::String)
+                            .unwrap_or(PropertyKeyExpr::Unknown),
+                    };
+                    self.prototype_field_writes
+                        .push((self.owner, prop.span, key));
+                }
+            }
+        }
         self.class_owners.insert(class.span.lo.0, self.owner);
         self.class_values
             .insert(class.span.lo.0, collect_class_value_facts(class));
@@ -4756,6 +4846,13 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_ident(&mut self, ident: &Ident) {
+        // A published outer closure can expose a nested closure's capabilities.
+        for key in &self.prototype_capture_stack {
+            self.prototype_callable_reads
+                .entry(*key)
+                .or_default()
+                .insert(ident.to_id());
+        }
         self.namespace_privacy.record_ident(ident);
         let id = ident.to_id();
         if self.class_ids.contains(&id) && self.safe_class_target.as_ref() != Some(&id) {
@@ -5305,6 +5402,7 @@ impl Visit for ExecutionIndex {
             self.intrinsic_writes.push(IntrinsicWriteTarget {
                 owner: self.owner,
                 receiver_callable: None,
+                constructor_this: None,
                 span: expression.span,
                 operation: NativeMutationOperation::Update,
                 receiver: ValueExpr::from_expr(&expression.arg),
@@ -5510,6 +5608,7 @@ impl Visit for ExecutionIndex {
                 IntrinsicWriteTarget {
                     owner: self.owner,
                     receiver_callable: None,
+                    constructor_this: None,
                     span: call.span,
                     operation: NativeMutationOperation::MutationCall,
                     receiver,
@@ -5525,6 +5624,7 @@ impl Visit for ExecutionIndex {
                 IntrinsicWriteTarget {
                     owner: self.owner,
                     receiver_callable: None,
+                    constructor_this: None,
                     span: call.span,
                     operation: NativeMutationOperation::MutationCall,
                     receiver,
@@ -5948,6 +6048,10 @@ impl PreparedCallableCapabilities {
         }
         for write in &mut self.index.native_write_census.conditional {
             locate(&mut write.witness);
+        }
+        for mutation in Arc::make_mut(&mut self.index.native_write_census.prototype_mutations) {
+            mutation.chunk_id = chunk_id.to_owned();
+            mutation.source_location = source_location(mutation.span);
         }
         for certificate in Arc::make_mut(&mut self.index.native_write_census.certificates) {
             certificate.chunk_id = chunk_id.to_owned();

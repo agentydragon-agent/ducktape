@@ -159,11 +159,11 @@ fn wide_acyclic_execution_reports_the_actual_expansion_bound() {
 }
 
 #[test]
-fn native_integrity_failure_reports_the_cross_chunk_write() {
+fn property_absence_failure_reports_the_cross_chunk_write() {
     let fixture = run_fixture(FixtureOpts::new(
         "import './mutation.js';\nclass Box { constructor(config) { this.value = config.value; } }\nconst result = new Box({ value: 3 });\nconsole.log(result.value);",
         vec![],
-    ).with_extra_chunks(&[("static/mutation", "export function mutate() { const alias = globalThis.slot; alias.flag = 1; }")]));
+    ).with_extra_chunks(&[("static/mutation", "export function mutate() { const alias = globalThis.slot; alias.value = 1; }")]));
     assert_entry_output(&fixture, "3\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let witnesses = graph["native_integrity_witnesses"]
@@ -188,12 +188,13 @@ fn native_integrity_failure_reports_the_cross_chunk_write() {
     );
     let result = execution(&fixture, "result");
     assert!(
-        result["native_integrity_checks"]
+        result["native_prototype_property_checks"]
             .as_array()
-            .expect("evaluated guards")
+            .expect("evaluated property guards")
             .iter()
-            .any(|check| check["guard"] == "ordinary_object_prototype"
-                && check["affected_roots"] == serde_json::json!(["global_object"])),
+            .any(|check| check["property"] == "value"
+                && check["intact"] == false
+                && check["blocking_mutation_count"] == 1),
         "{result}"
     );
 }
@@ -246,35 +247,39 @@ fn array_guard_references_a_direct_native_write_without_unknown_alias_widening()
 }
 
 #[test]
-fn describe_bounds_cross_chunk_native_mutation_witnesses() {
+fn describe_bounds_cross_chunk_prototype_mutations() {
     let fixture = GraphFixture::with_dependency(
         "import './dependency.js';\nclass Box { constructor(config) { this.value = config.value; } }\nconst result = new Box({ value: 3 });\nconsole.log(result.value);",
-        "export function mutate() { globalThis.slot.flag = 1; globalThis.other.flag = 2; }",
+        "export function mutate() { globalThis.slot.value = 1; globalThis.other.value = 2; }",
         &[],
     );
     let bounded = fixture.json(&["describe", "result", "--limit", "1"]);
     assert_eq!(
-        bounded["native_integrity_witnesses"]
+        bounded["native_prototype_mutations"]
             .as_array()
             .unwrap()
             .len(),
         1
     );
     assert_eq!(
-        bounded["native_integrity_witnesses"][0]["chunk_id"],
+        bounded["native_prototype_mutations"][0]["chunk_id"],
         "dependency"
     );
     assert_eq!(
-        bounded["limits"]["sections"]["native_integrity_witnesses"],
+        bounded["limits"]["sections"]["native_prototype_mutations"],
         serde_json::json!({"total": 2, "emitted": 1, "truncated": true})
     );
+    let mutation = &bounded["native_prototype_mutations"][0];
+    assert_eq!(mutation["properties"], serde_json::json!(["value"]));
+    assert_eq!(mutation["source_location"]["start_line"], 1);
+    assert!(mutation.get("span").is_none());
     let all = fixture.json(&["describe", "result", "--all"]);
     assert_eq!(
-        all["native_integrity_witnesses"].as_array().unwrap().len(),
+        all["native_prototype_mutations"].as_array().unwrap().len(),
         2
     );
     assert_eq!(
-        all["limits"]["sections"]["native_integrity_witnesses"],
+        all["limits"]["sections"]["native_prototype_mutations"],
         serde_json::json!({"total": 2, "emitted": 2, "truncated": false})
     );
 }
@@ -369,10 +374,17 @@ fn describe_follows_key_premises_to_the_other_chunk_write() {
     let report = fixture.json(&["describe", "result", "--all"]);
     let witnesses = report["native_integrity_witnesses"].as_array().unwrap();
     assert!(
-        witnesses
+        report["native_prototype_mutations"]
+            .as_array()
+            .unwrap()
             .iter()
-            .any(|witness| witness["chunk_id"] == "dependency"
-                && witness["affected_roots"] == serde_json::json!(["global_object"]))
+            .any(|mutation| mutation["chunk_id"] == "dependency"
+                && mutation["properties"].is_null()
+                && mutation["key_dependencies"]
+                    .as_array()
+                    .is_some_and(
+                        |dependencies| dependencies.contains(&serde_json::json!("symbol"))
+                    ))
     );
     assert!(witnesses.iter().any(|witness| witness["chunk_id"] == "main"
         && witness["affected_roots"] == serde_json::json!(["symbol"])));
@@ -428,4 +440,32 @@ fn describe_reports_a_discharged_receiver_with_constructor_provenance_and_limits
             .as_array()
             .is_none_or(Vec::is_empty)
     );
+}
+
+#[test]
+fn untracked_identity_paths_keep_prototype_absence_conservative() {
+    for capability in [
+        "host(({}).__proto__);",
+        "host(() => ({}).__proto__);",
+        "host({ get value() { return ({}).__proto__; } });",
+        "host({ get value() { return Object.prototype; } });",
+        "const { __proto__: prototype } = {}; host(prototype);",
+        "host(() => () => Object.prototype);",
+    ] {
+        let source = format!(
+            "function expose() {{ {capability} }}\nclass Box {{ constructor(config) {{ this.value = config.value; }} }}\nconst result = new Box({{value: 3}});"
+        );
+        let fixture = GraphFixture::new(&source, &[]);
+        let report = fixture.json(&["describe", "result", "--all"]);
+        assert!(
+            report["native_prototype_mutations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|mutation| mutation["kind"] == "escape"
+                    && mutation["statement_ordinal"] == 0
+                    && mutation["properties"].is_null()),
+            "{capability}: {report}"
+        );
+    }
 }
