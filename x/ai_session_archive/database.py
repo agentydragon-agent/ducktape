@@ -23,8 +23,10 @@ from sqlalchemy import (
     create_engine,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+
+from util.db_url import render_postgresql_url
 
 
 class Base(DeclarativeBase):
@@ -198,13 +200,11 @@ class FileVersionRecordRow(Base):
 
 
 def make_engine(dsn: str, **kwargs: Any) -> Engine:
-    return create_engine(dsn, pool_pre_ping=True, **kwargs)
+    url = make_url(dsn)
+    if url.drivername == "postgresql":
+        url = make_url(render_postgresql_url(url, "postgresql+psycopg"))
+    return create_engine(url, pool_pre_ping=True, **kwargs)
 
 
 def make_session_factory(engine: Engine) -> Callable[[], Session]:
     return sessionmaker(engine, expire_on_commit=False)
-
-
-def initialize_schema(engine: Engine) -> None:
-    """Create the initial schema for a new archive database."""
-    Base.metadata.create_all(engine)
