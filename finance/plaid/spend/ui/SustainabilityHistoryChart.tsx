@@ -8,14 +8,6 @@ import { annualFundingMinorUnits } from "./decimal_math";
 import { money } from "./spend_display";
 import type { SustainabilityHistory } from "./types";
 
-const WINDOW_COLORS: Record<number, string> = {
-  7: "#6741D9",
-  30: "#1971C2",
-  90: "#0C8599",
-  180: "#2F9E44",
-  365: "#E67700",
-  730: "#D6336C",
-};
 const REFERENCE_SCENARIO_COLOR = "#868E96";
 
 Chart.register(CategoryScale, LinearScale, LineController, LineElement, PointElement, Tooltip);
@@ -34,8 +26,11 @@ type HistoryTooltip = {
   references: string[];
 };
 
-function windowColor(windowDays: number): string {
-  return WINDOW_COLORS[windowDays] ?? `hsl(${((windowDays * 137.508) % 360).toFixed(1)} 58% 42%)`;
+function windowColor(windowDays: number, shortestWindowDays: number, longestWindowDays: number): string {
+  // Log spacing keeps month, quarter and year windows visually distinguishable.
+  const span = Math.log(longestWindowDays / shortestWindowDays);
+  const position = span === 0 ? 0.5 : Math.log(windowDays / shortestWindowDays) / span;
+  return `hsl(210 75% ${(54 - position * 24).toFixed(1)}%)`;
 }
 
 function percent(value: string | number): string {
@@ -149,14 +144,17 @@ export function SustainabilityHistoryChart({
   const amountLabel = includeTaxes ? "Annual funding including taxes" : "Annual spending excluding taxes";
 
   const historyWindows = useMemo(
-    () =>
-      [...windows]
+    () => {
+      const shortestWindowDays = Math.min(...windows.map((view) => view.window_days));
+      const longestWindowDays = Math.max(...windows.map((view) => view.window_days));
+      return [...windows]
         .sort((left, right) => left.window_days - right.window_days)
         .map((view) => ({
           view,
-          color: windowColor(view.window_days),
+          color: windowColor(view.window_days, shortestWindowDays, longestWindowDays),
           pointsByDate: new Map(view.history.map((point) => [point.date, point] as const)),
-        })),
+        }));
+    },
     [windows]
   );
   const visibleWindows = useMemo(
