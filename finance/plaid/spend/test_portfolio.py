@@ -18,6 +18,7 @@ from pydantic import SecretStr, ValidationError
 from finance.plaid.spend import portfolio
 from finance.plaid.spend.plaid_valuation import (
     AccountObservation,
+    HoldingObservation,
     PlaidValuationError,
     corrected_holding_value,
     value_plaid_rows,
@@ -168,14 +169,14 @@ async def test_plaid_values_use_latest_balances_signed_liabilities_and_coherent_
 
 
 @pytest.mark.asyncio
-async def test_correction_reconciles_included_holdings_across_independent_capture_times() -> None:
+async def test_correction_reconciles_with_independent_capture_times_across_accounts() -> None:
     now = datetime.now(UTC)
     policy = _policy(
         corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 100}]
     )
     balances = [
         _balance("asset-checking", 1000, now - timedelta(minutes=5)),
-        _balance("asset-brokerage", 2000, now - timedelta(minutes=10), account_type="investment"),
+        _balance("asset-brokerage", 2000, now - timedelta(minutes=15), account_type="investment"),
         _balance("card-account", 0, now - timedelta(minutes=8), account_type="credit"),
     ]
     holdings = [
@@ -205,6 +206,57 @@ async def test_correction_reconciles_included_holdings_across_independent_captur
     assert view.sources[0].issues == [
         "Plaid account and holding observations were captured at meaningfully different times."
     ]
+
+
+@pytest.mark.parametrize("adjustment", ["correction", "exclusion"])
+@pytest.mark.parametrize("holding_offset_minutes", [-15, -1, 0, 1, 15])
+def test_plaid_adjustments_require_the_same_account_sync_capture(adjustment: str, holding_offset_minutes: int) -> None:
+    now = datetime(2026, 1, 2, tzinfo=UTC)
+    captured_at = now - timedelta(hours=1)
+    policy = _policy(
+        corrections=(
+            [{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
+            if adjustment == "correction"
+            else []
+        ),
+        excluded=(
+            [
+                {
+                    "label": "fund-position",
+                    "source": "plaid",
+                    "account_id": "asset-brokerage",
+                    "security_ids": ["security-fake-1"],
+                }
+            ]
+            if adjustment == "exclusion"
+            else []
+        ),
+    )
+    accounts = [
+        AccountObservation.model_validate(row)
+        for row in [
+            _balance("asset-checking", 0, captured_at),
+            _balance("asset-brokerage", 200, captured_at, account_type="investment"),
+            _balance("card-account", 0, captured_at, account_type="credit"),
+        ]
+    ]
+    holdings = [
+        HoldingObservation(
+            account_id="asset-brokerage",
+            security_id="security-fake-1",
+            captured_at=captured_at + timedelta(minutes=holding_offset_minutes),
+            institution_value=Decimal(100 if adjustment == "correction" else 200),
+            holding_currency="USD",
+        )
+    ]
+
+    if holding_offset_minutes:
+        with pytest.raises(PlaidValuationError, match="different sync capture times"):
+            value_plaid_rows(policy, account_rows=accounts, holding_rows=holdings, now=now)
+    else:
+        result = value_plaid_rows(policy, account_rows=accounts, holding_rows=holdings, now=now)
+        assert result.assets_minor_units == 20_000
+        assert result.excluded_minor_units == (20_000 if adjustment == "exclusion" else 0)
 
 
 @pytest.mark.asyncio
@@ -240,8 +292,7 @@ async def test_corrected_holdings_that_do_not_reconcile_fail_closed() -> None:
 @pytest.mark.asyncio
 async def test_missing_excluded_position_with_other_holdings_fails_closed() -> None:
     now = datetime.now(UTC)
-    balance_time = now - timedelta(minutes=5)
-    holdings_time = now - timedelta(minutes=15)
+    captured_at = now - timedelta(minutes=5)
     policy = _policy(
         excluded=[
             {
@@ -254,15 +305,15 @@ async def test_missing_excluded_position_with_other_holdings_fails_closed() -> N
     )
     connection = _FakeConnection(
         balances=[
-            _balance("asset-checking", 1000, balance_time),
-            _balance("asset-brokerage", 2000, balance_time, account_type="investment"),
-            _balance("card-account", 0, balance_time, account_type="credit"),
+            _balance("asset-checking", 1000, captured_at),
+            _balance("asset-brokerage", 2000, captured_at, account_type="investment"),
+            _balance("card-account", 0, captured_at, account_type="credit"),
         ],
         holdings=[
             {
                 "account_id": "asset-brokerage",
                 "security_id": "security-still-held",
-                "captured_at": holdings_time,
+                "captured_at": captured_at,
                 "institution_value": 2000,
                 "holding_currency": "USD",
             }
@@ -279,22 +330,21 @@ async def test_missing_excluded_position_with_other_holdings_fails_closed() -> N
 @pytest.mark.asyncio
 async def test_missing_correction_position_with_other_holdings_fails_closed() -> None:
     now = datetime.now(UTC)
-    balance_time = now - timedelta(minutes=5)
-    holdings_time = now - timedelta(minutes=15)
+    captured_at = now - timedelta(minutes=5)
     policy = _policy(
         corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
     )
     connection = _FakeConnection(
         balances=[
-            _balance("asset-checking", 1000, balance_time),
-            _balance("asset-brokerage", 2000, balance_time, account_type="investment"),
-            _balance("card-account", 0, balance_time, account_type="credit"),
+            _balance("asset-checking", 1000, captured_at),
+            _balance("asset-brokerage", 2000, captured_at, account_type="investment"),
+            _balance("card-account", 0, captured_at, account_type="credit"),
         ],
         holdings=[
             {
                 "account_id": "asset-brokerage",
                 "security_id": "security-still-held",
-                "captured_at": holdings_time,
+                "captured_at": captured_at,
                 "institution_value": 2000,
                 "holding_currency": "USD",
             }

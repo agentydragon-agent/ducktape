@@ -2,6 +2,7 @@
 
 Holding rows must come from each account's
 latest complete capture batch, never the latest row of each individual security.
+That batch must share the account balance's exact sync capture time.
 """
 
 from collections.abc import Sequence
@@ -177,8 +178,10 @@ def value_plaid_rows(
         issue = observation_age_issue(holding_as_of, now, plaid.max_age_hours)
         if issue is not None:
             raise PlaidValuationError(issue)
-        if abs(balance_times[account_id] - holding_as_of) > timedelta(hours=min(plaid.max_age_hours, 24)):
-            raise PlaidValuationError("Account balances and holdings are too far apart to reconcile.")
+        if balance_times[account_id] != holding_as_of:
+            raise PlaidValuationError(
+                "A selected account's balance and holdings have different sync capture times; wait for a complete sync."
+            )
 
     configured_positions = excluded_positions | set(correction_by_position)
     if configured_positions.difference(holding_by_position):
