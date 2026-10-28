@@ -11,9 +11,12 @@ use analysis::cross_module_purity::{
     ModulePurityFacts, ResolvedImport, resolve_asserted_callback_factory_members,
     resolve_asserted_fluent_bindings, resolve_asserted_inline_callback_factories,
     resolve_asserted_member_purities, resolve_asserted_namespace_independent_members,
-    resolve_asserted_no_reentry_bindings, resolve_asserted_no_reentry_members,
-    resolve_asserted_no_reentry_record_members, resolve_asserted_pure_new_bindings,
-    resolve_imported_callback_factories, resolve_imported_purities,
+    resolve_asserted_no_reentry_bindings, resolve_asserted_no_reentry_callbacks,
+    resolve_asserted_no_reentry_members, resolve_asserted_no_reentry_record_members,
+    resolve_asserted_pure_new_bindings, resolve_asserted_retained_callback_constructors,
+    resolve_asserted_retained_callback_factories,
+    resolve_asserted_retained_callback_factory_members, resolve_imported_callback_factories,
+    resolve_imported_purities,
 };
 use analysis::purity::Purity;
 use anyhow::{Context, Result};
@@ -52,12 +55,14 @@ struct ReparsedEntry {
     parsed: ParsedJsModule,
     imports: Vec<ImportRecord>,
     export_aliases: Vec<ExportAliasRecord>,
+    primitive_exports: BTreeSet<String>,
 }
 
 /// Output of the program-level purity pass, keyed by chunk name.
 pub(super) struct CrossModulePurities {
     /// Per-chunk imported-binding verdicts (`AnalysisInputs::imported_purities`).
     pub(super) bindings: BTreeMap<String, BTreeMap<String, Arc<Purity>>>,
+    pub(super) primitives: BTreeMap<String, BTreeSet<String>>,
     /// Per-chunk pure-member sets for imported namespace-like bindings,
     /// merged into `AnalysisAssumptions::declared_pure_members`.
     pub(super) members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
@@ -72,7 +77,15 @@ pub(super) struct CrossModulePurities {
     pub(super) callback_factories: BTreeMap<String, BTreeSet<String>>,
     pub(super) inline_callback_factories: BTreeMap<String, BTreeSet<String>>,
     pub(super) callback_factory_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
+    pub(super) retained_callback_factories:
+        BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
+    pub(super) retained_callback_factory_members:
+        BTreeMap<String, BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>>,
+    pub(super) retained_callback_constructors:
+        BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
     pub(super) no_reentry_exports: BTreeMap<String, BTreeSet<String>>,
+    pub(super) no_reentry_callback_exports:
+        BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
     pub(super) no_reentry_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     pub(super) no_reentry_record_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     pub(super) namespace_independent_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
@@ -151,6 +164,7 @@ pub(super) fn collect_cross_module_imported_purities(
     chunk_export_purity: &BTreeMap<String, ChunkExportPurity>,
     declared_pure_new_bindings: &BTreeMap<String, BTreeSet<String>>,
     excluded_chunks: &BTreeSet<ChunkId>,
+    primitive_opaque_chunks: &BTreeSet<ChunkId>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> CrossModulePurities {
     // Pass 1: re-parse entries stored as raw source so every chunk's body is
@@ -185,6 +199,7 @@ pub(super) fn collect_cross_module_imported_purities(
                         parsed,
                         imports: analysis.imports,
                         export_aliases: analysis.export_aliases,
+                        primitive_exports: analysis.runtime_facts.stable_primitive_exports,
                     },
                 );
             }
@@ -200,6 +215,7 @@ pub(super) fn collect_cross_module_imported_purities(
     // Pass 2: assemble each chunk's oracle inputs from whichever body is
     // available (retained AST or re-parsed entry).
     let mut modules = BTreeMap::new();
+    let mut primitive_exports = BTreeMap::<String, BTreeSet<String>>::new();
     for chunk_artifact in &artifact.chunks {
         if !chunk_allowed(chunk_artifact.chunk_id, chunk_filter) {
             continue;
@@ -227,6 +243,18 @@ pub(super) fn collect_cross_module_imported_purities(
                 ),
                 (None, None) => continue,
             };
+        if !primitive_opaque_chunks.contains(&chunk_artifact.chunk_id) {
+            let exports = match reparsed.get(&chunk_artifact.chunk_id) {
+                Some(entry) => &entry.primitive_exports,
+                None => {
+                    &chunk_artifact
+                        .analysis
+                        .runtime_facts
+                        .stable_primitive_exports
+                }
+            };
+            primitive_exports.insert(chunk_name.to_string(), exports.clone());
+        }
         let body = &parsed.module.body;
         let mut imports = BTreeMap::new();
         for import in import_records {
@@ -399,6 +427,67 @@ pub(super) fn collect_cross_module_imported_purities(
         }
     }
     CrossModulePurities {
+        no_reentry_callback_exports: resolve_asserted_no_reentry_callbacks(
+            &modules,
+            &chunk_export_purity
+                .iter()
+                .map(|(chunk, assertion)| {
+                    (chunk.clone(), assertion.no_reentry_callback_exports.clone())
+                })
+                .collect(),
+        ),
+        retained_callback_constructors: resolve_asserted_retained_callback_constructors(
+            &modules,
+            &chunk_export_purity
+                .iter()
+                .map(|(chunk, assertion)| {
+                    (
+                        chunk.clone(),
+                        assertion.retained_callback_constructor_exports.clone(),
+                    )
+                })
+                .collect(),
+        ),
+        retained_callback_factories: resolve_asserted_retained_callback_factories(
+            &modules,
+            &chunk_export_purity
+                .iter()
+                .map(|(chunk, assertion)| {
+                    (
+                        chunk.clone(),
+                        assertion.retained_callback_factory_exports.clone(),
+                    )
+                })
+                .collect(),
+        ),
+        retained_callback_factory_members: resolve_asserted_retained_callback_factory_members(
+            &modules,
+            &chunk_export_purity
+                .iter()
+                .map(|(chunk, assertion)| {
+                    (
+                        chunk.clone(),
+                        assertion.retained_callback_factory_members.clone(),
+                    )
+                })
+                .collect(),
+        ),
+        primitives: modules
+            .iter()
+            .map(|(name, module)| {
+                let locals = module
+                    .imports
+                    .iter()
+                    .filter(|(_, target)| {
+                        primitive_exports
+                            .get(&target.module)
+                            .is_some_and(|exports| exports.contains(&target.export))
+                    })
+                    .map(|(local, _)| local.clone())
+                    .collect();
+                (name.clone(), locals)
+            })
+            .collect(),
         bindings: resolve_imported_purities(&modules, &asserted_pure),
         members: resolve_asserted_member_purities(&modules, &asserted_members),
         fluent: resolve_asserted_fluent_bindings(&modules, &asserted_fluent),

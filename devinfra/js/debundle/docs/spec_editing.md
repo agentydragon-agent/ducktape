@@ -228,6 +228,16 @@ unclaimed, import, and export source units and does not synthesize selectors. Mo
 comments and notes remain with their original files. See <cli.md> § Applying
 reviewed source-unit assignments (`modules refine`).
 
+Both `modules refine` and `modules merge` consolidate source-match records in
+their destinations when the template bytes, identifier policy and selector note
+are identical and the local capture names do not overlap. Captures retain their
+order and export aliases; binding annotations and module metadata are preserved.
+Different notes or incompatible capture aliases remain separate records.
+Consolidation happens before the normal source-resolution and assignment gates.
+An unchanged-owner `modules refine` batch can explicitly normalize an existing
+destination: preview and apply still run the complete identity check and gate,
+and report `dry-run` / `applied` when only selector grouping changes.
+
 ## Peel heuristics: patterns that should move together
 
 These patterns surface repeatedly when peeling minified bundles. Each
@@ -421,12 +431,14 @@ A binding that cannot yet be stabilized records its blocker in a `note:`:
 
 ## Renaming or disabling a module
 
-Not a CLI operation — plain `mv` on the YAML file:
+Rename whole modules with the gated `modules merge --batch` workflow in
+<cli.md#whole-module-merge-batches>, using one source and a new target per entry.
+This retains attached claims and metadata and validates the whole batch before
+writing. Explicit `.yaml` targets preserve filename casing.
+
+To disable a module, a non-`.yaml` suffix makes the compiler skip the file:
 
 ```bash
-# Rename: the module path is re-derived from the new filename.
-mv $DEBUNDLE_MODULES/runtime/plugins.yaml $DEBUNDLE_MODULES/runtime/plugin_settings.yaml
-
 # Disable: any non-.yaml suffix makes the spec compiler skip the file.
 mv $DEBUNDLE_MODULES/runtime/plugins.yaml $DEBUNDLE_MODULES/runtime/plugins.yaml.disabled
 ```

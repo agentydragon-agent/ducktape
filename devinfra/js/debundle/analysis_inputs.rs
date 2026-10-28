@@ -36,6 +36,8 @@ pub struct AnalysisAssumptions {
     /// Exact author-certified browser-global slots whose stored capabilities
     /// cannot be consumed before this chunk finishes synchronous init.
     pub deferred_global_publications: BTreeMap<BuiltinGlobalRoot, BTreeSet<String>>,
+    /// Exact root/key host-membership probes with an independent nonreentry audit.
+    pub non_reentrant_global_membership: BTreeMap<BuiltinGlobalRoot, BTreeSet<String>>,
     pub declared_pure: BTreeSet<String>,
     pub declared_pure_new: BTreeSet<String>,
     /// Author-trusted purity of one selected top-level variable initializer.
@@ -70,9 +72,16 @@ pub struct AnalysisAssumptions {
     /// Static members of imported namespace bindings with an audited
     /// return-only callback contract, independent of member-call purity.
     pub callback_factory_members: BTreeMap<String, BTreeSet<String>>,
+    pub retained_callback_factories: BTreeMap<String, Vec<spec::RetainedCallbackSignature>>,
+    pub retained_callback_factory_members:
+        BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
+    pub retained_callback_constructors: BTreeMap<String, Vec<spec::RetainedCallbackSignature>>,
     /// Direct imported function calls with audited no-reentry timing for
     /// checked primitive arguments. Does not imply purity or known return.
     pub no_reentry_exports: BTreeSet<String>,
+    /// Audited callback-bearing calls with no synchronous reentry; supplied
+    /// callbacks become global roots after the call, independent of purity.
+    pub no_reentry_callback_exports: BTreeMap<String, Vec<spec::RetainedCallbackSignature>>,
     /// Imported namespace members whose audited direct calls cannot reenter
     /// caller/importer/host code for primitive arguments. No purity claim.
     pub no_reentry_members: BTreeMap<String, BTreeSet<String>>,
@@ -102,4 +111,7 @@ pub struct AnalysisInputs {
     /// oracle (`crate::cross_module_purity`); empty in strictly per-chunk
     /// paths, where imported callees stay `unknown_call`.
     pub imported_purities: BTreeMap<String, std::sync::Arc<Purity>>,
+    /// Inferred direct ESM import bindings whose possible values are primitive.
+    /// Used only to suppress ToPrimitive callback promotion, never eager reads.
+    pub imported_primitives: BTreeSet<String>,
 }

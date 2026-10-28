@@ -51,6 +51,7 @@ from openai_utils.model import (
     ToolChoice,
     UserMessage,
 )
+from openai_utils.pydantic_strict_mode import validate_openai_strict_mode_schema
 from openai_utils.types import ReasoningEffort, ReasoningSummary, build_reasoning_params
 
 logger = logging.getLogger(__name__)
@@ -80,86 +81,9 @@ class CompactionResult:
     compacted: bool
 
 
-@dataclass(slots=True)
-class ToolCallOutcome:
-    """Tool invocation result; was_aborted is True when execution was aborted (policy denial)."""
-
-    result: ToolResult
-    was_aborted: bool = False
-
-
-def _validate_schema_strict_compatible(schema: dict[str, Any], tool_name: str) -> None:
-    """Validate that a JSON schema is compatible with OpenAI's strict mode.
-
-    Strict mode requirements for objects:
-    1. Regular objects with fixed properties: must have "additionalProperties": false and all properties in "required"
-    2. Map objects (dicts): may use "patternProperties" or "additionalProperties" with a schema (not false)
-
-    Recursively checks schema structure for OpenAI strict mode compatibility.
-
-    Raises RuntimeError with specific details if schema is not compatible.
-    """
-
-    def check_subschema(subschema: dict[str, Any], path: str) -> None:
-        schema_type = subschema.get("type")
-
-        if schema_type == "object" or (isinstance(schema_type, list) and "object" in schema_type):
-            # OpenAI strict mode: all objects must have additionalProperties: false
-            # No exemptions for patternProperties or map-like objects
-            if "patternProperties" in subschema:
-                raise RuntimeError(
-                    f"Tool '{tool_name}' at {path}: object uses 'patternProperties' which is not allowed in strict mode. "
-                    f"Refactor dict[str, T] fields to list[{{key: str, value: T}}] or similar fixed structure."
-                )
-
-            if "additionalProperties" not in subschema:
-                raise RuntimeError(
-                    f"Tool '{tool_name}' at {path}: object missing 'additionalProperties'. "
-                    f"Add 'model_config = ConfigDict(extra=\"forbid\")' to the Pydantic model."
-                )
-
-            additional_props = subschema.get("additionalProperties")
-            if additional_props is not False:
-                raise RuntimeError(
-                    f"Tool '{tool_name}' at {path}: 'additionalProperties' must be false, got {additional_props}. "
-                    f"If this is a dict field, refactor to a list of objects with fixed schema."
-                )
-
-            properties = subschema.get("properties", {})
-            required = set(subschema.get("required", []))
-            if missing := set(properties) - required:
-                raise RuntimeError(
-                    f"Tool '{tool_name}' at {path}: all properties must be in 'required'. "
-                    f"Missing: {missing}. "
-                    f"Fix: Remove Field(default=...) or Field(default_factory=...) from Pydantic model."
-                )
-
-            for prop_name, prop_schema in properties.items():
-                check_subschema(prop_schema, f"{path}.properties.{prop_name}")
-
-        if schema_type == "array" or (isinstance(schema_type, list) and "array" in schema_type):
-            items = subschema.get("items")
-            if items and isinstance(items, dict):
-                check_subschema(items, f"{path}.items")
-
-        for key in ["anyOf", "oneOf", "allOf"]:
-            variants = subschema.get(key)
-            if isinstance(variants, list):
-                for i, variant in enumerate(variants):
-                    if isinstance(variant, dict):
-                        check_subschema(variant, f"{path}.{key}[{i}]")
-
-    check_subschema(schema, "$")
-
-    defs = schema.get("$defs", {})
-    for def_name, def_schema in defs.items():
-        if isinstance(def_schema, dict):
-            check_subschema(def_schema, f"$defs.{def_name}")
-
-
 def _make_strict_function_tool(tool_name: str, description: str, input_schema: dict[str, Any]) -> FunctionToolParam:
-    """Create a strict-mode FunctionToolParam, raising RuntimeError if the schema is not strict-compatible."""
-    _validate_schema_strict_compatible(input_schema, tool_name)
+    """Create a strict-mode function tool after validating its input schema."""
+    validate_openai_strict_mode_schema(input_schema, tool_name)
     return FunctionToolParam(name=tool_name, description=description, parameters=input_schema, strict=True)
 
 
@@ -168,13 +92,6 @@ def _require_call_id(function_call: FunctionCallItem) -> str:
     if not call_id:
         raise RuntimeError("FunctionCallItem missing call_id")
     return call_id
-
-
-DEFAULT_ABORT_ERROR = "tool execution aborted"
-
-
-def _abort_result(reason: str = DEFAULT_ABORT_ERROR) -> ToolResult:
-    return ToolResult(content=[TextContent(text=reason)], is_error=True)
 
 
 MAX_TOOL_RESULT_BYTES = 10 * 1024 * 1024  # 10 MiB
@@ -334,6 +251,7 @@ class Agent:
         self._parallel_tool_calls = parallel_tool_calls
         self._tool_policy = tool_policy
         self._transcript: list[TranscriptItem] = []
+        self._response_count = 0
         self._reasoning_effort = reasoning_effort
         self._reasoning_summary = reasoning_summary
         self._dynamic_instructions = dynamic_instructions
@@ -557,85 +475,54 @@ class Agent:
 
         async def _invoke(
             function_call: FunctionCallItem, args_json: str | None, local_map: dict[str, ToolResult] = local_result_map
-        ) -> ToolCallOutcome:
+        ) -> ToolResult:
             call_id = _require_call_id(function_call)
             # No agent-level before-tool gating; Policy Gateway middleware enforces approvals/denials
             if call_id in local_map:
                 # Already have a result (replay scenario)
-                return ToolCallOutcome(result=local_map[call_id])
+                return local_map[call_id]
 
             try:
                 parsed = json.loads(args_json) if args_json else {}
             except json.JSONDecodeError as e:
-                return ToolCallOutcome(result=ToolResult.error(f"Invalid JSON in tool arguments: {e!s}"))
+                return ToolResult.error(f"Invalid JSON in tool arguments: {e!s}")
             if not isinstance(parsed, dict):
-                return ToolCallOutcome(
-                    result=ToolResult.error(f"Tool arguments must be a JSON object, got {type(parsed).__name__}")
-                )
+                return ToolResult.error(f"Tool arguments must be a JSON object, got {type(parsed).__name__}")
             args: dict[str, Any] = parsed
-            tool_result = await self._tool_provider.call_tool(function_call.name, args)
-            return ToolCallOutcome(result=tool_result)
+            return await self._tool_provider.call_tool(function_call.name, args)
 
         if self._parallel_tool_calls:
             await self._run_tool_calls_parallel(calls, function_calls, _invoke)
         else:
-            await self._run_tool_calls_sequential(calls, function_calls, _invoke)
+            await self._run_tool_calls_sequential(calls, _invoke)
         self.pending_function_calls.clear()
 
     async def _run_tool_calls_parallel(
         self, calls: list[tuple[FunctionCallItem, str | None]], function_calls: list[FunctionCallItem], invoker
     ) -> None:
-        results: dict[str, ToolCallOutcome] = {}
-        abort_triggered = False
+        results: dict[str, ToolResult] = {}
 
         async with anyio.create_task_group() as tg:
-            cancelled_exc = anyio.get_cancelled_exc_class()
 
             async def runner(fc: FunctionCallItem, aj: str | None) -> None:
-                nonlocal abort_triggered
                 call_id = _require_call_id(fc)
-                try:
-                    outcome = await invoker(fc, aj)
-                except cancelled_exc:
-                    return
                 # Tool providers handle their own exceptions and return ToolResult.error()
                 # Any exception here is unexpected and should propagate
-
-                results[call_id] = outcome
-                if outcome.was_aborted:
-                    abort_triggered = True
-                    tg.cancel_scope.cancel()
+                results[call_id] = await invoker(fc, aj)
 
             for function_call, args_json in calls:
                 tg.start_soon(runner, function_call, args_json)
 
-        had_error = False
         for function_call in function_calls:
             call_id = _require_call_id(function_call)
-            outcome = results.get(call_id)
-            if outcome is None:
-                if not abort_triggered:
-                    raise RuntimeError(f"Missing tool output for call_id={call_id!r}")
-                outcome = ToolCallOutcome(result=_abort_result(), was_aborted=True)
-            self._emit_tool_result(function_call, outcome.result)
-            if outcome.was_aborted:
-                had_error = True
-        if had_error:
-            self.finished = True
+            if call_id not in results:
+                raise RuntimeError(f"Missing tool output for call_id={call_id!r}")
+            self._emit_tool_result(function_call, results[call_id])
 
-    async def _run_tool_calls_sequential(
-        self, calls: list[tuple[FunctionCallItem, str | None]], function_calls: list[FunctionCallItem], invoker
-    ) -> None:
-        for i, (function_call, args_json) in enumerate(calls):
+    async def _run_tool_calls_sequential(self, calls: list[tuple[FunctionCallItem, str | None]], invoker) -> None:
+        for function_call, args_json in calls:
             # Tool providers handle their own exceptions and return ToolResult.error()
-            outcome = await invoker(function_call, args_json)
-
-            self._emit_tool_result(function_call, outcome.result)
-            if outcome.was_aborted:
-                for remaining in function_calls[i + 1 :]:
-                    self._emit_tool_result(remaining, _abort_result())
-                self.finished = True
-                break
+            self._emit_tool_result(function_call, await invoker(function_call, args_json))
 
     def to_openai_messages(self) -> list[InputItem]:
         """Convert transcript to typed OpenAI Responses input items.
@@ -767,7 +654,7 @@ class Agent:
             # Consider storing only non-derivable data (e.g., instructions, tool schemas at each phase)
             # and reconstructing full request from transcript + metadata.
             request_id = uuid4()
-            phase_number = sum(1 for evt in self._transcript if isinstance(evt, Response))
+            phase_number = self._response_count
             prepared_request = self._client.prepare(req)
             for h in self._handlers:
                 h.on_api_request_event(
@@ -801,6 +688,7 @@ class Agent:
                 h.on_response(
                     Response(response_id=resp.id, request_id=request_id, usage=usage, model=self._client.model)
                 )
+            self._response_count += 1
         # Note: Loop termination is controlled by handlers
         # or explicit tool policies (e.g., RequireAnyTool prevents text-only responses)
 

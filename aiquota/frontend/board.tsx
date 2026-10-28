@@ -17,23 +17,25 @@
 
 import { type JSX } from "react";
 
+import { displayUsedPercent, formatKnownExpiries, formatUsd, formatUsdWhole, formatWindowLabel } from "./format";
 import {
-  displayUsedPercent,
+  bindingTint,
+  computePace,
   formatAge,
   formatClock,
   formatDuration,
-  formatKnownExpiries,
-  formatMultiplier,
   formatPace,
   formatPaceForecast,
   formatPeakInterval,
   formatPrepaidBalance,
-  formatUsd,
-  formatUsdWhole,
-  formatWindowLabel,
+  formatMultiplier,
   roundHalfToEven,
-} from "./format";
-import { bindingTint, computePace, elapsedFraction, isExhausted, tintFor, type Tint, type WindowMath } from "./pace";
+  elapsedFraction,
+  isExhausted,
+  tintFor,
+  type Tint,
+  type WindowMath,
+} from "../shared/presentation.js";
 import {
   effectiveQuota,
   isShortWindow,
@@ -142,7 +144,7 @@ function WindowRow({
   };
   const exhausted = isExhausted(math);
   const pace = exhausted ? null : computePace(math);
-  const tint = stale ? "stale" : tintFor(pace, window.used_percent, { isShort });
+  const tint = stale ? "stale" : tintFor(pace, window.used_percent, isShort);
   const label = formatWindowLabel(window);
   const used = displayUsedPercent(window);
   const paceText = formatPace(pace);
@@ -356,9 +358,7 @@ function providerTint(provider: ProviderView, quota: EffectiveQuota, now: number
         windowSeconds: window.window_seconds,
       };
       const exhausted = isExhausted(math);
-      return exhausted
-        ? "hot"
-        : tintFor(computePace(math), window.used_percent, { isShort: isShortWindow(window, quota.windows) });
+      return exhausted ? "hot" : tintFor(computePace(math), window.used_percent, isShortWindow(window, quota.windows));
     })
   );
 }

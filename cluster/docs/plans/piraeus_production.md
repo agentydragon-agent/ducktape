@@ -40,10 +40,10 @@ on 2026-10-26 with owner approval. The Haku UI WALs stay on
 Seaweed until Haku UI is retired. Forgejo's shared Git volume and Grocy's backup
 destinations stay on Seaweed.
 
-Before more consumers move, run loss of a node holding a data copy (all OVH
-`ssd` pools are on control-plane nodes), resync and expansion on the class.
-Losing a diskless Primary fails over in 84 s with the HA controller
-([results](../../debug/drbd_canary/failover/results.md)). Review Matrix and GitHub API capture's RWX needs
+Before more consumers move, run expansion on the class. Node-loss failover is
+accepted on the diskless-Primary run, 84 s with the HA controller
+([results](../../debug/drbd_canary/failover/results.md)); owner 2026-10-27: no
+separate data-copy-loss or resync round. Review Matrix and GitHub API capture's RWX needs
 before choosing RWO for similar apps, and inventory direct S3 consumers as well
 as PVCs. Keep a moved consumer's old claim until the owner releases it.
 
@@ -139,7 +139,9 @@ testing this design; neither tested three-node two-copy movement or WAN boundari
       before admission.
 - [ ] **Laptop pools:** give each admitted laptop (iguana, rugged) an LVM
       physical volume as a Piraeus pool, so laptops work symmetrically with
-      Wyrm2. This replaces their `/var/local-path-provisioner` btrfs subvolumes.
+      Wyrm2. Rugged first, as an interim partition behind its shrunk root
+      ([procedure](../../../nix/nixos/hosts/rugged/plans/piraeus_partition.md));
+      full LVM layouts wait for each laptop's reinstall.
 - [ ] **Interoperability acceptance:** repeat Block/Filesystem lifecycle and recovery
       checks on NixOS, then test Talos/NixOS remote use and automatic movement within
       the approved placement domain. Preserve existing Talos service throughout.

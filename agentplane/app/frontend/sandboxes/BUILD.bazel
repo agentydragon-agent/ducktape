@@ -4,6 +4,20 @@ load("//devinfra/js:vitest.bzl", "check_vitest_specs")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
 
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = glob(
+        [
+            "*.ts",
+            "*.tsx",
+            "**/*.ts",
+            "**/*.tsx",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//agentplane/app/frontend:__pkg__"],
+)
+
 TSCONFIG = "//agentplane/app/frontend:tsconfig"
 
 # The lifecycle controls both sandbox views share: suspend/resume, and delete with its confirmation.
@@ -12,6 +26,7 @@ ts_library(
     srcs = ["lifecycle.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -40,6 +55,7 @@ ts_library(
     srcs = ["idle_suspend.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -52,6 +68,7 @@ ts_library(
     srcs = ["wake_on_send.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -64,6 +81,7 @@ ts_library(
     srcs = ["sandbox_status_view.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":idle_suspend",
         ":lifecycle",
         ":wake_on_send",
@@ -72,9 +90,11 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:json_view",
+        "//agentplane/app/frontend:model_catalog",
         "//agentplane/app/frontend:raw_switch",
         "//agentplane/app/frontend:sandbox_status",
         "//agentplane/app/frontend:time_ago",
+        "//agentplane/app/frontend/threads:client",
         "//util/frontend:help_tooltip",
     ],
 )
@@ -84,8 +104,10 @@ ts_library(
     srcs = ["list.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":idle_suspend",
         ":lifecycle",
+        ":live",
         ":sandbox_name",
         ":wake_on_send",
         "//:node_modules/@mantine/core",
@@ -109,13 +131,17 @@ ts_library(
     name = "decision_groups",
     srcs = ["decision_groups.ts"],
     tsconfig = TSCONFIG,
-    deps = ["//agentplane/app/frontend:client"],
+    deps = [
+        ":client",
+        "//agentplane/app/frontend:client",
+    ],
 )
 
 agentplane_vitest_test(
     name = "decision_groups_test",
     srcs = ["decision_groups.test.ts"],
     deps = [
+        ":client",
         ":decision_groups",
         "//:node_modules/vitest",
         "//agentplane/app/frontend:client",
@@ -127,7 +153,9 @@ ts_library(
     srcs = ["egress.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":decision_groups",
+        ":live",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -145,11 +173,12 @@ ts_library(
     srcs = ["policy_bindings.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/app/frontend:bindings_table",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend/bindings:table",
         "//util/frontend:help_tooltip",
     ],
 )
@@ -183,48 +212,16 @@ agentplane_vitest_test(
 )
 
 ts_library(
-    name = "new_session_form",
-    srcs = ["new_session_form.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:disclosure",
-        "//agentplane/proto:runner_pb",
-    ],
-)
-
-ts_library(
-    name = "sandbox_sessions",
-    srcs = ["sandbox_sessions.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:icons",
-        "//agentplane/app/frontend:time_ago",
-        "//agentplane/app/frontend:trace_search",
-        "//agentplane/app/frontend/threads:thread_status",
-        "//agentplane/app/frontend/threads:thread_status_indicator",
-    ],
-)
-
-ts_library(
     name = "sandbox_page",
     srcs = ["sandbox_page.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":egress",
         ":lifecycle",
-        ":new_session_form",
+        ":live",
         ":policy_bindings",
         ":sandbox_console",
-        ":sandbox_sessions",
         ":sandbox_status_view",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -243,6 +240,9 @@ ts_library(
         "//agentplane/app/frontend:trace_search",
         "//agentplane/app/frontend:tracing",
         "//agentplane/app/frontend/actions:policy",
+        "//agentplane/app/frontend/threads:client",
+        "//agentplane/app/frontend/threads:new_thread_form",
+        "//agentplane/app/frontend/threads:sandbox_threads",
         "//agentplane/app/frontend/threads:thread_status",
         "//agentplane/proto:runner_pb",
     ],
@@ -252,6 +252,8 @@ agentplane_vitest_test(
     name = "sandbox_page_test",
     srcs = ["sandbox_page.test.tsx"],
     deps = [
+        ":client",
+        ":live",
         ":sandbox_page",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -262,8 +264,12 @@ agentplane_vitest_test(
         "//:node_modules/vitest",
         "//agentplane/app/frontend:app",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:langfuse_search",
+        "//agentplane/app/frontend:langfuse_search_fixture",
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:test_model_catalog",
+        "//agentplane/app/frontend:trace_search",
+        "//agentplane/app/frontend/threads:client",
     ],
 )
 
@@ -271,6 +277,7 @@ agentplane_vitest_test(
     name = "list_test",
     srcs = ["list.test.tsx"],
     deps = [
+        ":client",
         ":list",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -282,6 +289,30 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:test_model_catalog",
         "//agentplane/app/frontend/actions:action_client",
+    ],
+)
+
+ts_library(
+    name = "live",
+    srcs = ["live.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:live",
+        "//agentplane/app/frontend:schema",
+    ],
+)
+
+ts_library(
+    name = "client",
+    srcs = ["client.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:schema",
+        "//agentplane/proto:runner_pb",
     ],
 )
 

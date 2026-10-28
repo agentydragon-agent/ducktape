@@ -124,6 +124,11 @@ pub enum ExecutionRuntime {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChunkExportPurity {
+    /// When present, identify the defining provider by a conjunction of
+    /// purpose-bearing substrings in its loaded entry source. The map key
+    /// becomes a policy label; provider identity and emission stay unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_markers: Option<BTreeSet<String>>,
     /// Export names whose *calls* the author asserts have no observable
     /// side effects. Applies to the export regardless of how the binding
     /// is produced (function declaration, function-valued const, interop
@@ -191,12 +196,30 @@ pub struct ChunkExportPurity {
     /// the same return-only callback contract as `callback_factory_exports`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub callback_factory_members: BTreeMap<String, BTreeSet<String>>,
+    /// Separately audited factories admitting existing local callbacks and
+    /// multiple retained callback arguments. See `RetainedCallbackSignature`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub retained_callback_factory_exports: BTreeMap<String, Vec<RetainedCallbackSignature>>,
+    /// The same stronger contract on direct static namespace member calls.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub retained_callback_factory_members:
+        BTreeMap<String, BTreeMap<String, Vec<RetainedCallbackSignature>>>,
+    /// Direct imported constructors whose audited construction retains the
+    /// listed callbacks in fresh instance storage without synchronous reentry.
+    /// Independent of constructor purity and ordinary-call factory contracts.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub retained_callback_constructor_exports: BTreeMap<String, Vec<RetainedCallbackSignature>>,
     /// Named exports whose direct calls with checked primitive arguments
     /// cannot synchronously invoke caller/importer/host callbacks or read
     /// importer-owned lexical state. This changes call timing only: provider
     /// effects and the opaque return value remain conservative.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub no_reentry_exports: BTreeSet<String>,
+    /// Exact direct imported call signatures that cannot synchronously reenter
+    /// caller/importer/host code, including their callback arguments. Callbacks
+    /// become globally reachable after the call; the result remains opaque.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub no_reentry_callback_exports: BTreeMap<String, Vec<RetainedCallbackSignature>>,
     /// Static members of an imported namespace whose calls cannot synchronously
     /// invoke caller, importer, or host callbacks or read importer-owned cells.
     /// This asserts call timing only, not purity or the shape of the result.
@@ -212,6 +235,46 @@ pub struct ChunkExportPurity {
     /// or replace audited factories except through supplied caller inputs.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub namespace_independent_members: BTreeMap<String, BTreeSet<String>>,
+}
+
+/// One exact callback-bearing call shape. Non-callback positions must be
+/// syntactically inert primitives. The policy containing this signature
+/// determines whether callbacks stay in a fresh returned graph or become
+/// globally reachable after the call. No policy is implied by another.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct RetainedCallbackSignature {
+    pub argument_count: usize,
+    pub callback_arguments: BTreeSet<usize>,
+}
+
+impl<'de> Deserialize<'de> for RetainedCallbackSignature {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Signature {
+            argument_count: usize,
+            callback_arguments: BTreeSet<usize>,
+        }
+        let signature = Signature::deserialize(deserializer)?;
+        if signature.callback_arguments.is_empty() {
+            return Err(serde::de::Error::custom(
+                "retained callback signature must list at least one callback argument",
+            ));
+        }
+        if signature
+            .callback_arguments
+            .iter()
+            .any(|position| *position >= signature.argument_count)
+        {
+            return Err(serde::de::Error::custom(
+                "retained callback signature position must be less than argument_count",
+            ));
+        }
+        Ok(Self {
+            argument_count: signature.argument_count,
+            callback_arguments: signature.callback_arguments,
+        })
+    }
 }
 
 /// Per-chunk dependency-graph build options. Each field defaults to the
@@ -237,6 +300,14 @@ pub struct DependencyGraphOptions {
     /// the write, RHS evaluation, and ordering effects remain observable.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub deferred_global_publications: BTreeMap<BuiltinGlobalRoot, BTreeSet<String>>,
+    /// Author-certified literal-key membership probes on direct unshadowed
+    /// builtin roots that cannot synchronously invoke or publish callbacks,
+    /// or access importer-owned cells, through host/proxy/prototype behavior.
+    /// Host identity and the complete prototype/alias surface must remain
+    /// intact at every admitted probe. This narrows protocol reentry only;
+    /// evaluation, dependencies, impurity and possible throws remain.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub non_reentrant_global_membership: BTreeMap<BuiltinGlobalRoot, BTreeSet<String>>,
     /// Emit the side-effect ordering chain using per-statement
     /// (writes, reads) summaries instead of the adjacent-impure
     /// transitive reduction. See the S-chain block in

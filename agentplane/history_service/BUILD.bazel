@@ -92,6 +92,7 @@ go_library(
         "//agentplane/history_service/reads",
         "//agentplane/history_service/storage",
         "//agentplane/observability",
+        "//agentplane/postgres/go:postgres",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/workload_auth/go/auth",
         "//util/netlistener",
@@ -104,6 +105,7 @@ go_library(
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//health",
         "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//keepalive",
     ],
 )
 

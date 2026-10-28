@@ -8,6 +8,7 @@ package github
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v88/github"
@@ -39,6 +41,16 @@ type Repository struct {
 type Revision struct {
 	SHA        string
 	Repository *Repository
+}
+
+// PullRequestObservation is the current state GitHub reports for a pull request.
+type PullRequestObservation struct {
+	Head         Revision
+	BaseRef      string
+	BaseSHA      string
+	State        store.GitHubPullRequestState
+	Mergeability store.GitHubMergeableState
+	MergeCommit  *store.GitHubMergeCommit
 }
 
 // Client reads GitHub as the App, or as one of its installations. It is safe for concurrent use.
@@ -323,31 +335,144 @@ func (c *Client) RepositoryByID(ctx context.Context, id, installationID int64) (
 	return repositoryFrom(repository)
 }
 
-// PullRequestHead reads a pull request's head as an installation.
-func (c *Client) PullRequestHead(ctx context.Context, repository string, number int, installationID int64) (Revision, error) {
+// PullRequest reads a pull request as an installation.
+func (c *Client) PullRequest(ctx context.Context, repository string, number int, installationID int64) (PullRequestObservation, error) {
 	owner, name, err := splitRepository(repository)
 	if err != nil {
-		return Revision{}, err
+		return PullRequestObservation{}, err
 	}
 	pullRequest, err := callAsInstallation(ctx, c, installationID, false, func(ctx context.Context, client *github.Client) (*github.PullRequest, *github.Response, error) {
 		return client.PullRequests.Get(ctx, owner, name, number)
 	})
 	if err != nil {
-		return Revision{}, err
+		return PullRequestObservation{}, err
 	}
+	if pullRequest == nil || pullRequest.Number == nil {
+		return PullRequestObservation{}, &invalidResponseError{reason: "pull request number is missing"}
+	}
+	if *pullRequest.Number != number {
+		return PullRequestObservation{}, &SourceChangedError{Reason: "GitHub pull request identity changed"}
+	}
+	if pullRequest.State == nil {
+		return PullRequestObservation{}, &invalidResponseError{reason: "pull request state is missing"}
+	}
+	if pullRequest.Merged == nil {
+		return PullRequestObservation{}, &invalidResponseError{reason: "pull request merged state is missing"}
+	}
+	var state store.GitHubPullRequestState
+	switch *pullRequest.State {
+	case "open":
+		if *pullRequest.Merged {
+			return PullRequestObservation{}, &invalidResponseError{reason: "open pull request is marked merged"}
+		}
+		state = store.GitHubPullRequestOpen
+	case "closed":
+		if *pullRequest.Merged {
+			state = store.GitHubPullRequestMerged
+		} else {
+			state = store.GitHubPullRequestClosed
+		}
+	default:
+		return PullRequestObservation{}, &invalidResponseError{reason: "pull request state is invalid"}
+	}
+	base := pullRequest.GetBase()
 	head := pullRequest.GetHead()
 	if head.GetSHA() == "" {
-		return Revision{}, &invalidResponseError{reason: "pull request head is missing"}
+		return PullRequestObservation{}, &invalidResponseError{reason: "pull request head is missing"}
 	}
 	revision := Revision{SHA: head.GetSHA()}
 	if head.Repo != nil {
 		fork, err := repositoryFrom(head.Repo)
 		if err != nil {
-			return Revision{}, err
+			return PullRequestObservation{}, err
 		}
 		revision.Repository = &fork
 	}
-	return revision, nil
+	var mergeability store.GitHubMergeableState
+	switch {
+	case pullRequest.Mergeable == nil:
+		mergeability = store.GitHubMergeabilityUnknown
+	case *pullRequest.Mergeable:
+		mergeability = store.GitHubMergeable
+	default:
+		mergeability = store.GitHubConflicting
+	}
+	if state != store.GitHubPullRequestOpen {
+		if base.GetRef() == "" {
+			return PullRequestObservation{}, &invalidResponseError{reason: "pull request base ref is missing"}
+		}
+		if base.SHA == nil || *base.SHA == "" {
+			return PullRequestObservation{}, &invalidResponseError{reason: "pull request base sha is missing"}
+		}
+		return PullRequestObservation{
+			Head: revision, BaseRef: base.GetRef(), BaseSHA: *base.SHA, State: state, Mergeability: mergeability,
+		}, nil
+	}
+
+	observation := PullRequestObservation{
+		Head: revision, BaseRef: base.GetRef(), State: state, Mergeability: store.GitHubMergeabilityUnknown,
+	}
+	if observation.BaseRef == "" {
+		return observation, nil
+	}
+
+	var testCommit *github.Commit
+	if pullRequest.GetMergeable() && pullRequest.MergeCommitSHA != nil && validGitSHA(*pullRequest.MergeCommitSHA) {
+		testCommit, err = c.pullRequestTestCommit(ctx, owner, name, *pullRequest.MergeCommitSHA, installationID)
+		if err != nil {
+			return PullRequestObservation{}, err
+		}
+	}
+	baseSHA, found, err := c.Branch(ctx, repository, observation.BaseRef, installationID)
+	if err != nil {
+		return PullRequestObservation{}, err
+	}
+	if !found || !validGitSHA(baseSHA) {
+		return observation, nil
+	}
+	observation.BaseSHA = baseSHA
+	switch {
+	case pullRequest.Mergeable == nil:
+		return observation, nil
+	case !*pullRequest.Mergeable:
+		observation.Mergeability = store.GitHubConflicting
+		return observation, nil
+	}
+	if testCommit == nil || testCommit.GetSHA() != *pullRequest.MergeCommitSHA || !validGitSHA(testCommit.GetSHA()) ||
+		len(testCommit.Parents) != 2 || testCommit.Parents[0] == nil || testCommit.Parents[1] == nil {
+		return observation, nil
+	}
+	first, second := testCommit.Parents[0].GetSHA(), testCommit.Parents[1].GetSHA()
+	if !validGitSHA(first) || !validGitSHA(second) ||
+		!((first == baseSHA && second == revision.SHA) || (second == baseSHA && first == revision.SHA)) {
+		return observation, nil
+	}
+	observation.Mergeability = store.GitHubMergeable
+	observation.MergeCommit = &store.GitHubMergeCommit{SHA: testCommit.GetSHA(), BaseSHA: baseSHA, HeadSHA: revision.SHA}
+	return observation, nil
+}
+
+// pullRequestTestCommit reads the test merge as an installation. A missing commit is an unavailable proof, not a
+// failure to read the pull request; other errors still reach the caller.
+func (c *Client) pullRequestTestCommit(ctx context.Context, owner, repository, sha string, installationID int64) (*github.Commit, error) {
+	commit, err := callAsInstallation(ctx, c, installationID, true, func(ctx context.Context, client *github.Client) (*github.Commit, *github.Response, error) {
+		return client.Git.GetCommit(ctx, owner, repository, sha)
+	})
+	if errors.Is(err, errMissing) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return commit, nil
+}
+
+func validGitSHA(sha string) bool {
+	if len(sha) != 40 || strings.ToLower(sha) != sha {
+		return false
+	}
+	_, err := hex.DecodeString(sha)
+	return err == nil
 }
 
 // CheckIssue reads an issue as an installation and returns a SourceChangedError unless it is that issue and not a

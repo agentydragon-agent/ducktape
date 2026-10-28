@@ -98,6 +98,33 @@ by `fresh_proxy_object_literals_are_pure`,
 See the [Proxy constructor algorithm](https://tc39.es/ecma262/multipage/reflection.html#sec-proxy-constructor)
 and [ProxyCreate](https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxycreate).
 
+## Imported primitive coercion timing
+
+The synchronous-effect interpreter can omit callback promotion for implicit
+coercion of an exact direct imported binding when the provider proves that all
+its possible values are primitive. The canonical shallow analysis recognizes
+string, numeric, boolean, null, and BigInt literals in top-level `const` or
+single-declaration `var` bindings, direct named export aliases, and literal or
+binding default exports. A `var` cell can also contain its hoisted `undefined`;
+that value cannot execute a conversion callback either.
+
+The provider must be ESM without CommonJS interop, direct eval, or `with` anywhere
+in its body, including deferred functions. A whole-module hygienic declaration
+and write census rejects duplicate declarations, assignment/update/loop writes,
+and writes in closures. `let`, opaque initializers, local value-copy aliases,
+reexports, imported initializers, namespace properties, and vendor-affected
+providers remain opaque. The cross-module resolver projects only direct named
+or default imports; a shadowing local binding does not inherit the fact.
+
+This is an inferred callback-timing fact, separate from purity and author
+assertions. It does not remove eager binding reads, relax live-binding or TDZ
+constraints, classify the operator as pure, fold source expressions, or suppress
+runtime exceptions such as mixed BigInt/Number arithmetic. Other protocols and
+ordinary opaque calls retain their existing behavior. `imported_primitive_test`
+pins split acceptance and Node output, unchanged imported reads and impure
+classification, conservative provider-write/dynamic-scope controls, and runtime
+throws.
+
 ## Immutable Symbol computed keys
 
 Chunk-top `const` values made by unshadowed `Symbol()` with at most one
@@ -450,6 +477,20 @@ spreads, arrays, and other expression forms remain conservative.
 Factory calls remain effectful for ordering unless a separate purity contract
 applies. See <design.md> for how this contract scopes callback-flow analysis.
 
+The separate `retained_callback_factory_exports` and
+`retained_callback_factory_members` contracts additionally admit stable named
+local callbacks and explicitly listed callback positions at exact arities.
+They do not widen either fresh-only assertion. The stronger audit belongs to
+each provider **and each call site**: existing callable identity, aliases and
+property/prototype capabilities cannot expose additional callbacks, proxies or
+accessors outside the tracked callable/capture graphs. The provider must not
+mutate, invoke or publish those inputs synchronously, access importer state,
+or introduce provider callbacks or cross-instance aliases in its fresh result.
+The analyzer aggregates all admitted callback graphs and retains ordinary
+mutation/publication/invocation checks. Recognized uncertain, rebound, exposed
+or mutated values fall back conservatively. Exact shape checks and the full
+author obligation are in <../SPEC.md> § Retaining existing or multiple callbacks.
+
 ## Local-effect decorator annotations
 
 `typescript_decorate_helper` only certifies mutation locality.
@@ -608,3 +649,19 @@ Out of scope (not admitted; flagged for follow-up review):
 - `Array.from(I[, mapFn])` — sound only when `mapFn` is absent (a
   `mapFn` invokes user code per element). Skipped to avoid the
   per-call argument-count gate.
+
+## Host membership nonreentry is separate from purity
+
+`non_reentrant_global_membership` is an explicit root/key host-integrity audit,
+not a builtin whitelist. It narrows callback reentry only for literal-key `in`
+probes on a direct unshadowed `globalThis` or `window`. Key coercion, aliases,
+shadowed roots, effectful receivers and unlisted keys retain fallback. The
+index also rejects recognized root/prototype mutations and global exposure.
+Unknown computed writes on other descendant objects do not themselves identify
+a root mutation. Explicit prototype keys, known identity/prototype paths and
+visible stored back-aliases still reject. Disjointness of other descendants is
+part of the complete author alias-integrity premise, not inferred host trust.
+Source checks cannot establish the complete host or cross-chunk prototype
+surface: its integrity at each probe remains a strong author premise. The
+operator's existing impurity, operand reads/effects and possible throws remain;
+see the complete contract in [SPEC](../SPEC.md#audited-builtin-global-membership-probes).

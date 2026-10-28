@@ -685,6 +685,8 @@ pub struct FixtureOpts<'a> {
     pub local_property_effects: bool,
     /// Author-certified browser-global slots, as `(root, static property)`.
     pub deferred_global_publications: &'a [(&'a str, &'a str)],
+    /// Independent host-membership nonreentry contract, as root/key pairs.
+    pub non_reentrant_global_membership: &'a [(&'a str, &'a str)],
     pub extra_files: &'a [(&'a str, &'a str)],
     /// Additional input chunks `(snapshot-relative path, source)` listed in
     /// `js-files.txt` alongside the entry chunk. Unlike `extra_files`
@@ -726,6 +728,7 @@ impl<'a> FixtureOpts<'a> {
             admission_overrides: &[],
             local_property_effects: false,
             deferred_global_publications: &[],
+            non_reentrant_global_membership: &[],
             extra_files: &[],
             extra_chunks: &[],
             source_paths: &[],
@@ -863,6 +866,11 @@ impl ChunkExportPurityBuilder {
         }
     }
 
+    pub fn with_source_markers(mut self, markers: &[&str]) -> Self {
+        self.purity.source_markers = Some(markers.iter().map(|s| (*s).to_string()).collect());
+        self
+    }
+
     pub fn with_pure_exports(mut self, exports: &[&str]) -> Self {
         self.purity.pure_exports = exports.iter().map(|s| (*s).to_string()).collect();
         self
@@ -910,6 +918,77 @@ impl ChunkExportPurityBuilder {
             export.to_string(),
             members.iter().map(|s| (*s).to_string()).collect(),
         );
+        self
+    }
+
+    pub fn with_retained_callback_factory(
+        mut self,
+        export: &str,
+        argument_count: usize,
+        callback_arguments: &[usize],
+    ) -> Self {
+        self.purity
+            .retained_callback_factory_exports
+            .entry(export.to_string())
+            .or_default()
+            .push(spec::RetainedCallbackSignature {
+                argument_count,
+                callback_arguments: callback_arguments.iter().copied().collect(),
+            });
+        self
+    }
+
+    pub fn with_retained_callback_factory_member(
+        mut self,
+        export: &str,
+        member: &str,
+        argument_count: usize,
+        callback_arguments: &[usize],
+    ) -> Self {
+        self.purity
+            .retained_callback_factory_members
+            .entry(export.to_string())
+            .or_default()
+            .entry(member.to_string())
+            .or_default()
+            .push(spec::RetainedCallbackSignature {
+                argument_count,
+                callback_arguments: callback_arguments.iter().copied().collect(),
+            });
+        self
+    }
+
+    pub fn with_retained_callback_constructor(
+        mut self,
+        export: &str,
+        argument_count: usize,
+        callback_arguments: &[usize],
+    ) -> Self {
+        self.purity
+            .retained_callback_constructor_exports
+            .entry(export.to_string())
+            .or_default()
+            .push(spec::RetainedCallbackSignature {
+                argument_count,
+                callback_arguments: callback_arguments.iter().copied().collect(),
+            });
+        self
+    }
+
+    pub fn with_no_reentry_callback(
+        mut self,
+        export: &str,
+        argument_count: usize,
+        callback_arguments: &[usize],
+    ) -> Self {
+        self.purity
+            .no_reentry_callback_exports
+            .entry(export.to_string())
+            .or_default()
+            .push(spec::RetainedCallbackSignature {
+                argument_count,
+                callback_arguments: callback_arguments.iter().copied().collect(),
+            });
         self
     }
 
@@ -979,6 +1058,7 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
         || opts.trusted_dataflow_summaries
         || opts.local_property_effects
         || !opts.deferred_global_publications.is_empty()
+        || !opts.non_reentrant_global_membership.is_empty()
         || !opts.admission_overrides.is_empty()
     {
         BTreeMap::from([(
@@ -988,6 +1068,21 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
                 trusted_dataflow_summaries: opts.trusted_dataflow_summaries,
                 local_property_effects: opts.local_property_effects,
                 deferred_global_publications: opts.deferred_global_publications.iter().fold(
+                    BTreeMap::new(),
+                    |mut slots, (root, property)| {
+                        let root = match *root {
+                            "globalThis" => spec::BuiltinGlobalRoot::GlobalThis,
+                            "window" => spec::BuiltinGlobalRoot::Window,
+                            _ => panic!("unsupported fixture global root: {root}"),
+                        };
+                        slots
+                            .entry(root)
+                            .or_insert_with(std::collections::BTreeSet::new)
+                            .insert((*property).to_string());
+                        slots
+                    },
+                ),
+                non_reentrant_global_membership: opts.non_reentrant_global_membership.iter().fold(
                     BTreeMap::new(),
                     |mut slots, (root, property)| {
                         let root = match *root {

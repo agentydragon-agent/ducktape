@@ -1,9 +1,12 @@
 # gazelle:exclude test_visual.py
+# gazelle:exclude test_navigation.py
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
+load("//devinfra/js:vitest.bzl", "vitest_config")
 load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 
 # Link npm packages for this workspace member.
@@ -13,6 +16,62 @@ ts_config(
     name = "tsconfig",
     src = "tsconfig.json",
     visibility = ["//props/frontend:__subpackages__"],
+)
+
+vitest_config(
+    name = "vitest_config",
+    data = ["//:node_modules/happy-dom"],
+    environment = "node",
+)
+
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = glob(
+        [
+            "*.ts",
+            "*.tsx",
+            "**/*.ts",
+            "**/*.tsx",
+        ],
+        allow_empty = True,
+    ) + [
+        "//props/frontend/src/components:typed_lint_srcs",
+        "//props/frontend/src/components/stats:typed_lint_srcs",
+        "//props/frontend/src/lib:typed_lint_srcs",
+        "//props/frontend/src/pages:typed_lint_srcs",
+    ],
+)
+
+filegroup(
+    name = "typed_lint_program_data",
+    srcs = [
+        ":node_modules/@mantine/core",
+        ":node_modules/@mantine/notifications",
+        ":node_modules/@tabler/icons-react",
+        ":node_modules/chart.js",
+        ":node_modules/chartjs-chart-matrix",
+        ":node_modules/date-fns",
+        ":node_modules/esbuild",
+        ":node_modules/esbuild-plugin-tailwindcss",
+        ":node_modules/highlight.js",
+        ":node_modules/openapi-fetch",
+        ":node_modules/react",
+        ":node_modules/react-dom",
+        ":node_modules/tailwindcss",
+        "//props/frontend/src/lib:schema",
+    ],
+)
+
+typed_eslint_test(
+    name = "eslint_typed_test",
+    srcs = ":typed_lint_srcs",
+    extra_data = [
+        ":main",
+        ":typed_lint_program_data",
+        "//util/frontend:typed_lint_program_data",
+    ],
+    source_data = ["//util/frontend:typed_lint_srcs"],
+    tsconfig = "tsconfig.json",
 )
 
 # Export config files.
@@ -49,8 +108,8 @@ ts_library(
         ":node_modules/@mantine/notifications",
         ":node_modules/@types/react",
         ":node_modules/react",
+        "//props/frontend:node_modules/react-router",
         "//props/frontend/src/components:RunTriggerModal",
-        "//props/frontend/src/lib:router",
         "//props/frontend/src/lib:runModalContext",
         "//props/frontend/src/lib:token",
         "//props/frontend/src/lib:types",
@@ -148,12 +207,14 @@ ts_library(
     tags = ["no-lint"],
     tsconfig = ":tsconfig",
     deps = [
+        ":app",
         ":app_css",
         ":node_modules/@mantine/core",
         ":node_modules/@types/react",
         ":node_modules/@types/react-dom",
         ":node_modules/react",
         ":node_modules/react-dom",
+        ":node_modules/react-router",
         "//props/frontend/src/components:DefinitionDetail",
         "//props/frontend/src/components:FileViewer",
         "//props/frontend/src/components:LLMRequestViewer",
@@ -235,4 +296,23 @@ py_visual_test(
     test_module = "props.frontend.test_visual",
     test_srcs = ["test_visual.py"],
     title = "Props frontend",
+)
+
+py_visual_test(
+    name = "navigation",
+    size = "small",
+    assets = [":harness_bundle"],
+    harness = ":harness_js",
+    inline_page = True,
+    page_url = "http://props.test/",
+    stylesheets = ["tests/harness/dist/harness.css"],
+    test_deps = [
+        "//util/testing:visual_capture",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+    test_module = "props.frontend.test_navigation",
+    test_srcs = ["test_navigation.py"],
+    title = "Props navigation",
 )

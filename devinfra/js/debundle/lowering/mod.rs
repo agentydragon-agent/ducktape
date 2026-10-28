@@ -23,6 +23,7 @@ mod body_facts;
 mod chunk_ast;
 mod chunk_renames;
 mod cross_module;
+mod export_policies;
 mod exports;
 mod imports;
 mod io;
@@ -230,6 +231,7 @@ impl ReportEmission {
 
 #[derive(Debug, Clone)]
 pub struct MaterializeLogicalModulesOptions {
+    pub graph_provenance: Option<graph_provenance::GraphProvenance>,
     pub config: spec::MaterializeLogicalModulesConfig,
     pub chunk_ids: Vec<String>,
     pub keep_going: bool,
@@ -279,6 +281,10 @@ pub fn materialize_logical_modules(
     if let Some(dir) = options.report_emission.full_dir() {
         prepare_output_dir(dir)?;
     }
+
+    let resolved_export_purity =
+        export_policies::resolve_source_export_policies(&artifact, chunk_export_purity)?;
+    let chunk_export_purity = resolved_export_purity.as_ref();
 
     if options.config.prune_other_chunks {
         prune_artifact_to_chunk_ids(&mut artifact, &selected_chunk_ids);
@@ -346,6 +352,7 @@ pub fn materialize_logical_modules(
                                 keep_going: options.keep_going,
                                 list_template_identifiers: options.list_template_identifiers,
                                 report_emission: &options.report_emission,
+                                graph_provenance: options.graph_provenance.as_ref(),
                                 export_reentry_reports: &export_reentry_reports,
                                 vendor_import_oracle: vendor_import_oracle.as_ref(),
                                 export_reentry_policies: &export_reentry_policies,
@@ -390,6 +397,7 @@ pub fn materialize_logical_modules(
         chunk_export_purity,
         &declared_pure_new,
         &full_swap_chunk_ids,
+        &vendor_affected_chunk_ids,
         Some(&cross_module_chunk_closure),
     );
     let chunk_results = GLOBALS

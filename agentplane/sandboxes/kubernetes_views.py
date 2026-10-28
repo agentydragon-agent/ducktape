@@ -10,6 +10,7 @@ from kubernetes_asyncio import client as k8s_client
 from agentplane import sandbox_resource
 from agentplane.crd_group import GROUP
 from agentplane.proto.sandboxes_pb2 import (
+    AutosuspendBlocker,
     OwnerReference,
     Sandbox,
     SandboxBinding,
@@ -57,6 +58,7 @@ def sandbox_view(
         created_at=created_at,
         namespace=metadata.namespace,
         status=_struct(sandbox.status.model_dump(mode="json", by_alias=True, exclude_none=True)),
+        autosuspend_blockers=[_autosuspend_blocker(blocker) for blocker in sandbox.status.idle_suspend_blockers],
         service_account=ServiceAccount(namespace=metadata.namespace, name=metadata.name),
         binding=_binding(spec),
         preset=metadata.labels.get(sandbox_resource.PRESET_LABEL),
@@ -70,6 +72,8 @@ def sandbox_view(
         view.suspended_by = sandbox.status.suspended_by.value
     if spec.idle_suspend_after is not None:
         view.idle_suspend_after.FromTimedelta(spec.idle_suspend_after)
+    if sandbox.status.idle_suspend_at is not None:
+        view.idle_suspend_at.FromDatetime(sandbox.status.idle_suspend_at)
     return view
 
 
@@ -97,6 +101,13 @@ def _binding(spec: sandbox_resource.Spec) -> SandboxBinding | None:
     if spec.bootstrap is None:
         return None
     return SandboxBinding(bootstrap=spec.bootstrap)
+
+
+def _autosuspend_blocker(blocker: sandbox_resource.AutosuspendBlocker) -> AutosuspendBlocker:
+    result = AutosuspendBlocker(reason=blocker.reason.value)
+    if blocker.session_id is not None:
+        result.session_id = blocker.session_id
+    return result
 
 
 def _struct(value: dict[str, object]) -> Struct:

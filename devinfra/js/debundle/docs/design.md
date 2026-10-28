@@ -388,6 +388,26 @@ The dependency graph is the right abstraction for tooling:
 - "Why did this fail?" should point at dependency edges first, then
   at the derived module edge they induced.
 
+### Saved-graph input contract
+
+`debundle run` embeds a `GraphProvenance` inventory in each saved graph. It
+records SHA-256 of the bytes returned to the spec, source, and vendor readers,
+the complete YAML path membership of the authored module tree, absent optional
+inputs, the chunk-to-source-file mapping, the engine executable's SHA-256, and
+an absolute-path regeneration invocation and original working directory. Paths are relative to named
+spec, source, and package roots where possible, so the same inputs can be
+checked after those roots are explicitly relocated. A second read of one input
+during analysis must return the same digest. Final-output-only inputs, such as
+browser harness assets, are outside the dependency-graph contract.
+
+Any command combining a saved graph with current spec or source first checks
+the graph's input inventory and exact selected chunk scope. The check runs
+before an edit is written. An edit then evaluates its candidate assignment on
+the saved dependency graph through the normal shared gates; the candidate YAML
+is intentionally different from the graph's **pre-edit** baseline. A successful
+edit leaves the saved graph as a pre-edit snapshot. Another graph-backed edit
+requires regenerating the graph against the new spec.
+
 The emitted module graph is a **quotient** of this graph: choose a
 destination function `dest(source_unit)` from spec assignments (defaulting
 to the entry destination), merge source units with the same destination, drop
@@ -1069,6 +1089,12 @@ The synchronous value-flow summary honors the same argument exemption for
 static event-listener registrations. Neither exemption suppresses reentry
 through callbacks already escaped to host code or available exports.
 Purity annotations alone do not assert that callback arguments are deferred.
+The separate exact-signature `no_reentry_callback_exports` author contract
+covers ordinary direct imported calls that cannot reenter any caller, importer
+or host callback during the call. Checked callbacks become globally escaped
+roots immediately afterward, even if the provider only returns them. The result
+remains opaque. Later unknown calls and protocol effects retain the ordinary
+promotion rules; this does not grant the return-only factory contract.
 Property writes inside collection callbacks retain the conservative accessor
 fallback when receiver integrity is unproved.
 
@@ -1127,6 +1153,21 @@ discarded result can use a confined local alias to the global object before
 the certified publication. Its alias and derived values cannot leave that
 invocation, access the certified slot, or reach an uncertain call.
 
+**Audited builtin-global membership.**
+`chunk_analysis_options.<chunk>.non_reentrant_global_membership` separately
+certifies protocol nonreentry for listed literal-string `in` probes on a direct
+unshadowed `globalThis` or `window`. The host's exact identity and relevant
+prototype/alias behavior must remain intact at every admitted probe, including
+hidden host and cross-chunk paths. This is an explicit author premise, not
+inferred builtin trust or a consequence of deferred global publication. Scoped
+bindings, aliases, uncertain keys/receivers, dynamic scope, and recognized root,
+prototype, Object-intrinsic or exposure mutations keep conservative fallback.
+The existing confined earlier-IIFE alias proof can certify a nonescaping alias
+that never touches protected keys or prototype/identity slots. The evaluator
+still indexes/evaluates operands and retains purity, throw and dependency
+checks; it suppresses only this exact host protocol's callback reentry.
+See [the full contract](../SPEC.md#audited-builtin-global-membership-probes).
+
 **Audited callback-factory exports.**
 `chunk_export_purity.<defining chunk>.callback_factory_exports` and
 `callback_factory_members` are separate callback-flow contracts. The latter
@@ -1165,11 +1206,37 @@ spread arguments, or construction does not use this contract. The imported
 binding identity follows the ordinary export/import resolver, including local
 renames; this callback-flow fact does not imply purity.
 
+The separate `retained_callback_factory_exports` and
+`retained_callback_factory_members` assertions admit explicitly enumerated
+arities and callback positions, including stable local named callbacks. The
+call index retains the syntax/primitive-position check from the single parse;
+the interpreter checks actual callable values and unions the retained callback
+graphs at both value production and synchronous call execution. Namespace
+privacy checks cover the union of independently audited factory members, while
+the old and stronger admission rules remain separate. Unsupported values,
+mutation, rebinding, exposure, spreads and construction keep ordinary fallback.
+The per-call-site audit additionally covers nonfresh callable identity, aliases,
+property/prototype capabilities and exclusion of additional callbacks or
+cross-instance state in the returned graph; the complete contract is in
+<../SPEC.md> § Retaining existing or multiple callbacks. This is an explicit
+author assumption, never an inference from a provider's name.
+
 Invoking a retained result promotes its callbacks through the shared synchronous
 statement adjacency and retained prefix reads. This includes callbacks returned
 before suspension while excluding reads after an unconditional await. Complete
 raw rebinds remain conservative; incomplete reachability or uncovered callable
 surfaces retain whole-body read effects.
+
+Callable own/prototype properties are not tracked as ordinary object records.
+Installing nonprimitive values through a recognized callable receiver or local
+alias therefore promotes the supplied callbacks conservatively at the write.
+This also covers nested prototype writes: otherwise an opaque factory could
+return the original function and expose an untracked `result.invoke.extra()`
+callback. Primitive metadata writes keep their existing narrow exception.
+Opaque consumers can also retain and invoke a passed callback's synchronous
+return value. The fallback promotes those returned callback graphs through the
+same bounded, cycle-safe source closure, preserving unconditional-await
+boundaries rather than stopping at the first invocation.
 
 Opaque class and instance values can expose constructors, instance fields,
 methods, and accessors to foreign code. Their callback promotion uses the same

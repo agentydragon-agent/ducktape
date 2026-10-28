@@ -37,7 +37,8 @@ trap 'rm -rf "$T"' EXIT
 cp {srcs} "$T/"
 printf 'module garble_target\\ngo 1.26.0\\n' > "$T/go.mod"
 export GOROOT GOCACHE="$T/.cache" GOPATH="$T/.gopath"
-cd "$T" && "$GOROOT/bin/go" build -o "$OUT" .
+# Keep the random temp module path out of the binary so remote rebuilds match.
+cd "$T" && "$GOROOT/bin/go" build -trimpath -o "$OUT" .
 """.format(
             go = go.path,
             srcs = " ".join(["'" + f.path + "'" for f in ctx.files.srcs]),

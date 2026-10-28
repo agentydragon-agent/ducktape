@@ -1,16 +1,31 @@
-# Thread history scrolling
+# Agentplane frontend
+
+## Thread creation
+
+When Create thread is disabled, hovering it or focusing its wrapper shows the current reason:
+Sandbox availability, an unconfirmed open attempt, opening in progress, or model availability.
 
 ## Thread names
 
 An operator can set, rename, or clear a Thread name from the thread view. An unnamed Thread displays
 its ID as a placeholder; clearing the name restores that placeholder.
 
+## Composer activity
+
+The composer shows the controller's next idle-suspension deadline from the current live Sandbox
+snapshot, with a client-side countdown and the full deadline on hover. A stale snapshot reports the
+timing as unavailable; a Sandbox that has not appeared yet shows no autosuspend state. Model activity
+and turn completion remain separate signals; when their relative ages match and their timestamps are
+within a minute, the composer combines them while keeping the exact idle timestamp on hover.
+
+## Thread history scrolling
+
 A thread's conversation can grow long, include messages of different heights, and change while
 someone is reading it. The following are promises to the reader; they do not prescribe how the
 browser loads, stores, or draws the conversation. These guarantees cover the supported Chromium
 browser on desktop and phone.
 
-## Guarantees
+### Guarantees
 
 - **Opening a thread** — including switching from another thread — scrolls to the thread's tail;
   the most recent message is what the reader sees first.

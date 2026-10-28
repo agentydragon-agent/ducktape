@@ -90,6 +90,7 @@ pub(super) struct ChunkContext<'a> {
     pub(super) keep_going: bool,
     pub(super) list_template_identifiers: bool,
     pub(super) report_emission: &'a ReportEmission,
+    pub(super) graph_provenance: Option<&'a graph_provenance::GraphProvenance>,
     pub(super) export_reentry_policies: &'a BTreeMap<ChunkId, ExportReentryPolicy>,
     pub(super) export_reentry_reports: &'a BTreeMap<ChunkId, ExportReentryReport>,
     /// Vendor-plan consultation for runtime re-import construction;
@@ -383,6 +384,7 @@ pub(super) fn finish_logical_chunk(
         chunk_id,
         target_dir,
         report_emission,
+        graph_provenance,
         vendor_import_oracle,
         export_reentry_policies,
         export_reentry_reports,
@@ -435,6 +437,11 @@ pub(super) fn finish_logical_chunk(
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
+        inputs.imported_primitives = cross_module_purities
+            .primitives
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
         // Definition-side `pure_members` assertions projected onto this
         // chunk's local import bindings; merged (not overwritten) so spec
         // member annotations and cross-module assertions coexist.
@@ -467,6 +474,42 @@ pub(super) fn finish_logical_chunk(
                 .assumptions
                 .callback_factories
                 .extend(callback_factories.iter().cloned());
+        }
+        if let Some(factories) = cross_module_purities
+            .retained_callback_factories
+            .get(chunk_id)
+        {
+            inputs
+                .assumptions
+                .retained_callback_factories
+                .extend(factories.clone());
+        }
+        if let Some(callbacks) = cross_module_purities
+            .no_reentry_callback_exports
+            .get(chunk_id)
+        {
+            inputs
+                .assumptions
+                .no_reentry_callback_exports
+                .extend(callbacks.clone());
+        }
+        if let Some(constructors) = cross_module_purities
+            .retained_callback_constructors
+            .get(chunk_id)
+        {
+            inputs
+                .assumptions
+                .retained_callback_constructors
+                .extend(constructors.clone());
+        }
+        if let Some(members) = cross_module_purities
+            .retained_callback_factory_members
+            .get(chunk_id)
+        {
+            inputs
+                .assumptions
+                .retained_callback_factory_members
+                .extend(members.clone());
         }
         if let Some(factories) = cross_module_purities
             .inline_callback_factories
@@ -520,6 +563,9 @@ pub(super) fn finish_logical_chunk(
             dependency_graph_options.trusted_dataflow_summaries;
         inputs.assumptions.deferred_global_publications = dependency_graph_options
             .deferred_global_publications
+            .clone();
+        inputs.assumptions.non_reentrant_global_membership = dependency_graph_options
+            .non_reentrant_global_membership
             .clone();
         inputs
     };
@@ -618,6 +664,7 @@ pub(super) fn finish_logical_chunk(
     let validated_assignment = validate_and_emit_reports(
         chunk_id,
         report_emission,
+        graph_provenance,
         &assignment_analysis,
         &export_reentry_reports[&chunk_id_interned],
     )?;
@@ -1033,6 +1080,7 @@ fn pattern_binds_name(pattern: &Pat, binding: &str) -> bool {
 fn validate_and_emit_reports<'a>(
     chunk_id: &str,
     report_emission: &ReportEmission,
+    graph_provenance: Option<&graph_provenance::GraphProvenance>,
     assignment_analysis: &'a AssignmentAnalysis,
     export_reentry_report: &ExportReentryReport,
 ) -> Result<ValidatedAssignment<'a>> {
@@ -1052,7 +1100,8 @@ fn validate_and_emit_reports<'a>(
         report_emission.full_dir()
     };
     if let Some(report_out_dir) = report_out_dir {
-        let dependency_graph_report = assignment_analysis.dependency_graph_report();
+        let mut dependency_graph_report = assignment_analysis.dependency_graph_report();
+        dependency_graph_report.provenance = graph_provenance.cloned();
         write_chunk_report_json(
             report_out_dir,
             chunk_id,

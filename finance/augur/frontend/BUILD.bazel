@@ -40,6 +40,7 @@ ts_library(
     srcs = ["input_helpers.ts"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         "//finance/augur/frontend/lib:format",
         "//finance/augur/frontend/lib:frame",
     ],
@@ -88,6 +89,7 @@ ts_library(
     srcs = ["data_helpers.ts"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":input_helpers",
         ":rollout_event_vocabulary",
         "//finance/augur/frontend/lib:format",
@@ -101,6 +103,8 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":data_helpers",
+        ":header",
+        ":rollout_event_vocabulary",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -110,7 +114,10 @@ ts_library(
     name = "sanity_bands",
     srcs = ["sanity_bands.ts"],
     tsconfig = TSCONFIG,
-    deps = ["//finance/augur/frontend/lib:format"],
+    deps = [
+        ":client",
+        "//finance/augur/frontend/lib:format",
+    ],
 )
 
 ts_library(
@@ -126,6 +133,7 @@ ts_library(
     srcs = ["header.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":url_state",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -234,6 +242,7 @@ ts_library(
     srcs = ["forms.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":data_helpers",
         ":header",
         ":input_helpers",
@@ -251,6 +260,7 @@ ts_library(
     srcs = ["calibration_format.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//finance/augur/frontend/lib:format",
@@ -263,6 +273,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":calibration_format",
+        ":client",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//finance/augur/frontend/lib:format",
@@ -286,6 +297,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":calibration_format",
+        ":client",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -683,8 +695,12 @@ augur_vitest_test(
     name = "product_test",
     srcs = ["product.test.tsx"],
     deps = [
+        ":client",
+        ":fan_chart",
         ":input_helpers",
         ":product",
+        ":scenario_editor",
+        ":terminal_distribution",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",

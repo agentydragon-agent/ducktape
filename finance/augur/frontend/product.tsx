@@ -1,19 +1,25 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { NativeSelect, SegmentedControl } from "@mantine/core";
 
-import { fetchProductPortfolio, fetchProductProjectionSummary, fetchProductRollout } from "./client";
+import {
+  fetchProductPortfolio,
+  fetchProductProjectionSummary,
+  fetchProductRollout,
+  type AugurDeployment,
+  type ProductPortfolioResponse,
+} from "./client";
 import { fmtQuanta, fmtNumber } from "./lib/format";
 import { rowsFrom } from "./lib/frame";
 import { toastFetchError } from "./lib/toast";
 import { replaceSearchParams } from "./url_state";
 
-import { MetricFanChart } from "./fan_chart";
+import { MetricFanChart, type FanSeries } from "./fan_chart";
 import { TerminalDistributionChart } from "./terminal_distribution";
 import { TerminalMetricTable, TerminalScenarioComparison } from "./metric_table";
 import { SelectedRolloutEventsPanel, EventKindLegend } from "./events_panel";
 import { ScenarioEditor } from "./scenario_editor";
 import { ScenarioBadge } from "./scenario_tabs";
-import { AugurHeader, SharedControls, AugurTabBar, DeploymentCommitSummary } from "./header";
+import { AugurHeader, SharedControls, AugurTabBar, DeploymentCommitSummary, type AugurTab } from "./header";
 import { RolloutResultsSkeleton, StatCardsSkeleton } from "./skeleton";
 import { useVisibleEventKinds, useEventSelection } from "./hooks";
 import {
@@ -40,6 +46,82 @@ import {
   sellableSleeves,
 } from "./data_helpers";
 
+type ProjectionSummaryResponse = Awaited<ReturnType<typeof fetchProductProjectionSummary>>;
+type ScenarioEditorProps = React.ComponentProps<typeof ScenarioEditor>;
+type ProductInput = ScenarioEditorProps["base"]["input"];
+type Bootstrap = ScenarioEditorProps["bootstrap"];
+type MetricOption = (typeof METRIC_OPTIONS)[number];
+type MetricScale = React.ComponentProps<typeof SharedControls>["metricScale"];
+type CurrencyDisplay = React.ComponentProps<typeof SharedControls>["currencyDisplay"];
+type SharedControlProps = React.ComponentProps<typeof SharedControls>;
+type Scenario = { id: string; label: string; input: ProductInput };
+type TerminalResults = ReadonlyMap<string, ProjectionSummaryResponse["terminalDistribution"]>;
+type SelectedSummary = NonNullable<React.ComponentProps<typeof TerminalMetricTable>["selectedSummary"]>;
+type EventSelection = ReturnType<typeof useEventSelection>;
+type EventVisibility = ReturnType<typeof useVisibleEventKinds>;
+type ProductWorkspaceProps = {
+  bootstrap: Bootstrap;
+  deployment: AugurDeployment | null;
+  tab: AugurTab;
+  onSelectTab: (tab: AugurTab) => void;
+  rolloutCount: SharedControlProps["rolloutCount"];
+  onChangeRolloutCount: NonNullable<SharedControlProps["onChangeRolloutCount"]>;
+  firstSeed: number;
+  model: SharedControlProps["model"];
+  onChangeModel: NonNullable<SharedControlProps["onChangeModel"]>;
+  horizonMonths: number | null;
+  onChangeHorizonMonths: (value: number | null) => void;
+  metricScale: MetricScale;
+  onChangeMetricScale: NonNullable<SharedControlProps["onChangeMetricScale"]>;
+  currencyDisplay: CurrencyDisplay;
+  onChangeCurrencyDisplay: NonNullable<SharedControlProps["onChangeCurrencyDisplay"]>;
+  settingsOpen: boolean;
+  onChangeSettingsOpen: SharedControlProps["onChangeSettingsOpen"];
+};
+type ProjectionSelection =
+  { kind: "percentile"; value: number } | { kind: "stopped"; seed: number; scenarioKey: string } | null;
+type ProjectionSnapshot = {
+  requestKey: string;
+  metricFan: ProjectionSummaryResponse["metricFan"];
+  terminalDistribution: ProjectionSummaryResponse["terminalDistribution"];
+};
+type ProjectionResource =
+  | { status: "pending"; requestKey: string; stale: ProjectionSnapshot | null; error: string | null }
+  | { status: "ready"; snapshot: ProjectionSnapshot }
+  | { status: "failed"; requestKey: string; stale: ProjectionSnapshot | null; error: string };
+
+function errorMessage(error: unknown): string {
+  if (typeof error === "object" && error !== null && "message" in error && error.message) {
+    return String(error.message);
+  }
+  return String(error);
+}
+
+function isAbortError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
+}
+
+function metricOption(value: string): MetricOption {
+  const option = METRIC_OPTIONS.find((candidate) => candidate.value === value);
+  if (!option) throw new Error(`unknown product metric: ${value}`);
+  return option;
+}
+
+function projectionSnapshot(resource: ProjectionResource | undefined): ProjectionSnapshot | null {
+  if (!resource) return null;
+  switch (resource.status) {
+    case "ready":
+      return resource.snapshot;
+    case "pending":
+    case "failed":
+      return resource.stale;
+  }
+}
+
+function projectionError(resource: ProjectionResource | undefined): string | null {
+  return resource && resource.status !== "ready" ? resource.error : null;
+}
+
 function RolloutResultsPanel({
   visibleMetrics,
   selectedMetric,
@@ -65,8 +147,34 @@ function RolloutResultsPanel({
   visibleEventKinds,
   eventSelection,
   rolloutError,
+}: {
+  visibleMetrics: readonly MetricOption[];
+  selectedMetric: MetricOption;
+  onSelectMetric: (value: string) => void;
+  metricScale: MetricScale;
+  horizonMonths: number | null;
+  onChangeHorizonMonths: (value: number | null) => void;
+  maxHorizonMonths: number;
+  selectedSeed: number | null;
+  selectedPercentile: number | null;
+  onSelectPercentile: (scenarioId: string, percentile: number) => void;
+  onClearSelection: () => void;
+  selectedRolloutLoading: boolean;
+  fanSeries: readonly FanSeries[];
+  percentiles: readonly number[];
+  scenarios: readonly Scenario[];
+  terminalResultsById: TerminalResults;
+  activeId: string;
+  activeTerminalResult:
+    ProjectionSummaryResponse["metricFan"] | ProjectionSummaryResponse["terminalDistribution"] | null;
+  selectedRows: ReturnType<typeof selectedRolloutMetricRows>;
+  selectedEvents: ReturnType<typeof selectedRolloutEvents>;
+  selectedSummary: SelectedSummary | null;
+  visibleEventKinds: EventVisibility;
+  eventSelection: EventSelection;
+  rolloutError: string | null;
 }) {
-  const [chartMode, setChartMode] = useState("fan");
+  const [chartMode, setChartMode] = useState<"fan" | "candles">("fan");
   const [candleBucketMonths, setCandleBucketMonths] = useState(6);
   // "Focus" collapses the overlay to just the active scenario, which the chart then renders as a
   // full single-scenario fan (inner+outer bands, edge lines) — the pre-comparison view, on demand,
@@ -91,7 +199,7 @@ function RolloutResultsPanel({
             classNames={{ input: "augur-tabular min-w-[12rem]" }}
             onChange={(event) => onSelectMetric(event.target.value)}
           />
-          {multipleScenarios && (
+          {multipleScenarios && activeScenario && (
             <span className="inline-flex items-center gap-1.5">
               <span className="augur-eyebrow">Active</span>
               <ScenarioBadge label={activeScenario.label} color={activeScenario.color} />
@@ -244,24 +352,17 @@ export function ProductProjectionWorkspace({
   onChangeCurrencyDisplay,
   settingsOpen,
   onChangeSettingsOpen,
-}) {
+}: ProductWorkspaceProps) {
   const [scenarioSet, setScenarioSet] = useState(() => scenarioSetFromSearch(window.location.search, bootstrap));
-  const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth");
-  // One combined projection response per scenario id. Every scenario shares the seed set, and
-  // identical seeds reproduce identical sampled exogenous paths, so the overlaid fans are
-  // apples-to-apples. The backend returns the fan and terminal distribution from one simulation.
-  const [resultsById, setResultsById] = useState(() => new Map());
-  // Dense terminal-only percentiles remain separate inside the combined response. This keeps the
-  // timeline fan payload small while giving the terminal distribution enough points to render smoothly.
-  const [terminalResultsById, setTerminalResultsById] = useState(() => new Map());
-  const [terminalResultKeysById, setTerminalResultKeysById] = useState(() => new Map());
-  const [errorsById, setErrorsById] = useState(() => new Map());
-  const [terminalErrorsById, setTerminalErrorsById] = useState(() => new Map());
-  const [portfolio, setPortfolio] = useState(null);
-  const [portfolioError, setPortfolioError] = useState(null);
-  const [selection, setSelection] = useState<
-    { kind: "percentile"; value: number } | { kind: "stopped"; seed: number; scenarioKey: string } | null
-  >(null);
+  const [selectedMetricValue, setSelectedMetricValue] = useState<MetricOption["value"]>("net_worth");
+  // Every scenario owns one resource that carries the latest request state plus its last successful
+  // response. The backend returns the fan and terminal distribution from one simulation.
+  const [projectionResourcesById, setProjectionResourcesById] = useState<Map<string, ProjectionResource>>(
+    () => new Map()
+  );
+  const [portfolio, setPortfolio] = useState<ProductPortfolioResponse | null>(null);
+  const [portfolioError, setPortfolioError] = useState<string | null>(null);
+  const [selection, setSelection] = useState<ProjectionSelection>(null);
   const selectedPercentile = selection?.kind === "percentile" ? selection.value : null;
   const [selectedRollout, setSelectedRollout] = useState<{
     key: string;
@@ -291,15 +392,15 @@ export function ProductProjectionWorkspace({
   // Metric list is the union across scenarios: a metric stays offered as long as *some* scenario
   // surfaces it (e.g. "Property value" once any scenario buys), so a comparison never hides a column.
   const visibleMetrics = useMemo(() => {
-    const visibleValues = new Set();
+    const visibleValues = new Set<MetricOption["value"]>();
     for (const entry of chartScenarios)
       for (const metric of visibleMetricOptions(entry.input)) visibleValues.add(metric.value);
     return METRIC_OPTIONS.filter((metric) => visibleValues.has(metric.value));
   }, [chartScenarios]);
   const selectedMetric =
     visibleMetrics.find((metric) => metric.value === selectedMetricValue) ?? visibleMetrics[0] ?? METRIC_OPTIONS[0];
-  const selectMetricValue = (value) => {
-    setSelectedMetricValue(value);
+  const selectMetricValue = (value: string) => {
+    setSelectedMetricValue(metricOption(value).value);
     setSelection(null);
     eventSelection.clear();
   };
@@ -311,10 +412,8 @@ export function ProductProjectionWorkspace({
   const sellable = useMemo(() => (portfolio ? sellableSleeves(portfolio) : null), [portfolio]);
   const projectionRequestEntries = useMemo(
     () =>
-      chartScenarios.map((entry) => ({
-        id: entry.id,
-        label: entry.label,
-        request: productProjectionSummaryRequest(
+      chartScenarios.map((entry) => {
+        const request = productProjectionSummaryRequest(
           entry.input,
           bootstrap,
           selectedMetric,
@@ -327,56 +426,51 @@ export function ProductProjectionWorkspace({
           },
           FAN_PERCENTILES,
           TERMINAL_DISTRIBUTION_PERCENTILES
-        ),
-      })),
+        );
+        return { id: entry.id, label: entry.label, request, requestKey: JSON.stringify(request) };
+      }),
     [chartScenarios, bootstrap, selectedMetric, rolloutCount, firstSeed, model, horizonMonths, sellable]
   );
-  const terminalRequestKeyById = useMemo(
-    () => new Map(projectionRequestEntries.map(({ id, request }) => [id, JSON.stringify(request)])),
-    [projectionRequestEntries]
-  );
-  const activeRequest =
-    projectionRequestEntries.find((entry) => entry.id === activeId)?.request ?? projectionRequestEntries[0].request;
-  const activeRawResult = resultsById.get(activeId) ?? null;
-  const activeResult = activeRawResult?.metric === selectedMetric.value ? activeRawResult : null;
-  const activeRawTerminalResult = terminalResultsById.get(activeId) ?? null;
-  const activeTerminalRequestKey = terminalRequestKeyById.get(activeId) ?? null;
+  const activeRequestEntry =
+    projectionRequestEntries.find((entry) => entry.id === activeId) ?? projectionRequestEntries[0];
+  const activeRequest = activeRequestEntry.request;
+  const activeProjection = projectionSnapshot(projectionResourcesById.get(activeId));
+  const activeResult = activeProjection?.metricFan.metric === selectedMetric.value ? activeProjection.metricFan : null;
   const activeTerminalResult =
-    activeRawTerminalResult?.metric === selectedMetric.value &&
-    terminalResultKeysById.get(activeId) === activeTerminalRequestKey
-      ? activeRawTerminalResult
+    activeProjection?.terminalDistribution.metric === selectedMetric.value &&
+    activeProjection.requestKey === activeRequestEntry.requestKey
+      ? activeProjection.terminalDistribution
       : null;
   const terminalResultsForDisplay = useMemo(() => {
-    const next = new Map();
-    for (const [id, result] of terminalResultsById) {
-      if (
-        result?.metric === selectedMetric.value &&
-        terminalResultKeysById.get(id) === terminalRequestKeyById.get(id)
-      ) {
-        next.set(id, result);
+    const next = new Map<string, ProjectionSummaryResponse["terminalDistribution"]>();
+    for (const entry of projectionRequestEntries) {
+      const snapshot = projectionSnapshot(projectionResourcesById.get(entry.id));
+      if (snapshot?.terminalDistribution.metric === selectedMetric.value && snapshot.requestKey === entry.requestKey) {
+        next.set(entry.id, snapshot.terminalDistribution);
       }
     }
     return next;
-  }, [terminalResultsById, terminalResultKeysById, terminalRequestKeyById, selectedMetric.value]);
+  }, [projectionRequestEntries, projectionResourcesById, selectedMetric.value]);
   const activeTerminalDisplayResult = activeTerminalResult ?? activeResult;
   const activeTerminalSelectionResult = terminalResultsForDisplay.get(activeId) ?? null;
-  const runError = errorsById.get(activeId) ?? null;
-  const terminalError = terminalErrorsById.get(activeId) ?? null;
+  const projectionFailure = projectionError(projectionResourcesById.get(activeId));
 
   // One overlay series per scenario; Base is series 0 (blue), variants follow. Color is by position
   // so it stays put as the active selection moves. The active scenario also drives the histogram,
   // selected-rollout overlay, and events.
   const fanSeries = useMemo(
     () =>
-      chartScenarios.map((entry, index) => ({
-        id: entry.id,
-        label: entry.label,
-        color: scenarioColor(index),
-        rows:
-          resultsById.get(entry.id)?.metric === selectedMetric.value ? metricFanRows(resultsById.get(entry.id)) : [],
-        isActive: entry.id === activeId,
-      })),
-    [chartScenarios, resultsById, activeId, selectedMetric.value]
+      chartScenarios.map((entry, index) => {
+        const metricFan = projectionSnapshot(projectionResourcesById.get(entry.id))?.metricFan;
+        return {
+          id: entry.id,
+          label: entry.label,
+          color: scenarioColor(index),
+          rows: metricFan?.metric === selectedMetric.value ? metricFanRows(metricFan) : [],
+          isActive: entry.id === activeId,
+        };
+      }),
+    [chartScenarios, projectionResourcesById, activeId, selectedMetric.value]
   );
 
   const scenarioKey = useMemo(() => JSON.stringify(activeRequest.scenario), [activeRequest.scenario]);
@@ -424,19 +518,19 @@ export function ProductProjectionWorkspace({
   // -- Base + variant operations. Base edits propagate to every variant that doesn't override the
   // touched knob (variants resolve as `{ ...base, ...overrides }`); variant edits write to that
   // variant's `overrides` only. ----------------------------------------------------------------
-  const updateBaseInput = (patch) =>
+  const updateBaseInput = (patch: Partial<ProductInput>) =>
     setScenarioSet((previous) => ({
       ...previous,
       base: { ...previous.base, input: { ...previous.base.input, ...patch } },
     }));
-  const setBaseField = (key, value) => updateBaseInput({ [key]: value });
+  const setBaseField: ScenarioEditorProps["onSetBaseField"] = (key, value) => updateBaseInput({ [key]: value });
   const resetBase = () =>
     setScenarioSet((previous) => ({ ...previous, base: { ...previous.base, input: productInputDefaults(bootstrap) } }));
-  const selectEntry = (id) => setScenarioSet((previous) => ({ ...previous, activeId: id }));
+  const selectEntry = (id: string) => setScenarioSet((previous) => ({ ...previous, activeId: id }));
   // Selecting in the distribution chart carries both coordinates: the line picks the variant
   // (making it active), and the X picks the percentile. The active terminal-distribution response
   // maps that percentile to a seed; the full rollout detail is fetched by seed.
-  const onSelectPercentile = (variantId, percentile) => {
+  const onSelectPercentile = (variantId: string, percentile: number) => {
     selectEntry(variantId);
     setSelection({ kind: "percentile", value: percentile });
   };
@@ -444,7 +538,7 @@ export function ProductProjectionWorkspace({
     setSelection(null);
     eventSelection.clear();
   };
-  const renameEntry = (id, label) =>
+  const renameEntry = (id: string, label: string) =>
     setScenarioSet((previous) =>
       id === "base"
         ? { ...previous, base: { ...previous.base, label } }
@@ -452,14 +546,14 @@ export function ProductProjectionWorkspace({
     );
   // Merge a partial-override patch into one variant's `overrides` (scalar cells + the variant
   // housing panel). Overridden keys win over the inherited base values.
-  const patchVariantOverrides = (id, patch) =>
+  const patchVariantOverrides = (id: string, patch: Partial<ProductInput>) =>
     setScenarioSet((previous) => ({
       ...previous,
       variants: previous.variants.map((v) => (v.id === id ? { ...v, overrides: { ...v.overrides, ...patch } } : v)),
     }));
   // Drop override keys so the variant re-inherits the base value(s): a scalar cell's "revert" or the
   // whole housing cluster's "revert to base".
-  const revertVariantKeys = (id, keys) =>
+  const revertVariantKeys = (id: string, keys: (keyof ProductInput)[]) =>
     setScenarioSet((previous) => ({
       ...previous,
       variants: previous.variants.map((v) => {
@@ -477,7 +571,7 @@ export function ProductProjectionWorkspace({
       const variant = makeVariant(defaultVariantLabel(previous.variants.length));
       return { ...previous, variants: [...previous.variants, variant], activeId: variant.id };
     });
-  const deleteVariant = (id) =>
+  const deleteVariant = (id: string) =>
     setScenarioSet((previous) => ({
       ...previous,
       variants: previous.variants.filter((v) => v.id !== id),
@@ -499,26 +593,21 @@ export function ProductProjectionWorkspace({
         setPortfolioError(null);
       })
       .catch((error) => {
-        if (error?.name === "AbortError") return;
+        if (isAbortError(error)) return;
         setPortfolio(null);
-        setPortfolioError(error?.message || String(error));
+        setPortfolioError(errorMessage(error));
         toastFetchError("product-portfolio", "Couldn't load portfolio", error);
       });
     return () => controller.abort();
   }, []);
 
-  // Drop cached fans/errors for scenarios that no longer exist (deleted from the set).
+  // Drop cached projection resources for scenarios that no longer exist (deleted from the set).
   useEffect(() => {
     const ids = new Set(chartScenarios.map((entry) => entry.id));
-    const prune = (previous) => {
+    setProjectionResourcesById((previous) => {
       const next = new Map([...previous].filter(([id]) => ids.has(id)));
       return next.size === previous.size ? previous : next;
-    };
-    setResultsById(prune);
-    setTerminalResultsById(prune);
-    setTerminalResultKeysById(prune);
-    setErrorsById(prune);
-    setTerminalErrorsById(prune);
+    });
   }, [chartScenarios]);
 
   useEffect(() => {
@@ -527,32 +616,45 @@ export function ProductProjectionWorkspace({
     // Fan out one combined request per scenario. The backend performs the metric-fan and terminal
     // reductions after one shared simulation, while the two public legacy endpoints remain intact.
     const handle = setTimeout(() => {
-      for (const { id, label, request } of projectionRequestEntries) {
-        const requestKey = JSON.stringify(request);
+      for (const { id, label, request, requestKey } of projectionRequestEntries) {
+        setProjectionResourcesById((previous) => {
+          const previousResource = previous.get(id);
+          return new Map(previous).set(id, {
+            status: "pending",
+            requestKey,
+            stale: projectionSnapshot(previousResource),
+            error: projectionError(previousResource),
+          });
+        });
         fetchProductProjectionSummary(request, { signal: controller.signal })
           .then((payload) => {
             if (controller.signal.aborted) return;
-            setResultsById((previous) => new Map(previous).set(id, payload.metricFan));
-            setTerminalResultsById((previous) => new Map(previous).set(id, payload.terminalDistribution));
-            setTerminalResultKeysById((previous) => new Map(previous).set(id, requestKey));
-            setErrorsById((previous) => {
-              if (!previous.has(id)) return previous;
-              const next = new Map(previous);
-              next.delete(id);
-              return next;
-            });
-            setTerminalErrorsById((previous) => {
-              if (!previous.has(id)) return previous;
-              const next = new Map(previous);
-              next.delete(id);
-              return next;
+            setProjectionResourcesById((previous) => {
+              const current = previous.get(id);
+              if (current?.status !== "pending" || current.requestKey !== requestKey) return previous;
+              return new Map(previous).set(id, {
+                status: "ready",
+                snapshot: {
+                  requestKey,
+                  metricFan: payload.metricFan,
+                  terminalDistribution: payload.terminalDistribution,
+                },
+              });
             });
           })
           .catch((error) => {
-            if (controller.signal.aborted || error?.name === "AbortError") return;
-            const message = error?.message || String(error);
-            setErrorsById((previous) => new Map(previous).set(id, message));
-            setTerminalErrorsById((previous) => new Map(previous).set(id, message));
+            if (controller.signal.aborted || isAbortError(error)) return;
+            const message = errorMessage(error);
+            setProjectionResourcesById((previous) => {
+              const current = previous.get(id);
+              if (current?.status !== "pending" || current.requestKey !== requestKey) return previous;
+              return new Map(previous).set(id, {
+                status: "failed",
+                requestKey,
+                stale: current.stale,
+                error: message,
+              });
+            });
             toastFetchError(`product-projection-${id}`, `Projection failed: ${label}`, error);
           });
       }
@@ -584,8 +686,8 @@ export function ProductProjectionWorkspace({
         setSelectedRollout({ key: selectedDetailKey, detail: payload, error: null });
       })
       .catch((error) => {
-        if (controller.signal.aborted || error?.name === "AbortError") return;
-        setSelectedRollout({ key: selectedDetailKey, detail: null, error: error?.message || String(error) });
+        if (controller.signal.aborted || isAbortError(error)) return;
+        setSelectedRollout({ key: selectedDetailKey, detail: null, error: errorMessage(error) });
         toastFetchError("product-rollout", "Rollout detail failed", error);
       });
     return () => controller.abort();
@@ -635,9 +737,11 @@ export function ProductProjectionWorkspace({
           onResetBase={resetBase}
         />
 
-        {runError && <div className="augur-note-danger p-4 text-sm">Product projection failed: {runError}</div>}
-        {terminalError && (
-          <div className="augur-note-danger p-4 text-sm">Terminal distribution failed: {terminalError}</div>
+        {projectionFailure && (
+          <>
+            <div className="augur-note-danger p-4 text-sm">Product projection failed: {projectionFailure}</div>
+            <div className="augur-note-danger p-4 text-sm">Terminal distribution failed: {projectionFailure}</div>
+          </>
         )}
 
         {activeResult ? (
@@ -680,7 +784,7 @@ export function ProductProjectionWorkspace({
                   }
                 />
               )}
-              {selectedSummary?.failed && (
+              {selectedSummary?.failed && selectedDetail != null && (
                 <div className="mt-2 text-sm" data-product-stop-book="">
                   At stop in event month {selectedSummary.endingMetrics.failedMonthIndex} (snapshot{" "}
                   {selectedSummary.endingMetrics.snapshotIndex}):{" "}

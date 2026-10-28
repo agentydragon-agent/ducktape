@@ -12,6 +12,7 @@ load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config")
 load("//devinfra/python:defs.bzl", "py_library")
 load(":visual_tests.bzl", "agentplane_visual_test")
@@ -20,6 +21,78 @@ load(":vitest.bzl", "agentplane_vitest_test")
 package(default_visibility = ["//agentplane/app:__subpackages__"])
 
 TSCONFIG = ":tsconfig"
+
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = glob(
+        [
+            "*.ts",
+            "*.tsx",
+            "**/*.ts",
+            "**/*.tsx",
+        ],
+        allow_empty = True,
+    ) + [
+        "//agentplane/app/frontend/actions:typed_lint_srcs",
+        "//agentplane/app/frontend/actions/rendering:typed_lint_srcs",
+        "//agentplane/app/frontend/bindings:typed_lint_srcs",
+        "//agentplane/app/frontend/connections:typed_lint_srcs",
+        "//agentplane/app/frontend/sandboxes:typed_lint_srcs",
+        "//agentplane/app/frontend/service_worker:typed_lint_srcs",
+        "//agentplane/app/frontend/threads:typed_lint_srcs",
+    ],
+)
+
+filegroup(
+    name = "typed_lint_program_data",
+    srcs = [
+        ":schema",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@electric-sql/client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@mantine/hooks",
+        "//:node_modules/@opentelemetry/api",
+        "//:node_modules/@opentelemetry/context-zone",
+        "//:node_modules/@opentelemetry/core",
+        "//:node_modules/@opentelemetry/exporter-trace-otlp-proto",
+        "//:node_modules/@opentelemetry/instrumentation",
+        "//:node_modules/@opentelemetry/instrumentation-fetch",
+        "//:node_modules/@opentelemetry/resources",
+        "//:node_modules/@opentelemetry/sdk-trace-web",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@tanstack/react-virtual",
+        "//:node_modules/@types/node",
+        "//:node_modules/date-fns",
+        "//:node_modules/happy-dom",
+        "//:node_modules/openapi-fetch",
+        "//:node_modules/react-router",
+        "//:node_modules/yaml",
+        "//:node_modules/zod",
+        "//agentplane/action_service:action_service_pb",
+        "//agentplane/action_service:operator_action_service_pb",
+        "//agentplane/action_service:web_push_service_pb",
+        "//agentplane/mcp_edge:connection_service_pb",
+        "//agentplane/proto:command_pb",
+        "//agentplane/proto:event_log_pb",
+        "//agentplane/proto:event_pb",
+        "//agentplane/proto:runner_pb",
+        "//agentplane/proto:sandboxes_pb",
+    ],
+)
+
+typed_eslint_test(
+    name = "eslint_typed_test",
+    srcs = ":typed_lint_srcs",
+    config = "eslint.typed.config.js",
+    extra_data = [
+        ":app",
+        ":typed_lint_program_data",
+        "//agentplane/app/frontend/service_worker:typed_lint_tsconfigs",
+        "//util/frontend:typed_lint_program_data",
+    ],
+    source_data = ["//util/frontend:typed_lint_srcs"],
+    tsconfig = "tsconfig.json",
+)
 
 ts_config(
     name = "tsconfig",
@@ -46,7 +119,10 @@ ts_library(
     testonly = True,
     srcs = ["test_model_catalog.ts"],
     tsconfig = TSCONFIG,
-    deps = [":client"],
+    deps = [
+        ":client",
+        ":model_catalog",
+    ],
 )
 
 ts_library(
@@ -55,6 +131,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":schema",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -64,7 +141,10 @@ ts_library(
     name = "trace_search",
     srcs = ["trace_search.ts"],
     tsconfig = TSCONFIG,
-    deps = [":client"],
+    deps = [
+        ":client",
+        ":schema",
+    ],
 )
 
 agentplane_vitest_test(
@@ -80,7 +160,21 @@ ts_library(
     name = "langfuse_search",
     srcs = ["langfuse_search.ts"],
     tsconfig = TSCONFIG,
-    deps = [":client"],
+    deps = [
+        ":client",
+        ":schema",
+    ],
+)
+
+ts_library(
+    name = "langfuse_search_fixture",
+    testonly = True,
+    srcs = ["langfuse_search_fixture.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":langfuse_search",
+    ],
 )
 
 agentplane_vitest_test(
@@ -88,6 +182,7 @@ agentplane_vitest_test(
     srcs = ["langfuse_search.test.ts"],
     deps = [
         ":langfuse_search",
+        ":langfuse_search_fixture",
         "//:node_modules/vitest",
     ],
 )
@@ -162,11 +257,7 @@ ts_library(
     deps = [
         ":operator_login",
         ":schema",
-        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/openapi-fetch",
-        "//agentplane/proto:event_log_pb",
-        "//agentplane/proto:runner_pb",
-        "//agentplane/proto:sandboxes_pb",
     ],
 )
 
@@ -176,7 +267,6 @@ agentplane_vitest_test(
     deps = [
         ":client",
         ":operator_login",
-        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
     ],
 )
@@ -281,8 +371,8 @@ ts_library(
 )
 
 ts_library(
-    name = "command_view",
-    srcs = ["command_view.tsx"],
+    name = "shell_command_view",
+    srcs = ["shell_command_view.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":argv_text",
@@ -479,10 +569,8 @@ ts_library(
         ":live_stream",
         ":schema",
         ":stream_status",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//:node_modules/react-router",
     ],
 )
 
@@ -494,6 +582,7 @@ ts_library(
         ":client",
         ":format_time",
         ":status_mark",
+        "//agentplane/app/frontend/sandboxes:client",
     ],
 )
 
@@ -504,6 +593,7 @@ agentplane_vitest_test(
         ":client",
         ":sandbox_status",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/sandboxes:client",
     ],
 )
 
@@ -603,47 +693,12 @@ agentplane_vitest_test(
         "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/app/frontend/threads:client",
+        "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:scroll_diagnostics",
         "//agentplane/app/frontend/threads:thread_groups",
         "//agentplane/app/frontend/threads:thread_status",
-    ],
-)
-
-ts_library(
-    name = "binding_state",
-    srcs = ["binding_state.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":status_mark",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "binding_state_test",
-    srcs = ["binding_state.test.ts"],
-    deps = [
-        ":binding_state",
-        ":client",
-        "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
-    name = "bindings_table",
-    srcs = ["bindings_table.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":binding_state",
-        ":client",
-        ":mark_glyph",
-        ":status_mark",
-        ":time_ago",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/react-router",
-        "//util/frontend:code_block",
     ],
 )
 
@@ -655,6 +710,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":schema",
         ":system_css",
         ":time_ago",
         ":topbar",
@@ -783,10 +839,12 @@ ts_library(
         "//agentplane/app/frontend/actions:sidebar",
         "//agentplane/app/frontend/connections:consent",
         "//agentplane/app/frontend/sandboxes:list",
+        "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/app/frontend/sandboxes:sandbox_page",
+        "//agentplane/app/frontend/threads:electric_sync",
         "//agentplane/app/frontend/threads:home",
-        "//agentplane/app/frontend/threads:projected_session",
-        "//agentplane/app/frontend/threads:thread_store",
+        "//agentplane/app/frontend/threads:live",
+        "//agentplane/app/frontend/threads:page",
         "//agentplane/app/frontend/threads:thread_sync",
     ],
 )
@@ -879,12 +937,12 @@ ts_library(
         ":app",
         ":clamped_block",
         ":client",
-        ":command_view",
         ":disclosure",
         ":harness_network",
         ":live",
         ":mcp_linkage_client",
         ":notification_types",
+        ":shell_command_view",
         ":stream_status",
         ":test_model_catalog",
         ":text_block",
@@ -901,6 +959,10 @@ ts_library(
         "//agentplane/app/frontend/actions/rendering:index",
         "//agentplane/app/frontend/connections:fixture",
         "//agentplane/app/frontend/connections:models",
+        "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/app/frontend/sandboxes:live",
+        "//agentplane/app/frontend/threads:client",
+        "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:local_commands",
         "//agentplane/proto:runner_pb",
     ],
@@ -1008,6 +1070,16 @@ agentplane_vitest_test(
     deps = [
         ":harness_network",
         "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "model_catalog",
+    srcs = ["model_catalog.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":schema",
     ],
 )
 

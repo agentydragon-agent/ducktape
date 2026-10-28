@@ -1,13 +1,12 @@
 import { expect, it } from "vitest";
 
-import { langfuseSandboxTraceUrl } from "./langfuse_search";
-import type { LangfuseSearchSettings } from "./client";
+import { langfuseSandboxTraceUrl, type LangfuseSearchSettings } from "./langfuse_search";
+import { LANGFUSE_SEARCH_SETTINGS } from "./langfuse_search_fixture";
 
 const settings: LangfuseSearchSettings = {
+  ...LANGFUSE_SEARCH_SETTINGS,
   base_url: "https://langfuse.example.test/observability/",
   project_id: "langfuse-litellm-project",
-  sandbox_namespace_metadata_key: "attributes.agentplane.namespace",
-  sandbox_service_account_metadata_key: "attributes.agentplane.service_account",
 };
 
 it("builds Langfuse's metadata-filter URL for the Sandbox namespace and ServiceAccount", () => {

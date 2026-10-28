@@ -4,6 +4,41 @@ What `debundle` guarantees when it places spec entities in a bundle chunk. How t
 write selectors: <docs/selectors.md>. How it is implemented:
 `docs/selector_resolution.md`.
 
+## Resolved CLI invocations
+
+The global `--print-invocation` option parses the selected command normally,
+resolves its declared CLI values, environment-backed values, and meaningful
+defaults, then prints a typed `ResolvedInvocation` and exits before dispatch.
+It does not read graph contents, run source analysis or proposal work, create
+operation outputs, write graph rejection reports, or modify spec files.
+Resolution uses parsed CLI metadata, the current working directory, and
+executable path metadata only; it does not require file inputs to exist or read
+their contents. If `--invocation-out` is supplied, writing that requested
+record file is the sole print-only write.
+
+`--invocation-out <path>` persists the same record before the selected
+operation starts. An execution record is provenance for the attempted call,
+not proof of success or of completed validation. Its `requested_proof` records
+the checks the command asks to run, and its `write_scope` records possible
+operation writes. Neither field describes a completed result.
+
+The record includes the current working directory, executable path, typed
+argument values and their sources, replay argv, and a shell-quoted command.
+Declared environment-backed values are emitted as explicit replay arguments;
+explicit CLI values take precedence. The record does not dump ambient
+environment variables. A replay preserves file selection and relative-path
+resolution while the caller environment changes, but argv alone does not pin
+the contents of a spec, source tree, graph, or executable. Reproducing a
+mutation against a changed spec requires the corresponding input identity or
+snapshot provenance.
+
+Operation classification is based on the selected CLI shape: graph-snapshot or
+diagnostic-snapshot read, source-snapshot read, fresh pipeline, snapshot
+creation or verification, validated edit, unverified edit, conditional comment
+operation, or read-only analysis. Unrecognized shapes remain unclassified.
+Running an edit gate does not establish full pipeline, reconstruction, or
+runtime validation.
+
 ## Input and spec scope
 
 One run or validation resolves one exact spec against one configured input
@@ -17,6 +52,18 @@ diagnostics or propose structural candidates. Those reports do not establish
 semantic intent and do not change the spec unless an author explicitly applies
 an edit. A new upstream snapshot needs its own reviewed spec and exact validation
 against that snapshot.
+
+The `modules refine` and `modules merge` authoring edits may combine source-match
+records with byte-identical templates and matching metadata into one ordered
+capture list. Conflicting notes or overlapping local captures remain separate.
+The combined document passes the same production selector resolution and edit
+gate before writing; regrouping does not bypass source-unit identity checks.
+
+`modules merge --batch` composes all requested whole-module merges before one
+edit-gate check. Rejected plans and gate failures leave every source and target
+unchanged. Successful batches retain exact physical filenames and all claim and
+metadata fields, write every target before deleting sources, and use atomic
+per-file replacement rather than a crash-atomic multi-file transaction.
 
 ## Accepted output
 
@@ -36,10 +83,63 @@ The browser writer materializes those decisions without rediscovering entries.
 
 ## Authoring reports
 
+Each `dependency_graph.json` written by `debundle run` carries input provenance:
+SHA-256 of the executable engine and the exact bytes read for the tree config,
+vendor marks, module YAMLs, optional binding patches, JS list, every listed JS
+chunk, and vendor package files consulted by planning. Module YAML path
+membership is recorded separately, including paths outside the graph chunk.
+The provenance also retains a canonical runnable argv with resolved paths and
+effective env-provided values, the original cwd, logical root paths, and the
+config's chunk-to-module-tree mapping. A graph created before this metadata
+existed remains a historical report only.
+
+A command that combines a saved graph with current spec or source checks the
+recorded baseline before reading claims or writing edits. It refuses changed,
+added, deleted, or mismapped inputs and reports the mismatch with a regeneration
+command that uses a fresh output directory. An accepted edit evaluates its
+candidate assignment against the saved dependency analysis; the graph remains
+the **pre-edit** snapshot and the next graph-backed edit requires another
+`debundle run`. A batch edit checks one
+starting snapshot and one combined candidate. Graph-only historical views do
+not certify current input compatibility.
+
+`inspect-source --id unit:...` resolves that exact graph node without current
+module claims. It skips the authored module-scope check, allowing flat-spec
+graphs, while retaining captured-input, engine, and source identity checks.
+Other graph-backed selections and edits require the authored scope.
+
 Description reports include `module_proposals` and `module_proposal_diagnostics`
 only when proposal analysis runs. Their limits sections use the same field names.
 Proposals name their outgoing residual quotient-class dependencies with
 `edges_to_other_residual_classes` and `other_residual_classes_referenced`.
+
+## Delegated input snapshots
+
+`snapshot create` copies one saved graph's verified input set and exact engine
+bytes into a new worker directory. It preserves the input bytes and root
+relationships, rechecks copied file digests, and publishes the directory only
+after verifying the complete copy. Existing destinations are refused.
+
+The snapshot includes source chunks, the complete captured spec/config input
+set, dependency inputs, the graph, and a manifest describing the starting
+state. Its returned regeneration argument vector names the worker's copied
+engine, inputs and output directory. The returned `graph_package_roots` map
+supplies each global `--graph-package-root NAME=DIR` override for graph-backed
+queries and edits, including the `__packages_root__` fallback name. Separate
+snapshots share no writable
+input or output files. Snapshot verification continues to work after the
+original workspace is removed or the snapshot directory is moved.
+Browser source assets and their summary are copied and fingerprinted when
+the snapshot is created.
+
+`snapshot verify` checks the starting graph, engine, input contents and YAML
+membership. After a worker edits its spec, this baseline check fails; running
+the returned regeneration command produces analysis for the edited state.
+
+Snapshot creation requires a graph produced by `run` from a tree-shaped spec.
+Embedded source and vendor-bundle paths must be relative to the configured
+source root, and all captured files must belong to declared relocatable roots.
+Unsupported inputs are refused before a worker directory is published.
 
 ## Unassigned source
 
@@ -388,7 +488,46 @@ retained lazy closure are included as well, covering an accessor that returns
 another conversion callable. This is callback-effect analysis; it does not
 classify the enclosing operator as pure.
 
+## Source-anchored export policies
+
+`chunk_export_purity` normally keys contracts by the defining chunk ID.
+An optional `source_markers` list instead identifies that provider by a
+conjunction of purpose-bearing substrings; the key then serves only as a
+policy label:
+
+```yaml
+chunk_export_purity:
+  lazyRegistry:
+    source_markers: [neutral-lazy-registry, private-callback-storage]
+    pure_exports: [factory]
+    inline_callback_factory_exports: [factory]
+```
+
+Matching uses the loaded provider entry's current analysis source before
+logical-module lowering: exact input text for pass-through source entries,
+or the current staged AST's rendering for retained AST entries. It does not
+read filenames or original text from an earlier parser snapshot. Every marker
+must be nonempty, and the conjunction must identify exactly one loaded
+provider, including providers outside the selected chunks' import closure.
+Zero/multiple matches, an empty list, whitespace-only markers, and multiple
+policies resolving to one provider are spec errors. An explicit chunk-ID
+policy and a source policy for the same provider also conflict.
+
+Only the policy map is resolved to the existing provider ID. This does not
+alias, select, rename, split, relocate or rewrite the provider, and it grants
+no admission override. It can therefore configure an analyzed but unselected
+provider whose `import.meta` context must remain in its existing output file.
+Existing input/output relocation rules remain unchanged. The markers identify
+a provider; they do not prove its contracts. Each purity, callback, intrinsic
+and publication premise still requires the same independent source audit.
+
 ## Audited callback factories
+
+Optional calls retain conservative callee, receiver and argument callback
+effects even when their value and short-circuit behavior cannot be inferred.
+Known local return graphs keep their callable captures and a possible undefined
+result. Optional calls do not acquire assertions scoped to ordinary direct-call
+syntax.
 
 `chunk_export_purity.<defining chunk>.callback_factory_exports` lists named
 exports whose calls are audited to defer a single callback argument.
@@ -429,6 +568,123 @@ Calls with a named callback, a retained factory result, spread arguments, or
 `new` use conservative callback timing. This contract is independent of purity
 and does not grant the broader `callback_factory_exports` composition rule.
 
+### Retaining existing or multiple callbacks
+
+`retained_callback_factory_exports` and `retained_callback_factory_members`
+are **separate, stronger author assertions**. No provider name implies this
+contract. Each entry lists exact audited signatures:
+
+```yaml
+chunk_export_purity:
+  provider:
+    retained_callback_factory_exports:
+      factory:
+        - { argument_count: 1, callback_arguments: [0] }
+    retained_callback_factory_members:
+      api:
+        make:
+          - { argument_count: 2, callback_arguments: [0, 1] }
+```
+
+Positions are zero-based. At least one position must be listed, every listed
+position must be less than `argument_count`, and all arguments must be present.
+Unlisted positions admit only the inert primitive syntax of `no_reentry_exports`.
+Spread, construction, computed/chained/aliased callees, uncertain callback
+values, and unlisted arities retain conservative timing. The older contracts
+continue to admit their existing shapes independently when both are declared.
+
+Listed positions admit inline functions/arrows, stable local named function
+values, and retained audited-factory results. Every admitted callback contributes
+to a single over-approximated returned callback graph; extracting any member or
+invoking or publishing that graph can expose all those callbacks and their
+lexical captures. The contract never proves callback purity.
+
+The author must audit **both the provider and each admitted call site's input
+graphs**. Unlike a fresh inline callback, an existing function has observable
+identity, aliases, own properties and a prototype. All provider/type/helper paths
+must refrain from synchronously invoking any caller/importer/host callback,
+publishing or mutating any supplied graph, or accessing importer-owned lexical
+state through any other route. The provider must return a fresh ordinary
+callable/plain-object graph retaining the supplied callbacks, without introducing
+additional provider callbacks, existing-instance aliases or cross-call state.
+Provider-private effects remain allowed and normally ordered.
+
+The callable property/prototype surfaces exposed through the result must contain
+only inert metadata, standard intrinsic properties, and capabilities already
+represented by the supplied callbacks and their lexical captures. Additional
+callbacks attached as custom properties/prototypes, proxies and accessors are
+outside the contract. A provider audit alone cannot establish this importer-side
+obligation. Recognized mutation, rebinding and exposure keep the conservative
+fallback; the checker does not prove the absence of all external aliases.
+
+Namespace members retain the existing namespace identity, mutation and lookup
+guards and require the same namespace capability audit as the fresh-only
+contract. Result mutation and later callback invocation/publication retain the
+ordinary synchronous-effect checks. No callback deferral assertion implies
+purity or permission to reorder argument evaluation.
+
+`debundle gate diagnose <binding>` provides a bounded source-backed trace for
+one ownership target through constraining promoted callback dependencies. Its
+initial supported rejection family is a matched imported namespace-member
+callback-factory signature rejected by a top-level write to that member or a
+recognized alias. The report names the matched signature and a write witness
+selected by source-unit order, with deterministic selection within a unit,
+including receiver, property, source span, and graph source-unit reference. A
+supported row also requires the promoted edge's callee source unit to match a
+statically resolved callback argument root from that exact signature.
+Unresolved callback arguments and source-unit mismatches are inconclusive. The
+report provides an explicit-path `inspect-source` command. Diagnose currently
+does not read or fingerprint the source input, so it does not emit a parsed
+statement ID or apply a possibly stale `SourceUnitOrdinal -> StatementId`
+crosswalk. Five rows are returned by
+default; `--all` requests exhaustive output, while query status summarizes all
+uniquely linked candidate edges regardless of the output limit. This is a
+local witness for this guard family, not a claim of a sole or globally earliest
+cause. Other guard families and absent promoted
+dependencies are inconclusive. Multiple candidate barriers at one source unit
+are also reported as an ambiguous link rather than cross-paired with callback
+dependencies. Configured overloads are included only when their arity and
+callback argument positions apply to the actual call.
+
+### Retaining callbacks in constructed instances
+
+`retained_callback_constructor_exports` is a separate author assertion for
+direct `new` expressions through named or default imported bindings:
+
+```yaml
+chunk_export_purity:
+  provider:
+    retained_callback_constructor_exports:
+      Box:
+        - { argument_count: 3, callback_arguments: [0, 1] }
+```
+
+It uses the exact signature validation and callback/input-graph audit above.
+Non-callback positions admit only inert primitive syntax. Spreads, namespace
+member constructors, local constructor aliases, uncertain callback values and
+unlisted arities keep conservative timing. This assertion does not apply to
+ordinary calls; factory assertions do not apply to construction.
+
+The author must audit construction, including superclass construction, field
+initializers, default arguments and helpers: none may synchronously invoke,
+inspect, coerce, mutate or publish the supplied callback graphs, or access
+importer-owned lexical state through another capability. The imported
+constructor's identity and construction behavior must remain stable during
+synchronous initialization. The result must be a fresh instance retaining only
+the supplied callback graphs, without preexisting-instance aliases or shared
+callback storage across constructions. Its reachable methods, prototype and
+property surfaces must introduce no unrepresented importer capabilities;
+provider-private helper methods are allowed only under that same audit.
+Proxies, accessors and externally mutable callback-bearing prototypes are
+outside the contract. Intrinsic-integrity premises must also be established.
+
+Recognized callback rebinding, mutation and exposure retain conservative
+timing. Extracting an instance member, invoking it or publishing the instance
+can expose every retained callback and its captures, including graphs returned
+by those callbacks. Argument evaluation and provider-private effects retain
+their normal checks and ordering. The contract does not assert construction
+purity: `pure_new_exports` or `purity: pure_new` requires its own audit.
+
 `chunk_export_purity.<defining chunk>.no_reentry_exports` asserts that direct
 calls of listed named imports cannot synchronously invoke caller-, importer-,
 or host-provided callbacks or read importer-owned lexical state. The author
@@ -442,6 +698,40 @@ expressions are still visited normally.
 Aliases, uncertain arguments, and result use retain ordinary reentry checks.
 The defining module still initializes in its usual order. This contract is
 independent of `pure_exports` and callback-factory assertions.
+
+`chunk_export_purity.<defining chunk>.no_reentry_callback_exports` is a separate
+author assertion for direct imported calls with exact callback-bearing signatures:
+
+```yaml
+chunk_export_purity:
+  provider:
+    no_reentry_callback_exports:
+      register:
+        - { argument_count: 2, callback_arguments: [0] }
+```
+
+Positions are zero-based and at least one callback position is required. Every
+unlisted argument must use the checked inert primitive syntax described above.
+Listed arguments must resolve to stable local ordinary callable identities;
+inline functions/arrows and stable named aliases are supported. Rebound,
+exposed, mutated, uncertain or non-callable values, retained result graphs,
+callee aliases, namespace calls, spread and construction remain conservative.
+
+The author audits every admitted provider/type/helper path and each callable's
+own/prototype surface and aliases. During the call, the provider must not invoke
+any supplied, caller-, importer- or host-provided callback, mutate supplied
+graphs, inspect effectful properties/prototypes or access importer-owned lexical
+state. The exported callable must retain its audited identity and behavior
+through synchronous initialization. Provider-private effects remain allowed.
+
+Unlike the returned-graph factory contracts, this assertion permits storing
+callbacks in cross-call provider registries or returning opaque capabilities.
+After argument evaluation and the audited call, every supplied callback and its
+capture graph becomes globally reachable in the analysis, even if the actual
+provider only returns it. Every later opaque call or protocol operation may
+invoke those callbacks. Sibling/operand evaluation and later invocation,
+publication or mutation retain their ordinary checks. The result stays opaque.
+This contract does not imply purity or any factory/constructor retention policy.
 
 `chunk_export_purity.<defining chunk>.no_reentry_members` asserts a narrower
 call-timing fact for listed static namespace members: with admitted primitive
@@ -614,8 +904,63 @@ through the alias retain the conservative fallback.
 Primitive-valued operator results cannot carry the global-object identity.
 The synthetic protocol call for a literal-key `in` check on a direct builtin
 global root does not publish that root as a value; its possible host or proxy
-effects remain in synchronous effect analysis. Dynamic keys, aliases, ordinary
+effects remain in synchronous effect analysis unless the independent audited
+membership contract below applies. Dynamic keys, aliases, ordinary
 calls, and visible root replacement retain the conservative publication guard.
+
+## Audited builtin-global membership probes
+
+`chunk_analysis_options.<chunk>.non_reentrant_global_membership` maps builtin
+roots (`globalThis` or `window`) to literal string keys. For example:
+
+```yaml
+non_reentrant_global_membership:
+  globalThis: [featureEnabled]
+```
+
+This separately certifies the host's `[[HasProperty]]` protocol at every admitted
+probe. The author must audit that the exact global object and its complete
+prototype/alias surface remain intact throughout synchronous initialization,
+including code in other chunks and host setup. The probe must neither invoke
+or publish caller/importer/host callbacks nor access importer-owned lexical
+cells through getters, proxies, modified prototypes or other hidden routes.
+A browser-global name alone establishes none of these facts. Clean native
+host behavior is a strong per-probe author premise, not inferred builtin trust.
+
+Admission requires a listed literal string on the left of `in` and a direct,
+unshadowed listed root on the right (parentheses are transparent). Keys with
+unpaired surrogate code units cannot match the UTF-8 assertion and keep fallback.
+Parameters, block-local bindings, imported roots, aliases, other roots, effectful receivers
+and nonliteral keys keep their conservative protocol behavior. Recognized
+root replacement, prototype writes, mutated Object intrinsics, dynamic global
+member access, dynamic scope or global-root publication/escape also disable
+the certificate. An earlier discarded synchronous function IIFE may use the
+existing mechanically checked confined alias rule; its derived values cannot
+escape or touch the protected keys or prototype/identity surface. Unsupported
+or hidden alias/prototype mutations remain part of the author's audit burden.
+
+A computed write to another object reached through a global property, such as
+`globalThis.cache[key]`, does not alone identify a root/prototype mutation.
+Explicit `__proto__`, `prototype` and `constructor` writes still reject, as do
+computed writes on recognized global identity or constructor/prototype paths
+(including `window.parent`, `document.defaultView` and `Window.prototype`).
+Stored direct/recognized identity back-aliases (including nested record values)
+remain rejecting. Storing a recognized prototype/constructor value on a
+global-rooted receiver also rejects; merely holding that value in an unrelated
+private object does not. The other root-exposure guards remain rejecting.
+The author must establish that an otherwise admitted descendant cannot alias
+the protected root or prototype surface; no host-property name proves this.
+Indirect aliases through untracked variables, calls or host fields still need
+the complete author audit; the path classifier does not prove their absence.
+The descendant write retains its normal execution effects and callback checks.
+
+Only protocol callback reentry is suppressed. Both operands and their existing
+reads/effects are still evaluated and indexed in source order. Purity,
+possible errors/throws, global-property dependencies and unrelated call effects
+retain their existing treatment. The emitted JavaScript still executes the
+original operator. Unlisted probes remain conservative even in the same chunk.
+`deferred_global_publications` certifies a different timing boundary and never
+implies this membership contract, or vice versa.
 
 ## Local-effect decorator annotations
 

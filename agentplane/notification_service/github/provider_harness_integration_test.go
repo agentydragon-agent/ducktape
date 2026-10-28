@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
@@ -25,27 +24,13 @@ import (
 var database *postgres.Database
 
 func TestMain(m *testing.M) {
-	os.Exit(runIntegrationTests(m))
-}
-
-func runIntegrationTests(m *testing.M) int {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	started, err := postgres.Start(ctx, migrations.Up)
-	cancel()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	database = started
-
-	code := m.Run()
-	if err := database.Close(); err != nil {
-		fmt.Fprintln(os.Stderr, "close PostgreSQL fixture:", err)
-		if code == 0 {
-			code = 1
-		}
-	}
-	return code
+	os.Exit(postgres.RunIntegrationTests(
+		migrations.Up,
+		func(fixtureDatabase *postgres.Database) int {
+			database = fixtureDatabase
+			return m.Run()
+		},
+	))
 }
 
 const (
@@ -67,6 +52,7 @@ type world struct {
 
 	mu               sync.Mutex
 	head             string
+	base             string
 	fork             bool
 	revoked, limited bool
 	// onRequest runs before a request is answered, outside the lock; it may block until the request is cancelled.
@@ -81,7 +67,7 @@ func (w *world) update(change func(*world)) {
 
 func (w *world) serve(rw http.ResponseWriter, r *http.Request, path string) bool {
 	w.mu.Lock()
-	head, fork, revoked, limited, hook := w.head, w.fork, w.revoked, w.limited, w.onRequest
+	head, base, fork, revoked, limited, hook := w.head, w.base, w.fork, w.revoked, w.limited, w.onRequest
 	w.mu.Unlock()
 	if hook != nil {
 		hook(r.Context(), path)
@@ -116,15 +102,23 @@ func (w *world) serve(rw http.ResponseWriter, r *http.Request, path string) bool
 		if fork {
 			repository = fmt.Sprintf(`{"id": %d, "full_name": "fork/repo"}`, forkRepository)
 		}
-		reply(http.StatusOK, fmt.Sprintf(`{"number": %s, "head": {"sha": %q, "repo": %s}}`, last, head, repository))
+		reply(http.StatusOK, fmt.Sprintf(`{"number": %s, "state": "open", "merged": false, "base": {"ref": "main", "sha": %q}, "mergeable": true, "merge_commit_sha": %q, "head": {"sha": %q, "repo": %s}}`, last, base, testMergeCommitSHA, head, repository))
 	case strings.Contains(path, "/issues/"):
 		reply(http.StatusOK, fmt.Sprintf(`{"number": %s}`, last))
+	case path == "/repos/owner/repo/git/ref/heads/main":
+		if base == "" {
+			reply(http.StatusNotFound, "")
+		} else {
+			reply(http.StatusOK, fmt.Sprintf(`{"object": {"sha": %q}}`, base))
+		}
 	case strings.Contains(path, "/git/ref/"):
 		if head == "" {
 			reply(http.StatusNotFound, "")
 		} else {
 			reply(http.StatusOK, fmt.Sprintf(`{"object": {"sha": %q}}`, head))
 		}
+	case path == "/repos/owner/repo/git/commits/"+testMergeCommitSHA:
+		reply(http.StatusOK, fmt.Sprintf(`{"sha": %q, "parents": [{"sha": %q}, {"sha": %q}]}`, testMergeCommitSHA, base, head))
 	case strings.Contains(path, "/commits/"):
 		reply(http.StatusOK, fmt.Sprintf(`{"sha": %q}`, last))
 	default:
@@ -162,7 +156,7 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	h := &harness{t: t, db: db, fake: newFake(t), world: &world{t: t, head: testSHA}}
+	h := &harness{t: t, db: db, fake: newFake(t), world: &world{t: t, head: testSHA, base: testBaseSHA}}
 	h.fake.handler = h.world.serve
 	h.exec(`TRUNCATE inbox, github_installation, github_repository, github_delivery CASCADE`)
 	h.restart()

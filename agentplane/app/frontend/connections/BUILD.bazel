@@ -4,6 +4,20 @@ load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
 
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = glob(
+        [
+            "*.ts",
+            "*.tsx",
+            "**/*.ts",
+            "**/*.tsx",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//agentplane/app/frontend:__pkg__"],
+)
+
 TSCONFIG = "//agentplane/app/frontend:tsconfig"
 
 ts_library(
@@ -46,6 +60,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":connection_service_client",
+        ":models",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -79,9 +94,9 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/app/frontend:bindings_table",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend/actions:policy",
+        "//agentplane/app/frontend/bindings:table",
         "//util/frontend:help_tooltip",
     ],
 )

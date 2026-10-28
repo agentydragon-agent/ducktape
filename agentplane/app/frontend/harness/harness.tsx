@@ -41,11 +41,15 @@ import {
 } from "../actions/proto_test_fixtures";
 import { sampleConnection } from "../connections/fixture";
 import type { Connection } from "../connections/models";
-import type { BindingView, Decision, DispatchReceipt, PolicySetView, SandboxView, ThreadView } from "../client";
+import { type BindingView, type PolicySetView, type Decision, type SandboxView } from "../sandboxes/client";
+
+import type { DispatchReceipt, ThreadView } from "../threads/client";
 import { ACTION_RENDERERS } from "../actions/rendering/index";
 import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
 import type { McpLinkageView } from "../mcp_linkage_client";
-import type { DecisionsSnapshot, SandboxesSnapshot, SandboxSnapshot, ThreadsSnapshot, WatchHealth } from "../live";
+import type { DecisionsSnapshot, SandboxesSnapshot, SandboxSnapshot } from "../sandboxes/live";
+import type { ThreadsSnapshot } from "../threads/live";
+import type { WatchHealth } from "../live";
 import type {
   GitHubSubject,
   InboxNoticeState,
@@ -955,7 +959,7 @@ function withDormantSession(thread: ThreadView): ThreadView {
   return thread.id === RUNNING_THREAD
     ? {
         ...thread,
-        name: "Dormant harness session",
+        name: "Dormant harness thread",
         feed_status: "active",
         harness_state: "HARNESS_STATE_STOPPED",
         active_turn_id: null,
@@ -968,6 +972,77 @@ function withFailedTurn(thread: ThreadView): ThreadView {
   return thread.id === IDLE_THREAD
     ? { ...thread, name: "Failed-turn thread", last_turn_status: "TURN_STATUS_FAILED" }
     : thread;
+}
+
+function autosuspendCountdown(): void {
+  const sandbox = SANDBOXES.find((candidate) => candidate.name === "ready-sandbox");
+  if (!sandbox) throw new Error("Missing ready Sandbox fixture");
+  sandbox.idle_suspend_after_seconds = 900;
+  sandbox.idle_suspend_at = ago(-12 * 60_000);
+  threadEntityRows = interleavedRows;
+  mapThread = (thread) =>
+    thread.id === IDLE_THREAD
+      ? {
+          ...thread,
+          name: "Idle thread awaiting autosuspend",
+          active_turn_id: null,
+          last_model_activity_at: ago(13 * 60_000 + 25_000),
+          idle_since: ago(13 * 60_000 + 5_000),
+        }
+      : thread;
+}
+
+function autosuspendBusy(): void {
+  autosuspendCountdown();
+  const sandbox = SANDBOXES.find((candidate) => candidate.name === "ready-sandbox");
+  if (!sandbox) throw new Error("Missing ready Sandbox fixture");
+  // Exercise busy facts taking precedence over a retained idle deadline.
+  sandbox.autosuspend_blockers = [
+    { reason: "ActiveTurn", session_id: RUNNING_THREAD },
+    { reason: "Setup", session_id: UNNAMED_STOPPED_THREAD },
+    { reason: "Bootstrap", session_id: null },
+  ];
+  const countdownThread = mapThread;
+  mapThread = (thread) => {
+    const mapped = countdownThread(thread);
+    if (thread.id === IDLE_THREAD) return { ...mapped, name: "Idle thread sharing a busy Sandbox" };
+    if (thread.id === RUNNING_THREAD) return { ...mapped, name: "Session running a turn" };
+    if (thread.id === UNNAMED_STOPPED_THREAD) {
+      return { ...mapped, name: "Session running setup", setup_state: "SETUP_STATE_RUNNING" };
+    }
+    return mapped;
+  };
+}
+
+function autosuspendStarting(): void {
+  autosuspendCountdown();
+  const ready = SANDBOXES.find((candidate) => candidate.name === "ready-sandbox");
+  if (!ready) throw new Error("Missing ready Sandbox fixture");
+  SANDBOXES.push({
+    ...ready,
+    name: "starting-sandbox",
+    uid: "0f9c1d2e-0000-4000-8000-000000000077",
+    service_account: { namespace: ready.namespace, name: "starting-sandbox" },
+    phase: "Creating",
+    pod: null,
+    status: null,
+    idle_suspend_at: null,
+    autosuspend_blockers: [],
+  });
+  const countdownThread = mapThread;
+  mapThread = (thread) => {
+    const mapped = countdownThread(thread);
+    return thread.id === IDLE_THREAD
+      ? {
+          ...mapped,
+          sandbox: "starting-sandbox",
+          name: "Thread waiting for Sandbox startup",
+          harness_state: "HARNESS_STATE_STOPPED",
+          feed_status: "ended",
+        }
+      : mapped;
+  };
+  rememberDispatch(IDLE_THREAD);
 }
 
 let mapThread = (thread: ThreadView): ThreadView => thread;
@@ -1712,7 +1787,7 @@ function statesRows(threadId: string, outcomes = false): Record<string, unknown>
       outcomes ? "Target turn already ended" : null
     ),
     // Admitted and still pending, so it renders inline as a pending message bubble rather than in
-    // the pending-commands box below -- see projected_session.tsx's pendingSentMessage.
+    // the pending-commands box below -- see conversation.tsx's pendingSentMessage.
     command(26, "queued-submit", "submit_input", "pending", null, "Continue past the failing test once it lands."),
     command(
       27,
@@ -1896,16 +1971,21 @@ function standaloneReasoningRows(
 ): Record<string, unknown>[] {
   const reasoning = codeFence
     ? [
-        "# Result",
+        "> Check",
         "",
-        "I checked the typed implementation and its returned value:",
+        "| State | Count |",
+        "| --- | --- |",
+        "| Ready | 2 |",
+        "",
+        "- Parsed",
+        "- Complete",
         "",
         "```python",
         "def greet(name: str) -> str:",
         '    return f"Hello, {name}!"',
         "```",
         "",
-        "The complete implementation remains available when expanded.",
+        "The complete result remains available when expanded.",
       ].join("\n")
     : longBody
       ? LONG_REASONING_BODY
@@ -3238,7 +3318,7 @@ function projectQueuedSession(): void {
   const projected: ThreadView = {
     ...source,
     id: sessionId,
-    name: "Queued opening session",
+    name: "Queued opening thread",
     created_at: ago(0),
     last_cursor: 0,
     last_event_at: ago(0),
@@ -3287,6 +3367,9 @@ const visualHarness = {
   mountOperationPresentation(): void {
     mount(<OperationPresentationVisual />);
   },
+  autosuspendCountdown,
+  autosuspendBusy,
+  autosuspendStarting,
   addProvisioningSandbox,
   addSuspendedSandboxes,
   queueOpenResponse(): void {

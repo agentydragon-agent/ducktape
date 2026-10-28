@@ -7,16 +7,50 @@ import {
   fmtQuanta,
   fmtNumber,
 } from "./lib/format";
-import { METRIC_OPTIONS, sleeveKey } from "./input_helpers";
+import { METRIC_OPTIONS, sleeveKey, type LifecycleInputEvent, type productInputDefaults } from "./input_helpers";
+import type {
+  CalibrationRunResponse,
+  ProductPortfolioResponse,
+  ProductProjectionSummary,
+  ProductRolloutResponse,
+} from "./client";
 import { ROLLOUT_EVENT_KIND_ORDER, type RolloutEventKind } from "./rollout_event_vocabulary.generated";
 
 export { ROLLOUT_EVENT_KIND_ORDER };
 
-function currency(result) {
+type ProductMetricFan = ProductProjectionSummary["metricFan"];
+type ProductTerminalDistribution = ProductProjectionSummary["terminalDistribution"];
+type ProductRollout = ProductRolloutResponse["rollout"];
+type RolloutEvent = ProductRollout["events"][number];
+type CurrencyMetadata = { currencyCode?: string; currencyQuantum?: string };
+type RolloutEventWithCurrency = RolloutEvent & { _currency: CurrencyMetadata };
+type EventKind = RolloutEvent["kind"];
+type EventOfKind<Kind extends EventKind> = Extract<RolloutEventWithCurrency, { kind: Kind }>;
+type CalibrationMarkFan = NonNullable<CalibrationRunResponse["markFans"]>[number];
+type MetricOption = (typeof METRIC_OPTIONS)[number];
+type ProductInput = ReturnType<typeof productInputDefaults>;
+type RolloutSummary = Pick<ProductRollout, "failed" | "endingMetrics">;
+type DueWithShortfallEvent = EventOfKind<
+  | "monthly_expense"
+  | "outside_rent"
+  | "tax_payment"
+  | "property_tax_payment"
+  | "hoa_dues_payment"
+  | "homeowners_insurance_payment"
+  | "property_maintenance_payment"
+>;
+type EventFormatterMap = {
+  [Kind in EventKind]: {
+    label: (event: EventOfKind<Kind>) => string;
+    detail: (event: EventOfKind<Kind>) => string;
+  };
+};
+
+function currency(result: { currencyCode: string; currencyQuantum: string } | null | undefined): CurrencyMetadata {
   return { currencyCode: result?.currencyCode, currencyQuantum: result?.currencyQuantum };
 }
 
-function cu(value, currencyMeta) {
+function cu(value: unknown, currencyMeta: CurrencyMetadata | undefined) {
   return fmtQuanta(value, currencyMeta);
 }
 
@@ -71,10 +105,10 @@ export const TABLE_NUMERIC_HEADER = "px-3 py-2 text-right font-semibold";
 export const SELECTED_COL_HEADER = "px-3 py-2 text-right font-semibold text-teal-700 dark:text-teal-300";
 export const SELECTED_COL_CELL = "px-3 py-2 text-right font-semibold text-teal-700 augur-tabular dark:text-teal-300";
 
-export function metricFanRows(result) {
+export function metricFanRows(result: ProductMetricFan | null | undefined) {
   if (!result?.monthlyMetricFan) return [];
-  const byMonth = new Map();
-  const displayValuesByMonth = new Map();
+  const byMonth = new Map<number, Map<number, number>>();
+  const displayValuesByMonth = new Map<number, Map<number, string | number | boolean>>();
   for (const row of rowsFrom(result.monthlyMetricFan)) {
     if (row.valueQuanta == null) continue;
     const monthIndex = Number(row.monthIndex);
@@ -82,10 +116,18 @@ export function metricFanRows(result) {
     const rawValue = row.valueQuanta;
     const metricValue = currencyQuantaChartNumber(rawValue, result.currencyQuantum);
     if (!Number.isFinite(monthIndex) || !Number.isFinite(percentile) || !Number.isFinite(metricValue)) continue;
-    if (!byMonth.has(monthIndex)) byMonth.set(monthIndex, new Map());
-    if (!displayValuesByMonth.has(monthIndex)) displayValuesByMonth.set(monthIndex, new Map());
-    byMonth.get(monthIndex).set(percentile, metricValue);
-    displayValuesByMonth.get(monthIndex).set(percentile, rawValue);
+    let monthValues = byMonth.get(monthIndex);
+    if (monthValues == null) {
+      monthValues = new Map();
+      byMonth.set(monthIndex, monthValues);
+    }
+    let monthDisplayValues = displayValuesByMonth.get(monthIndex);
+    if (monthDisplayValues == null) {
+      monthDisplayValues = new Map();
+      displayValuesByMonth.set(monthIndex, monthDisplayValues);
+    }
+    monthValues.set(percentile, metricValue);
+    monthDisplayValues.set(percentile, rawValue);
   }
   return [...byMonth.entries()]
     .sort(([left], [right]) => left - right)
@@ -103,7 +145,7 @@ export function metricFanRows(result) {
 // The fan's `percentiles` are numbers (5, 25, ...) while each month's `values` is keyed by the
 // stringified percentile ("5.0", ...), so we re-key the Map by `Number(...)` to line up with the
 // `percentiles` prop the chart sorts over (`Number("5.0") === 5`).
-export function markFanRows(markFan) {
+export function markFanRows(markFan: CalibrationMarkFan | null | undefined) {
   if (!markFan?.months) return [];
   return markFan.months
     .map((month) => ({
@@ -119,7 +161,10 @@ export function markFanRows(markFan) {
     .sort((left, right) => left.monthIndex - right.monthIndex);
 }
 
-export function terminalPercentileValue(result, percentile) {
+export function terminalPercentileValue(
+  result: Pick<ProductTerminalDistribution, "terminalMetricPercentiles"> | null | undefined,
+  percentile: number
+) {
   if (!result?.terminalMetricPercentiles) return null;
   for (const row of rowsFrom(result?.terminalMetricPercentiles)) {
     if (Number(row.percentile) === percentile) {
@@ -129,7 +174,7 @@ export function terminalPercentileValue(result, percentile) {
   return null;
 }
 
-export function terminalMetricSamples(result, metric) {
+export function terminalMetricSamples(result: ProductTerminalDistribution | null | undefined, metric: MetricOption) {
   if (result?.metric !== metric.value || !result?.terminalMetricSamples) return [];
   return rowsFrom(result.terminalMetricSamples)
     .filter((row) => row.valueQuanta != null)
@@ -143,7 +188,11 @@ export function terminalMetricSamples(result, metric) {
     .filter((row) => Number.isInteger(row.seed) && Number.isFinite(row.value));
 }
 
-export function terminalSampleAtPercentile(result, metric, percentile) {
+export function terminalSampleAtPercentile(
+  result: ProductTerminalDistribution | null | undefined,
+  metric: MetricOption,
+  percentile: number
+) {
   const samples = terminalMetricSamples(result, metric)
     .slice()
     .sort((left, right) => currencyQuantaCompare(left.currencyQuanta, right.currencyQuanta) || left.seed - right.seed);
@@ -153,14 +202,17 @@ export function terminalSampleAtPercentile(result, metric, percentile) {
   return samples[Math.max(0, Math.min(samples.length - 1, rank))];
 }
 
-export function endingMetricValue(endingMetrics, metric) {
+export function endingMetricValue(
+  endingMetrics: ProductRollout["endingMetrics"] | null | undefined,
+  metric: MetricOption
+) {
   return endingMetrics?.[metric.chartValue] ?? null;
 }
 
 const PROPERTY_METRIC_VALUES = new Set(["property_value"]);
 const MORTGAGE_METRIC_VALUES = new Set(["mortgage_balance", "home_equity"]);
 
-export function visibleMetricOptions(input) {
+export function visibleMetricOptions(input: ProductInput | null | undefined) {
   const hasProperty = input?.propertyId != null;
   const hasMortgage = hasProperty && input?.financingKind === "mortgage";
   return METRIC_OPTIONS.filter((metric) => {
@@ -170,23 +222,27 @@ export function visibleMetricOptions(input) {
   });
 }
 
-export function rolloutStatusText(summary) {
+export function rolloutStatusText(summary: RolloutSummary | null | undefined) {
   if (!summary) return "No rollout selected";
   const failedMonth = summary.endingMetrics?.failedMonthIndex;
   if (summary.failed) return Number.isFinite(failedMonth) ? `failed m${failedMonth}` : "failed";
   return "completed";
 }
 
-export function selectedRolloutMetricRows(detail, metric) {
-  if (!detail?.rollout?.monthlyMetrics) return [];
-  const ending = detail.rollout.endingMetrics;
-  return rowsFrom(detail.rollout.monthlyMetrics)
+export function selectedRolloutMetricRows(detail: ProductRolloutResponse | null | undefined, metric: MetricOption) {
+  if (detail == null) return [];
+  const rollout = detail.rollout;
+  if (rollout == null || !rollout.monthlyMetrics) return [];
+  const failed = rollout.failed;
+  const endingSnapshotIndex = rollout.endingMetrics?.snapshotIndex;
+  const endingFailedMonthIndex = rollout.endingMetrics?.failedMonthIndex;
+  return rowsFrom(rollout.monthlyMetrics)
     .map((row) => ({
       monthIndex: Number(row.monthIndex),
       // The stopped post-event book has not observed the next month's market mark.
       year:
-        (detail.rollout.failed && Number(row.monthIndex) === ending.snapshotIndex
-          ? ending.failedMonthIndex
+        (failed && Number(row.monthIndex) === endingSnapshotIndex
+          ? Number(endingFailedMonthIndex)
           : Number(row.monthIndex)) / 12,
       value: currencyQuantaChartNumber(row[metric.chartValue], detail.currencyQuantum),
       currencyQuanta: row[metric.chartValue],
@@ -195,66 +251,75 @@ export function selectedRolloutMetricRows(detail, metric) {
     .filter((row) => Number.isFinite(row.monthIndex) && Number.isFinite(row.value));
 }
 
-export function selectedRolloutEvents(detail) {
+export function selectedRolloutEvents(detail: ProductRolloutResponse | null | undefined): RolloutEventWithCurrency[] {
   return Array.isArray(detail?.rollout?.events)
     ? detail.rollout.events.map((event) => ({ ...event, _currency: currency(detail) }))
     : [];
 }
 
-export function eventMonthIndex(event) {
+export function eventMonthIndex(event: RolloutEvent | null | undefined) {
   const monthIndex = Number(event?.monthIndex);
   return Number.isFinite(monthIndex) ? monthIndex : null;
 }
 
-export function eventStateMonthIndex(event) {
+export function eventStateMonthIndex(event: RolloutEvent | null | undefined) {
   const monthIndex = eventMonthIndex(event);
   return monthIndex == null ? null : monthIndex + 1;
 }
 
-export function eventGroupsByMonth(events) {
-  const groups = new Map();
+export function eventGroupsByMonth(events: readonly RolloutEventWithCurrency[]) {
+  const groups = new Map<number, RolloutEventWithCurrency[]>();
   for (const event of events) {
     const monthIndex = eventMonthIndex(event);
     if (monthIndex == null) continue;
-    if (!groups.has(monthIndex)) groups.set(monthIndex, []);
-    groups.get(monthIndex).push(event);
+    let monthEvents = groups.get(monthIndex);
+    if (monthEvents == null) {
+      monthEvents = [];
+      groups.set(monthIndex, monthEvents);
+    }
+    monthEvents.push(event);
   }
   return [...groups.entries()]
     .sort(([left], [right]) => left - right)
     .map(([monthIndex, monthEvents]) => ({ monthIndex, events: monthEvents }));
 }
 
-export function eventColor(event) {
-  return ROLLOUT_EVENT_COLORS[event?.kind] ?? "#64748b";
+export function eventColor(event: RolloutEvent | null | undefined) {
+  if (!event) return "#64748b";
+  return ROLLOUT_EVENT_COLORS[event.kind] ?? "#64748b";
 }
 
-export function eventAmount(event) {
+export function eventAmount(event: RolloutEvent | null | undefined) {
   return event?.amountQuanta ?? null;
 }
 
-export function jurisdictionLabel(jurisdictionId) {
+export function jurisdictionLabel(jurisdictionId: EventOfKind<"tax_accrual">["jurisdictionId"] | null | undefined) {
   if (jurisdictionId === "federal_us") return "federal";
   if (jurisdictionId === "california") return "California";
   return (jurisdictionId ?? "").replace(/_/g, " ");
 }
 
-export function formatDueWithShortfall(amountDueQuanta, shortfallQuanta, currencyMeta) {
+export function formatDueWithShortfall(
+  amountDueQuanta: unknown,
+  shortfallQuanta: unknown,
+  currencyMeta: CurrencyMetadata
+) {
   const base = `due ${cu(amountDueQuanta, currencyMeta)}`;
   return currencyQuantaIsPositive(shortfallQuanta) ? `${base}; shortfall ${cu(shortfallQuanta, currencyMeta)}` : base;
 }
 
-export function shortfallLabel(event, { ok, shortfall }) {
+export function shortfallLabel(event: DueWithShortfallEvent, { ok, shortfall }: { ok: string; shortfall: string }) {
   return currencyQuantaIsPositive(event.shortfallQuanta) ? shortfall : ok;
 }
 
-export function taxPaymentLabel(event) {
+export function taxPaymentLabel(event: EventOfKind<"tax_payment">) {
   const isShortfall = currencyQuantaIsPositive(event.shortfallQuanta);
   if (event.obligationType === "estimated_tax") return isShortfall ? "Estimated tax shortfall" : "Paid estimated taxes";
   if (event.obligationType === "tax_true_up") return isShortfall ? "Tax true-up shortfall" : "Paid tax true-up";
   return isShortfall ? "Tax payment shortfall" : "Paid taxes";
 }
 
-export function taxAccrualDetail(event) {
+export function taxAccrualDetail(event: EventOfKind<"tax_accrual">) {
   const gain = currencyQuantaAdd(event.ltcgQuanta, event.stcgQuanta);
   const parts = [
     `ordinary tax ${cu(event.ordinaryTaxQuanta, event._currency)}`,
@@ -273,7 +338,7 @@ export function taxAccrualDetail(event) {
   return parts.join("; ");
 }
 
-export function propertyPurchaseDetail(event) {
+export function propertyPurchaseDetail(event: EventOfKind<"property_purchase">) {
   const parts = [`down ${cu(event.downPaymentQuanta, event._currency)}`];
   if (currencyQuantaIsPositive(event.mortgagePrincipalQuanta)) {
     parts.push(`mortgage ${cu(event.mortgagePrincipalQuanta, event._currency)}`);
@@ -281,13 +346,18 @@ export function propertyPurchaseDetail(event) {
   return parts.join("; ");
 }
 
-const dueWithShortfallDetail = (event) =>
+const dueWithShortfallDetail = (event: DueWithShortfallEvent) =>
   formatDueWithShortfall(event.amountDueQuanta, event.shortfallQuanta, event._currency);
 
 // A human-friendly name for the typed `AssetKey` an event carries — the display fallback when
 // no curated `assetLabel` is set. Derived from the kind's own identifying field (the security's
 // symbol, the PE issuer), not the old `crypto:btc`-style wire string.
-function assetDisplayName(asset) {
+type EventAsset =
+  | EventOfKind<"holding_sale">["asset"]
+  | EventOfKind<"private_equity_event">["asset"]
+  | EventOfKind<"private_equity_opportunity">["asset"];
+
+function assetDisplayName(asset: EventAsset | null | undefined) {
   if (!asset) return undefined;
   switch (asset.kind) {
     case "security":
@@ -299,22 +369,22 @@ function assetDisplayName(asset) {
   }
 }
 
-// Single source of truth for per-event-kind label + detail rendering. Adding a new
-// `RolloutEvent` discriminator must add an entry here, otherwise eventLabel/eventDetailText fall
-// back to the generic "Event" / "" defaults.
-export const EVENT_FORMATTERS = {
+// The mapped type requires a formatter for every generated `RolloutEvent` discriminator.
+const tlhOperationLabel: Record<EventOfKind<"tlh_financial_effect">["operation"], string> = {
+  contribution: "contribution",
+  redemption: "redemption",
+  modeled_realization: "modeled realization",
+  distribution: "distribution",
+};
+
+export const EVENT_FORMATTERS: EventFormatterMap = {
   holding_sale: {
     label: (event) => `Sold ${event.assetLabel ?? assetDisplayName(event.asset) ?? "asset"}`,
     detail: (event) => `${fmtNumber(event.units)} units; basis ${cu(event.costBasisQuanta, event._currency)}`,
   },
   tlh_financial_effect: {
     label: (event) => {
-      const operation = {
-        contribution: "contribution",
-        redemption: "redemption",
-        modeled_realization: "modeled realization",
-        distribution: "distribution",
-      }[event.operation];
+      const operation = tlhOperationLabel[event.operation];
       return `TLH ${operation}: ${event.portfolioId}`;
     },
     detail: (event) =>
@@ -448,17 +518,105 @@ export const EVENT_FORMATTERS = {
       return parts.filter(Boolean).join("; ");
     },
   },
-} satisfies Record<RolloutEventKind, unknown>;
+};
 
-export function eventLabel(event) {
-  return EVENT_FORMATTERS[event?.kind]?.label(event) ?? "Event";
+export function eventLabel(event: RolloutEventWithCurrency | null | undefined) {
+  if (!event) return "Event";
+  switch (event.kind) {
+    case "holding_sale":
+      return EVENT_FORMATTERS.holding_sale.label(event);
+    case "tlh_financial_effect":
+      return EVENT_FORMATTERS.tlh_financial_effect.label(event);
+    case "monthly_expense":
+      return EVENT_FORMATTERS.monthly_expense.label(event);
+    case "outside_rent":
+      return EVENT_FORMATTERS.outside_rent.label(event);
+    case "tax_accrual":
+      return EVENT_FORMATTERS.tax_accrual.label(event);
+    case "tax_payment":
+      return EVENT_FORMATTERS.tax_payment.label(event);
+    case "property_purchase":
+      return EVENT_FORMATTERS.property_purchase.label(event);
+    case "closing_cost_payment":
+      return EVENT_FORMATTERS.closing_cost_payment.label(event);
+    case "mortgage_payment":
+      return EVENT_FORMATTERS.mortgage_payment.label(event);
+    case "property_tax_payment":
+      return EVENT_FORMATTERS.property_tax_payment.label(event);
+    case "hoa_dues_payment":
+      return EVENT_FORMATTERS.hoa_dues_payment.label(event);
+    case "homeowners_insurance_payment":
+      return EVENT_FORMATTERS.homeowners_insurance_payment.label(event);
+    case "property_maintenance_payment":
+      return EVENT_FORMATTERS.property_maintenance_payment.label(event);
+    case "failure":
+      return EVENT_FORMATTERS.failure.label(event);
+    case "set_rented_fraction":
+      return EVENT_FORMATTERS.set_rented_fraction.label(event);
+    case "set_primary_residence":
+      return EVENT_FORMATTERS.set_primary_residence.label(event);
+    case "capital_improvement":
+      return EVENT_FORMATTERS.capital_improvement.label(event);
+    case "property_sale":
+      return EVENT_FORMATTERS.property_sale.label(event);
+    case "private_equity_event":
+      return EVENT_FORMATTERS.private_equity_event.label(event);
+    case "private_equity_opportunity":
+      return EVENT_FORMATTERS.private_equity_opportunity.label(event);
+    default:
+      return "Event";
+  }
 }
 
-export function eventDetailText(event) {
-  return EVENT_FORMATTERS[event?.kind]?.detail(event) ?? "";
+export function eventDetailText(event: RolloutEventWithCurrency | null | undefined) {
+  if (!event) return "";
+  switch (event.kind) {
+    case "holding_sale":
+      return EVENT_FORMATTERS.holding_sale.detail(event);
+    case "tlh_financial_effect":
+      return EVENT_FORMATTERS.tlh_financial_effect.detail(event);
+    case "monthly_expense":
+      return EVENT_FORMATTERS.monthly_expense.detail(event);
+    case "outside_rent":
+      return EVENT_FORMATTERS.outside_rent.detail(event);
+    case "tax_accrual":
+      return EVENT_FORMATTERS.tax_accrual.detail(event);
+    case "tax_payment":
+      return EVENT_FORMATTERS.tax_payment.detail(event);
+    case "property_purchase":
+      return EVENT_FORMATTERS.property_purchase.detail(event);
+    case "closing_cost_payment":
+      return EVENT_FORMATTERS.closing_cost_payment.detail(event);
+    case "mortgage_payment":
+      return EVENT_FORMATTERS.mortgage_payment.detail(event);
+    case "property_tax_payment":
+      return EVENT_FORMATTERS.property_tax_payment.detail(event);
+    case "hoa_dues_payment":
+      return EVENT_FORMATTERS.hoa_dues_payment.detail(event);
+    case "homeowners_insurance_payment":
+      return EVENT_FORMATTERS.homeowners_insurance_payment.detail(event);
+    case "property_maintenance_payment":
+      return EVENT_FORMATTERS.property_maintenance_payment.detail(event);
+    case "failure":
+      return EVENT_FORMATTERS.failure.detail(event);
+    case "set_rented_fraction":
+      return EVENT_FORMATTERS.set_rented_fraction.detail(event);
+    case "set_primary_residence":
+      return EVENT_FORMATTERS.set_primary_residence.detail(event);
+    case "capital_improvement":
+      return EVENT_FORMATTERS.capital_improvement.detail(event);
+    case "property_sale":
+      return EVENT_FORMATTERS.property_sale.detail(event);
+    case "private_equity_event":
+      return EVENT_FORMATTERS.private_equity_event.detail(event);
+    case "private_equity_opportunity":
+      return EVENT_FORMATTERS.private_equity_opportunity.detail(event);
+    default:
+      return "";
+  }
 }
 
-export function eventTitle(event) {
+export function eventTitle(event: RolloutEventWithCurrency) {
   return `Month ${eventStateMonthIndex(event) ?? "n/a"}: ${eventLabel(event)} ${cu(eventAmount(event), event?._currency)}`;
 }
 
@@ -471,10 +629,11 @@ export function eventTitle(event) {
 // Each TLH portfolio is a row of its own, named by its id and labelled with its own label: it is
 // valued in money and drawn on as a managed portfolio, never merged with lots of its index.
 // Private equity is absent because its key carries no symbol: it leaves only via a tender event.
-export function sellableSleeves(portfolio) {
-  const bySymbol = new Map();
+export function sellableSleeves(portfolio: ProductPortfolioResponse | null | undefined) {
+  const bySymbol = new Map<string, { symbol: string; labels: string[]; valueQuanta: string | null }>();
   for (const position of portfolio?.holdings ?? []) {
-    const symbol = isPrivateSecurityPosition(position) ? null : position.asset?.symbol;
+    if (position.asset.kind === "private_equity") continue;
+    const symbol = position.asset.symbol;
     if (!symbol) continue;
     const label = position.label || position.symbol || symbol;
     const valueQuanta = position.currentValueQuanta ?? "0";
@@ -497,18 +656,26 @@ export function sellableSleeves(portfolio) {
   return [...securities, ...managed];
 }
 
-function sellableRow(sleeve, label, valueQuanta) {
+function sellableRow(
+  sleeve: { kind: "security"; symbol: string } | { kind: "managed_portfolio"; portfolioId: string },
+  label: string,
+  valueQuanta: string | null
+) {
   return { key: sleeveKey(sleeve), sleeve, label, valueQuanta };
 }
 
 // Reads the typed asset key, not a display string: private equity is a different KIND of
 // holding, and `securityKind` now describes only how to present a tradable security.
-export function isPrivateSecurityPosition(position) {
+type PrivateEquityAsset = Extract<ProductPortfolioResponse["holdings"][number]["asset"], { kind: "private_equity" }>;
+
+export function isPrivateSecurityPosition(
+  position: ProductPortfolioResponse["holdings"][number]
+): position is ProductPortfolioResponse["holdings"][number] & { asset: PrivateEquityAsset } {
   return position?.asset?.kind === "private_equity";
 }
 
-export function firstSaleMonth(events) {
-  let earliest = null;
+export function firstSaleMonth(events: readonly LifecycleInputEvent[]): number | null {
+  let earliest: number | null = null;
   for (const event of events) {
     if (event.kind === "property_sale" && (earliest == null || event.month < earliest)) {
       earliest = event.month;
@@ -521,7 +688,7 @@ export function firstSaleMonth(events) {
 // after `saleMonth`, plus same-month non-sale events (a SetRentedFraction in the same month
 // as the sale is also illegal). `saleMonth == null` means no sale on the timeline → nothing
 // is post-sale.
-export function isEventPostSale(event, saleMonth) {
+export function isEventPostSale(event: LifecycleInputEvent, saleMonth: number | null): boolean {
   if (saleMonth == null) return false;
   if (event.month > saleMonth) return true;
   return event.month === saleMonth && event.kind !== "property_sale";

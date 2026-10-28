@@ -53,6 +53,60 @@ async def test_reported_rollout_overview(reported_rollout: VisualPage) -> None:
     await reported_rollout.capture()
 
 
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+async def test_composer_autosuspend_countdown(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.AUTOSUSPEND_COUNTDOWN)
+    await app.mount_thread(IDLE_THREAD)
+    await view.page.wait_for_selector("[aria-label='Thread history'][data-layout-settled='true']", state="attached")
+    autosuspend = view.page.locator(
+        ".agentplane-composer-autosuspend:visible, .agentplane-composer-autosuspend-mobile:visible"
+    )
+    activity = view.page.locator(
+        ".agentplane-composer-model-activity:visible, .agentplane-thread-tail-model-activity:visible"
+    )
+    await expect(autosuspend).to_be_visible()
+    await expect(autosuspend).to_have_text("Sandbox autosuspends in ~12m")
+    await expect(activity).to_be_visible()
+    await expect(activity).to_contain_text("Model activity: 13m ago · Idle")
+    await view.check(context="autosuspend composer ready")
+    await view.capture()
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+async def test_composer_autosuspend_busy(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.AUTOSUSPEND_BUSY)
+    await app.mount_thread(IDLE_THREAD)
+    await view.page.wait_for_selector("[aria-label='Thread history'][data-layout-settled='true']", state="attached")
+    hint = view.page.locator(
+        ".agentplane-composer-autosuspend:visible, .agentplane-composer-autosuspend-mobile:visible"
+    )
+    await expect(hint).to_have_text("Sandbox in active use by Session running a turn · Details")
+    await expect(hint.get_by_role("link", name="Session running a turn")).to_have_attribute(
+        "href", f"#/threads/{RUNNING_THREAD}"
+    )
+    await view.capture()
+    await hint.get_by_role("button", name="Show autosuspend blockers").click()
+    details = view.page.get_by_role("dialog", name="Show autosuspend blockers")
+    await expect(details).to_be_visible()
+    await expect(details.get_by_role("link", name="Session running a turn", exact=True)).to_be_visible()
+    await expect(details.get_by_role("link", name="Session running setup", exact=True)).to_be_visible()
+    await expect(details).to_contain_text("Sandbox bootstrap running")
+    await view.capture(name="blockers")
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+async def test_composer_autosuspend_starting(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.AUTOSUSPEND_STARTING)
+    await app.mount_thread(IDLE_THREAD)
+    await view.page.wait_for_selector("[aria-label='Thread history'][data-layout-settled='true']", state="attached")
+    hint = view.page.locator(
+        ".agentplane-composer-autosuspend:visible, .agentplane-composer-autosuspend-mobile:visible"
+    )
+    await expect(hint).to_have_text("Autosuspend waiting: Sandbox starting")
+    await expect(view.page.get_by_text("Continue when the Sandbox is ready.", exact=True)).to_be_visible()
+    await view.capture()
+
+
 @pytest.mark.parametrize(
     ("viewport", "color_scheme"),
     [(DESKTOP, "light"), (MOBILE, "light"), (DESKTOP, "dark")],
@@ -604,16 +658,27 @@ async def test_standalone_reasoning_opens_session_standalone_reasoning_open(
 
 
 @DESKTOP_AND_MOBILE
-async def test_standalone_reasoning_opens_session_reasoning_code_fence_open(
-    view: VisualPage, app: AgentplaneFixture
-) -> None:
+async def test_standalone_reasoning_compact_markdown_and_code_fence(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.standalone_reasoning(code_fence=True)
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
-    reasoning = await _open_standalone_reasoning(page)
+    reasoning = page.locator('[data-thread-anchor="20"] .agentplane-step-details')
+    summary = reasoning.locator(".agentplane-disclosure-summary").first
+    preview = reasoning.locator(".agentplane-step-preview .agentplane-markdown--single-line")
+    await expect(summary).to_have_attribute("aria-expanded", "false")
+    await expect(preview).to_contain_text("> Check")
+    await expect(preview).to_contain_text("State | Count ; Ready | 2")
+    await expect(preview).to_contain_text("• Parsed • Complete")
+    await wait_for_stable(page)
+    await view.capture(target=page.locator("#app"))
+
+    await summary.click()
+    await expect(summary).to_have_attribute("aria-expanded", "true")
+    await expect(reasoning.locator(".agentplane-disclosure-panel .agentplane-markdown")).to_be_visible()
     await expect(reasoning.locator(".agentplane-code-block .cm-content")).to_be_attached()
-    await view.capture(target=view.page.locator("#app"))
+    await wait_for_stable(page)
+    await view.capture(name=f"{view.capture_name}_expanded", target=page.locator("#app"))
 
 
 @DESKTOP_AND_MOBILE

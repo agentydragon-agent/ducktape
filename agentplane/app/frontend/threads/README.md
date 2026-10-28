@@ -1,17 +1,20 @@
 # Thread frontend
 
 `home.tsx` owns the Threads landing page, and `thread_list.tsx` owns the grouped
-Thread list used there and in the sidebar. `thread_groups.ts`, `thread_notices.tsx`,
+Thread list used there and in the sidebar. `sandbox_threads.tsx` and `new_thread_form.tsx`
+own the Thread list and creation form on a Sandbox. `thread_groups.ts`, `thread_notices.tsx`,
 the status indicator, and the Thread tab favicon belong with that navigation.
 
-`projected_session.tsx` presents the conversation and composer. `thread_commands.tsx`
-owns local delivery, retries, and command outcome presentation. `thread_sync.ts`
-defines the view-facing contract, and `thread_store.tsx` implements it with
+`page.tsx` resolves the selected Thread and its live availability. `conversation.tsx`
+connects synchronization with command delivery; `composer.tsx` owns the draft, keyboard handling,
+and send/interrupt controls; `history_row_views.tsx` renders history rows,
+and `virtualized_history.tsx` owns their virtualization and scroll anchoring. `command_delivery.ts`
+owns retained command submission, receipts, and retries; `thread_commands.tsx` renders command
+outcomes. `thread_sync.ts`
+defines the view-facing contract, and `electric_sync.tsx` implements it with
 Electric. `thread_cards.tsx` renders bodies and cards, while `thread_evidence.tsx`
 owns their lazy evidence paging. History rows, local commands, disclosures, Thread
-status, title, and chronological debug belong to this feature. The shared sidebar
-shell, API client, Sandbox status model, and generic rendering components stay in
-the parent frontend package.
+status, title, chronological debug, Thread API calls, and the shell's shared Thread listing stream belong to this feature. The shared sidebar shell, HTTP transport, Sandbox status model, and generic rendering components stay in the parent frontend package.
 
 The Bazel targets live in `BUILD.bazel`. The ambient CSS and per-icon TypeScript
 declarations are local copies of the parent package declarations: each TypeScript

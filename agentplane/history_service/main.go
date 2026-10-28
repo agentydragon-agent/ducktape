@@ -23,13 +23,14 @@ import (
 	runneringresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/agentydragon/ducktape/util/netlistener"
-	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -78,14 +79,8 @@ func readOnly(databaseURL string) (string, error) {
 }
 
 func openDatabase(ctx context.Context, databaseURL string, connections int) (*sql.DB, error) {
-	db, err := sql.Open("postgres", databaseURL)
+	db, err := postgres.Open(ctx, databaseURL, connections, connections/2)
 	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(connections)
-	db.SetMaxIdleConns(connections / 2)
-	if err := db.PingContext(ctx); err != nil {
-		db.Close()
 		return nil, fmt.Errorf("History Service PostgreSQL unavailable: %w", err)
 	}
 	return db, nil
@@ -183,7 +178,13 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, i
 	historypb.RegisterHistoryServiceServer(server, service)
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
-	ingressServer := grpc.NewServer(observability.GRPCServerOption())
+	ingressServer := grpc.NewServer(
+		observability.GRPCServerOption(),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             30 * time.Second,
+			PermitWithoutStream: false,
+		}),
+	)
 	runneringresspb.RegisterRunnerIngressServer(ingressServer, &ingress.Service{
 		Principals: writerAuth, SandboxUIDs: ingress.NewServiceAccountSandboxUIDResolver(kube),
 		History: storage.NewStore(ingressDB, c.Ingress.SettleDeltas),

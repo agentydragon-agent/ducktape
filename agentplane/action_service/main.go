@@ -1,11 +1,11 @@
 // Command actions is the Go Action Service, over the Action Service's PostgreSQL database. On one listener it serves
 // `ActionService`'s submission, request reads, watches and cancellation, its catalog reads and watch and the Action
-// policy, `OperatorActionService`'s Decisions and MCP server linkages, `WebPushService`, and the MCP edge's
-// `ConnectionService` until the edge is split out, over gRPC and their HTTP facade under /v1/, the MCP linkage's OAuth
-// callback and Client ID Metadata Document, the agent documentation, the standard gRPC health service and the process's
-// Prometheus metrics at /metrics, runs the dispatch worker, which runs the Actions of the sandbox, orchestration_v1 and
-// MCP groups, refreshes the linked OAuth tokens, pushes the requests awaiting a Decision to operators' browsers when Web
-// Push is configured, and keeps its policy index equal to the API server's.
+// policy, `OperatorActionService`'s Decisions and MCP server linkages, and `WebPushService`, over gRPC and their HTTP
+// facade under /v1/, the MCP linkage's OAuth callback and Client ID Metadata Document, the agent documentation, the
+// standard gRPC health service and the process's Prometheus metrics at /metrics. It runs the dispatch worker, which
+// runs the Actions of the sandbox, orchestration_v1 and MCP groups, refreshes linked OAuth tokens, pushes requests
+// awaiting a Decision to operators' browsers when Web Push is configured, and keeps its policy index equal to the API
+// server's.
 package main
 
 import (
@@ -43,17 +43,15 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connections"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/postgres/go"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
-	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -115,14 +113,8 @@ func run(ctx context.Context, c config) error {
 }
 
 func openDatabase(ctx context.Context, databaseURL string) (*sql.DB, error) {
-	db, err := sql.Open("postgres", databaseURL)
+	db, err := postgres.Open(ctx, databaseURL, maxConnections, idleConnections)
 	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(maxConnections)
-	db.SetMaxIdleConns(idleConnections)
-	if err := db.PingContext(ctx); err != nil {
-		db.Close()
 		return nil, fmt.Errorf("Action Service PostgreSQL unavailable: %w", err)
 	}
 	return db, nil
@@ -335,8 +327,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	}
 	defer db.Close()
 	hub, err := wakeups.Listen(
-		ctx, c.DatabaseURL, store.UpdatesChannel, store.DispatchChannel, push.UpdatesChannel, connections.UpdatesChannel,
-		linkage.UpdatesChannel,
+		ctx, c.DatabaseURL, store.UpdatesChannel, store.DispatchChannel, push.UpdatesChannel, linkage.UpdatesChannel,
 	)
 	if err != nil {
 		return fmt.Errorf("Action Service PostgreSQL listener unavailable: %w", err)
@@ -438,16 +429,12 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		grpc.ChainUnaryInterceptor(admission.UnaryInterceptor), grpc.ChainStreamInterceptor(admission.StreamInterceptor),
 	)
 	healthpb.RegisterHealthServer(grpcServer, readiness{Probes: health, policy: policy.Freshness})
-	connectionStore := connections.NewStore(db, policy)
 	actionAPI := api.NewService(requests, hub, c.ActionGroups, admission, policy, api.Submissions{
 		Executors: actions, Provider: policies.NewProvider(visibility),
 	})
 	action_servicepb.RegisterActionServiceServer(grpcServer, actionAPI)
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, api.NewOperatorService(requests, hub, admission, linkages))
 	web_push_servicepb.RegisterWebPushServiceServer(grpcServer, api.NewPushService(push.NewSubscriptions(db), pushIdentity, hub, admission))
-	if c.IntegratedConnectionService {
-		connection_servicepb.RegisterConnectionServiceServer(grpcServer, connections.NewService(connectionStore, admission, hub))
-	}
 	// The facade is the listener's own client: its gRPC calls come back to the gRPC server mounted on it, so the
 	// Gate admits every request. It outlives the termination signal, so that calls admitted before it finish
 	// while draining.
@@ -458,10 +445,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		operator_action_servicepb.RegisterOperatorActionServiceHandlerFromEndpoint,
 		web_push_servicepb.RegisterWebPushServiceHandlerFromEndpoint,
 	}
-	if c.IntegratedConnectionService {
-		registrations = append(registrations, connection_servicepb.RegisterConnectionServiceHandlerFromEndpoint)
-	}
-	httpFacade, err := facade.NewHandler(facadeContext, listener.Addr().String(), registrations...)
+	httpFacade, err := facade.NewHandler(facadeContext, listener.Addr().String(), 0, registrations...)
 	if err != nil {
 		return err
 	}
@@ -472,11 +456,6 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	// The OAuth provider's redirect to the callback and the authorization server's fetch of the document carry no
 	// bearer, so they are plain HTTP beside the facade.
 	linkages.Mount(routes)
-	if c.OAuth != nil {
-		if err := mountMCPEdge(ctx, routes, c, db, connectionStore, actionAPI, admission); err != nil {
-			return err
-		}
-	}
 	server := &http.Server{Handler: observability.HTTPHandler(routes), ReadHeaderTimeout: readHeaderTimeout}
 	facade.MountGRPC(server, grpcServer)
 

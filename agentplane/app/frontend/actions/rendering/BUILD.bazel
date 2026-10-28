@@ -3,6 +3,20 @@ load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
 
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = glob(
+        [
+            "*.ts",
+            "*.tsx",
+            "**/*.ts",
+            "**/*.tsx",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//agentplane/app/frontend:__pkg__"],
+)
+
 TSCONFIG = "//agentplane/app/frontend:tsconfig"
 
 # Widgets for particular Actions' requests and responses, registered by the Action's identity:
@@ -118,7 +132,7 @@ ts_library(
         "//:node_modules/zod",
         "//agentplane/app/frontend:argv_text",
         "//agentplane/app/frontend:clamped_block",
-        "//agentplane/app/frontend:command_view",
+        "//agentplane/app/frontend:shell_command_view",
         "//agentplane/app/frontend:text_block",
         "//agentplane/app/frontend/actions:kubernetes_action_schemas",
     ],
@@ -161,7 +175,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
-        "//agentplane/app/frontend:command_view",
+        "//agentplane/app/frontend:shell_command_view",
         "//agentplane/app/frontend/actions:ssh_action_schemas",
         "//util/frontend:code_block",
     ],
@@ -231,7 +245,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
-        "//agentplane/app/frontend:command_view",
+        "//agentplane/app/frontend:shell_command_view",
         "//agentplane/app/frontend/actions:sandbox_action_schemas",
     ],
 )

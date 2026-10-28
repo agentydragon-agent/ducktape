@@ -24,7 +24,7 @@ import tarfile
 import tempfile
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -36,6 +36,7 @@ from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_f
 from agentplane.system_tests.conftest import AGENT_SERVICE_ACCOUNT, AUDIENCE
 from agentplane.system_tests.k3s import block_storage, guest_logs, rendered_fixture, vm_sandboxes
 from agentplane.system_tests.k3s.bootstrap import Bootstrap
+from agentplane.system_tests.k3s.iptables_rule import ensure_rule
 from agentplane.testing import tls
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -235,10 +236,7 @@ class K3s:
             # A recycled runner already has the rule.
             iptables = self.data_dir / "data/current/bin/aux/iptables"  # the copy k3s ships; the host has none
             masquerade = ("POSTROUTING", "-s", POD_CIDR, "!", "-d", POD_CIDR, "-j", "MASQUERADE")
-            if subprocess.run(
-                [str(iptables), "-t", "nat", "-C", *masquerade], capture_output=True, check=False
-            ).returncode:
-                run(str(iptables), "-t", "nat", "-A", *masquerade)
+            ensure_rule(iptables, table="nat", chain=masquerade[0], rule=masquerade[1:])
         except BaseException:
             process.terminate()
             try:
@@ -474,7 +472,9 @@ def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
 
 
 @contextlib.contextmanager
-def running_stack(*, models: rendered_fixture.Models, timeline: Timeline) -> Iterator[Stack]:
+def running_stack(
+    *, models: rendered_fixture.Models, timeline: Timeline, validate_vm_shutdown: Callable[[], bool]
+) -> Iterator[Stack]:
     """The stack with every Deployment Available, LLM ingress forwarding to `models`, each step of
     bringing it up marked on `timeline`.
 
@@ -605,7 +605,9 @@ def running_stack(*, models: rendered_fixture.Models, timeline: Timeline) -> Ite
                 guest_logs.capture(
                     log_root=Path("/var/log/pods"),
                     namespace=fixture.namespace,
-                    destination=undeclared_outputs_dir() / "vm-artifacts" / "consoles",
+                    kubevirt_namespace=vm_sandboxes.KUBEVIRT_NAMESPACE,
+                    destination=undeclared_outputs_dir() / "vm-artifacts",
+                    validate_shutdown=validate_vm_shutdown,
                 )
             )
         yield Stack(k3s=k3s, namespace=fixture.namespace, base_url=fixture.app_origin, token=token, mcp_fixtures=access)

@@ -63,6 +63,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        "//agentplane/runner/testing:executor_companion",
         "//agentplane/runner/testing:failure_journal",
         "//agentplane/runner/testing:fixtures",
         "//agentplane/runner/testing:process_fixtures",
@@ -392,8 +393,8 @@ py_test(
 py_test(
     name = "test_cgroups",
     srcs = ["test_cgroups.py"],
-    data = ["//agentplane/runner:runner_test"],  # keep: the real Go integration fixture
-    env = {"RUNNER_TEST_BINARY": "$(rlocationpath //agentplane/runner:runner_test)"},
+    data = ["//agentplane/runner:runner_cgroup_fixture"],  # keep: the real Go integration fixture
+    env = {"RUNNER_TEST_BINARY": "$(rlocationpath //agentplane/runner:runner_cgroup_fixture)"},
     requires_docker = True,
     deps = [
         ":conftest",
@@ -429,15 +430,12 @@ py_test(
         "//agentplane/runner/testing:config",
         "//agentplane/runner/testing:driver",
         "//agentplane/runner/testing:events",
+        "//agentplane/runner/testing:executor_companion",
         "//agentplane/runner/testing:fixtures",
         "//agentplane/runner/testing:launches",
         "//agentplane/runner/testing:process",
         "//agentplane/runner/testing:process_fixtures",
         "//agentplane/testing:scripted_model",
-        "//third_party/containers:debian_slim",
-        "//util:oci",
-        "//util/bazel:runfiles",
-        "//util/testing:container_logs",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -515,6 +513,7 @@ go_library(
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:grpc_tunnel_go_proto",
         "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/runner:runner_service_go_proto",
         "//agentplane/runner/claude",
         "//agentplane/runner/codex",
@@ -545,10 +544,13 @@ go_library(
 
 go_test(
     name = "runner_test",
-    srcs = glob(["*_test.go"]),
+    srcs = glob(
+        ["*_test.go"],
+        exclude = ["cgroup_kernel_test.go"],
+    ),
     embed = [":runner"],
     exec_properties = {"test.dockerUser": "0:0"},
-    pure = "on",
+    race = "on",
     deps = [
         "//agentplane/history_service:runner_ingress_go_proto",
         "//agentplane/proto:command_go_proto",
@@ -556,6 +558,7 @@ go_test(
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:grpc_tunnel_go_proto",
         "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/runner:runner_service_go_proto",
         "//agentplane/runner/claude",
         "//agentplane/runner/codex",
@@ -571,6 +574,15 @@ go_test(
         "@org_golang_google_protobuf//proto",
         "@org_golang_x_sys//unix",
     ],
+)
+
+go_test(
+    name = "runner_cgroup_fixture",
+    srcs = ["cgroup_kernel_test.go"],
+    embed = [":runner"],
+    pure = "on",
+    tags = ["manual"],
+    deps = ["@org_golang_x_sys//unix"],
 )
 
 py_library(

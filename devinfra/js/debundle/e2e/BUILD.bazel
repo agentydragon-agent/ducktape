@@ -44,6 +44,29 @@ rust_library(
 
 debundle_e2e_test(name = "chunk_admission_test")
 
+debundle_e2e_test(
+    name = "graph_provenance_test",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+debundle_e2e_test(
+    name = "delegation_snapshot_cli_test",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+debundle_e2e_test(name = "source_export_policy_test")
+
+debundle_e2e_test(
+    name = "imported_primitive_test",
+    deps = ["//devinfra/js/debundle:analysis"],
+)
+
 debundle_e2e_test(name = "soundness_at_init_value_flow_test")
 
 debundle_e2e_test(name = "unknown_call_unescaped_callable_test")
@@ -54,7 +77,32 @@ debundle_e2e_test(name = "unknown_call_export_reentry_test")
 
 debundle_e2e_test(name = "native_browser_reentry_test")
 
+debundle_e2e_test(
+    name = "global_membership_reentry_test",
+    deps = ["//devinfra/js/debundle:analysis"],
+)
+
+debundle_e2e_test(name = "optional_call_timing_test")
+
+debundle_e2e_test(name = "no_reentry_callback_test")
+
 debundle_e2e_test(name = "empty_collection_timing_test")
+
+debundle_e2e_test(
+    name = "retained_callback_factory_test",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "retained_constructor_callback_test",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "@crates//:serde_json",
+    ],
+)
 
 debundle_e2e_test(name = "map_entry_callbacks_test")
 
@@ -78,10 +126,11 @@ debundle_e2e_test(
 
 debundle_e2e_test(name = "class_callback_reachability_test")
 
-# A larger branching callback pool used to exhaust this bound in analysis.
+# Keep the full scale workloads: unoptimized RBE runs approach a minute even
+# without a regression, so the short deadline leaves too little margin.
 debundle_e2e_test(
     name = "opaque_callback_scale_test",
-    timeout = "short",
+    timeout = "moderate",
 )
 
 debundle_e2e_test(
@@ -91,13 +140,13 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "conflict_diagnostics_scale_test",
-    timeout = "short",
+    timeout = "moderate",
     deps = ["//devinfra/js/debundle:spec"],
 )
 
 debundle_e2e_test(
     name = "value_flow_sharing_scale_test",
-    timeout = "short",
+    timeout = "moderate",
 )
 
 debundle_e2e_test(name = "soundness_dynamic_scope_test")
@@ -465,6 +514,7 @@ debundle_e2e_test(name = "intrinsic_alias_lowering_test")
 debundle_e2e_test(
     name = "module_merge_test",
     deps = [
+        "@crates//:serde_json",
         "@crates//:serde_yaml",
     ],
 )
@@ -564,6 +614,15 @@ debundle_e2e_test(
 debundle_e2e_test(name = "scc_cluster_cli_test")
 
 debundle_e2e_test(
+    name = "invocation_cli_test",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:shlex",
+        "@crates//:tempfile",
+    ],
+)
+
+debundle_e2e_test(
     name = "top_level_query_cli_test",
     deps = ["@crates//:serde_json"],
 )
@@ -606,3 +665,11 @@ debundle_e2e_test(
 debundle_e2e_test(name = "initializer_placement_test")
 
 debundle_e2e_test(name = "intrinsic_array_iteration_test")
+
+debundle_e2e_test(
+    name = "source_match_coalescing_cli_test",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
+)

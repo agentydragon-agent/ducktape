@@ -125,6 +125,7 @@ go_library(
     deps = [
         "//agentplane/grpc/facade",
         "//agentplane/observability",
+        "//agentplane/postgres/go:postgres",
         "//agentplane/runner_gateway/dispatcher",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/runner_gateway/gateway",
@@ -145,6 +146,7 @@ go_library(
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//health",
         "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//keepalive",
     ],
 )
 
@@ -184,6 +186,7 @@ proto_library(
     srcs = ["runner_control.proto"],
     deps = [
         "//agentplane/proto:grpc_tunnel_proto",
+        "//agentplane/proto:sandboxes_proto",
         "@protobuf//:timestamp_proto",
     ],
 )
@@ -207,5 +210,8 @@ go_proto_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb",
     proto = ":runner_control_proto",
-    deps = ["//agentplane/proto:grpc_tunnel_go_proto"],
+    deps = [
+        "//agentplane/proto:grpc_tunnel_go_proto",
+        "//agentplane/proto:sandboxes_go_proto",
+    ],
 )

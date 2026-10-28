@@ -29,17 +29,27 @@ another. Agent messaging and the test-tier split have finished; what they left i
 ```mermaid
 flowchart LR
     subgraph ACTION_TRACK[MCP edge extraction]
-        ACTION_MCP_EDGE_SPLIT[Active: retire Actions' integrated Connection ownership]
+        ACTION_MCP_EDGE_SPLIT[Active: remove Actions' integrated MCP serving path]
     end
     subgraph DISPATCH_TRACK[Dispatcher and Gateway merge]
         DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: merge plan awaiting review]
         DISPATCHER_QUEUE_OPTIONAL[Unscheduled: run without the queue]
     end
+    subgraph APP_TRANSPORT_TRACK[App service transports]
+        APP_HTTP_GRPC_BOUNDARY[In flight: app backends use native gRPC]
+    end
+    subgraph APP_GO_TRACK[App Go port]
+        APP_GO_PORT_CATCHUP[In review: rebase Go app PR #12223 and pass CI]
+        APP_GO_CUTOVER[Blocked: the Go app serves staging]
+    end
+    APP_HTTP_GRPC_BOUNDARY --> APP_GO_PORT_CATCHUP
+    APP_GO_TRACK -. leaves .-> APP_PYTHON_RETIRE[Blocked: delete the Python app runtime, section 14]
     FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
     APP_TEST_RUNNER_FIXTURES_GO[Candidate: app test runners use the Go Gateway and History ingress]
     RUNNER_LAYERING_VM[Paused: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
     ACTION_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit, section 9]
     DISPATCH_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
+    APP_GO_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
 ```
 
 ## 1. Session schema and identity follow-up
@@ -54,6 +64,8 @@ flowchart TD
 **Deferred by the operator; not dispatchable until selected.** Baseline only the settled schema,
 verify fresh and migrated databases and their deployed stamps before pruning old revisions.
 Retain the data-preserving rollback procedure. No Action Service or other database squash implied.
+Moot once [`APP_GOOSE_MIGRATIONS`](#app_goose_migrations--goose-owns-the-app-schema) lands: its Goose baseline is the
+consolidated schema. Delete this node then.
 
 ## 2. Service-owned command admission and later notification presentation
 
@@ -215,14 +227,69 @@ concern, not proof that GitHub webhook delivery itself is at fault. Diagnose web
 matching, inbox persistence and notice dispatch separately. Do not reopen waived broad provider
 outage/refresh exercises; test the specific recovery contract with controlled missing webhooks.
 
+**Current coverage:** PR mergeability has service-side reconciliation after [#12274](https://github.com/agentydragon/ducktape/pull/12274).
+Active PR subscriptions refresh shared observations on the configured `github.freshness_seconds`
+deadline (600 seconds by default), and settled mergeability changes produce durable, deduplicated
+inbox entries even without another webhook. Access failures and rate-limit backoff can extend that
+interval. Refreshing head associations alone does not synthesize missed CI/check, comment or review
+notices; their broader recovery contract remains the decision below. Intermediate changes that
+revert between reads are not recovered by state polling.
+
+The [2026-10-27 live exercise](../debug/github_mergeability_live_acceptance_20261027.md) also found a
+separate correctness gap: a received base push can be followed by GitHub returning an old definite
+mergeability result, suppressing early retries until periodic repair; the PR response's base SHA can
+lag the actual branch tip. Correcting that existing contract does not wait for the broader recovery decision.
+
 ```mermaid
 flowchart LR
+    GITHUB_MERGEABILITY_FRESHNESS[In flight: fresh post-change mergeability observations]
     GITHUB_NOTICE_RELIABILITY_DESIGN[Decision: eventual-state recovery vs agent fallback]
     GITHUB_NOTIFICATION_RECOVERY[Blocked: selected reconciliation or reminder mechanism]
     GITHUB_SHEPHERD_GUIDANCE[Blocked: after the reliability decision; fallback-check wording]
     GITHUB_NOTICE_RELIABILITY_DESIGN --> GITHUB_NOTIFICATION_RECOVERY
     GITHUB_NOTICE_RELIABILITY_DESIGN --> GITHUB_SHEPHERD_GUIDANCE
 ```
+
+### `GITHUB_MERGEABILITY_FRESHNESS` — handle stale definite GitHub results after a change
+
+**In flight — Codex, 2026-10-28 UTC:** implementing test-merge parent validation, current base-ref reads,
+persisted rechecks and deterministic coverage in [PR #12343](https://github.com/agentydragon/ducktape/pull/12343). The
+[bounded GitHub probe](../notification_service/debug/github_mergeability_freshness_probe.md) confirmed stale
+positive and negative results; PR validation and deployment acceptance remain pending.
+
+Reject a positive result whose test merge does not match the observed head/current base, and
+apply the bounded negative-result recheck policy below. An old definite positive must not suppress
+rechecks until the ordinary freshness deadline. Persist the required follow-up across worker restarts, preserve access/error
+backoff and generation fences, and source revision labels from the actual relevant refs rather than
+assuming the PR response's base SHA is the current branch tip. Keep pending/settling observations
+separate from source failures, and fence observations overtaken by known head/base changes.
+
+For an open PR reporting `MERGEABLE`, retain REST `merge_commit_sha`, fetch that test merge
+commit and validate both parents against the expected base and head revisions. GitHub documents
+that successful-check artifact in [Get a pull request](https://docs.github.com/en/rest/pulls/pulls#get-a-pull-request);
+GraphQL exposes the corresponding `potentialMergeCommit`. A missing/unavailable test commit or
+mismatched parent pair leaves the observation pending for a durable recheck, with normal source
+failure/rate-limit backoff preserved. Persist the test commit and its actual parent revisions with
+the accepted observation and event, under the existing invalidation/access fences. Read the current
+base tip through its branch ref; PR `.base.sha` / `baseRefOid` alone does not prove either the
+current tip or which pair was evaluated. Do not equate that current-ref read with proof of a result.
+
+`CONFLICTING` needs a separate freshness rule: a successful test merge commit may not exist, and
+no documented general field was found binding a negative result to an evaluated base/head pair.
+The probe established the available evidence. Report a negative with observed refs and no pair
+proof; recheck after successive 5, 15 and 45 second delays before ordinary freshness refreshes.
+Unverified results use 5, 15 and 45 second delays, then a 60-second cap, with persisted counters
+reset by changed observed refs/state. Document these policy limits in the API and agent guidance. Neither an absent merge commit nor the accompanying PR ref fields
+proves a fresh conflict calculation. Keep the distinction between a validated positive result and
+an observed negative result explicit; a fixed delay alone is not evidence of the evaluated pair.
+
+Exit: controlled GitHub responses cover a stale definite answer followed by the current answer,
+a test merge with the right head but an old base, a wrong head, unavailable test-commit evidence,
+a negative result without pair evidence, lagging PR base metadata, ref changes during parent
+validation, duplicate/reordered invalidations and durable follow-up. Repeat the
+bounded base-only conflict/resolution and late-subscriber live exercise with current SHA labels;
+record its actual latency and harness receipt. This repairs the shipped mergeability contract;
+it does not select a broader GitHub replay/reminder mechanism.
 
 ### `GITHUB_NOTICE_RELIABILITY_DESIGN` — delivery guarantee and fallback
 
@@ -264,7 +331,8 @@ asked not just to subscribe to GitHub while waiting (e.g. for CI) but to back th
 a fallback check after N minutes, in case the webhook never delivers. Treat notifications as prompts
 to inspect authoritative current PR state, not evidence that the latest head passed or that silence
 means no progress. Document the chosen fallback deadline/ownership and how an agent notices
-unreliable monitoring. State who runs reminders and that notices do not start a stopped harness.
+unreliable monitoring. State who runs reminders. Notices can start a stopped harness in a running
+Sandbox; a suspended Sandbox requires explicit resume or its configured wake-on-message authority.
 Guidance accompanies the selected reliability behavior; it must not advertise a polling/reminder
 guarantee before that mechanism exists.
 
@@ -1469,7 +1537,7 @@ devel. A gate counts as legacy once its rollout is finished on staging or nothin
 reads it; the delta settlement flag stays (operator, 2026-10-13 PDT). Lane named per
 node; leftovers of in-flight work belong to the lane already changing that code. Upstream-gated
 tombstones with a verifiable condition in code (`keepingOffset` in
-`thread_store.tsx`, the jsdom pragma in `markdown.test.tsx`) need no node.
+`electric_sync.tsx`, the jsdom pragma in `markdown.test.tsx`) need no node.
 
 ```mermaid
 flowchart TD
@@ -1536,6 +1604,7 @@ The Gateway serves `Connect` and proxies the runner's
 
 ```mermaid
 flowchart TD
+    RUNNER_CONTROL_TRANSPORT_DESIGN[Decision, unscheduled: runner listens versus reverse tunnel]
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization]
     DISPATCHER_OWNERSHIP_IN_POSTGRES[Unscheduled: Dispatcher Sandbox ownership without the Kubernetes Lease]
 ```
@@ -1544,6 +1613,28 @@ The [service-boundary contract](../docs/service_boundaries.md) and [Runner Gatew
 describe the current proxy. Live `Runner.ListSessions` remains part of the app and Notification
 service caller contract. The separate destination-authority decision
 `DELIVERY_DESTINATION_AUTHORITY_DESIGN` (section 13) remains open.
+
+### `RUNNER_CONTROL_TRANSPORT_DESIGN` — consider making the runner a gRPC server again
+
+**Decision, unscheduled; operator, 2026-10-27 PDT: consider the alternative, no transport change selected.**
+Compare the current runner-initiated [reverse control stream](../docs/runner_control.md) with ordinary
+Gateway-to-runner gRPC on a private listener reachable only by authorized Gateway workloads. Evaluate
+Pod and KubeVirt guest reachability, ingress restrictions, mutual workload authentication and credential
+rotation, Sandbox/Pod incarnation checks, replica routing, connection loss, cancellation, and migration
+cost against the custom tunnel and connection-owner machinery that could be removed. Establish whether
+remote or NAT-bound runners are a real requirement. The initial recommendation is direct gRPC for a
+cluster-routable fleet, retaining outbound control if otherwise unreachable runners are required.
+
+Keep runner journal admission/execution ownership and History Event push independent of transport.
+Both choices must preserve command-ID deduplication when an admission reply is lost; reconnecting is
+not proof that a command failed or permission to repeat an uncertain native effect. Review consequences
+for [holder-owned Dispatcher delivery](dispatcher_gateway_merge.md) rather than assuming a connection
+holder still owns delivery with direct dialing.
+
+**Exit:** a reviewed comparison, recommendation and operator decision on retaining the tunnel or
+returning to a runner listener, with focused security/reconnect proof requirements and a cutover/rollback
+outline if changing transport. This evaluation has no prerequisites and does not gate existing work;
+implementation waits for that decision.
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
@@ -1753,7 +1844,7 @@ contract is [HTTP/JSON facades](../docs/grpc_services.md#httpjson-facades); what
 flowchart LR
     HISTORY_READS_FACADE[Candidate: History reads as a generated browser API]
     WEB_PUSH_SERVICE[Decision, unscheduled: Web Push as its own sender]
-    ACTION_MCP_EDGE_SPLIT[Active: retire Actions' integrated Connection ownership]
+    ACTION_MCP_EDGE_SPLIT[Active: remove Actions' integrated MCP serving path]
 ```
 
 ### `HISTORY_READS_FACADE` — History reads as a generated browser API
@@ -1764,19 +1855,19 @@ reads and replace the app's mirror models (`app/threads/view/content.py`,
 changed; a browser-facing watch could use `FollowSession` (section 11). Decide on purpose whether the app's Thread
 check on `thread_observations` (404 for a Session no Thread links) is kept or dropped.
 
-### `ACTION_MCP_EDGE_SPLIT` — finish the MCP edge handoff
+### `ACTION_MCP_EDGE_SPLIT` — remove the retired Action Service serving path
 
-**Active (Codex).** The Go port, Python retirement and legacy schema cleanup are complete. Staging's
-handoff configuration is merged (#11729, #11734): one edge replica serves the public MCP/OAuth routes and
-the app's Connection calls, and Actions' integrated ConnectionService is off
-(`integrated_connection_service: false`).
+**Active (Codex).** The standalone edge serves external MCP/OAuth and ConnectionService; Actions
+keeps upstream MCP linkage and CIMD. This source change removes Actions' integrated runtime and
+API registrations while retaining false-only/no-op settings for the old image's generated keys.
 
-Remaining outcome: deletion of Actions' integrated Connection/OAuth runtime and its six source tables.
-Detailed sequence and constraints: [MCP edge extraction](mcp_edge_extraction.md#remaining-work).
-The current token audience is `agentplane-egress`; a dedicated audience is a separate change.
-Actions retains its upstream CIMD endpoint and the app retains upstream OAuth callbacks.
-External-client reauthorization remains unverified; extraction preserves existing issuer URLs
-and copied token state rather than requiring another reauthorization.
+Remaining work: after the new image is observed running, remove the compatibility keys from
+generated manifests, deploy that config, then remove the parser fields in a later image. Preserve
+all database rows and schemas in this change; any later migration needs a separate verified
+ownership and retention plan. Detailed sequence and constraints:
+[MCP edge extraction](mcp_edge_extraction.md#remaining-work). The current token audience is
+`agentplane-egress`; a dedicated audience is a separate change. Actions retains its upstream CIMD
+endpoint and the app retains upstream OAuth callbacks.
 
 ### `WEB_PUSH_SERVICE` — Web Push as its own sender
 
@@ -1857,11 +1948,102 @@ Do not delete retained runner stores, native conversations or History. Confirm e
 routing to the private store, suspended-queue retry and restart on the deployed images before retiring
 old paths.
 
+## 14. App Go port
+
+[#12223](https://github.com/agentydragon/ducktape/pull/12223) supersedes [#11821](https://github.com/agentydragon/ducktape/pull/11821) as the current Go app port. It replaces the Python runtime in `//agentplane/app:image` with a Go server: Huma's typed routes generate the frontend's OpenAPI client, while SSE, auth and telemetry stay in `net/http` handlers. The manifests keep their shape, so merging it cuts staging over through image automation. The schema stays with the Python/Alembic `agentplane-app-migrate` init container until `APP_GOOSE_MIGRATIONS`.
+
+```mermaid
+flowchart LR
+    APP_HTTP_GRPC_BOUNDARY[In flight: app backends use native gRPC] --> APP_GO_PORT_CATCHUP[In review: rebase Go app PR #12223 and pass CI]
+    APP_HTTP_GRPC_BOUNDARY --> APP_DISPATCHER_HTTP_SETTING_CLEANUP[Blocked: remove legacy Dispatcher URL setting after rollout]
+    APP_GO_PORT_CATCHUP[In review: rebase Go app PR #12223 and pass CI] --> APP_GO_CUTOVER[Blocked: the Go app serves staging]
+    APP_GO_PORT_CATCHUP --> APP_GO_TEST_RETARGET[Blocked: app integration tests drive the Go server]
+    APP_GO_PORT_CATCHUP --> APP_SYSTEM_TEST_CLIENT[Blocked: system-test client without Python app models]
+    APP_GO_CUTOVER --> APP_GOOSE_MIGRATIONS[Blocked: Goose owns the app schema]
+    APP_GO_CUTOVER --> APP_PYTHON_RETIRE[Blocked: delete the Python app runtime]
+    APP_GO_TEST_RETARGET --> APP_PYTHON_RETIRE
+    APP_SYSTEM_TEST_CLIENT --> APP_PYTHON_RETIRE
+    APP_GOOSE_MIGRATIONS --> APP_PYTHON_RETIRE
+```
+
+### `APP_HTTP_GRPC_BOUNDARY` — app service backends use native gRPC
+
+**In flight: Python app transport prerequisite (Codex; reported 2026-10-27; Actions, Connection and Session Dispatcher).** Keep the app's browser API as the BFF while calling Action Service, Connection Service and Session Dispatcher through their native gRPC APIs. Preserve the generated ProtoJSON and NDJSON browser contracts with explicit typed routes and narrow shared transport helpers; remove their generic service HTTP relays. Retain the public MCP OAuth callback's plain HTTP route and the direct service HTTP contracts available to external agent and automation callers. No full HTTP transcoder or gRPC-Web surface is part of this change.
+
+Exit: focused `bbr test` coverage proves route-to-RPC mapping, request-bound operator bearer metadata, bounded watch startup, stream cancellation on browser/session shutdown, and the existing browser response contract for all three services. Keep the direct Actions CLI path on generated gRPC. Merge this Python prerequisite before the Go app cutover in `APP_GO_PORT_CATCHUP`; catch-up implementation and review can proceed in parallel.
+
+### `APP_DISPATCHER_HTTP_SETTING_CLEANUP` — remove the retired Dispatcher URL setting
+
+**Blocked on `APP_HTTP_GRPC_BOUNDARY` rollout.** The Python gRPC app no longer reads
+`session_dispatcher_http_url`, but `cluster/cdk8s/agentplane/app.py` still supplies it and the Python
+`Settings` schema accepts it for compatibility. After the Python gRPC image is deployed, remove the
+argument from the manifest; then remove the optional field from `Settings`. Its dated `CLEANUP`
+tombstone names this last-reader gate. Keep this cleanup independent of the Go port catch-up.
+
+Exit: neither the manifest nor the app settings schema contains `session_dispatcher_http_url`, and the
+tombstone is removed.
+
+### `APP_GO_PORT_CATCHUP` — rebase the Go app port and pass CI
+
+**In review: #12223 (Rai via Codex).** Its earlier audit against devel found the frontend configuration, removed title generation, UUID route matching, changed frontend call sites and logging style that needed catch-up; those fixes are now on the current PR. The separate Python gRPC boundary prerequisite above must merge before Go cutover. Catch-up can proceed while that prerequisite is reviewed; then rebase #12223 onto current devel, reconcile any resulting contract changes and run bazel-ci.
+
+Exit: bazel-ci is green on the rebased head, including the k3s system tests that deploy `//agentplane/app:image` (the Go server) and exercise it through `app/testing/client.py`.
+
+### `APP_GO_CUTOVER` — the Go app serves staging
+
+**Blocked on `APP_GO_PORT_CATCHUP`.** Merging #12223 is the cutover: image automation publishes the Go
+`agentplane-app` image and the unchanged Deployment rolls to it. Alembic still owns the schema, so the database is
+untouched. Under the rollout rule it merges once the covering k3s system tests pass at its head, and the PR states the
+rollback: revert it, and the next devel build publishes the Python image again. Check after rollout: the app Pod is
+Ready on staging's rendered configuration, and a logged-in browser loads the Sandbox list and a Thread. Until
+`APP_GO_TEST_RETARGET` lands, the app's browser and Electric integration tests still exercise the Python app.
+
+### `APP_GO_TEST_RETARGET` — app integration tests drive the Go server
+
+**Blocked on `APP_GO_PORT_CATCHUP`; runs alongside the cutover.** Every test under `agentplane/app/` that uses the app
+`conftest.py` builds the Python app in process, so none covers the Go runtime. Retarget the ones that exercise real
+History, Electric, Gateway or PostgreSQL (`test_thread_browser`, `test_thread_window_browser`, `test_thread_sync`,
+`test_thread_debug`, `test_electric*`, `test_action_stream`, `test_native_facades`, `test_notifications_stream`,
+`test_history_gateway`, `test_bridge`, `test_shutdown`) to start the Go binary as a process, as `gateway_process` does
+for the Gateway. Port each remaining unit test's behavior to a Go test or drop it as Python-internal. One PR per test
+file or fixture group, each saying what it ported, retargeted or dropped. Exit: no app test imports the Python runtime.
+
+### `APP_SYSTEM_TEST_CLIENT` — system tests stop importing the Python app's API models
+
+**Blocked on `APP_GO_PORT_CATCHUP`.** `app/testing/client.py`, which the k3s system tests use, decodes responses into
+the Python app's models (`SandboxView`, `ThreadView`, `ThreadPage`, `NewSession`, `SandboxesSnapshot`, …), and some
+tests import `CallerGrantView`, `ActionPolicyView` and `electric`'s `SubsetRequest` directly. Give the client models
+generated from, or checked against, the Go server's `/openapi.json`. The settings schema cdk8s renders `app-config`
+from (`settings.py`, `presets.py`, `model_catalog.py`, `action_federation_settings.py`, `oidc.OIDCSettings`) stays,
+as `action_service/settings.py` did after the Action port.
+
+### `APP_GOOSE_MIGRATIONS` — Goose owns the app schema
+
+**Blocked on `APP_GO_CUTOVER`; a PR of its own.** #12223 already carries `app/go/migrations`: an idempotent Goose
+baseline that adopts a database stamped at the Alembic head, refuses unknown or partial schemas, and on a fresh
+database writes the Alembic stamp too, so the Python image stays a working rollback. The Go tests already migrate
+with it. Publish a Go migrator under the `agentplane-app-migrate` image name the init container already runs, so no
+manifest changes, and delete the Alembic history, `database_migrate.py` and the Python migration image in the same
+change; Python tests still alive then set up their schema through the Goose migrator. Rolling back to the Python
+image stays possible until the first Goose migration after the baseline. Exit: on staging the init container runs
+Goose, `agentplane_app_goose_version` holds the baseline and `alembic_version_app` is unchanged.
+
+### `APP_PYTHON_RETIRE` — delete the Python app runtime
+
+**Blocked on `APP_GO_CUTOVER`, `APP_GO_TEST_RETARGET`, `APP_SYSTEM_TEST_CLIENT` and `APP_GOOSE_MIGRATIONS`.** Delete
+the Python serving modules and their tests (`api.py`, `live.py`, `electric.py`, `threads/`, `auth_routes.py`,
+`operator_sessions.py`, `database*.py`, `main.py`, …) and the `conftest.py` fixtures only they use; keep the settings
+schema `APP_SYSTEM_TEST_CLIENT` names. In the same change delete shared Python modules whose last live caller was the
+app, checking each: `sandboxes/inventory.py`, `postgres/wakeups.py`, `history_service/client.py`,
+`egress/decisions_client.py`, `sandboxes/egress_views.py`, `kubernetes_watch.py`, `sse.py`, `changes.py`. Update
+`app/README.md`, `app/AGENTS.md` and `HISTORY_READS_FACADE`'s module names. A later, separate Goose migration drops
+`alembic_version_app` once no deployable image can roll back to Python.
+
 ## 15. Cleanups after the current tracks
 
 Dead code, transitional pieces and test leftovers each current track reports it will leave behind (census of the
-lanes, 2026-10-21). Removals that a track's own plan already lists stay there: the integrated Connection/OAuth runtime
-and its old tables in [MCP edge extraction](mcp_edge_extraction.md#remaining-work). The overview's graph is in
+lanes, 2026-10-21). Removals that a track's own plan already lists stay there: the compatibility
+settings and separately gated schema cleanup in [MCP edge extraction](mcp_edge_extraction.md#remaining-work). The overview's graph is in
 [Current tracks](#current-tracks-and-what-they-leave-behind). Fakes kept to inject faults the real API server cannot
 produce are named at the fake and are not cleanups.
 
@@ -1895,7 +2077,8 @@ One PR per file. Exit: each reads from `testing/kubeapiserver`, or keeps only a 
   to History.
 
 Exit: those users go through the Go Gateway's runner proxy (`sandbox_control` in `app/testing/runner_gateway.py`),
-the runner fixtures push straight to `GoHistoryService`'s ingress, and both stand-ins are deleted.
+the runner fixtures push straight to `GoHistoryService`'s ingress, and both stand-ins are deleted. The app
+`conftest.py` users may instead leave with `APP_GO_TEST_RETARGET` or `APP_PYTHON_RETIRE` (section 14).
 
 ### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
 

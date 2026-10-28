@@ -97,7 +97,7 @@ async def test_thread_trace_menu(view: VisualPage, app: AgentplaneFixture) -> No
     await view.capture()
     assert view.capture_name is not None
     await view.page.get_by_role("button", name="More", exact=True).click()
-    await expect(view.page.get_by_role("menuitem", name="Find Session traces in Grafana")).to_be_visible()
+    await expect(view.page.get_by_role("menuitem", name="Find Thread traces in Grafana")).to_be_visible()
     await view.capture(name=f"{view.capture_name}_thread_trace_menu")
 
 
@@ -162,13 +162,51 @@ async def test_sandboxes(view: VisualPage, app: AgentplaneFixture) -> None:
 
 
 @DESKTOP_AND_MOBILE
-async def test_sandbox_start_session_suspended(view: VisualPage, app: AgentplaneFixture) -> None:
+@pytest.mark.parametrize(
+    ("sandbox", "pending", "reason"),
+    [
+        ("suspended-sandbox", False, "Resume it or enable wake on send"),
+        ("pending-sandbox", False, "ImagePullBackOff"),
+        ("ready-sandbox", True, "Check opening status"),
+    ],
+    ids=["suspended", "not-ready", "unconfirmed-open"],
+)
+async def test_create_thread_disabled_tooltip(
+    view: VisualPage, app: AgentplaneFixture, sandbox: str, pending: bool, reason: str
+) -> None:
+    page = view.page
+    if pending:
+        await page.evaluate(
+            "name => sessionStorage.setItem(`agentplane:pending-open:${name}`, 'unconfirmed-session')", sandbox
+        )
+    await app.mount_app(f"/sandboxes/{sandbox}")
+    await page.get_by_role("button", name="New thread", exact=True).click()
+    await expect(page.get_by_role("combobox", name="Model")).not_to_have_value("")
+    button = page.get_by_role("button", name="Create thread", exact=True)
+    await expect(button).to_be_disabled()
+    wrapper = button.locator("..")
+    await wrapper.hover()
+    tooltip = page.get_by_role("tooltip")
+    await expect(tooltip).to_contain_text(reason)
+    await expect(tooltip).to_be_in_viewport(ratio=1)
+    await view.capture(target=page.locator("#app"))
+    await page.mouse.move(0, 0)
+    await expect(tooltip).to_be_hidden()
+    await page.get_by_role("button", name="Close", exact=True).focus()
+    await page.keyboard.press("Tab")
+    await expect(wrapper).to_be_focused()
+    await expect(tooltip).to_be_visible()
+    await expect(tooltip).to_contain_text(reason)
+
+
+@DESKTOP_AND_MOBILE
+async def test_sandbox_create_thread_suspended(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.build(Scene.ADD_SUSPENDED_SANDBOXES)
     await app.mount_app("/sandboxes/idle-suspended-sandbox")
-    await expect(view.page.get_by_text("Starting a session will wake the Sandbox.", exact=False)).to_be_visible()
-    await view.page.get_by_role("button", name="New session").click()
+    await expect(view.page.get_by_text("Creating a thread will wake the Sandbox.", exact=False)).to_be_visible()
+    await view.page.get_by_role("button", name="New thread", exact=True).click()
     await expect(view.page.get_by_role("combobox", name="Model")).not_to_have_value("")
-    await expect(view.page.get_by_role("button", name="Start session")).to_be_enabled()
+    await expect(view.page.get_by_role("button", name="Create thread")).to_be_enabled()
     await view.capture(target=view.page.locator("#app"))
 
 
@@ -272,13 +310,13 @@ async def test_sandbox(view: VisualPage, app: AgentplaneFixture) -> None:
     await view.capture(name=f"{view.capture_name}_sandbox_trace_menu")
     await page.get_by_role("button", name="More Sandbox actions").click()
     await page.get_by_role("button", name=f"More actions for {IDLE_THREAD}").click()
-    await expect(page.get_by_role("menuitem", name="Find Session traces in Grafana")).to_be_visible()
-    await view.capture(name=f"{view.capture_name}_session_trace_menu")
+    await expect(page.get_by_role("menuitem", name="Find Thread traces in Grafana")).to_be_visible()
+    await view.capture(name=f"{view.capture_name}_thread_trace_menu")
 
-    await page.get_by_role("button", name="New session").click()
+    await page.get_by_role("button", name="New thread", exact=True).click()
     await expect(page.get_by_role("combobox", name="Model")).not_to_have_value("")
-    await expect(page.get_by_role("button", name="Start session")).to_be_enabled()
-    await view.capture(target=page.locator("#app"), name=f"{view.capture_name}_new_session")
+    await expect(page.get_by_role("button", name="Create thread")).to_be_enabled()
+    await view.capture(target=page.locator("#app"), name=f"{view.capture_name}_new_thread")
     for label, checkpoint in (
         ("Standing instructions", "standing_instructions"),
         ("Thread setup script", "thread_setup_script"),

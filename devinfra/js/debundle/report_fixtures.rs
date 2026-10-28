@@ -124,6 +124,7 @@ pub fn source_unit_report(
         declared_bindings,
         statement_kind: StatementKind::VarDecl,
         purity: Purity::Pure,
+        callback_factory_barriers: Vec::new(),
         destination,
     }
 }
@@ -258,6 +259,7 @@ pub fn graph_of(
 ) -> DependencyGraphReport {
     let module_nodes = module_table(nodes.iter().map(|n| &n.destination));
     DependencyGraphReport {
+        provenance: None,
         chunk_id: "x".to_string(),
         nodes,
         purity_causes: Vec::new(),
