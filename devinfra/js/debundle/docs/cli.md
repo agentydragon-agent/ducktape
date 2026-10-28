@@ -14,18 +14,9 @@ JSON-on-stdout / structured-diagnostic-on-stderr convention.
 
 ## Find a workflow
 
-- Transform a spec: [Running the pipeline](#running-the-pipeline).
-- Inspect a binding or source: [Workflow: investigating a binding
-  end-to-end](#workflow-investigating-a-binding-end-to-end) and
-  [Inspecting source](#inspecting-source).
-- Edit assignments or claim proposals: [Batch atomicity](#batch-atomicity-bindings-assign),
-  [Claiming fresh proposals](#claiming-fresh-proposals-modules-apply), and
-  <spec_editing.md>.
-- Reorganize existing modules: [Plan a module assignment](#refining-existing-modules-modules-decompose),
-  then [apply reviewed source-unit assignments](#applying-reviewed-source-unit-assignments-modules-refine).
-- Diagnose a rejected edit: [Rejection diagnostics](#rejection-diagnostics)
-  and [Gate queries](#gate-queries).
-- Delegate an isolated spec edit: [Delegating with an input snapshot](#delegating-with-an-input-snapshot).
+The README's [task chooser](../README.md#choose-a-task) links to the recipe for
+inspection, extraction, reorganization, naming, selector stabilization, gate
+diagnosis, or delegation.
 
 Use `debundle <command> --help` for the current command and flag inventory.
 
@@ -846,6 +837,12 @@ run the project extraction gate after an accepted edit.
 
 ## Rejection diagnostics
 
+Start with the reported source and constraint. If the investigation establishes
+an author assertion's premises, use the [initialization contract
+chooser](../skills/shared/initialization_contracts.md#choose-the-contract-for-the-established-fact)
+to select its scope and audit obligations. A rejection alone does not establish
+purity, callback timing, or a host/runtime premise.
+
 When validation refuses a mutating command, the diagnostic names exactly
 what's wrong:
 
@@ -949,6 +946,32 @@ When a binding's role is unclear or a proposal is suspicious:
 3. **`debundle cluster <sym>`** — list the module-quotient neighbors of the
    binding's source unit. Useful for "what does this module touch?" questions
    before deciding a destination.
+
+### Explain behavior with a partial spec
+
+Trace from the relevant entry point through branches, helpers, data, and callers.
+Use emitted modules for readability and the inspection workflow above for source
+and graph evidence. Coverage counts alone do not establish behavior.
+
+When answering requires missing coverage and spec edits are in scope, claim only
+the complete atomic groups needed for the question, using the
+[extraction recipes](spec_editing.md). Choose coherent module boundaries,
+[descriptive names](naming.md), and [purpose-bearing selectors](selectors.md).
+A current unique match cannot prove future rebuild stability. Record factual
+module/binding comments through `modules comment` / `bindings comment` when they
+clarify behavior; YAML `#` comments do not emit into the generated JS.
+
+Run the adapter's full pipeline/gate after edits and exercise emitted behavior
+with its applicable runtime checks. Regenerate through the adapter. Fix failures
+before relying on the changed tree, or state what remains unverified. If source
+or spec is unavailable, answer from available evidence without claiming that the
+debundled tree covers it.
+
+Explain the observed control/data flow and cite the generated paths/functions
+that demonstrate it. Report spec additions, actual gate/runtime results, and
+remaining uncertainty. Keep a focused question scoped to the code needed for its
+answer; [specialist roles](../skills/shared/workflow.md#roles) handle substantial
+source discovery, architecture, naming, or multi-lane extraction.
 
 ## Evidence files
 
