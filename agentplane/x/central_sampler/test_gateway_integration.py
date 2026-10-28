@@ -62,7 +62,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
             postgres_async_engine(database_url) as engine,
             Endpoint() as endpoint,
             sandbox_cluster(api_server) as sandbox,
-            serve_gateway() as ingress,
+            serve_gateway() as runner_gateway,
             run_gateway(
                 api_server.kubeconfig,
                 database_url=gateway_database,
@@ -79,7 +79,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 history_database,
                 api=api_server,
                 directory=tmp_path,
-                writer_namespaces=[sampler.namespace],
+                writer_namespaces=[sampler.namespace, sandbox.namespace],
                 sampler_accounts=[sampler],
             ) as history,
         ):
@@ -94,7 +94,16 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
             )
             config = replace(config, launch=replace(config.launch, sandbox=sandbox.identity))
             control = configuration.Endpoint(target=gateway.target, bearer=await sandbox.pod_token(runner_audience))
-            async with RunningRunner(config, ingress, control_endpoint=control) as running_runner:
+            runner_ingress = configuration.Endpoint(
+                target=history.ingress_target, bearer=await history.writer_token(sandbox.owner)
+            )
+            async with RunningRunner(
+                config,
+                runner_gateway,
+                history=history.reader,
+                ingress_endpoint=runner_ingress,
+                control_endpoint=control,
+            ) as running_runner:
                 await gateway.wait_for_runner(gateway.gateway_client(gateway_token), sandbox.destination)
                 values = settings(
                     database_url,
