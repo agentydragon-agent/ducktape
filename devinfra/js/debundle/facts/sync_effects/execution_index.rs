@@ -1171,6 +1171,75 @@ fn sole_return_expression(body: &FunctionBody) -> Option<&Expr> {
     }
 }
 
+struct ReturnedRecordCandidate {
+    constructor: Id,
+    members: Vec<(String, Span)>,
+}
+
+/// An exact eager skeleton; all user code in the returned record is deferred.
+fn returned_record_candidate(function: &Function) -> Option<ReturnedRecordCandidate> {
+    if function.is_async
+        || function.is_generator
+        || !function.params.is_empty()
+        || !function.decorators.is_empty()
+    {
+        return None;
+    }
+    let [Stmt::Decl(Decl::Var(declaration)), Stmt::Return(returned)] =
+        function.body.as_ref()?.stmts.as_slice()
+    else {
+        return None;
+    };
+    let [binding] = declaration.decls.as_slice() else {
+        return None;
+    };
+    if declaration.declare || !matches!(binding.name, Pat::Ident(_)) {
+        return None;
+    }
+    let Expr::New(allocation) = binding.init.as_ref()?.unwrap_parens() else {
+        return None;
+    };
+    let Expr::Ident(constructor) = allocation.callee.unwrap_parens() else {
+        return None;
+    };
+    if constructor.sym != "Map" || !allocation.args.as_deref().unwrap_or_default().is_empty() {
+        return None;
+    }
+    let Expr::Object(record) = returned.arg.as_ref()?.unwrap_parens() else {
+        return None;
+    };
+    let mut members = Vec::new();
+    let mut names = BTreeSet::new();
+    for property in &record.props {
+        let PropOrSpread::Prop(property) = property else {
+            return None;
+        };
+        let (key, function) = match property.as_ref() {
+            Prop::Method(method) => (&method.key, &method.function),
+            Prop::Getter(getter) => (&getter.key, &getter.function),
+            _ => return None,
+        };
+        if matches!(key, PropName::Computed(_))
+            || !function.decorators.is_empty()
+            || function
+                .params
+                .iter()
+                .any(|param| !param.decorators.is_empty())
+        {
+            return None;
+        }
+        let name = static_property_name(key)?;
+        if name == "__proto__" || !names.insert(name.clone()) {
+            return None;
+        }
+        members.push((name, function.span));
+    }
+    (!members.is_empty()).then_some(ReturnedRecordCandidate {
+        constructor: constructor.to_id(),
+        members,
+    })
+}
+
 fn returned_function_span(expr: &Expr) -> Option<Span> {
     match expr.unwrap_parens() {
         Expr::Arrow(arrow) if !arrow.is_async && arrow.params.is_empty() => Some(arrow.span),
@@ -1927,6 +1996,8 @@ struct ExecutionIndex {
     no_reentry_members: BTreeMap<Id, BTreeSet<String>>,
     no_reentry_record_members: BTreeMap<Id, BTreeSet<String>>,
     returned_factory_candidates: BTreeMap<u32, Span>,
+    returned_record_candidates: BTreeMap<u32, ReturnedRecordCandidate>,
+    returned_record_summaries: BTreeMap<Id, crate::analysis_inputs::ReturnedRecordSummary>,
 }
 
 impl Default for ExecutionIndex {
@@ -2030,6 +2101,8 @@ impl Default for ExecutionIndex {
             no_reentry_members: BTreeMap::new(),
             no_reentry_record_members: BTreeMap::new(),
             returned_factory_candidates: BTreeMap::new(),
+            returned_record_candidates: BTreeMap::new(),
+            returned_record_summaries: BTreeMap::new(),
         }
     }
 }
@@ -2194,6 +2267,15 @@ impl ExecutionIndex {
                             == "AsyncLocalStorage"
                     {
                         index.host_async_local_storage_imports.insert(local.to_id());
+                    }
+                    if let Some(record) = hints
+                        .imported_callables
+                        .get(local.sym.as_ref())
+                        .and_then(|summary| summary.returned_record.as_ref())
+                    {
+                        index
+                            .returned_record_summaries
+                            .insert(local.to_id(), record.clone());
                     }
                     if let Some(summary) = hints.imported_callables.get(local.sym.as_ref())
                         && summary.supports_callback_factory()
@@ -2967,6 +3049,18 @@ impl ExecutionIndex {
                 .mutated_intrinsic_roots
                 .contains(&IntrinsicRoot::GlobalObject)
             && !self.mutated_intrinsic_roots.contains(&root)
+    }
+
+    fn empty_collection_constructor_is_unmodified(
+        &self,
+        id: &Id,
+        flow: &ChunkValueFlow,
+        shadowed: &BTreeSet<&'static str>,
+    ) -> bool {
+        matches!(id.0.as_ref(), "Map" | "Set" | "WeakMap" | "WeakSet")
+            && !flow.is_declared(id)
+            && !shadowed.contains(id.0.as_ref())
+            && self.collection_intrinsic_is_unmodified(id.0.as_ref())
     }
 
     fn set_iterable_intrinsics_are_unmodified(&self) -> bool {
@@ -3857,6 +3951,10 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_function(&mut self, function: &Function) {
+        if let Some(candidate) = returned_record_candidate(function) {
+            self.returned_record_candidates
+                .insert(function.span.lo.0, candidate);
+        }
         if function.is_async {
             self.async_callables.insert(function.span.lo.0);
         }
@@ -4903,10 +5001,22 @@ fn returned_callback_factory(index: &ExecutionIndex, key: u32) -> bool {
             })
 }
 
-pub(crate) fn infer_returned_callback_factories(
+pub(crate) struct InferredReturnedRecord {
+    pub function_start: u32,
+    pub members: Vec<(String, u32, BTreeSet<String>)>,
+}
+
+pub(crate) struct InferredCallableCapabilities {
+    pub map_integrity: bool,
+    pub callback_factories: BTreeMap<String, u32>,
+    pub returned_records: BTreeMap<String, InferredReturnedRecord>,
+}
+
+/// One canonical index/flow for all imported callable capabilities and premises.
+pub(crate) fn infer_callable_capabilities(
     body: &[TopLevelItemView<'_>],
     exported_locals: &BTreeSet<String>,
-) -> BTreeMap<String, u32> {
+) -> InferredCallableCapabilities {
     let index = ExecutionIndex::collect(
         body,
         &AnalysisInputs::default(),
@@ -4914,6 +5024,113 @@ pub(crate) fn infer_returned_callback_factories(
         &BTreeSet::new(),
         &LocalClassConstructionProof::default(),
     );
+    let mut result = InferredCallableCapabilities {
+        map_integrity: index.collection_intrinsic_is_unmodified("Map"),
+        callback_factories: BTreeMap::new(),
+        returned_records: BTreeMap::new(),
+    };
+    // Most exports are not function factories. Preserve the demand boundary:
+    // namespace-only providers and unsupported bodies need no value-flow graph.
+    let callback_candidate = |id: &Id, key: u32| {
+        exported_locals.contains(id.0.as_ref()) && returned_callback_factory(&index, key)
+    };
+    let has_candidate = index.hoisted_bindings.iter().any(|(id, key)| {
+        callback_candidate(id, *key)
+            || (exported_locals.contains(id.0.as_ref())
+                && index.returned_record_candidates.contains_key(key))
+    }) || index.top_assignments.iter().flatten().any(|(id, value)| {
+        matches!(value, ValueExpr::Origin(ValueOrigin::Function(key)) if callback_candidate(id, *key))
+    });
+    if has_candidate {
+        let flow = ChunkValueFlow::analyze(body);
+        let shadowed = crate::facts::compute_shadowed_globals(body);
+        result.callback_factories =
+            infer_returned_callback_factories(&index, &flow, exported_locals);
+        result.returned_records = infer_returned_records(&index, &flow, &shadowed, exported_locals);
+    }
+    result
+}
+
+fn infer_returned_records(
+    index: &ExecutionIndex,
+    flow: &ChunkValueFlow,
+    shadowed: &BTreeSet<&'static str>,
+    exported_locals: &BTreeSet<String>,
+) -> BTreeMap<String, InferredReturnedRecord> {
+    let mut inferred = BTreeMap::new();
+    for local in exported_locals {
+        let Some((binding, &key)) = index
+            .hoisted_bindings
+            .iter()
+            .find(|(id, _)| id.0.as_ref() == local)
+        else {
+            continue;
+        };
+        if flow
+            .values_of_binding(binding)
+            .iter()
+            .ne([ValueOrigin::Function(key)])
+        {
+            continue;
+        }
+        let Some(candidate) = index.returned_record_candidates.get(&key) else {
+            continue;
+        };
+        // This first milestone uses hoisted declarations only. Rebinding the
+        // exported cell, including from a deferred body, defeats the identity.
+        let rebound = index
+            .top_assignments
+            .iter()
+            .flatten()
+            .any(|(id, _)| id == binding)
+            || index
+                .callables
+                .values()
+                .any(|callable| callable.rebinds.contains(binding));
+        if rebound
+            || !index.empty_collection_constructor_is_unmodified(
+                &candidate.constructor,
+                flow,
+                shadowed,
+            )
+        {
+            continue;
+        }
+        let members = candidate
+            .members
+            .iter()
+            .map(|(name, span)| {
+                let callable = &index.callables[&span.lo.0];
+                let parameters: BTreeSet<_> = callable
+                    .params
+                    .iter()
+                    .filter_map(|param| param.binding.clone())
+                    .collect();
+                let captures = callable
+                    .reads
+                    .difference(&callable.declared_locals)
+                    .filter(|id| !parameters.contains(*id))
+                    .map(|id| id.0.to_string())
+                    .collect();
+                (name.clone(), span.lo.0, captures)
+            })
+            .collect();
+        inferred.insert(
+            local.clone(),
+            InferredReturnedRecord {
+                function_start: key,
+                members,
+            },
+        );
+    }
+    inferred
+}
+
+fn infer_returned_callback_factories(
+    index: &ExecutionIndex,
+    flow: &ChunkValueFlow,
+    exported_locals: &BTreeSet<String>,
+) -> BTreeMap<String, u32> {
     if !index.dynamic_scope_owners.is_empty() {
         return BTreeMap::new();
     }
@@ -4930,7 +5147,7 @@ pub(crate) fn infer_returned_callback_factories(
         .hoisted_bindings
         .iter()
         .filter(|(id, key)| {
-            exported_locals.contains(id.0.as_ref()) && returned_callback_factory(&index, **key)
+            exported_locals.contains(id.0.as_ref()) && returned_callback_factory(index, **key)
         })
         .map(|(id, key)| (id.clone(), *key))
         .collect();
@@ -4940,13 +5157,12 @@ pub(crate) fn infer_returned_callback_factories(
         };
         (exported_locals.contains(id.0.as_ref())
             && index.top_definite_initializers[owner.0].contains(&id)
-            && returned_callback_factory(&index, *key))
+            && returned_callback_factory(index, *key))
         .then_some((id, *key))
     }));
     if candidates.is_empty() {
         return BTreeMap::new();
     }
-    let flow = ChunkValueFlow::analyze(body);
     candidates
         .into_iter()
         .filter_map(|(id, key)| {

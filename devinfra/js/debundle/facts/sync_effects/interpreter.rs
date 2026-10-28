@@ -17,7 +17,7 @@ use crate::facts::local_effect_targets::MetadataDecorateCall;
 use crate::facts::source_unit_read_closure::SourceUnitReadClosure;
 use crate::facts::statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, CallbackFactoryUseFact,
-    StatementFacts, StatementKind, SynchronousCalls,
+    ReturnedRecordUseFact, StatementFacts, StatementKind, SynchronousCalls,
 };
 use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin, Values as FlowValues};
 use crate::facts::{LocalClassConstructionProof, set_iterables::SetIterableProof};
@@ -165,6 +165,7 @@ struct Executor<'a> {
     current_top_owner: Option<SourceUnitOrdinal>,
     call_site_owners: BTreeMap<CallSite, (SourceUnitOrdinal, Span)>,
     proof_uses: Vec<CallbackFactoryUseFact>,
+    returned_record_proof_uses: Vec<ReturnedRecordUseFact>,
     /// Owners executed while building a certified unpublished instance graph.
     /// Their synchronous effects still run; execution alone does not expose
     /// the wrapper or the classes' deferred callable members to the host.
@@ -258,6 +259,32 @@ impl Executor<'_> {
                 .enum_data_members
                 .get(binding)
                 .is_some_and(|keys| keys.contains(property))
+    }
+
+    fn record_returned_record_use(
+        &mut self,
+        callee: &ValueExpr,
+        kind: crate::reports::schema::ReturnedRecordUseKind,
+        lexical_statement_ordinal: SourceUnitOrdinal,
+        span: Span,
+    ) {
+        let ValueExpr::Binding(imported_local) = callee else {
+            return;
+        };
+        let Some(evidence) = self.index.returned_record_summaries.get(imported_local) else {
+            return;
+        };
+        let proof_use = ReturnedRecordUseFact {
+            imported_local: imported_local.0.to_string(),
+            evidence: evidence.clone(),
+            kind,
+            lexical_statement_ordinal,
+            source_location: None,
+            span,
+        };
+        if !self.returned_record_proof_uses.contains(&proof_use) {
+            self.returned_record_proof_uses.push(proof_use);
+        }
     }
 
     fn ordinary_object_prototype_intact(&self) -> bool {
@@ -1987,6 +2014,9 @@ impl Executor<'_> {
                         pending.extend(captured.values.iter().cloned());
                     }
                 }
+                AbstractValue::ForeignDeferredRecord => {
+                    callbacks.insert(value.clone());
+                }
                 AbstractValue::DeferredCallbacks(captured) => {
                     if callbacks.insert(value.clone()) {
                         pending.extend(captured.values.iter().cloned());
@@ -2290,7 +2320,9 @@ impl Executor<'_> {
                             self.prefix_revision = self.prefix_revision.wrapping_add(1);
                         }
                     }
-                    AbstractValue::Unknown | AbstractValue::DeferredCallbacks(_) => {
+                    AbstractValue::Unknown
+                    | AbstractValue::DeferredCallbacks(_)
+                    | AbstractValue::ForeignDeferredRecord => {
                         self.taint_objects(&values);
                         // A write through an untracked object may publish the
                         // callback through that object before it is passed to
@@ -2616,6 +2648,10 @@ impl Executor<'_> {
         let mut owners = BTreeSet::new();
         for callback in self.callback_values(values) {
             let owner = match callback {
+                AbstractValue::ForeignDeferredRecord => {
+                    self.promote_foreign_record(outcome);
+                    None
+                }
                 AbstractValue::Origin(ValueOrigin::Function(key))
                 | AbstractValue::Closure(key, _) => self
                     .index
@@ -2956,10 +2992,21 @@ impl Executor<'_> {
     ) {
         let mut callbacks = self.global_escaped_callbacks.clone();
         callbacks.extend(self.available_export_callbacks());
-        if !no_sync_arguments {
-            let values = args.iter().flatten().cloned().collect();
-            callbacks.extend(self.callback_values(&values));
+        // A callback-argument exemption does not certify foreign getters or
+        // direct live-cell captures reachable through a returned record.
+        let supplied: Values = args.iter().flatten().cloned().collect();
+        let supplied_callbacks = self.callback_values(&supplied);
+        if callbacks.contains(&AbstractValue::ForeignDeferredRecord)
+            || supplied_callbacks.contains(&AbstractValue::ForeignDeferredRecord)
+        {
+            self.promote_foreign_record(outcome);
         }
+        if !no_sync_arguments {
+            callbacks.extend(supplied_callbacks);
+        }
+        // Activate the foreign pool before any callback-size fallback, which
+        // otherwise only expands callables with local source owners.
+        callbacks.remove(&AbstractValue::ForeignDeferredRecord);
         // Unknown host code may invoke any callback it received with another
         // currently available callback, so each formal gets the conservative
         // callback set plus a non-callable/unknown possibility.
@@ -3116,6 +3163,9 @@ impl Executor<'_> {
         possible_values.extend(self.global_escaped_callbacks.iter().cloned());
         possible_values.extend(self.available_export_callbacks());
         let callbacks = self.callback_values(&possible_values);
+        if callbacks.contains(&AbstractValue::ForeignDeferredRecord) {
+            self.promote_foreign_record(&mut outcome);
+        }
         let mut roots = BTreeSet::new();
         for callback in &callbacks {
             let key = match callback {
@@ -3253,6 +3303,33 @@ impl Executor<'_> {
         };
         result.lose_precision(reason, owner, DUMMY_SP);
         result
+    }
+
+    fn source_record_factory(&self, callee: &ValueExpr, args: &[ValueExpr]) -> bool {
+        args.is_empty()
+            && matches!(callee, ValueExpr::Binding(id)
+            if self.index.returned_record_summaries.contains_key(id)
+                && self.index.collection_intrinsic_is_unmodified("Map"))
+    }
+
+    fn promote_foreign_record(&mut self, outcome: &mut Outcome) {
+        // Foreign bodies may read importer cells through a direct ESM capture,
+        // without calling an exported callback. Preserve all such obligations.
+        // This deliberately buys precision only at construction, not member use.
+        self.promote_lazy_effects(
+            &self.top_bindings,
+            &BTreeSet::new(),
+            self.current_top_owner
+                .expect("foreign record use has a top owner"),
+            outcome,
+        );
+        outcome.unknown_call = true;
+        outcome.lose_precision(
+            ExecutionPrecisionLossReason::UnknownCallTarget,
+            self.current_top_owner
+                .expect("foreign record use has a top owner"),
+            DUMMY_SP,
+        );
     }
 
     fn evaluate(&mut self, expr: &ValueExpr, env: &Context, captures: &Context) -> Values {
@@ -3401,6 +3478,9 @@ impl Executor<'_> {
                 let mut values = Values::new();
                 for object in objects {
                     match object {
+                        AbstractValue::ForeignDeferredRecord => {
+                            values.insert(AbstractValue::ForeignDeferredRecord);
+                        }
                         AbstractValue::ArrayIntrinsic => {
                             values.insert(AbstractValue::ArrayIntrinsic);
                         }
@@ -3512,6 +3592,17 @@ impl Executor<'_> {
                 }
                 for values in &mut args {
                     values.remove(&AbstractValue::Unavailable);
+                }
+                if self.source_record_factory(callee, expressions) {
+                    if let Some(&(owner, call_span)) = self.call_site_owners.get(span) {
+                        self.record_returned_record_use(
+                            callee,
+                            crate::reports::schema::ReturnedRecordUseKind::ReturnCapability,
+                            owner,
+                            call_span,
+                        );
+                    }
+                    return BTreeSet::from([AbstractValue::ForeignDeferredRecord]);
                 }
                 if let Some(returns) =
                     self.resolve_native_call(CallKind::Call, callee, expressions, &args)
@@ -4076,6 +4167,12 @@ impl Executor<'_> {
                 unreachable!()
             };
             let values = self.evaluate(receiver, env, captures);
+            if values.contains(&AbstractValue::ForeignDeferredRecord) {
+                self.promote_foreign_record(outcome);
+                self.note_unknown_call(call);
+                self.invoke_possible_callbacks(&[values], false, outcome);
+                return;
+            }
             let unsupported_local = values.iter().any(|value| match value {
                 AbstractValue::Origin(ValueOrigin::Object(object)) => {
                     self.tainted_objects.contains(object)
@@ -4207,10 +4304,7 @@ impl Executor<'_> {
         if call.kind == CallKind::New
             && call.args.is_empty()
             && matches!(&call.callee, ValueExpr::Binding(id)
-                if matches!(id.0.as_ref(), "Map" | "Set" | "WeakMap" | "WeakSet")
-                    && !self.flow.is_declared(id)
-                    && !self.shadowed.contains(id.0.as_ref())
-                    && self.index.collection_intrinsic_is_unmodified(id.0.as_ref()))
+                if self.index.empty_collection_constructor_is_unmodified(id, self.flow, self.shadowed))
         {
             return;
         }
@@ -4231,6 +4325,18 @@ impl Executor<'_> {
         }
         for values in &mut args {
             values.remove(&AbstractValue::Unavailable);
+        }
+        if call.kind == CallKind::Call
+            && !call.has_spread
+            && self.source_record_factory(&call.callee, &call.args)
+        {
+            self.record_returned_record_use(
+                &call.callee,
+                crate::reports::schema::ReturnedRecordUseKind::CallTiming,
+                call.owner,
+                call.span,
+            );
+            return;
         }
         if !call.has_spread
             && self
@@ -4410,6 +4516,11 @@ impl Executor<'_> {
                             call.args.as_slice(),
                             [ValueExpr::Origin(ValueOrigin::Function(_))]
                         ) => {}
+                AbstractValue::ForeignDeferredRecord => {
+                    self.promote_foreign_record(outcome);
+                    self.note_unknown_call(call);
+                    self.invoke_possible_callbacks(&opaque_args, false, outcome);
+                }
                 AbstractValue::DeferredCallbacks(captured) => {
                     outcome.lose_precision(
                         ExecutionPrecisionLossReason::UnknownCallTarget,
@@ -4913,6 +5024,7 @@ pub(crate) fn annotate_synchronous_calls(
             .map(|call| (CallSite::from(call.span), (call.owner, call.span)))
             .collect(),
         proof_uses: Vec::new(),
+        returned_record_proof_uses: Vec::new(),
         private_constructor_result_owners: BTreeSet::new(),
         prior_effect_owners: BTreeSet::new(),
         accepted_deferred_global_writes: BTreeSet::new(),
@@ -5229,6 +5341,8 @@ pub(crate) fn annotate_synchronous_calls(
             executor.prefix_revision = executor.prefix_revision.wrapping_add(1);
         }
         outcome.effects.callback_factory_uses = std::mem::take(&mut executor.proof_uses);
+        outcome.effects.returned_record_uses =
+            std::mem::take(&mut executor.returned_record_proof_uses);
         effects.push(outcome.effects);
     }
     for (fact, effect) in facts.iter_mut().zip(effects) {

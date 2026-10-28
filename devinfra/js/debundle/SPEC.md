@@ -698,6 +698,23 @@ Existing input/output relocation rules remain unchanged. The markers identify
 a provider; they do not prove its contracts. Each purity, callback, intrinsic
 and publication premise still requires the same independent source audit.
 
+## Inferred returned-record construction timing
+
+For a stable directly exported hoisted zero-argument function declaration that allocates one fresh
+empty Map and returns only noncomputed methods/getters, source analysis may
+certify that construction cannot synchronously reenter importer code. This is
+independent of purity and possible throws. The proof requires an exact defining
+entry/export and the shared intrinsic-integrity checks across analyzed modules.
+The returned record retains opaque deferred capabilities: later access,
+invocation and opaque consumption conservatively preserve importer live-cell
+reads and callback effects. The summary and provider member/capture provenance
+appear in `modules.json` under `imported_callables.*.returned_record`.
+Used certificates also appear in the dependency graph's
+`imported_callable_summaries.*.returned_record`. A source unit's
+`synchronous_execution.returned_record_uses` separately records `call_timing`
+and `return_capability` consumption with the call-site location and a summary
+reference. Callback-input factory evidence and uses retain their own fields.
+
 ## Audited callback factories
 
 Optional calls retain conservative callee, receiver and argument callback
