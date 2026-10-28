@@ -453,6 +453,8 @@ def build_chart(
         image_pull_secret_name=None,
         trust_mounts=sandbox_pod.egress_proxy_mounts(),
         control_service=control,
+        # The hermetic k3s fixture has no Alloy collector behind the telemetry sidecar route.
+        disable_otel_sdk=True,
     )
     sandbox_controller.SandboxController(
         chart,
