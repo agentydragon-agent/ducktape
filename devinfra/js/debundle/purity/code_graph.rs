@@ -1,5 +1,5 @@
 use super::*;
-use crate::facts::SetIterableProof;
+use crate::facts::{DynamicScopeFact, LocalClassConstructionProof, SetIterableProof};
 use std::sync::Arc;
 
 /// Chunk-wide code graph: indexes top-level bindings and answers
@@ -48,6 +48,7 @@ pub struct ChunkCodeGraph {
     /// Exact Set-constructor spans with a structurally checked fresh-array
     /// iterable. The same proof is consumed by synchronous effect analysis.
     set_iterable_proof: SetIterableProof,
+    local_class_construction_proof: LocalClassConstructionProof,
     /// Purity verdict for chunk-top bindings that are imports of a
     /// function from another module, keyed by local binding name.
     /// Populated by the program-level cross-module purity oracle;
@@ -174,8 +175,16 @@ impl ChunkCodeGraph {
     ) -> Self {
         let value_flow = crate::facts::ChunkValueFlow::analyze(body);
         let plain_data_bindings = collect_plain_data_bindings(body, shadowed, &value_flow);
-        let set_iterable_proof =
-            SetIterableProof::analyze(body, shadowed, &value_flow, &plain_data_bindings);
+        let dynamic_scope = DynamicScopeFact::analyze(body);
+        let set_iterable_proof = SetIterableProof::analyze(
+            body,
+            shadowed,
+            &value_flow,
+            &plain_data_bindings,
+            dynamic_scope,
+        );
+        let local_class_construction_proof =
+            LocalClassConstructionProof::analyze(body, shadowed, &value_flow, dynamic_scope);
         Self::build_full_with_prepared_plain_data(
             body,
             shadowed,
@@ -185,6 +194,7 @@ impl ChunkCodeGraph {
             imported_purities,
             fluent_bindings,
             &set_iterable_proof,
+            &local_class_construction_proof,
             &plain_data_bindings,
             locate,
         )
@@ -201,6 +211,7 @@ impl ChunkCodeGraph {
         imported_purities: &BTreeMap<String, Arc<Purity>>,
         fluent_bindings: &BTreeSet<String>,
         set_iterable_proof: &SetIterableProof,
+        local_class_construction_proof: &LocalClassConstructionProof,
         plain_data_bindings: &[String],
         mut locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
     ) -> Self {
@@ -282,6 +293,7 @@ impl ChunkCodeGraph {
             plain_array_bindings: collect_plain_array_bindings(body, shadowed),
             ts_enum_named_data_candidates,
             set_iterable_proof: set_iterable_proof.clone(),
+            local_class_construction_proof: local_class_construction_proof.clone(),
             imported_purities: imported_purities.clone(),
             fluent_bindings: collect_fluent_const_bindings(body, fluent_bindings),
         };
@@ -396,6 +408,11 @@ impl ChunkCodeGraph {
 
     pub(crate) fn has_proven_set_iterable(&self, span: Span) -> bool {
         self.set_iterable_proof.contains_constructor(span)
+    }
+
+    pub(crate) fn has_proven_local_class_construction(&self, span: Span) -> bool {
+        self.local_class_construction_proof
+            .contains_construction(span)
     }
 
     pub(crate) fn is_declared_pure_new(&self, name: &str) -> bool {

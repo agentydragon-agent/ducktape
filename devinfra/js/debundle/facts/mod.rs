@@ -46,10 +46,12 @@ pub(crate) use crate::purity::{
 mod analyze;
 mod at_init_fallback;
 mod collector;
+mod dynamic_scope;
 mod fresh_receiver;
 mod global_object;
 mod item_views;
 mod lazy_boundary;
+mod local_class_construction;
 mod local_effect_targets;
 mod local_effects;
 mod purity_classification;
@@ -67,9 +69,11 @@ mod value_set_tests;
 // crate-internal items through `use super::*;`, which sees these globs.
 pub(crate) use at_init_fallback::*;
 pub(crate) use collector::*;
+pub(crate) use dynamic_scope::DynamicScopeFact;
 pub(crate) use global_object::*;
 pub(crate) use item_views::*;
 pub(crate) use lazy_boundary::*;
+pub(crate) use local_class_construction::LocalClassConstructionProof;
 pub(crate) use local_effect_targets::*;
 pub(crate) use purity_classification::*;
 pub(crate) use set_iterables::{SetIterableProof, primitive_literal_property_keys};
