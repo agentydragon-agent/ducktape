@@ -401,7 +401,7 @@ func failedInitialOperationRunner(t *testing.T, failTeardown bool) (*Runner, *in
 	}
 	t.Cleanup(func() {
 		r.cancel()
-		<-r.lifecycle.done
+		<-r.lifecycle.done.Done()
 		r.lifecycle.workers.Wait()
 		if r.sessions != nil {
 			_ = r.sessions.Close()
@@ -437,7 +437,7 @@ func TestCloseSettlesAfterInitialOperationPublicationFailure(t *testing.T) {
 	r, _, marker := failedInitialOperationRunner(t, false)
 
 	closeDone := make(chan error, 1)
-	go func() { closeDone <- r.Close() }()
+	go func() { closeDone <- r.Close(context.Background()) }()
 	closeCtx, cancelClose := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancelClose()
 	select {
@@ -464,7 +464,7 @@ func TestCloseReportsTeardownOperationPublicationFailureAndRetainsOwner(t *testi
 	closeCtx, cancelClose := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancelClose()
 	closeDone := make(chan error, 1)
-	go func() { closeDone <- r.Close() }()
+	go func() { closeDone <- r.Close(context.Background()) }()
 	select {
 	case err := <-closeDone:
 		if err == nil || !strings.Contains(err.Error(), "publish operation start") {
@@ -658,7 +658,7 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 				t.Error("runner did not finish closing after releasing one-shot scripts")
 			}
 		} else if !closeStarted && !closed {
-			if err := r.Close(); err != nil {
+			if err := r.Close(context.Background()); err != nil {
 				t.Error(err)
 			}
 		}
@@ -681,7 +681,7 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 	}
 	waitForFile(t, bootstrapStarted)
 	closeStarted = true
-	go func() { closeDone <- r.Close() }()
+	go func() { closeDone <- r.Close(context.Background()) }()
 	assertStillClosing(t, closeDone, "bootstrap")
 	facts, err := r.facts()
 	if err != nil {
@@ -726,7 +726,7 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		if err := restarted.Close(); err != nil {
+		if err := restarted.Close(context.Background()); err != nil {
 			t.Error(err)
 		}
 	}()
@@ -824,7 +824,7 @@ func newLifecycleRunnerWithState(t *testing.T, config Config, store state.State)
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := r.Close(); err != nil {
+		if err := r.Close(context.Background()); err != nil {
 			t.Errorf("close test runner: %v", err)
 		}
 	})
@@ -863,7 +863,7 @@ func TestScriptRunPreservesEnvironmentStreamsAndExitStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := r.Close(); err != nil {
+		if err := r.Close(context.Background()); err != nil {
 			t.Errorf("close test runner: %v", err)
 		}
 	})
