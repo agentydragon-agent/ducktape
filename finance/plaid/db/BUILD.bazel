@@ -11,7 +11,7 @@ py_library(
     name = "models",
     srcs = ["models.py"],
     visibility = [
-        "//cluster/k8s/agents/plaid-mcp:__pkg__",
+        "//cluster/cdk8s/plaid_mcp:__pkg__",
         "//finance/augur:__subpackages__",
         "//finance/beancount_export:__pkg__",
         "//finance/budget:__pkg__",

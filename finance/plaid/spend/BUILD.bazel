@@ -342,7 +342,7 @@ py_test(
 py_library(
     name = "portfolio_queries",
     srcs = ["portfolio_queries.py"],
-    visibility = ["//cluster/k8s/agents/plaid-mcp:__pkg__"],
+    visibility = ["//cluster/cdk8s/plaid_mcp:__pkg__"],
     deps = [
         "//finance/plaid/db:models",
         "//finance/plaid/db:read_model",
