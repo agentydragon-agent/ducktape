@@ -41,6 +41,33 @@ recursive summaries and cross-revision reuse are outside this migration.
 A, B and C are independent; D depends on C, E on A/C, F and G on D/E, H on all.
 Use isolated worktrees, independent PRs and native stacks for real dependencies.
 
+## Transfer requests
+
+Source-prefix producers discover named expression, call, heap, callback and model
+transfers on the same fact context. A request identifies its source owner and
+parent operation plus a child occurrence, carries a settled input state and
+explicit argument/capture environments, and produces a settled output state and
+typed value/effect result. Occurrence numbers describe execution order, not
+opcodes. Rule and fact families use named enums, including scheduler fixtures.
+
+These execution transitions form an acyclic graph: a result can affect its
+parent's continuation, never the immutable predecessor supplied to that child.
+Current active-recursion and expansion fallbacks remain terminal results; this
+migration does not infer recursive call summaries. The graph can therefore be
+evaluated eagerly in dependency order on the common context. No pending child is
+substituted with an unknown value. Admission counts/revisions advance once in
+semantic output state, independent of scheduler passes.
+
+Completed single-consumer requests/results use `FactContext::take_final` to move
+their state and retire obsolete payloads while retaining typed proof dependencies.
+Growing facts never use this operation. There can be no future producer or reader
+of a retired key. Source-prefix payloads retire after the successor consumes them;
+reports retain their existing source and typed proof evidence.
+
+The rejected parent-replay prototype and the profiling evidence motivating
+single-consumer retirement are recorded in
+[the performance investigation](../debug/runtime_transfers.md).
+
 ## Acceptance
 
 Freeze an optimized baseline at b3697f5ee41de9fbbe1742c196f3ea594d0d10c0;

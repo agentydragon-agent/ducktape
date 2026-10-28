@@ -8285,5 +8285,15 @@ pub(crate) fn stable_ts_enum_named_data_members(
 #[path = "interpreter.rs"]
 pub(crate) mod interpreter;
 
+#[path = "runtime_heap.rs"]
+mod runtime_heap;
+#[path = "runtime_inference.rs"]
+mod runtime_inference;
+
+#[path = "runtime_callbacks.rs"]
+mod runtime_callbacks;
+#[path = "runtime_models.rs"]
+mod runtime_models;
+
 #[path = "native_calls.rs"]
 mod native_calls;

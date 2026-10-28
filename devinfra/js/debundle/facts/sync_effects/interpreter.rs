@@ -5,11 +5,14 @@ use super::super::value_model::{
     Context, DenseArray, FrozenNamespaceProof, ValueExpr, Values,
 };
 use super::native_calls::{CallInputs, CallReturn, NativeCallModel};
+use super::runtime_callbacks::{CallbackOperation, CallbackResult};
+use super::runtime_heap::{HeapOperation, HeapResult};
+use super::runtime_inference::{ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue};
 use super::{
     Call, CallKind, Callable, CallbackResultWrite, ExecutionIndex, IntrinsicRoot, LocalConstructor,
     RetainedCallbackCall,
 };
-use crate::analysis_inputs::AnalysisInputs;
+use crate::analysis_inputs::{AnalysisInputs, ProofDependencies};
 use crate::facts::ExportReentryPolicy;
 use crate::facts::callable_inference::CallableInferenceInputs;
 use crate::facts::fresh_receiver::fresh_mutation_callables;
@@ -60,7 +63,7 @@ fn unknown() -> Values {
 }
 
 #[derive(Debug, Clone, Default)]
-struct Outcome {
+pub(super) struct Outcome {
     effects: SynchronousCalls,
     returns: Values,
     complete: bool,
@@ -170,7 +173,7 @@ struct OwnDescriptorMapState {
 }
 
 #[derive(Debug, Clone)]
-struct NativeCallResolution {
+pub(super) struct NativeCallResolution {
     returns: CallReturn,
     own_property_projection: Option<OwnPropertyProof>,
 }
@@ -229,12 +232,35 @@ pub(super) struct ExecutionInputs<'source> {
     needed_bindings: BTreeSet<Id>,
 }
 
-#[derive(Clone)]
+pub(super) struct OwnPropertyQuery {
+    source_object: u32,
+    source_values: Values,
+    prefix_properties: BTreeMap<Option<String>, Values>,
+    tainted: bool,
+    request: OwnPropertyRequest,
+}
+
+impl ExecutionInputs<'_> {
+    pub(super) fn project_own_property(&self, query: OwnPropertyQuery) -> Option<OwnPropertyProof> {
+        infer_own_property_projection(
+            query.source_object,
+            &query.source_values,
+            self.index.own_descriptor_shapes.get(&query.source_object)?,
+            &query.prefix_properties,
+            query.tainted,
+            self.index.semantic_facts.as_deref()?,
+            query.request,
+        )
+    }
+}
+
+#[derive(Default)]
 pub(super) struct ExecutionState {
     native_integrity_checks: RefCell<BTreeSet<NativeIntegrityCheck>>,
     native_prototype_property_checks: RefCell<BTreeMap<String, NativePrototypePropertyCheck>>,
     author_host_contract_uses: Vec<crate::reports::schema::HostNoReentryUse>,
     native_integrity_uses: RefCell<BTreeSet<crate::reports::schema::NativeIntegrityUse>>,
+    proof_dependencies: RefCell<ProofDependencies>,
     inference_uses: RefCell<BTreeSet<crate::reports::schema::InferenceUse>>,
     class_member_effects: BTreeMap<SourceUnitOrdinal, (BTreeSet<Id>, BTreeSet<Id>)>,
     class_superclasses: OrdMap<u32, Values>,
@@ -287,12 +313,36 @@ pub(super) struct ExecutionState {
     capture_contexts: OrdMap<Arc<Context>, usize>,
     callback_sets: OrdMap<Arc<Values>, usize>,
     active: BTreeSet<ActiveInvocation>,
-    cache: OrdMap<InvocationSignature, Outcome>,
+    /// Context lookup only; completed outcomes live in the shared fact store.
+    invocation_memos: OrdMap<InvocationSignature, ProgramPoint>,
 }
 
 pub(super) struct Executor<'source, 'rule> {
     inputs: &'rule ExecutionInputs<'source>,
-    state: ExecutionState,
+    state: ExecutionStateSlot,
+    queries: RuntimeQueries<'source, 'rule>,
+}
+
+/// A suspended transfer has handed its state to its child. Keep the remaining
+/// Rust frame small without allocating an empty state for every child request.
+struct ExecutionStateSlot(Option<Box<ExecutionState>>);
+
+impl std::ops::Deref for ExecutionStateSlot {
+    type Target = ExecutionState;
+
+    fn deref(&self) -> &ExecutionState {
+        self.0
+            .as_deref()
+            .expect("the active transfer owns its state")
+    }
+}
+
+impl std::ops::DerefMut for ExecutionStateSlot {
+    fn deref_mut(&mut self) -> &mut ExecutionState {
+        self.0
+            .as_deref_mut()
+            .expect("the active transfer owns its state")
+    }
 }
 
 /// The source proof selected for one exact factory call. Kept separate from
@@ -304,17 +354,59 @@ struct CheckedLocalConstructorFactory {
 }
 
 #[derive(Clone, Copy)]
-struct ValidatedMetadataDecoration {
+pub(super) struct ValidatedMetadataDecoration {
     target_owner: SourceUnitOrdinal,
 }
 
 impl<'source, 'rule> Executor<'source, 'rule> {
-    pub(super) fn new(inputs: &'rule ExecutionInputs<'source>, state: ExecutionState) -> Self {
-        Self { inputs, state }
+    pub(super) fn new(
+        inputs: &'rule ExecutionInputs<'source>,
+        state: Box<ExecutionState>,
+        queries: RuntimeQueries<'source, 'rule>,
+    ) -> Self {
+        Self {
+            inputs,
+            state: ExecutionStateSlot(Some(state)),
+            queries,
+        }
     }
 
-    pub(super) fn into_state(self) -> ExecutionState {
-        self.state
+    pub(super) fn into_state(self) -> Box<ExecutionState> {
+        self.state.0.expect("the completed transfer owns its state")
+    }
+
+    fn request(&mut self, operation: RuntimeOperation) -> RuntimeValue {
+        let state = self
+            .state
+            .0
+            .take()
+            .expect("the requesting transfer owns its state");
+        let result = self.queries.request(state, operation);
+        self.state.0 = Some(result.state);
+        result.value
+    }
+
+    fn request_callback_operation(&mut self, operation: CallbackOperation) -> CallbackResult {
+        let result = self.request(RuntimeOperation::Callbacks(operation));
+        let RuntimeValue::Callbacks(result) = result else {
+            unreachable!("callback operations produce callback results");
+        };
+        result
+    }
+
+    fn remember_invocation(&mut self, signature: InvocationSignature, outcome: &Outcome) {
+        let point = self.queries.publish_invocation_memo(outcome);
+        if let Some(previous) = self.state.invocation_memos.insert(signature, point.clone())
+            && previous != point
+        {
+            self.queries.retire_invocation_memo(previous);
+        }
+    }
+
+    fn clear_invocation_memos(&mut self) {
+        for (_, point) in std::mem::take(&mut self.state.invocation_memos) {
+            self.queries.retire_invocation_memo(point);
+        }
     }
 
     /// The abstract callback-factory value also represents namespace members
@@ -409,8 +501,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let mut intact = true;
         for root in roots {
             let key = SemanticKey::NativeIntegrity(*root);
-            if let Some(proof) = facts.inference_use(&key) {
-                self.record_inference_use(guard, proof);
+            if let Some(judgment) = facts.judgment(&key)
+                && let Some(proof) = facts.inference_use(&key)
+            {
+                self.record_inference_use(guard, proof, judgment.dependencies());
             } else {
                 intact = false;
             }
@@ -525,6 +619,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         guard: NativeIntegrityGuard,
         dependencies: &crate::analysis_inputs::ProofDependencies,
     ) {
+        self.queries.assume(dependencies);
+        self.state
+            .proof_dependencies
+            .borrow_mut()
+            .extend(dependencies);
         if !dependencies.is_empty() {
             self.state.native_integrity_uses.borrow_mut().insert(
                 crate::reports::schema::NativeIntegrityUse {
@@ -539,15 +638,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &self,
         guard: NativeIntegrityGuard,
         proof: crate::reports::schema::InferenceUse,
+        dependencies: &ProofDependencies,
     ) {
-        if !proof.value_input_refs.is_empty() {
-            self.state.native_integrity_uses.borrow_mut().insert(
-                crate::reports::schema::NativeIntegrityUse {
-                    guard,
-                    value_input_refs: proof.value_input_refs.clone(),
-                },
-            );
-        }
+        self.record_proof_dependencies(guard, dependencies);
         self.state.inference_uses.borrow_mut().insert(proof);
     }
 
@@ -572,18 +665,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if values.len() != 1 {
             return None;
         }
-        let shape = self.inputs.index.own_descriptor_shapes.get(object)?;
         let properties = self.state.prefix_object_properties.get(object)?;
-        let semantic_facts = self.inputs.index.semantic_facts.as_deref()?;
-        infer_own_property_projection(
-            *object,
-            values,
-            shape,
-            properties,
-            self.state.tainted_objects.contains(object),
-            semantic_facts,
+        self.queries.project_own_property(OwnPropertyQuery {
+            source_object: *object,
+            source_values: values.clone(),
+            prefix_properties: properties.clone(),
+            tainted: self.state.tainted_objects.contains(object),
             request,
-        )
+        })
     }
 
     fn ordinary_source_object(&self, values: &Values) -> Option<OwnPropertyProof> {
@@ -684,6 +773,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn apply_own_descriptor_map(&mut self, args: &[Values]) {
+        let RuntimeValue::Heap(HeapResult::Updated) =
+            self.request(RuntimeOperation::Heap(HeapOperation::ApplyDescriptors {
+                arguments: args.to_vec(),
+            }))
+        else {
+            unreachable!("descriptor application produces a successor heap");
+        };
+    }
+
+    pub(super) fn apply_own_descriptor_map_transfer(&mut self, args: &[Values]) {
         let [target_values, map_values] = args else {
             return;
         };
@@ -752,20 +851,41 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         callee: &ValueExpr,
     ) -> Option<(NativeCallModel, SemanticKey)> {
         let (model, key) = super::native_call_identity_key(kind, callee)?;
-        let proof = self
-            .inputs
-            .index
-            .semantic_facts
-            .as_ref()?
-            .inference_use(&key)?;
-        self.record_inference_use(NativeIntegrityGuard::NativeCallIdentity, proof);
+        let facts = self.inputs.index.semantic_facts.as_ref()?;
+        let judgment = facts.judgment(&key)?;
+        let proof = facts.inference_use(&key)?;
+        self.record_inference_use(
+            NativeIntegrityGuard::NativeCallIdentity,
+            proof,
+            judgment.dependencies(),
+        );
         Some((model, key))
     }
 
     /// A successful model lookup certifies the operation after its inputs
     /// have evaluated. It does not infer purity or exception freedom.
     fn resolve_native_call(
-        &self,
+        &mut self,
+        kind: CallKind,
+        callee: &ValueExpr,
+        expressions: &[ValueExpr],
+        args: &[Values],
+    ) -> Option<NativeCallResolution> {
+        let RuntimeValue::Heap(HeapResult::Native(resolution)) =
+            self.request(RuntimeOperation::Heap(HeapOperation::ResolveNative {
+                kind,
+                callee: callee.clone(),
+                expressions: expressions.to_vec(),
+                arguments: args.to_vec(),
+            }))
+        else {
+            unreachable!("native model resolution produces an optional model");
+        };
+        *resolution
+    }
+
+    pub(super) fn resolve_native_call_transfer(
+        &mut self,
         kind: CallKind,
         callee: &ValueExpr,
         expressions: &[ValueExpr],
@@ -1095,9 +1215,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn retain_dense_array(&mut self, object: u32, slots: Vec<Values>) {
-        let before = self.state.prefix_object_properties.get(&object).cloned();
-        let dense = self
-            .state
+        let state = &mut *self.state;
+        let before = state.prefix_object_properties.get(&object).cloned();
+        let dense = state
             .dense_arrays
             .entry(object)
             .or_insert_with(|| DenseArray {
@@ -1114,11 +1234,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 current.insert(AbstractValue::Undefined);
             }
         }
-        let properties = self
-            .state
-            .prefix_object_properties
-            .entry(object)
-            .or_default();
+        let properties = state.prefix_object_properties.entry(object).or_default();
         properties
             .entry(Some("length".into()))
             .or_default()
@@ -1134,7 +1250,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .extend(values.iter().cloned());
         }
         if before.as_ref() != Some(properties) {
-            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+            state.prefix_revision = state.prefix_revision.wrapping_add(1);
         }
     }
 
@@ -1270,6 +1386,32 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         captures: &Context,
         outcome: &mut Outcome,
     ) -> bool {
+        let result = self.request(RuntimeOperation::Model(
+            super::runtime_models::ModelOperation::ExecuteArrayIteration {
+                span,
+                environment: env.clone(),
+                captures: captures.clone(),
+                outcome: Box::new(std::mem::take(outcome)),
+            },
+        ));
+        let RuntimeValue::Model(super::runtime_models::ModelResult::ArrayIteration {
+            handled,
+            outcome: model_outcome,
+        }) = result
+        else {
+            unreachable!("array iteration models produce iteration results");
+        };
+        *outcome = *model_outcome;
+        handled
+    }
+
+    pub(super) fn execute_array_iteration_transfer(
+        &mut self,
+        span: CallSite,
+        env: &Context,
+        captures: &Context,
+        outcome: &mut Outcome,
+    ) -> bool {
         let Some((proof, source, dense, key, captured)) =
             self.array_iteration_plan(span, env, captures)
         else {
@@ -1277,9 +1419,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         };
         let source_values = Values::from([AbstractValue::Origin(ValueOrigin::Object(source))]);
         let original_callbacks = self.callback_values(&source_values);
+        let protected_objects = self.reachable_objects(&source_values);
         self.state
             .array_iteration_protected_objects
-            .extend(self.reachable_objects(&source_values));
+            .extend(protected_objects);
         let mut slots = Vec::new();
         for values in &dense.slots {
             let previous_unsupported = self.state.array_iteration_unsupported;
@@ -1551,6 +1694,30 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn summarize_metadata_decoration(
+        &mut self,
+        application: &MetadataDecorateCall,
+        validated: ValidatedMetadataDecoration,
+        owner: SourceUnitOrdinal,
+        outcome: &mut Outcome,
+    ) {
+        let result = self.request(RuntimeOperation::Model(
+            super::runtime_models::ModelOperation::SummarizeMetadataDecoration {
+                application: application.clone(),
+                validated,
+                owner,
+                outcome: Box::new(std::mem::take(outcome)),
+            },
+        ));
+        let RuntimeValue::Model(super::runtime_models::ModelResult::MetadataDecoration {
+            outcome: model_outcome,
+        }) = result
+        else {
+            unreachable!("metadata decoration models produce updated outcomes");
+        };
+        *outcome = *model_outcome;
+    }
+
+    pub(super) fn summarize_metadata_decoration_transfer(
         &mut self,
         application: &MetadataDecorateCall,
         _validated: ValidatedMetadataDecoration,
@@ -3072,6 +3239,30 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         certified_data_receivers: &BTreeSet<u32>,
         deferred_global_write: bool,
     ) {
+        if writes.is_empty() {
+            return;
+        }
+        let RuntimeValue::Heap(HeapResult::Updated) =
+            self.request(RuntimeOperation::Heap(HeapOperation::WriteMembers {
+                writes: writes.to_vec(),
+                environment: env.clone(),
+                captures: captures.clone(),
+                certified_data_receivers: certified_data_receivers.clone(),
+                deferred_global_write,
+            }))
+        else {
+            unreachable!("member writes produce a successor heap");
+        };
+    }
+
+    pub(super) fn apply_member_value_writes_transfer(
+        &mut self,
+        writes: &[(Id, Option<String>, ValueExpr)],
+        env: &Context,
+        captures: &Context,
+        certified_data_receivers: &BTreeSet<u32>,
+        deferred_global_write: bool,
+    ) {
         for (receiver, property, expression) in writes {
             let receivers = self.evaluate(&ValueExpr::Binding(receiver.clone()), env, captures);
             let values = self.evaluate(expression, env, captures);
@@ -3313,6 +3504,25 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         key: u32,
         args: &[Values],
     ) -> Option<(Outcome, AbstractValue)> {
+        let result = self.request(RuntimeOperation::Model(
+            super::runtime_models::ModelOperation::ConstructLocalClass {
+                key,
+                arguments: args.to_vec(),
+            },
+        ));
+        let RuntimeValue::Model(super::runtime_models::ModelResult::LocalClassConstruction(result)) =
+            result
+        else {
+            unreachable!("local class models produce construction results");
+        };
+        *result
+    }
+
+    pub(super) fn construct_local_class_transfer(
+        &mut self,
+        key: u32,
+        args: &[Values],
+    ) -> Option<(Outcome, AbstractValue)> {
         let constructor = self.eligible_local_constructor(key, args.len())?.clone();
         if self.inputs.export_reentry_enabled {
             let exported: Values = self
@@ -3350,7 +3560,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .local_class_construction_proof
             .inference_use_for_class(key)
         {
-            self.record_inference_use(NativeIntegrityGuard::LocalClassConstruction, proof);
+            self.record_inference_use(
+                NativeIntegrityGuard::LocalClassConstruction,
+                proof,
+                self.inputs
+                    .index
+                    .local_class_construction_proof
+                    .dependencies_for_class(key)
+                    .expect("a class certificate retains its typed dependencies"),
+            );
         }
         let outcome = constructor.key.map_or_else(
             || Outcome {
@@ -3453,6 +3671,22 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn promote_raw_callbacks(&mut self, values: &Values, outcome: &mut Outcome) {
+        let prior_outcome = std::mem::take(outcome);
+        let result = self.request_callback_operation(CallbackOperation::PromoteRaw {
+            values: values.clone(),
+            outcome: Box::new(prior_outcome),
+        });
+        let CallbackResult::Outcome(result) = result else {
+            unreachable!("raw callback promotion returns its updated outcome");
+        };
+        *outcome = *result;
+    }
+
+    pub(super) fn promote_raw_callbacks_transfer(
+        &mut self,
+        values: &Values,
+        outcome: &mut Outcome,
+    ) {
         let effect_owner = self.state.current_top_owner.unwrap();
         let mut owners = BTreeSet::new();
         for callback in self.callback_values(values) {
@@ -3535,6 +3769,22 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn promote_deferred_callbacks(&mut self, captured: &Values, outcome: &mut Outcome) {
+        let prior_outcome = std::mem::take(outcome);
+        let result = self.request_callback_operation(CallbackOperation::PromoteDeferred {
+            captured: captured.clone(),
+            outcome: Box::new(prior_outcome),
+        });
+        let CallbackResult::Outcome(result) = result else {
+            unreachable!("deferred callback promotion returns its updated outcome");
+        };
+        *outcome = *result;
+    }
+
+    pub(super) fn promote_deferred_callbacks_transfer(
+        &mut self,
+        captured: &Values,
+        outcome: &mut Outcome,
+    ) {
         let effect_owner = self.state.current_top_owner.unwrap();
         let mut roots = BTreeSet::new();
         for callback in self.callback_values(captured) {
@@ -3577,6 +3827,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn promote_returned_callbacks(&mut self, returned: &Values) {
+        let result = self.request_callback_operation(CallbackOperation::PromoteReturned {
+            returned: returned.clone(),
+        });
+        let CallbackResult::Completed = result else {
+            unreachable!("returned callback promotion has no value result");
+        };
+    }
+
+    pub(super) fn promote_returned_callbacks_transfer(&mut self, returned: &Values) {
         let callbacks: Values = self
             .callback_values(returned)
             .into_iter()
@@ -3589,9 +3848,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .callables
                         .get(key)
                         .is_some_and(|callable| {
-                            self.state
+                            let state = &mut *self.state;
+                            state
                                 .returned_callback_owners
-                                .insert((self.state.reachability.incomplete, callable.owner))
+                                .insert((state.reachability.incomplete, callable.owner))
                         }),
                     // Keep class capability/superclass checks on their existing
                     // path. Other aggregate values have already been expanded by
@@ -3830,6 +4090,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         no_sync_arguments: bool,
         outcome: &mut Outcome,
     ) {
+        let prior_outcome = std::mem::take(outcome);
+        let result = self.request_callback_operation(CallbackOperation::InvokePossible {
+            arguments: args.to_vec(),
+            no_sync_arguments,
+            outcome: Box::new(prior_outcome),
+        });
+        let CallbackResult::Outcome(result) = result else {
+            unreachable!("possible callback invocation returns its updated outcome");
+        };
+        *outcome = *result;
+    }
+
+    pub(super) fn invoke_possible_callbacks_transfer(
+        &mut self,
+        args: &[Values],
+        no_sync_arguments: bool,
+        outcome: &mut Outcome,
+    ) {
         let mut callbacks = self.state.global_escaped_callbacks.clone();
         callbacks.extend(self.available_export_callbacks());
         // A callback-argument exemption does not certify foreign getters or
@@ -3954,9 +4232,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let before = self.state.global_escaped_callbacks.len();
         let values = args.iter().flatten().cloned().collect();
         self.taint_objects(&values);
-        self.state
-            .global_escaped_callbacks
-            .extend(self.callback_values(&values));
+        let callbacks = self.callback_values(&values);
+        self.state.global_escaped_callbacks.extend(callbacks);
         if self.state.global_escaped_callbacks.len() != before {
             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
         }
@@ -3980,6 +4257,26 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn bounded_invocation_fallback(
+        &mut self,
+        owner: SourceUnitOrdinal,
+        args: &[Values],
+        captured: &Context,
+        reason: ExecutionPrecisionLossReason,
+    ) -> Outcome {
+        let result =
+            self.request_callback_operation(CallbackOperation::BoundedInvocationFallback {
+                owner,
+                arguments: args.to_vec(),
+                captured: captured.clone(),
+                reason,
+            });
+        let CallbackResult::Outcome(result) = result else {
+            unreachable!("bounded callback fallback returns an outcome");
+        };
+        *result
+    }
+
+    pub(super) fn bounded_invocation_fallback_transfer(
         &mut self,
         owner: SourceUnitOrdinal,
         args: &[Values],
@@ -4202,6 +4499,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.record_inference_use(
             NativeIntegrityGuard::NativeCallIdentity,
             summary.inference.clone(),
+            &summary.dependencies,
         );
         Some(*source_object)
     }
@@ -4229,6 +4527,23 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn evaluate(&mut self, expr: &ValueExpr, env: &Context, captures: &Context) -> Values {
+        let result = self.request(RuntimeOperation::Evaluate {
+            expression: expr.clone(),
+            environment: env.clone(),
+            captures: captures.clone(),
+        });
+        let RuntimeValue::Values(values) = result else {
+            unreachable!("expression transfers produce values");
+        };
+        values
+    }
+
+    pub(super) fn evaluate_transfer(
+        &mut self,
+        expr: &ValueExpr,
+        env: &Context,
+        captures: &Context,
+    ) -> Values {
         match expr {
             ValueExpr::Binding(id) => {
                 if self.inputs.index.callback_factory_imports.contains(id) {
@@ -4777,6 +5092,25 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         captured: Option<CapturedContext>,
         fresh_checked_constructor: bool,
     ) -> Outcome {
+        let result = self.request(RuntimeOperation::Invoke {
+            callable: key,
+            arguments: args,
+            captured,
+            fresh_checked_constructor,
+        });
+        let RuntimeValue::Outcome(outcome) = result else {
+            unreachable!("invocation transfers produce outcomes");
+        };
+        *outcome
+    }
+
+    pub(super) fn invoke_transfer(
+        &mut self,
+        key: u32,
+        args: Vec<Values>,
+        captured: Option<CapturedContext>,
+        fresh_checked_constructor: bool,
+    ) -> Outcome {
         let Some((callable_owner, callable_opaque, uses_arguments)) =
             self.inputs.index.callables.get(&key).map(|callable| {
                 (
@@ -4822,9 +5156,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             top_owner: self.state.current_top_owner,
         };
         if self.state.array_iteration_depth == 0
-            && let Some(cached) = self.state.cache.get(&signature)
+            && let Some(point) = self.state.invocation_memos.get(&signature)
         {
-            return cached.clone();
+            return self.queries.invocation_memo(point);
         }
         let active_invocation = ActiveInvocation {
             callable: key,
@@ -4925,7 +5259,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             );
             self.state.active.remove(&active_invocation);
             self.state.invocation_depth -= 1;
-            self.state.cache.insert(signature, outcome.clone());
+            self.remember_invocation(signature, &outcome);
             return outcome;
         }
         if callable.opaque {
@@ -5047,11 +5381,30 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         self.state.active.remove(&active_invocation);
         self.state.invocation_depth -= 1;
-        self.state.cache.insert(signature, outcome.clone());
+        self.remember_invocation(signature, &outcome);
         outcome
     }
 
     fn execute_call(
+        &mut self,
+        call: &Call,
+        env: &Context,
+        captures: &Context,
+        outcome: &mut Outcome,
+    ) {
+        let result = self.request(RuntimeOperation::Call {
+            call: call.clone(),
+            environment: env.clone(),
+            captures: captures.clone(),
+            outcome: Box::new(std::mem::take(outcome)),
+        });
+        let RuntimeValue::Outcome(result) = result else {
+            unreachable!("call transfers produce outcomes");
+        };
+        *outcome = *result;
+    }
+
+    pub(super) fn execute_call_transfer(
         &mut self,
         call: &Call,
         env: &Context,
@@ -5302,7 +5655,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .set_iterable_proof
                 .inference_use_for_constructor(call.span)
         {
-            self.record_inference_use(NativeIntegrityGuard::SetIterable, proof);
+            self.record_inference_use(
+                NativeIntegrityGuard::SetIterable,
+                proof,
+                self.inputs
+                    .set_iterable_proof
+                    .dependencies_for_constructor(call.span)
+                    .expect("a set certificate retains its typed dependencies"),
+            );
             return;
         }
         let targets = self.evaluate(&call.callee, env, captures);
@@ -6173,6 +6533,7 @@ pub(crate) fn annotate_synchronous_calls(
         native_prototype_property_checks: RefCell::default(),
         author_host_contract_uses: Vec::new(),
         native_integrity_uses: RefCell::default(),
+        proof_dependencies: RefCell::default(),
         inference_uses: RefCell::default(),
         class_member_effects: BTreeMap::new(),
         class_superclasses: OrdMap::new(),
@@ -6223,14 +6584,10 @@ pub(crate) fn annotate_synchronous_calls(
         capture_contexts: OrdMap::new(),
         callback_sets: OrdMap::new(),
         active: BTreeSet::new(),
-        cache: OrdMap::new(),
+        invocation_memos: OrdMap::new(),
     };
-    let mut executor = Executor::new(&inputs, state);
-    let mut effects = Vec::with_capacity(facts.len());
-    for owner in 0..facts.len() {
-        effects.push(executor.execute_owner(SourceUnitOrdinal(owner)));
-    }
-    let _state = executor.into_state();
+    let effects =
+        super::runtime_inference::infer_synchronous_execution(&inputs, state, facts.len());
     drop(inputs);
     for (fact, effect) in facts.iter_mut().zip(effects) {
         fact.synchronous_calls = Some(effect);
@@ -6253,12 +6610,13 @@ impl Executor<'_, '_> {
             .borrow_mut()
             .clear();
         self.state.native_integrity_uses.borrow_mut().clear();
+        *self.state.proof_dependencies.borrow_mut() = ProofDependencies::default();
         self.state.inference_uses.borrow_mut().clear();
         self.state.current_top_owner = Some(fact.ordinal);
         self.state.proof_uses.clear();
         // Cache keys include this owner; previous statement snapshots cannot
         // be reused and should not consume this statement's bounded budget.
-        self.state.cache.clear();
+        self.clear_invocation_memos();
         self.state.invocation_count = 0;
         self.state.fallback_outcome = Outcome::default();
         self.state.fallback_callback_sizes = None;
@@ -6469,15 +6827,16 @@ impl Executor<'_, '_> {
             prior_effect_owners.insert(fact.ordinal);
         }
         self.state.prior_effect_owners.extend(prior_effect_owners);
-        if !self.state.reachability.unknown_call_seen
-            && let Some(roots) = &mut self.state.prior_reachability_roots
+        let state = &mut *self.state;
+        if !state.reachability.unknown_call_seen
+            && let Some(roots) = &mut state.prior_reachability_roots
         {
             roots.extend(
                 outcome
                     .executed_owners
                     .iter()
                     .copied()
-                    .filter(|owner| !self.state.private_constructor_result_owners.contains(owner)),
+                    .filter(|owner| !state.private_constructor_result_owners.contains(owner)),
             );
         }
         for (id, expression) in assignments {
@@ -6568,12 +6927,7 @@ impl Executor<'_, '_> {
             && outcome.effects.uninitialized_reads.is_empty()
             && let Some(proof) = checked_local_constructor_factory
         {
-            let mut dependencies = crate::analysis_inputs::ProofDependencies::default();
-            for usage in &outcome.effects.native_integrity_uses {
-                dependencies
-                    .value_inputs
-                    .extend(usage.value_input_refs.iter().cloned());
-            }
+            let dependencies = self.state.proof_dependencies.borrow().clone();
             outcome.effects.local_record_factory_purity =
                 Some(crate::facts::LocalRecordFactoryPurityCertificate {
                     call_span: proof.call_span,
@@ -6585,7 +6939,7 @@ impl Executor<'_, '_> {
         outcome.effects.native_receiver_certificates = index.native_receiver_certificates.clone();
         self.state.top_env = top_env;
         self.state.top_captures = top_captures;
-        self.state.cache.clear();
+        self.clear_invocation_memos();
         self.state.invocation_count = 0;
         self.state.fallback_outcome = Outcome::default();
         self.state.fallback_callback_sizes = None;
