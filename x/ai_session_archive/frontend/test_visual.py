@@ -1,5 +1,7 @@
 """Visual check for the local workstation session browser."""
 
+import re
+
 import pytest
 import pytest_bazel
 from playwright.async_api import expect
@@ -58,30 +60,37 @@ async def test_import_progress_on_mobile(visual: VisualHarness, capture_name: st
         page = view.page
         progress = page.get_by_role("region", name="Import progress by machine")
         thinkpad_progress = page.get_by_role("progressbar", name="ThinkPad file-entry progress")
-        sidebar = page.get_by_role("complementary", name="Session list")
-        session_list_refresh = page.get_by_role("button", name="Refresh session list")
+        session_list_toggle = page.get_by_role("button", name="Session list")
         progress_explanation = page.locator(".session-import-progress-explanation-mobile")
         await expect(progress).to_contain_text("File entries: 27 processed · 4 pending · 0 failed")
         await expect(thinkpad_progress).to_have_attribute("aria-valuemax", "31")
-        await expect(session_list_refresh).to_be_visible()
+        await expect(session_list_toggle).to_be_visible()
         await expect(progress_explanation.locator("summary")).to_contain_text(
             "Denominator: inventoried entries so far; can grow"
         )
 
         progress_bounds = await thinkpad_progress.bounding_box()
-        sidebar_bounds = await sidebar.bounding_box()
-        refresh_bounds = await session_list_refresh.bounding_box()
         assert progress_bounds is not None
         assert progress_bounds["x"] >= 0
         assert progress_bounds["x"] + progress_bounds["width"] <= 390
         assert progress_bounds["y"] >= 0
         assert progress_bounds["y"] + progress_bounds["height"] <= 844
+
+        await view.check(context="the first machine progress bar and session-list button fit the mobile viewport")
+        await view.capture(target=page.locator("#root"))
+
+        await session_list_toggle.click()
+        sidebar = page.get_by_role("dialog", name="Session list")
+        session_list_refresh = sidebar.get_by_role("button", name="Refresh session list")
+        await expect(sidebar).to_be_visible()
+        await expect(session_list_refresh).to_be_visible()
+        sidebar_bounds = await sidebar.bounding_box()
+        refresh_bounds = await session_list_refresh.bounding_box()
         assert sidebar_bounds is not None
         assert refresh_bounds is not None
+        assert sidebar_bounds["y"] >= 0
+        assert sidebar_bounds["y"] + sidebar_bounds["height"] <= 844
         assert refresh_bounds["y"] + refresh_bounds["height"] <= sidebar_bounds["y"] + sidebar_bounds["height"]
-
-        await view.check(context="the first machine progress bar and session-list controls fit the mobile viewport")
-        await view.capture(target=page.locator("#root"))
 
 
 async def test_inferred_subagent_parent_link(visual: VisualHarness, capture_name: str) -> None:
@@ -93,7 +102,7 @@ async def test_inferred_subagent_parent_link(visual: VisualHarness, capture_name
     ) as view:
         page = view.page
         await page.get_by_role("link", name="Inspect a local transcript").click()
-        related = page.locator('[aria-label="Related sessions"]')
+        related = page.locator('#session-browser-sidebar [aria-label="Related sessions"]')
         await expect(related).to_contain_text("Parent inferred from Claude subagent path")
         await expect(related).to_contain_text("Inferred Claude parent · session 12ab")
         await expect(
@@ -101,6 +110,86 @@ async def test_inferred_subagent_parent_link(visual: VisualHarness, capture_name
         ).to_be_visible()
         await view.check(context="child transcript and inferred parent link are visible")
         await view.capture(target=page.locator("#root"))
+
+
+@pytest.mark.parametrize(
+    "viewport", [Viewport(width=1440, height=780), Viewport(width=390, height=844)], ids=["desktop", "mobile"]
+)
+async def test_long_child_list_stays_scrollable_without_covering_transcript(
+    visual: VisualHarness, capture_name: str, viewport: Viewport
+) -> None:
+    async with visual.open(
+        "long-child-list", viewport=viewport, color_scheme="light", capture_name=capture_name
+    ) as view:
+        page = view.page
+        if viewport.width <= 760:
+            await page.get_by_role("button", name="Session list").click()
+        await page.get_by_role("link", name="Inspect a local transcript").click()
+        if viewport.width <= 760:
+            await page.get_by_role("button", name=re.compile(r"^Related sessions \(\d+ child sessions\)$")).click()
+
+        related = page.locator('#session-browser-sidebar [aria-label="Related sessions"]')
+        children = page.get_by_role("region", name="Child sessions")
+        transcript = page.get_by_role("region", name="Session transcript")
+        await expect(related).to_contain_text("Inferred Claude parent · session 12ab")
+        await expect(children).to_contain_text("Inspect module 01")
+        await expect(transcript).to_contain_text("The capture preserves the original JSONL records.")
+        assert await children.evaluate("element => element.scrollHeight > element.clientHeight")
+
+        await related.get_by_role("button", name="Load more child sessions").click()
+        await expect(children).to_contain_text("Inspect module 63")
+        await related.evaluate(
+            "element => { element.scrollIntoView({ block: 'nearest' }); element.scrollTop = element.scrollHeight; }"
+        )
+        await children.evaluate("element => { element.scrollTop = element.scrollHeight; }")
+        last_child = children.get_by_role("link", name="Inspect module 63")
+        last_child_visibility = await last_child.evaluate(
+            """node => {
+                const range = document.createRange();
+                range.selectNodeContents(node);
+                const textRect = range.getBoundingClientRect();
+                const clippingBounds = [{ top: 0, bottom: window.innerHeight, left: 0, right: window.innerWidth }];
+                for (let ancestor = node.parentElement; ancestor !== null; ancestor = ancestor.parentElement) {
+                  if (!/(auto|scroll|hidden|clip)/.test(getComputedStyle(ancestor).overflowY)) continue;
+                  const rect = ancestor.getBoundingClientRect();
+                  clippingBounds.push({
+                    top: rect.top + ancestor.clientTop,
+                    bottom: rect.top + ancestor.clientTop + ancestor.clientHeight,
+                    left: rect.left + ancestor.clientLeft,
+                    right: rect.left + ancestor.clientLeft + ancestor.clientWidth,
+                  });
+                }
+                return {
+                  visible: clippingBounds.every(bounds => textRect.top >= bounds.top && textRect.bottom <= bounds.bottom &&
+                    textRect.left >= bounds.left && textRect.right <= bounds.right),
+                  text: { top: textRect.top, bottom: textRect.bottom, left: textRect.left, right: textRect.right },
+                  clippingBounds,
+                };
+            }"""
+        )
+        assert last_child_visibility["visible"], (
+            "the final child link text must fit in the viewport and every enclosing scrollport: "
+            f"{last_child_visibility}"
+        )
+        await expect(transcript).to_contain_text("The capture preserves the original JSONL records.")
+        if viewport.width <= 760:
+            await view.check(context="related children remain reachable in the mobile session-list drawer")
+            await view.capture(target=page.locator("#root"), name=f"{capture_name}_related_drawer")
+            await page.get_by_role("dialog", name="Session list").get_by_role("button", name="Close").click()
+
+        events = page.locator(".session-browser-events")
+        geometry = await events.evaluate(
+            "element => { const rect = element.getBoundingClientRect(); return { height: element.clientHeight, top: rect.top, bottom: rect.bottom, viewport: window.innerHeight }; }"
+        )
+        transcript_viewport_is_usable = (
+            geometry["height"] >= 150 and geometry["top"] >= 0 and geometry["bottom"] <= geometry["viewport"]
+        )
+        assert transcript_viewport_is_usable, f"conversation viewport is too small or outside the viewport: {geometry}"
+        assert await events.locator('[data-event-ordinal="1"]').evaluate(
+            "element => { const parent = element.closest('.session-browser-events'); const row = element.getBoundingClientRect(); const viewport = parent.getBoundingClientRect(); return row.top >= viewport.top && row.bottom <= viewport.bottom; }"
+        )
+        await view.check(context="child sessions scroll independently and the conversation stays visible")
+        await view.capture(target=page.locator("#root"), name=f"{capture_name}_child_list_end")
 
 
 if __name__ == "__main__":
