@@ -26,9 +26,9 @@ images:
   - name: git.allegedly.works/ducktape-ci/runner-ducktape
     newTag: devel-20261028122929-67ce47e # {"$imagepolicy": "flux-system:runner-ducktape:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
-    newTag: devel-20261028122137-67ce47e # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
+    newTag: devel-20261028124401-32dbc20 # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-build
-    newTag: devel-20261028122151-67ce47e # {"$imagepolicy": "flux-system:agentplane-sandbox-build:tag"}
+    newTag: devel-20261028124332-32dbc20 # {"$imagepolicy": "flux-system:agentplane-sandbox-build:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar
     newTag: devel-20261028035647-8937425 # {"$imagepolicy": "flux-system:agentplane-egress-sidecar:tag"}
   # Publication bootstrap: unused until the separate MCP edge cutover.
@@ -43,7 +43,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-history-migrate
     newTag: devel-20261027062027-acf3833 # {"$imagepolicy": "flux-system:agentplane-history-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
-    newTag: devel-20261028115944-c1d660d # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
+    newTag: devel-20261028124348-022d2bc # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
     newTag: devel-20261028040913-8937425 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   # The runner VM SandboxTemplate's containerDisk, which `images:` reaches through kustomizeconfig.
@@ -52,6 +52,6 @@ images:
   # The runner and `agentplane` command: a disk beside the VM guest, and an image volume in the
   # runner Pod, both reached through kustomizeconfig.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-disk
-    newTag: devel-20261028121701-4da2b48 # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
+    newTag: devel-20261028124316-022d2bc # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
 configurations:
   - kustomizeconfig
