@@ -4049,6 +4049,10 @@ fn source_record_native_integrity_rejects_unknown_or_rebound_keys() {
         "export function publish() { for (const [key = 'Map', value] of Object.entries({ safe: 1 })) globalThis[key] = value; }",
         "const key = Symbol.for('example.registry'); export function mutate() { Map[key] = 1; }",
         "export function mutate() { Map++; }",
+        "const key = Symbol.for('example.registry'); export function replace() { globalThis.box = Symbol; globalThis.box.for = () => 'Map'; globalThis[Symbol.for('other.registry')] = function () {}; }",
+        "const key = Symbol.for('example.registry'); export function replace() { globalThis.box = Symbol; const alias = globalThis.box; alias.for = () => 'Map'; globalThis[Symbol.for('other.registry')] = function () {}; }",
+        "const key = Symbol.for('example.registry'); export function replace() { globalThis[key] = Symbol; globalThis[key].for = () => 'Map'; globalThis[Symbol.for('other.registry')] = function () {}; }",
+        "const key = Symbol.for('example.registry'); export function replace() { globalThis[key] = Symbol; const alias = globalThis[key]; alias.for = () => 'Map'; globalThis[Symbol.for('other.registry')] = function () {}; }",
     ] {
         expect_atomic_conflict_rejection(
             source_record_namespace_opts(&[
@@ -4088,4 +4092,54 @@ fn source_record_native_integrity_checks_other_chunk_operation_replacement() {
             &[],
         );
     }
+}
+
+#[test]
+fn source_record_native_integrity_handles_long_aliases_and_cycles() {
+    let mut namespace = String::from("const key0 = Symbol.for('example.registry');\n");
+    for index in 1..=256 {
+        namespace.push_str(&format!("const key{index} = key{};\n", index - 1));
+    }
+    namespace.push_str("export function publish(value) { globalThis[key256] = value; }\n");
+    let fixture = source_record_with_global_namespace(&namespace);
+    assert_preserved_entry_output(&fixture, "0 Later\n");
+    expect_atomic_conflict_rejection(
+        source_record_namespace_opts(&[
+            ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
+            (
+                "static/namespace",
+                "var first = second; var second = first; export function publish(value) { globalThis[first] = value; }",
+            ),
+        ]),
+        &["queue", "later"],
+        &[],
+    );
+}
+
+#[test]
+fn source_record_unknown_global_slot_mutation_preserves_constructor_reentry() {
+    let source = "import { factory } from './peer.js';\nimport './namespace.js';\nexport function readLater() { return Later; }\nglobalThis.saved = readLater;\nconst queue = factory();\nclass Later {}\nconsole.log(queue.size, readLater().name);\nexport { queue, Later };\n";
+    let namespace = "const key = Symbol.for('example.registry');\nglobalThis[key] = Symbol;\nglobalThis[key].for = () => 'Map';\nglobalThis[Symbol.for('other.registry')] = function () { try { globalThis.saved(); return { size: 'ready' }; } catch (error) { return { size: error.name }; } };\n";
+    let chunks = [
+        ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
+        ("static/namespace", namespace),
+    ];
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_extra_chunks(&chunks));
+    assert_preserved_entry_output(&fixture, "ReferenceError Later\n");
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "queue",
+                    &[Member::new("queue"), Member::new("readLater")],
+                    &["globalThis.saved = readLater;"],
+                ),
+                logical_module("later", &[Member::new("Later")]),
+            ],
+        )
+        .with_extra_chunks(&chunks),
+        &["queue", "later"],
+        &[],
+    );
 }
