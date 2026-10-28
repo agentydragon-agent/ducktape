@@ -84,6 +84,7 @@ py_library(
 py_library(
     name = "portfolio_models",
     srcs = ["portfolio_models.py"],
+    visibility = ["//finance/plaid/spend/ui:__pkg__"],
     deps = ["@pypi//pydantic"],
 )
 
@@ -263,6 +264,7 @@ py_library(
 py_library(
     name = "sustainability",
     srcs = ["sustainability.py"],
+    visibility = ["//finance/plaid/spend/ui:__pkg__"],
     deps = [
         ":allowance",
         ":consumption",
@@ -354,6 +356,7 @@ py_test(
 py_library(
     name = "reconciliation",
     srcs = ["reconciliation.py"],
+    visibility = ["//finance/plaid/spend/ui:__pkg__"],
 )
 
 py_library(
