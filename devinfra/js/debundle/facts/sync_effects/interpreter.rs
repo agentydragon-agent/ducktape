@@ -149,6 +149,7 @@ struct Executor<'a> {
     native_prototype_property_checks: RefCell<BTreeMap<String, NativePrototypePropertyCheck>>,
     host_runtime: Option<&'a spec::HostNoReentryRuntime>,
     author_host_contract_uses: Vec<crate::reports::schema::HostNoReentryUse>,
+    native_integrity_uses: RefCell<BTreeSet<crate::reports::schema::NativeIntegrityUse>>,
     index: &'a ExecutionIndex,
     graph: &'a ChunkCodeGraph,
     facts: &'a [StatementFacts],
@@ -300,6 +301,7 @@ impl Executor<'_> {
             .copied()
             .collect();
         if affected_roots.is_empty() {
+            self.record_native_integrity_use(guard);
             return true;
         }
         self.native_integrity_checks
@@ -336,7 +338,24 @@ impl Executor<'_> {
                 blocking_mutation_count,
             }
         });
-        check.intact
+        let intact = check.intact;
+        if intact {
+            // Finite mutation keys may depend on Symbol/Object/Array identity,
+            // which can itself consume a captured-value census refinement.
+            self.record_native_integrity_use(NativeIntegrityGuard::OrdinaryObjectPrototype);
+        }
+        intact
+    }
+
+    fn record_native_integrity_use(&self, guard: NativeIntegrityGuard) {
+        if !self.index.native_integrity_value_input_refs.is_empty() {
+            self.native_integrity_uses.borrow_mut().insert(
+                crate::reports::schema::NativeIntegrityUse {
+                    guard,
+                    value_input_refs: self.index.native_integrity_value_input_refs.clone(),
+                },
+            );
+        }
     }
 
     /// A successful model lookup certifies the operation after its inputs
@@ -381,6 +400,7 @@ impl Executor<'_> {
         ) {
             return None;
         }
+        self.record_native_integrity_use(NativeIntegrityGuard::NativeCallIdentity);
         let admitted = match model.inputs {
             CallInputs::Primitives { min, max } => {
                 (min..=max).contains(&args.len())
@@ -4903,7 +4923,12 @@ pub(crate) fn prepare_synchronous_call_index(
         local_class_construction,
     );
     index.local_class_construction_proof = local_class_construction.with_native_premises(|id| {
-        index.empty_collection_constructor_is_unmodified(id, flow, shadowed)
+        // This proof can affect purity without an execution-site guard record.
+        // Keep structural proofs with no native field premise, but do not let
+        // an author-conditioned census certify a native-backed field until
+        // that proof-use consumer can retain the dependency directly.
+        index.native_integrity_value_input_refs.is_empty()
+            && index.empty_collection_constructor_is_unmodified(id, flow, shadowed)
     });
     index.local_constructors.retain(|key, constructor| {
         !constructor.checked_default_fields
@@ -5162,6 +5187,7 @@ pub(crate) fn annotate_synchronous_calls(
             .as_ref()
             .map(|policy| &policy.runtime),
         author_host_contract_uses: Vec::new(),
+        native_integrity_uses: RefCell::default(),
         index: &index,
         graph: proofs.graph,
         facts,
@@ -5261,6 +5287,7 @@ pub(crate) fn annotate_synchronous_calls(
             .native_prototype_property_checks
             .borrow_mut()
             .clear();
+        executor.native_integrity_uses.borrow_mut().clear();
         executor.current_top_owner = Some(fact.ordinal);
         executor.proof_uses.clear();
         // Cache keys include this owner; previous statement snapshots cannot
@@ -5532,6 +5559,10 @@ pub(crate) fn annotate_synchronous_calls(
                 .into_values()
                 .collect();
         outcome.effects.native_prototype_mutations = index.native_prototype_mutations.clone();
+        outcome.effects.native_integrity_uses =
+            std::mem::take(executor.native_integrity_uses.get_mut())
+                .into_iter()
+                .collect();
         outcome.effects.native_integrity_witnesses = index.native_integrity_witnesses.clone();
         outcome.effects.native_receiver_certificates = index.native_receiver_certificates.clone();
         effects.push(outcome.effects);
