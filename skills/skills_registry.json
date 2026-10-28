@@ -146,6 +146,12 @@
       "filename": "followups.skill"
     },
     {
+      "name": "github_stacks",
+      "pkg": "skill-github_stacks",
+      "target": "//skills/github_stacks:github_stacks_skill",
+      "filename": "github_stacks.skill"
+    },
+    {
       "name": "forensic_surgeon",
       "pkg": "skill-forensic_surgeon",
       "target": "//skills/forensic_surgeon:forensic_surgeon_skill",
