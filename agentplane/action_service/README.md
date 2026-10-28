@@ -299,7 +299,8 @@ key is reserved for its caller: `POST /v1/action-requests` refuses a repeat with
 `GET /v1/action-requests?idempotency_key=<key>` (operator: `/v1/operator/action-requests`)
 returns the request it named, combinable with `state`.
 Dispatch uses the executor bound to that group. `store.Store` owns persistence and lifecycle,
-not a second admission registry. Executors expose execution only, not an action registry.
+not a second admission registry. Built-in executors supply their typed contracts' definitions at
+startup; the catalog owns admission and routing thereafter.
 Dispatch resolves the identity again, so a removed action is terminally refused rather than rerouted or
 retried. Each service replica may own its own current MCP session; the database-backed
 single-Execution claim and lease token, not the MCP connection, fence dispatch and keep a lost
@@ -331,6 +332,38 @@ to health wakes the dispatch coordinator to retry eligibility. Canonical grant c
 the claim's row locks, so revocation still fails unstarted work. Removed groups/Actions and
 incompatible schemas remain terminal. New requests to known unavailable groups return an explicit
 unavailable error (HTTP 503), not unknown-action. Replica-local health is never stored in Postgres.
+
+### Authoring built-in inputs
+
+Keep Action names, wire input structs, constraints and metadata in the group's lightweight
+`contract` package. Construct `catalog.Input[T]` with `catalog.NewInput[T]`: reflection uses `T`,
+and `Decode` returns that same type after schema validation. Use `json`/`jsonschema` field tags for
+presence, nullability and constraints, and plain `int` fields for integers. A deployment
+constraint belongs in the contract builder's schema configuration, applied to a fresh schema.
+Do not maintain a parallel argument-schema document, decoder destination map, or Python model for these inputs.
+
+The shared Sandbox Action vocabulary lives in [action.schema.json](sandbox/contract/action.schema.json).
+The pinned `quicktype-core` generates both language enums: Go uses `just-types-and-package` with
+`package=contract`; Python uses `just-types`. Python callers read the standard `Enum` members'
+`.value` strings. Deployment-owned group keys stay in cdk8s configuration.
+
+```mermaid
+flowchart LR
+    go["Go contract package<br/>names, structs, field constraints"] --> reflect["catalog.NewInput[T]<br/>invopop/jsonschema"]
+    binding["Deployment constraints"] --> reflect
+    reflect --> schema["Draft 2020-12 JSON Schema<br/>local reference graph"]
+    schema --> advertise["Executor.Actions → catalog<br/>admission and discovery"]
+    schema --> compile["catalog.CompileSchema<br/>santhosh-tekuri/jsonschema"]
+    compile --> decode["Input[T].Decode → typed handler"]
+    names["JSON Schema Action-name enum"] --> gen["quicktype_codegen → quicktype-core<br/>Go and Python enum renderers"]
+    gen --> go
+    gen --> cdk8s["cdk8s staging and policies"]
+```
+
+Sandbox builds admission and execution profiles for exec from the same type. Admission uses current
+binding maxima; execution uses stable hard ceilings and clips requests to current maxima in the
+inventory. Preserve that distinction when changing the builder: a previously admitted request must
+survive a settings change. Other input constraints agree across advertisement and typed decoding.
 
 ### Execution schema-check diagnostics
 

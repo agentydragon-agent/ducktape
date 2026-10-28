@@ -10,6 +10,23 @@ The service publishes an agent overview at `/llms.txt`, linked Markdown workflow
 `/docs/agents/`, and request/response schemas at `/openapi.json`. These static documentation
 surfaces do not require caller admission.
 
+## Built-in input contracts
+
+Sandbox and orchestration Action inputs have one Go contract per wire shape. The same typed
+contract produces the advertised JSON Schema and validates arguments before decoding them for its
+executor. Objects reject unknown properties, including nested objects. Optional nullable fields
+accept absence and explicit null; required fields remain required. Integer inputs use Go's standard
+JSON decoding: send integer literals such as `60`. Field constraints enforce their allowed ranges.
+Invalid arguments expose no validator detail that could quote their values.
+
+Sandbox exec admission advertises the deployment's current timeout and output maxima. Execution
+accepts the stable hard ceilings (3600 seconds and 1,000,000 bytes), then clips to the current
+deployment maxima. This lets an already-admitted request execute across a settings change that
+lowers those maxima. Both profiles derive from the same typed input contract.
+
+Go and Python Sandbox Action names are generated from a shared JSON Schema enum. Externally
+supplied MCP schemas and policy-authored argument schemas retain their own JSON Schema contracts.
+
 ## Caller admission and Connection authority
 
 Every caller is a Kubernetes ServiceAccount carrying the label
