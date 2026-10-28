@@ -213,6 +213,7 @@ py_test(
 
 py_test(
     name = "test_compaction",
+    size = "medium",
     srcs = ["test_compaction.py"],
     data = [
         ":main_bin",
