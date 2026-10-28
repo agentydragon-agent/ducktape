@@ -351,13 +351,12 @@ class RunnerTemplate(Construct):
         ]
 
     def _executor_container(self) -> k8s.Container:
-        health_probe = k8s.Probe(
-            http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_EXECUTOR_HEALTH_PORT)),
-            initial_delay_seconds=5,
-            period_seconds=5,
-            timeout_seconds=2,
-            failure_threshold=1,
+        health_get = k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_EXECUTOR_HEALTH_PORT))
+        liveness_probe = k8s.Probe(
+            http_get=health_get, initial_delay_seconds=5, period_seconds=5, timeout_seconds=2, failure_threshold=1
         )
+        # Readiness can check immediately without restarting a container that is still starting.
+        readiness_probe = k8s.Probe(http_get=health_get, period_seconds=2, timeout_seconds=2, failure_threshold=1)
         return k8s.Container(
             name=_EXECUTOR_CONTAINER_NAME,
             image=f"{self.image}:{_PLACEHOLDER_TAG}",
@@ -383,8 +382,8 @@ class RunnerTemplate(Construct):
                 requests={"cpu": k8s.Quantity.from_string("250m"), "memory": k8s.Quantity.from_string("512Mi")},
                 limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("2Gi")},
             ),
-            liveness_probe=health_probe,
-            readiness_probe=health_probe,
+            liveness_probe=liveness_probe,
+            readiness_probe=readiness_probe,
             volume_mounts=[
                 *self._execution_mounts(),
                 *self._isolated_executor_mounts(),
