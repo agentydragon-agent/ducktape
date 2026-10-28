@@ -241,8 +241,8 @@ In [CI invocation 1f9fca25](https://app.buildbuddy.io/invocation/1f9fca25-3dec-5
 `test_central_sampler_vm` reached successful setup, read the file created by setup through the
 VM executor, and passed PID 1, UID and cgroup checks. Retained `setup_finished` had exit code 0,
 but retained setup stdout was empty instead of `setup-on-executor`. The Pod variant passed.
-The VM timeline includes the runner disk and both guest images; the unused Pod runner layout
-is not on this execution path.
+The VM timeline includes the runner disk and both guest images. This run reached execution;
+it did not fail importing or starting an image.
 
 The old failure hook captured early setup/provider stalls, so this later assertion left no
 nested `process/read` reply evidence. The fixture now writes
@@ -250,3 +250,18 @@ nested `process/read` reply evidence. The fixture now writes
 and their boundary-record request/reply bodies. That evidence must distinguish an empty
 exec-server reply from loss after the sampler receives a chunk before choosing a backend fix.
 The stdout assertion remains unchanged.
+
+## Identity Pod image after VM input cleanup
+
+[CI invocation 36453d32](https://app.buildbuddy.io/invocation/36453d32-4bd0-5347-9662-41ae84180c2b)
+failed before sampler startup: the separate `test-central-sampler` identity Pod had
+`ErrImageNeverPull` for `git.allegedly.works/ducktape-ci/runner:unset`. Removing the Pod
+runner layout from VM tests exposed this helper's hidden dependency. Earlier passing runs
+had the image available and did not establish that the VM test's image inputs were complete.
+
+The fixture now runs the sampler itself in a Pod using its own OCI image. Its initialization
+container applies the schema; the serving container gets Kubernetes API, Gateway and History
+credentials from its own service account and projected token volumes. A Service and gRPC health
+probe make readiness and request routing part of the integration test. The node-host process and
+dummy identity Pod are removed. Ordinary VM tests still omit the Pod runner image. Fixture mode
+still omits delegated per-JS-host cgroups, so this does not validate that deployment boundary.
