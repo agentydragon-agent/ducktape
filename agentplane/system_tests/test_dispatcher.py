@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import sys
+import traceback
 from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
@@ -665,7 +667,15 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
             finally:
                 await channel.close()
     finally:
-        await cleanup()
+        failure = sys.exception()
+        try:
+            await cleanup()
+        except Exception as cleanup_error:
+            if failure is None:
+                raise
+            failure.add_note(
+                "Sandbox cleanup also failed:\n" + "".join(traceback.format_exception(cleanup_error, chain=False))
+            )
     evidence["cleanup_complete"] = True
     path.write_text(json.dumps(evidence, indent=2) + "\n")
 
