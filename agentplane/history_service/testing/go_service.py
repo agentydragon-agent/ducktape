@@ -23,7 +23,6 @@ from agentplane.grpc.calls import ServiceError
 from agentplane.history_service import history_service_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_log_pb2, runner_pb2
-from agentplane.runner.testing.process import RunningRunner
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.go_process import GoProcess, go_process
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
@@ -99,15 +98,6 @@ class GoHistoryService:
         if writer not in self._writer_tokens:
             self._writer_tokens[writer] = await self.api.workload_token(writer, [WRITER_AUDIENCE], pod_name=pod_name)
         return self._writer_tokens[writer]
-
-    @asynccontextmanager
-    async def ingest(self, runner: RunningRunner, *, writer: ServiceAccountRef = WRITER) -> AsyncIterator[None]:
-        """Forward what `runner` pushes to its Gateway on to this service's ingress, as `writer`."""
-        runner.gateway.ingress.forward_to(self.ingress_target, await self.writer_token(writer))
-        try:
-            yield
-        finally:
-            runner.gateway.ingress.stop_forwarding()
 
     async def push(
         self,
@@ -185,6 +175,15 @@ class GoHistoryService:
     async def folded(self, session_id: UUID, through: int) -> history_service_pb2.SessionSummary:
         """The Session's summary once the fold has reached `through`."""
         return await self.settled(session_id, lambda summary: summary.folded_through >= through)
+
+
+async def wait_for_history_session(history: HistoryServiceClient, session_id: str) -> None:
+    """Wait for the raw ingress opening that binds a Session's History row."""
+    while True:
+        async with aclosing(history.watch_session_openings(after_position=0)) as openings:
+            async for opened in openings:
+                if str(opened.session_id) == session_id:
+                    return
 
 
 @asynccontextmanager
