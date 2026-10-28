@@ -1,9 +1,18 @@
 # CI cancellation propagation
 
-The [2026-10-28 hosted probe](admission_fence_probe.md) reconfirmed cancellation
-of submitted work and proved that a successful cancellation response does not
-prevent later submissions under the same invocation ID. It records the current
-ownership boundary and the missing admission/remote-stop acknowledgment.
+The [active investigation](investigation.md) tracks remote action work after
+cancellation, the unconfirmed hosted lease duration, competing explanations, and
+the next evidence to collect. The [2026-10-28 protocol probe](admission_fence_probe.md)
+is a separate control of the cancellation API's scope.
+
+Related evidence in this folder:
+
+- [Action merging and hedging hang](action_merge_hedge_hang.md): the 2026-10-04/05
+  incident, execution identities, source trace, and upstream report draft.
+- [CLI retry during the VM shutdown probe](vm_shutdown_retry.md): the 2026-10-27
+  transport retry that reused an inner invocation ID across outer runs.
+- [Continued VM action evidence](continued_action.json): the selected worker and
+  test-result fields supporting the active investigation's incident timeline.
 
 ## Original signal-forwarding investigation (2026-10-10)
 
