@@ -51,11 +51,14 @@ py_binary(
 
 py_test(
     name = "replay_test",
-    # Fetches the record from the public upstreams and runs ~55 474-rollout simulations, so it
+    # Fetches the record from the public upstreams and runs 30 474-rollout simulations, so it
     # is excluded from CI's default filter: an upstream outage must not redden an unrelated PR.
     # See the package README.
     size = "large",
     srcs = ["replay_test.py"],
+    # The full table needs minutes of active simulation; separate it from the
+    # all-bond cases without thinning any historical windows.
+    shard_count = 2,
     tags = ["manual"],
     deps = [
         ":evidence_snapshot",
@@ -73,8 +76,10 @@ py_test(
     data = [":replay_bin"],
     deps = [
         ":replay",
+        ":synthetic",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/model:historical_windows",
         "//finance/augur/model:series",
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:fixed_point",
