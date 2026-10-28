@@ -47,6 +47,7 @@ py_package(
         "gmail_archiver",
         "gmail_archiver.cli",
         "gmail_archiver.planners",
+        "openai_utils",
     ],
     deps = [":main"],
 )
@@ -97,9 +98,9 @@ py_library(
     deps = [
         ":dirs",
         ":models",
+        "//openai_utils:json_schema",
         "@pypi//openai",
         "@pypi//pydantic",
-        "@pypi//pydantic_core",
     ],
 )
 
@@ -246,5 +247,17 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//rich",
+    ],
+)
+
+py_test(
+    name = "test_event_classifier",
+    srcs = ["test_event_classifier.py"],
+    deps = [
+        ":event_classifier",
+        "//:conftest",
+        "//openai_utils:json_schema",
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//pytest_bazel",
     ],
 )
