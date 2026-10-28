@@ -216,7 +216,7 @@ func TestExecutorConcurrentStartupPublishesOneProcessAndClosesThroughCOSI(t *tes
 	if got := starts.Load(); got != 1 {
 		t.Fatalf("started %d executor instances, want one", got)
 	}
-	if err := r.Close(); err != nil {
+	if err := r.Close(context.Background()); err != nil {
 		t.Fatalf("close through COSI: %v", err)
 	}
 	if got := stops.Load(); got != 1 {
@@ -295,7 +295,7 @@ func TestExecutorFailedFenceRetainsOwnershipAndBlocksSuccessor(t *testing.T) {
 			t.Fatalf("executor readiness after failed fence = %v, want terminal fence failure", readinessErr)
 		}
 
-		closeErr := r.Close()
+		closeErr := r.Close(context.Background())
 		if closeErr == nil || !strings.Contains(closeErr.Error(), fenceFailure.Error()) {
 			t.Fatalf("Runner Close after failed executor fence = %v, want the fence failure", closeErr)
 		}
@@ -324,7 +324,7 @@ func TestExecutorCloseCancelsConcurrentStartupWithoutRestart(t *testing.T) {
 		t.Fatal("executor startup did not begin")
 	}
 	closed := make(chan error, 1)
-	go func() { closed <- r.Close() }()
+	go func() { closed <- r.Close(context.Background()) }()
 	select {
 	case err := <-closed:
 		if err != nil {
@@ -455,7 +455,7 @@ func newExecutorLifecycleRunner(t *testing.T, start func(context.Context) (*supe
 		t.Fatalf("start lifecycle Runner: %v", err)
 	}
 	t.Cleanup(func() {
-		if err := r.Close(); err != nil {
+		if err := r.Close(context.Background()); err != nil {
 			t.Errorf("close executor test Runner: %v", err)
 		}
 		cancelCompanion()
