@@ -25,6 +25,8 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
 - [Task DAG](task_dag.md) — remaining work and proposed priorities, including unranked future
   harness-capability candidates, deployed acceptance, UI/history, and native recovery
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
+- [Session runtime model](session_runtime_model.md) — future common vocabulary for Sandbox-local and
+  independently persistent harnesses, optional execution attachments and backend-specific constraints
 - [Sampling outside Sandboxes](sampling_outside_sandboxes.md) — research on running Codex's agent loop in the
   control plane with only exec servers in Sandboxes: what Codex already routes to an environment, code mode,
   where AGENTS.md comes from, what it would enable and cost, and why Claude stays put; no direction chosen

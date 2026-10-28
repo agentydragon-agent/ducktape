@@ -586,6 +586,7 @@ flowchart LR
     PLATFORM_SERVICE_NAMES_DESIGN[Decision, unscheduled: reserved sidecar names for platform services]
     PLATFORM_SERVICE_ROUTING_DESIGN[Decision, unscheduled: direct platform access vs central egress]
     PLATFORM_SERVICE_NAMES_DESIGN -. related naming and transport choices .-> PLATFORM_SERVICE_ROUTING_DESIGN
+    SESSION_RUNTIME_MODEL_DESIGN[Decision, unscheduled: Sessions, harness placement and execution attachments]
     STRUCTURED_TOOL_OUTPUT[Unscheduled: tool results as ordered text and image parts]
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
     CENTRAL_CODEX_SPIKE[In progress: experimental central Codex process fixture]
@@ -593,6 +594,27 @@ flowchart LR
     CLAUDE_REMOTE_EXECUTION_SPIKE[Unscheduled: Claude remote tools and custom sampler compatibility]
     CLAUDE_REMOTE_EXECUTION_SPIKE -. optional Claude branch evidence .-> HARNESS_PLACEMENT_DESIGN
 ```
+
+### `SESSION_RUNTIME_MODEL_DESIGN` — Sessions, harness placement and execution attachments
+
+**Decision, unscheduled; operator requested future design work, 2026-10-28 PDT.**
+[Design brief](session_runtime_model.md). Represent both Sandbox-local harnesses/state and independently
+persistent harnesses whose Sandboxes supply execution. Preserve harness-specific constraints: Claude
+Code naturally runs in the environment it acts in; a shared vocabulary must not pretend every
+backend supports independent placement or executor replacement.
+
+Recommendation for review: distinguish Session identity/continuation authority, harness placement
+and execution attachments without choosing their storage or forcing a global creation order. Prefer
+external placement when capabilities are otherwise equal, for isolation and independent lifetimes.
+Characterize complete per-feature placement; OpenClaw's historical partial remote support is a
+counterexample to equating remote shell forwarding with a fully separated harness.
+Support the design cases of Sandbox-first native CLI use, Session-first central use, no Sandbox
+(external MCP tools only), and later attachment/detachment. Central Session data must survive
+execution-Sandbox deletion. Decide cardinality, capabilities, lifecycle, authority and attribution;
+reuse the existing versioned Codex environment API evidence without claiming unsupported modes work.
+Exit: reviewed vocabulary, lifecycle/API examples and a data-preserving transition proposal covering
+these cases. This is not a prerequisite for the fixed-binding sampler in PR #12225 and authorizes
+no implementation, deployment or native-state migration.
 
 ### `STRUCTURED_TOOL_OUTPUT` — tool results as ordered text and image parts
 
