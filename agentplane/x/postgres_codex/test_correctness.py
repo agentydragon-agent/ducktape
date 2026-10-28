@@ -15,11 +15,11 @@ from sqlalchemy import select
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, response_stream
 from agentplane.native.testing.model_endpoint import JsonResponse, SseEvent
+from agentplane.testing.codex_fixtures import ExecutorServer
 from agentplane.x.postgres_codex.code_mode import code_mode
 from agentplane.x.postgres_codex.executor import Executor
 from agentplane.x.postgres_codex.sampler import advance
 from agentplane.x.postgres_codex.store import Base, Intent, KnownFailureError, Owner, Store, UnknownEffectError
-from agentplane.x.postgres_codex.testing import ExecutorServer
 from util.testing.sqlalchemy_engines import postgres_async_engine
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 

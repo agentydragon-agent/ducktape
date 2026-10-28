@@ -4,7 +4,6 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from typing import Any, cast
 
 from aiohttp import ClientSession, web
@@ -23,12 +22,6 @@ class ObservingExecutor(Executor):
         if method == "process/read" and result["chunks"]:
             self.output.set()
         return result
-
-
-@dataclass(frozen=True)
-class ExecutorServer:
-    url: str
-    process: asyncio.subprocess.Process
 
 
 @asynccontextmanager

@@ -13,11 +13,12 @@ from agentplane.native.codex import wire
 from agentplane.native.codex.testing.harness import CodexHarness
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, Reasoning, response_stream
+from agentplane.testing.codex_fixtures import ExecutorServer
 from agentplane.x.postgres_codex.code_mode import code_mode
 from agentplane.x.postgres_codex.executor import Executor
 from agentplane.x.postgres_codex.sampler import advance
 from agentplane.x.postgres_codex.store import Base, Conversation, Intent, LostOwnershipError, Store, UnknownEffectError
-from agentplane.x.postgres_codex.testing import ExecutorServer, ObservingExecutor, drop_completed_process_reply
+from agentplane.x.postgres_codex.testing import ObservingExecutor, drop_completed_process_reply
 from util.testing.sqlalchemy_engines import postgres_async_engine
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
