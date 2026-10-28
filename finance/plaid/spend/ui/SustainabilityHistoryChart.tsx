@@ -143,20 +143,17 @@ export function SustainabilityHistoryChart({
   const hasRates = effectiveTaxRate != null && portfolioMinorUnits != null && portfolioMinorUnits > 0;
   const amountLabel = includeTaxes ? "Annual funding including taxes" : "Annual spending excluding taxes";
 
-  const historyWindows = useMemo(
-    () => {
-      const shortestWindowDays = Math.min(...windows.map((view) => view.window_days));
-      const longestWindowDays = Math.max(...windows.map((view) => view.window_days));
-      return [...windows]
-        .sort((left, right) => left.window_days - right.window_days)
-        .map((view) => ({
-          view,
-          color: windowColor(view.window_days, shortestWindowDays, longestWindowDays),
-          pointsByDate: new Map(view.history.map((point) => [point.date, point] as const)),
-        }));
-    },
-    [windows]
-  );
+  const historyWindows = useMemo(() => {
+    const shortestWindowDays = Math.min(...windows.map((view) => view.window_days));
+    const longestWindowDays = Math.max(...windows.map((view) => view.window_days));
+    return [...windows]
+      .sort((left, right) => left.window_days - right.window_days)
+      .map((view) => ({
+        view,
+        color: windowColor(view.window_days, shortestWindowDays, longestWindowDays),
+        pointsByDate: new Map(view.history.map((point) => [point.date, point] as const)),
+      }));
+  }, [windows]);
   const visibleWindows = useMemo(
     () => historyWindows.filter(({ view }) => !hiddenWindowDays.has(view.window_days)),
     [historyWindows, hiddenWindowDays]
