@@ -14,8 +14,10 @@ import (
 	"testing"
 	"time"
 
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	bootstrapcomponent "github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
@@ -69,6 +71,173 @@ func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
 	}
 	if got := lookups.Load(); got != 1 {
 		t.Fatalf("conflicting reservation queried model config; lookups=%d", got)
+	}
+}
+
+func TestOpenSessionRetryUsesPersistedSetupAfterSealPublicationFailure(t *testing.T) {
+	proxy := modelConfigServer(t)
+	workspace := t.TempDir()
+	failure := errors.New("injected journal seal publication failure")
+	resources := &failJournalSealPublicationOnce{
+		State:   state.WrapCore(namespaced.NewState(inmem.Build)),
+		failure: failure,
+	}
+	resources.fail.Store(true)
+	r, err := newRunner(lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"), nil, resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.store.AdoptIncarnation("test-incarnation"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Startup(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := r.Close(); err != nil {
+			t.Errorf("close test runner: %v", err)
+		}
+	})
+
+	marker := filepath.Join(t.TempDir(), "setup-runs")
+	script := fmt.Sprintf("printf setup >> %s", shellQuote(marker))
+	request := openLifecycleSession("session-retry", filepath.Join(workspace, "project"))
+	request.SetupScript = &script
+	if _, err := r.OpenSession(context.Background(), request); status.Code(err) != codes.Unavailable {
+		t.Fatalf("first OpenSession error = %v, want injected Unavailable", err)
+	}
+	if resources.fail.Load() {
+		t.Fatal("journal seal publication failure was not injected")
+	}
+	if r.sessions.Get(request.SessionId) != nil {
+		t.Fatal("failed OpenSession became visible in the Session registry")
+	}
+	if _, found, err := session.ReadInput(r.ctx, r.lifecycle.state, request.SessionId); err != nil || found {
+		t.Fatalf("failed OpenSession published a Session input: found=%t, err=%v", found, err)
+	}
+	record, err := r.store.Read(request.SessionId)
+	if err != nil || record.SetupScript != script || record.SetupScriptSHA256 != nil {
+		t.Fatalf("retained setup = %q, legacy hash = %v, err=%v; want source authority without cached digest", record.SetupScript, record.SetupScriptSHA256, err)
+	}
+	wrongScript := "exit 1"
+	conflict := openLifecycleSession(request.SessionId, filepath.Join(workspace, "project"))
+	conflict.SetupScript = &wrongScript
+	if _, err := r.OpenSession(context.Background(), conflict); status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("conflicting setup source error = %v, want AlreadyExists", err)
+	}
+
+	request.SetupScript = nil
+	if _, err := r.OpenSession(context.Background(), request); err != nil {
+		t.Fatalf("omitted-script OpenSession retry: %v", err)
+	}
+	s := r.sessions.Get(request.SessionId)
+	if s == nil {
+		t.Fatal("successful OpenSession retry did not register the Session")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var cursor uint64
+	for {
+		entries, err := s.EventJournal().Since(ctx, cursor, 128)
+		if err != nil {
+			t.Fatal(err)
+		}
+		finished := false
+		for _, entry := range entries {
+			cursor = entry.Cursor
+			if entry.GetEvent().GetSetupInterrupted() != nil {
+				t.Fatalf("fresh setup was marked interrupted during retry: %v", entries)
+			}
+			finished = finished || entry.GetEvent().GetSetupFinished() != nil
+		}
+		if finished {
+			break
+		}
+		if err := s.EventJournal().WaitBeyond(ctx, cursor); err != nil {
+			t.Fatalf("wait for retried setup: %v", err)
+		}
+	}
+	output, err := os.ReadFile(marker)
+	if err != nil || string(output) != "setup" {
+		t.Fatalf("setup execution marker = %q, err=%v; want exactly one setup run", output, err)
+	}
+}
+
+func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
+	proxy := modelConfigServer(t)
+	workspace := t.TempDir()
+	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
+	config.StateDir = filepath.Join(t.TempDir(), "state")
+	const sessionID = "setup-restart"
+	marker := filepath.Join(t.TempDir(), "setup-ran")
+	setupScript := fmt.Sprintf("touch %s", shellQuote(marker))
+	spec := &runnerpb.SessionSpec{
+		Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: filepath.Join(workspace, "project"), Model: "test-model",
+		Instructions: config.Launch.Instructions(sessionID, ""),
+	}
+	store, err := retained.NewStore(filepath.Join(config.StateDir, "sessions"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := retained.NewRecord(spec, setupScript, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Write(sessionID, record); err != nil {
+		t.Fatal(err)
+	}
+	directory, err := store.Directory(sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventJournal, err := journal.Open(context.Background(), filepath.Join(directory, "journal.sqlite"), record.EventSourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eventJournal.Append(context.Background(), &eventpb.Event{
+		Observation: &eventpb.Event_SetupStarted{SetupStarted: &eventpb.SetupStarted{}},
+	}, journal.AppendOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := eventJournal.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	r := newLifecycleRunner(t, config)
+	request := openLifecycleSession(sessionID, filepath.Join(workspace, "project"))
+	if _, err := r.OpenSession(context.Background(), request); err != nil {
+		t.Fatalf("open recovered Session without resupplying setup source: %v", err)
+	}
+	input, found, err := session.ReadInput(r.ctx, r.lifecycle.state, sessionID)
+	if err != nil || !found || input.Setup != runnerpb.SetupState_SETUP_STATE_INTERRUPTED || !input.SetupRequested {
+		t.Fatalf("recovered setup input = %+v, found=%t, err=%v; want retained but interrupted", input, found, err)
+	}
+	if err := r.Close(); err != nil {
+		t.Fatalf("close recovered Runner: %v", err)
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("retained setup source replayed after restart: stat marker err=%v", err)
+	}
+	eventJournal, err = journal.Open(context.Background(), filepath.Join(directory, "journal.sqlite"), record.EventSourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer eventJournal.Close()
+	entries, err := eventJournal.Since(context.Background(), 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started, interrupted := 0, 0
+	for _, entry := range entries {
+		if entry.GetEvent().GetSetupStarted() != nil {
+			started++
+		}
+		if entry.GetEvent().GetSetupInterrupted() != nil {
+			interrupted++
+		}
+	}
+	if started != 1 || interrupted != 1 {
+		t.Fatalf("setup recovery events = %v; want one started and one interrupted, with no replay", entries)
 	}
 }
 
@@ -158,6 +327,19 @@ type initialOperationFailureState struct {
 	failTeardown    atomic.Bool
 	failed          chan struct{}
 	teardownFailed  chan struct{}
+}
+
+type failJournalSealPublicationOnce struct {
+	state.State
+	failure error
+	fail    atomic.Bool
+}
+
+func (s *failJournalSealPublicationOnce) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
+	if value.Metadata().Type() == journalSealType && s.fail.CompareAndSwap(true, false) {
+		return s.failure
+	}
+	return s.State.Modify(ctx, value, update, opts...)
 }
 
 func (s *initialOperationFailureState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
