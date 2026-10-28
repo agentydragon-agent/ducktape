@@ -24,7 +24,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate
     newTag: devel-20261024140421-841392f # {"$imagepolicy": "flux-system:agentplane-runner-gateway-queue-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/runner-ducktape
-    newTag: devel-20261028212040-a393468 # {"$imagepolicy": "flux-system:runner-ducktape:tag"}
+    newTag: devel-20261028214627-e36002e # {"$imagepolicy": "flux-system:runner-ducktape:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
     newTag: devel-20261028213916-e36002e # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-build
@@ -46,7 +46,7 @@ images:
     newTag: devel-20261028203057-d8ded74 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   # The runner VM SandboxTemplate's containerDisk, which `images:` reaches through kustomizeconfig.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-vm
-    newTag: devel-20261028212433-a393468 # {"$imagepolicy": "flux-system:agentplane-runner-vm:tag"}
+    newTag: devel-20261028214543-e36002e # {"$imagepolicy": "flux-system:agentplane-runner-vm:tag"}
   # The runner and `agentplane` command: a disk beside the VM guest, and an image volume in the
   # runner Pod, both reached through kustomizeconfig.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-disk
