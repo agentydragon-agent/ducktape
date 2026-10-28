@@ -1,4 +1,4 @@
-# OpenAPI TypeScript declarations
+# TypeScript schema conversion
 
 The `openapi_js_library` macro converts a declared OpenAPI JSON artifact into a TypeScript
 declaration file and packages it in a `js_library` under the requested target name. The schema owner
@@ -77,3 +77,43 @@ source contract and serialization choices; this rule does not normalize schema d
 OpenAPI and JSON Schema inputs. Reference interpretation otherwise follows the pinned OpenAPI
 parser. In particular, it may treat a literal `$ref` key nested inside example or default data as a
 schema reference; such payloads are not claimed as supported by this conversion path.
+
+## Standalone JSON Schema declarations
+
+The `json_schema_js_library` macro converts one declared JSON Schema file without invoking its
+producer. Its named `js_library` publishes the original schema, declared local-reference files, and
+generated declaration together through `JsInfo`. It has the same file-input shape as
+`openapi_js_library`:
+
+```starlark
+load("//devinfra/js:json_schema_js_library.bzl", "json_schema_js_library")
+
+json_schema_js_library(
+    name = "types",
+    schema = "//my/api:types_schema",
+    schema_files = ["//my/api:shared_definitions"],
+)
+```
+
+List every file reached through a relative local `$ref` in `schema_files`; the action receives each
+as a declared input and resolves the reference from the root schema's path. The generated file
+defaults to `:<name>.d.ts` (`:types.d.ts` here); set `out` when consumers need another module path.
+Remote HTTP resolution is disabled by the converter. The named library exposes the schema and
+`schema_files` at their producer-owned paths, so runtime consumers can import those JSON modules
+directly alongside the generated declarations.
+
+Declare the macro beside the schema producer; downstream consumers depend on that target and
+import the original JSON and generated types at their natural paths:
+
+```starlark
+load("//devinfra/js:json_schema_js_library.bzl", "json_schema_js_library")
+
+json_schema_js_library(
+    name = "tool_arguments",
+    schema = ":types_schema",
+    schema_files = [":shared_definitions"],
+)
+```
+
+JSON Schema carries no HTTP operation types; owners remain responsible for exporting their actual
+runtime or API contract.

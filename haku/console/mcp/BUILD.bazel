@@ -1,3 +1,4 @@
+load("//devinfra/js:json_schema_js_library.bzl", "json_schema_js_library")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -23,6 +24,34 @@ py_binary(
     name = "export_tool_schemas_bin",
     main_module = "haku.console.mcp.export_tool_schemas",
     deps = [":export_tool_schemas"],
+)
+
+genrule(
+    name = "tool_arguments_schema",
+    outs = ["tool_arguments.schema.json"],
+    cmd = "$(location :export_tool_schemas_bin) > $@",
+    tools = [":export_tool_schemas_bin"],
+    visibility = ["//haku/console/frontend:__pkg__"],
+)
+
+genrule(
+    name = "tool_results_schema",
+    outs = ["tool_results.schema.json"],
+    cmd = "$(location :export_tool_schemas_bin) --results > $@",
+    tools = [":export_tool_schemas_bin"],
+    visibility = ["//haku/console/frontend:__pkg__"],
+)
+
+json_schema_js_library(
+    name = "tool_arguments",
+    schema = ":tool_arguments_schema",
+    visibility = ["//haku/console/frontend:__pkg__"],
+)
+
+json_schema_js_library(
+    name = "tool_results",
+    schema = ":tool_results_schema",
+    visibility = ["//haku/console/frontend:__pkg__"],
 )
 
 py_test(

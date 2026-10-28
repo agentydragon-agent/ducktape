@@ -1,6 +1,5 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
-load("//devinfra/js:openapi.bzl", "js_openapi_zod")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
@@ -21,20 +20,15 @@ filegroup(
 
 TSCONFIG = "//agentplane/app/frontend:tsconfig"
 
-# Generate the SSH argument/result validators from the schema FastMCP builds from the server's
-# registered tool signature and return type.
-js_openapi_zod(
-    name = "ssh_action_schemas_generated",
-    out = "schemas/ssh/exec.zod.ts",
-    generator = "//ssh_mcp_server:export_frontend_schema_bin",
-    tsconfig = "//agentplane/app/frontend:tsconfig_generated",
-)
-
 ts_library(
     name = "ssh_action_schemas",
     srcs = ["schemas/ssh/exec.ts"],
     tsconfig = TSCONFIG,
-    deps = [":ssh_action_schemas_generated"],
+    deps = [
+        "//:node_modules/zod",
+        "//ssh_mcp_server:exec_arguments",
+        "//ssh_mcp_server:exec_result",
+    ],
 )
 
 # Validators and text shared by the GitHub Action widgets and their notification formatters.
