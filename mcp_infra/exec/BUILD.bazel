@@ -70,6 +70,7 @@ py_test(
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
     ],
 )
 

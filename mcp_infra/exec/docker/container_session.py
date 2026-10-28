@@ -9,6 +9,7 @@ from typing import Any, cast
 import aiodocker
 import anyio
 from fastmcp.server import FastMCP
+from tenacity import AsyncRetrying, retry_if_result, wait_fixed
 
 from mcp_infra.constants import SLEEP_FOREVER_CMD
 from mcp_infra.exec.docker.types import ContainerExecServerConfig, ResolvedExecInput
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 # Docker exec stream type codes
 STREAM_TYPE_STDOUT = 1
 STREAM_TYPE_STDERR = 2
+DOCKER_EXIT_GRACE_S = 5
 
 
 @dataclass
@@ -156,13 +158,12 @@ async def run_session_container(
     overall_start = loop.time()
     stdout_buf = bytearray()
     stderr_buf = bytearray()
-    timed_out = False
-    exit_code = None
+    timeout_s = input.timeout_ms / 1000
 
     # Create exec instance with explicit args (avoid **kwargs issues)
     t0 = loop.time()
     exec_obj = await container_instance.exec(
-        cmd,
+        ["/usr/bin/timeout", "--signal=KILL", f"{timeout_s}s", *cmd],
         stdout=True,
         stderr=True,
         stdin=False,
@@ -177,46 +178,29 @@ async def run_session_container(
     stream: Any = exec_obj.start()
 
     t_collect_begin = loop.time()
-    deadline = asyncio.timeout(input.timeout_ms / 1000.0)
     try:
-        async with deadline:
+        # The in-container utility enforces the process deadline. This outer
+        # deadline only bounds Docker transport/exit reporting; expiry raises.
+        async with asyncio.timeout(timeout_s + DOCKER_EXIT_GRACE_S):
             await _collect_from_exec_stream(stream, stdout_buf, stderr_buf)
-    except TimeoutError:
-        if not deadline.expired():
-            raise
-        timed_out = True
     finally:
+        # start() is lazy: cancellation during read_out() can interrupt stream
+        # initialization, before Stream.__aenter__ could register __aexit__.
         await stream.close()
     t_collect_end = loop.time()
 
+    inspect_result: dict[str, Any] = await asyncio.wait_for(
+        AsyncRetrying(wait=wait_fixed(0.05), retry=retry_if_result(lambda info: info["Running"]))(exec_obj.inspect),
+        DOCKER_EXIT_GRACE_S,
+    )
+    exit_code = inspect_result["ExitCode"]
+    if exit_code is None:
+        raise RuntimeError(f"Docker exec completed without an exit code in container {container_id[:12]}")
+    # SIGKILL also kills GNU timeout itself (137). Preserve an early command
+    # exit with that status; an exit at/after the deadline is ambiguous.
+    timed_out = exit_code == 137 and t_collect_end - t_collect_begin >= timeout_s
     if timed_out:
-        # External timeout - kill the exec process, not the container
-        logger.debug(f"Command timed out after {input.timeout_ms}ms in container {container_id[:12]}")
         exit_code = None
-
-        inspect_result = await exec_obj.inspect()
-        pid = inspect_result.get("Pid")
-        if pid and pid > 0:
-            kill_exec = await container_instance.exec(["kill", "-9", str(pid)], stdout=False, stderr=False, stdin=False)
-            kill_stream = kill_exec.start()
-            # Drain the stream to ensure the kill command completes
-            while await kill_stream.read_out() is not None:
-                pass
-            logger.debug(f"Killed exec process PID {pid} in container {container_id[:12]}")
-        else:
-            raise RuntimeError(f"Could not get PID for timed-out exec in container {container_id[:12]}")
-    else:
-        t_inspect_begin = loop.time()
-        inspect_result = await exec_obj.inspect()
-        exit_code = inspect_result.get("ExitCode", 0)
-        t_inspect_end = loop.time()
-        logger.debug(
-            "Command completed: exit_code=%s stdout=%dB stderr=%dB inspect_ms=%.1f",
-            exit_code,
-            len(stdout_buf),
-            len(stderr_buf),
-            (t_inspect_end - t_inspect_begin) * 1000,
-        )
 
     overall_elapsed = (loop.time() - overall_start) * 1000
     logger.info(

@@ -29,6 +29,7 @@ py_library(
         "@pypi//aiodocker",
         "@pypi//anyio",
         "@pypi//fastmcp_slim",
+        "@pypi//tenacity",
     ],
 )
 
