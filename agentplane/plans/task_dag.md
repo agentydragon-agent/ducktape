@@ -1998,6 +1998,6 @@ the runner fixtures push straight to `GoHistoryService`'s ingress, and both stan
 ### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
 
 **Blocked on `RUNNER_LAYERING_VM`.** The system tests' `_vm` targets boot a Bazel-built test guest under `system_tests/k3s/guest`, a
-second copy of `runner/vm.nix`'s guest contract (disks by serial, workspace format, cgroup delegation, harness and
-tool paths). Delete it once the production guest is Bazel-built and boots in seconds under
+second implementation of `runner/vm.nix`'s guest boot contract (disks by serial, workspace format,
+harness and tool paths). The two guests share the static runner/slice units and native supervision backend. Delete it once the production guest is Bazel-built and boots in seconds under
 emulation, and point the k3s VM scenarios at that guest.
