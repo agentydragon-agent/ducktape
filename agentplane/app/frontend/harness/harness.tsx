@@ -992,6 +992,28 @@ function autosuspendCountdown(): void {
       : thread;
 }
 
+function autosuspendBusy(): void {
+  autosuspendCountdown();
+  const sandbox = SANDBOXES.find((candidate) => candidate.name === "ready-sandbox");
+  if (!sandbox) throw new Error("Missing ready Sandbox fixture");
+  sandbox.idle_suspend_at = null;
+  sandbox.autosuspend_blockers = [
+    { reason: "ActiveTurn", session_id: RUNNING_THREAD },
+    { reason: "Setup", session_id: UNNAMED_STOPPED_THREAD },
+    { reason: "Bootstrap", session_id: null },
+  ];
+  const countdownThread = mapThread;
+  mapThread = (thread) => {
+    const mapped = countdownThread(thread);
+    if (thread.id === IDLE_THREAD) return { ...mapped, name: "Idle thread sharing a busy Sandbox" };
+    if (thread.id === RUNNING_THREAD) return { ...mapped, name: "Session running a turn" };
+    if (thread.id === UNNAMED_STOPPED_THREAD) {
+      return { ...mapped, name: "Session running setup", setup_state: "SETUP_STATE_RUNNING" };
+    }
+    return mapped;
+  };
+}
+
 let mapThread = (thread: ThreadView): ThreadView => thread;
 
 // A 32x32 checkerboard, 95 bytes: a real image, small enough to inline.
@@ -3315,6 +3337,7 @@ const visualHarness = {
     mount(<OperationPresentationVisual />);
   },
   autosuspendCountdown,
+  autosuspendBusy,
   addProvisioningSandbox,
   addSuspendedSandboxes,
   queueOpenResponse(): void {
