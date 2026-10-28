@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 
-from sqlalchemy import Date, Float, Integer, String, and_, case, func, literal, not_, or_, select
+from sqlalchemy import Date, Integer, String, and_, case, func, literal, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.selectable import CTE
@@ -43,7 +44,7 @@ from finance.budget.wire import (
 from finance.plaid.db.models import AccountRow, LinkRow, TransactionRow
 
 # Mean Gregorian month in days; converts a window's per-day average into `window_monthly_avg`.
-DAYS_PER_MONTH = 365.2425 / 12.0
+DAYS_PER_MONTH = Decimal("365.2425") / 12
 
 
 def _month_start(d: date) -> date:
@@ -219,7 +220,7 @@ async def _read_stale_overrides(session: AsyncSession, config: BudgetConfig) -> 
 class _MonthlyAgg:
     bucket_id: str
     month: date
-    amount: float
+    amount: Decimal
     transaction_count: int
 
 
@@ -238,7 +239,7 @@ async def read_budget_snapshot(
         select(
             classified_tx.c.bucket_id,
             month,
-            func.sum(classified_tx.c.amount).cast(Float).label("amount"),
+            func.sum(classified_tx.c.amount).label("amount"),
             func.count().cast(Integer).label("transaction_count"),
         )
         .group_by(classified_tx.c.bucket_id, month)
@@ -265,7 +266,7 @@ async def read_budget_snapshot(
             _MonthlyAgg(
                 bucket_id=row["bucket_id"],
                 month=row["month"],
-                amount=float(row["amount"]),
+                amount=row["amount"],
                 transaction_count=int(row["transaction_count"]),
             )
             for row in monthly_rows
@@ -274,7 +275,7 @@ async def read_budget_snapshot(
             LumpyView(
                 transaction_id=row["transaction_id"],
                 date=row["date"],
-                amount=float(row["amount"]),
+                amount=row["amount"],
                 name=row["name"],
                 merchant_name=row["merchant_name"],
                 bucket_id=row["bucket_id"],
@@ -298,9 +299,9 @@ async def read_budget_snapshot(
         monthly_by_bucket=tuple(
             BucketMonthly(
                 bucket_id=bucket.id,
-                monthly_amounts=tuple(amounts_by_bucket_month.get((bucket.id, month), 0.0) for month in months),
+                monthly_amounts=tuple(amounts_by_bucket_month.get((bucket.id, month), Decimal(0)) for month in months),
                 window_monthly_avg=(
-                    sum(amounts_by_bucket_month.get((bucket.id, month), 0.0) for month in months)
+                    sum((amounts_by_bucket_month.get((bucket.id, month), Decimal(0)) for month in months), Decimal(0))
                     / days_covered
                     * DAYS_PER_MONTH
                 ),
@@ -360,7 +361,7 @@ async def read_budget_bucket_transactions(
             TransactionView(
                 transaction_id=row["transaction_id"],
                 date=row["date"],
-                amount=float(row["amount"]),
+                amount=row["amount"],
                 name=row["name"],
                 merchant_name=row["merchant_name"],
                 pfc_primary=row["pfc_primary"],
@@ -380,7 +381,7 @@ class ClassifiedRow:
 
     transaction_id: str
     date: date
-    amount: float
+    amount: Decimal
     name: str
     merchant_name: str | None
     pfc_primary: str | None
@@ -418,7 +419,7 @@ async def read_all_classified(
             ClassifiedRow(
                 transaction_id=row["transaction_id"],
                 date=row["date"],
-                amount=float(row["amount"]),
+                amount=row["amount"],
                 name=row["name"],
                 merchant_name=row["merchant_name"],
                 pfc_primary=row["pfc_primary"],

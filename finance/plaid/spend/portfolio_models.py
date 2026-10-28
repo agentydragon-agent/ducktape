@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -14,7 +14,7 @@ class HoldingValueCorrection(BaseModel):
 
     account_id: str = Field(min_length=1)
     security_ids: list[str] = Field(min_length=1)
-    value_multiplier: Decimal = Field(gt=0)
+    value_multiplier: Decimal = Field(gt=0, allow_inf_nan=False)
 
     @field_validator("security_ids")
     @classmethod
@@ -22,23 +22,6 @@ class HoldingValueCorrection(BaseModel):
         if any(not value for value in values) or len(values) != len(set(values)):
             raise ValueError("security selectors must contain unique non-empty IDs")
         return values
-
-    @field_validator("value_multiplier", mode="before")
-    @classmethod
-    def _decimal_multiplier(cls, value: object) -> Decimal:
-        if isinstance(value, bool) or not isinstance(value, int | float | Decimal):
-            raise ValueError("value_multiplier must be a positive number")
-        try:
-            return Decimal(str(value))
-        except InvalidOperation as exc:
-            raise ValueError("value_multiplier must be a positive number") from exc
-
-    @field_validator("value_multiplier")
-    @classmethod
-    def _finite_positive_multiplier(cls, value: Decimal) -> Decimal:
-        if not value.is_finite() or value <= 0:
-            raise ValueError("value_multiplier must be a finite positive number")
-        return value
 
 
 class PlaidSourcePolicy(BaseModel):

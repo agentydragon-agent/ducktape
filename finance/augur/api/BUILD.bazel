@@ -71,6 +71,7 @@ py_library(
         ":portfolio_source_config",
         ":schemas",
         ":wire",
+        "//finance:yaml_decimal",
         "//finance/augur/model:series",
         "//finance/augur/product:wire",
         "//finance/augur/sim:ids",

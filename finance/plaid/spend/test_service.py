@@ -34,13 +34,8 @@ from finance.plaid.spend.allowance import (
     Status,
 )
 from finance.plaid.spend.app import _event_stream
-from finance.plaid.spend.models import (
-    AlertState,
-    AnalysisCategoryView,
-    CardConfig,
-    SpendConfiguration,
-    SpendTransactionRow,
-)
+from finance.plaid.spend.configuration import CardConfig, SpendConfiguration
+from finance.plaid.spend.models import AlertState, AnalysisCategoryView, SpendTransactionRow
 from finance.plaid.spend.portfolio_models import (
     HoldingValueCorrection,
     PlaidSourcePolicy,
@@ -156,7 +151,7 @@ async def add_transaction(
     item_id: str,
     transaction_id: str,
     on_date: date,
-    amount: float,
+    amount: Decimal,
     *,
     pending: bool = False,
     pending_transaction_id: str | None = None,
@@ -199,7 +194,7 @@ async def test_purchase_days_match_allowance_and_list_without_changing_statement
         "item-time",
         "late-post",
         today + timedelta(days=2),
-        7,
+        Decimal("7.00"),
         raw_json={"authorized_datetime": now.isoformat()},
     )
     # A posted charge authorized before activation informs pace but not allowance debt.
@@ -209,17 +204,17 @@ async def test_purchase_days_match_allowance_and_list_without_changing_statement
         "item-time",
         "prior-purchase",
         today,
-        11,
+        Decimal("11.00"),
         raw_json={"authorized_date": (activation - timedelta(days=1)).isoformat()},
     )
-    await add_transaction(connection, "card-time", "item-time", "date-only", today, 9)
+    await add_transaction(connection, "card-time", "item-time", "date-only", today, Decimal("9.00"))
     await add_transaction(
         connection,
         "card-time",
         "item-time",
         "pending-time",
         today,
-        5,
+        Decimal("5.00"),
         pending=True,
         raw_json={"authorized_datetime": now.isoformat()},
     )
@@ -229,7 +224,7 @@ async def test_purchase_days_match_allowance_and_list_without_changing_statement
         "item-time",
         "replacement-time",
         today,
-        6,
+        Decimal("6.00"),
         pending_transaction_id="pending-time",
         raw_json={"authorized_datetime": now.isoformat()},
     )
@@ -275,15 +270,15 @@ async def test_read_view_uses_statement_cycle_and_normalizes_transactions(
         await add_liability(connection, account_id, "item-1", start - timedelta(days=1))
     # The SQL query uses the earliest selected cycle. Python still applies the later card boundary.
     for transaction_id, on_date, amount in (
-        ("before-cycle", late_cycle_start - timedelta(days=1), 90.0),
-        ("cycle-start", late_cycle_start, 12.34),
-        ("refund", today, -3.0),
-        ("pending-only", today, 7.5),
-        ("pending-old", today, 20.0),
-        ("posted-replacement", today, 22.0),
-        ("card-payment", today, 100.0),
-        ("other-currency", today, 40.0),
-        ("future", today + timedelta(days=1), 60.0),
+        ("before-cycle", late_cycle_start - timedelta(days=1), Decimal("90.00")),
+        ("cycle-start", late_cycle_start, Decimal("12.34")),
+        ("refund", today, Decimal("-3.00")),
+        ("pending-only", today, Decimal("7.50")),
+        ("pending-old", today, Decimal("20.00")),
+        ("posted-replacement", today, Decimal("22.00")),
+        ("card-payment", today, Decimal("100.00")),
+        ("other-currency", today, Decimal("40.00")),
+        ("future", today + timedelta(days=1), Decimal("60.00")),
     ):
         await add_transaction(
             connection,
@@ -316,6 +311,8 @@ async def test_read_view_uses_statement_cycle_and_normalizes_transactions(
     assert late_card.posted_minor_units == 3_134
     assert late_card.pending_minor_units == 750
     assert late_card.spend_minor_units == 3_884
+    assert late_card.spend_percent == Decimal("3.884")
+    assert late_card.model_dump(mode="json")["spend_percent"] == "3.884"
 
 
 async def test_card_without_statement_reports_observed_spend_not_a_statement_cycle(
@@ -326,12 +323,20 @@ async def test_card_without_statement_reports_observed_spend_not_a_statement_cyc
     await add_link(connection, "item-new", synced=datetime.now(UTC))
     for account_id in ("card-first", "card-empty"):
         await add_account(connection, account_id, "item-new", type="credit")
-    await add_transaction(connection, "card-first", "item-new", "first", start, 10.0)
-    await add_transaction(connection, "card-first", "item-new", "pending", today, 15.0, pending=True)
-    await add_transaction(connection, "card-first", "item-new", "posted", today, 17.0, pending_transaction_id="pending")
-    await add_transaction(connection, "card-first", "item-new", "new", today, 12.0)
+    await add_transaction(connection, "card-first", "item-new", "first", start, Decimal("10.00"))
+    await add_transaction(connection, "card-first", "item-new", "pending", today, Decimal("15.00"), pending=True)
     await add_transaction(
-        connection, "card-first", "item-new", "repayment", today, 30.0, category="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"
+        connection, "card-first", "item-new", "posted", today, Decimal("17.00"), pending_transaction_id="pending"
+    )
+    await add_transaction(connection, "card-first", "item-new", "new", today, Decimal("12.00"))
+    await add_transaction(
+        connection,
+        "card-first",
+        "item-new",
+        "repayment",
+        today,
+        Decimal("30.00"),
+        category="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT",
     )
     service = SpendService(
         postgres_url,
@@ -441,7 +446,7 @@ async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg
     for account_id, item_id, type in (("card-1", "item-card", "credit"), ("checking-1", "item-checking", "depository")):
         await add_link(connection, item_id, synced=now)
         await add_account(connection, account_id, item_id, type=type)
-    await add_transaction(connection, "card-1", "item-card", "purchase", now.date(), 12.0)
+    await add_transaction(connection, "card-1", "item-card", "purchase", now.date(), Decimal("12.00"))
     config = SpendConfiguration(
         time_zone=ZoneInfo("UTC"),
         cards=[],
@@ -477,8 +482,8 @@ async def test_prior_purchases_are_queried_for_pace_but_not_balance(
     now = datetime.now(UTC)
     await add_link(connection, "item-card", synced=now)
     await add_account(connection, "card-1", "item-card", type="credit")
-    await add_transaction(connection, "card-1", "item-card", "prior", now.date() - timedelta(days=1), 70.0)
-    await add_transaction(connection, "card-1", "item-card", "older", now.date() - timedelta(days=20), 30.0)
+    await add_transaction(connection, "card-1", "item-card", "prior", now.date() - timedelta(days=1), Decimal("70.00"))
+    await add_transaction(connection, "card-1", "item-card", "older", now.date() - timedelta(days=20), Decimal("30.00"))
     config = SpendConfiguration(
         time_zone=ZoneInfo("UTC"),
         cards=[],
@@ -516,9 +521,9 @@ async def test_reversal_uses_old_retained_original_and_preserves_card_statement(
     await add_link(connection, "item-reversal", synced=now)
     await add_account(connection, "card-reversal", "item-reversal", type="credit")
     await add_liability(connection, "card-reversal", "item-reversal", today - timedelta(days=10))
-    await add_transaction(connection, "card-reversal", "item-reversal", "original", original_day, 80)
-    await add_transaction(connection, "card-reversal", "item-reversal", "return", reversal_day, -80)
-    await add_transaction(connection, "card-reversal", "item-reversal", "replacement", reversal_day, 90)
+    await add_transaction(connection, "card-reversal", "item-reversal", "original", original_day, Decimal("80.00"))
+    await add_transaction(connection, "card-reversal", "item-reversal", "return", reversal_day, Decimal("-80.00"))
+    await add_transaction(connection, "card-reversal", "item-reversal", "replacement", reversal_day, Decimal("90.00"))
     pair = ReversalPair(
         id="example-return",
         description="Synthetic full return with a separately counted replacement.",
@@ -681,15 +686,17 @@ async def test_portfolio_reads_complete_snapshots_through_sqlalchemy(
 ) -> None:
     now = datetime.now(UTC)
     captured_at = now - timedelta(minutes=2)
+    previous_capture_at = captured_at - timedelta(hours=1)
     await add_link(connection, "portfolio-item", synced=captured_at)
     await add_account(connection, "portfolio-brokerage", "portfolio-item", type="investment")
     await connection.execute(
         """INSERT INTO public.balance_snapshots
            (account_id, item_id, captured_at, current, iso_currency_code)
-           VALUES ($1, $2, $3, 900, 'USD'), ($1, $2, $3, 1000, 'USD')""",
+           VALUES ($1, $2, $3, 900, 'USD'), ($1, $2, $4, 1100, 'USD')""",
         "portfolio-brokerage",
         "portfolio-item",
-        captured_at,
+        captured_at - timedelta(minutes=1),
+        captured_at + timedelta(minutes=1),
     )
     for security_id in ("portfolio-sold", "portfolio-held", "portfolio-zero"):
         await connection.execute(
@@ -699,20 +706,50 @@ async def test_portfolio_reads_complete_snapshots_through_sqlalchemy(
             security_id,
             captured_at,
         )
-    for security_id, holdings_time, value in (
-        ("portfolio-sold", captured_at - timedelta(hours=1), 500),
-        ("portfolio-held", captured_at, 1000),
-        ("portfolio-zero", captured_at, 0),
+
+    async def add_holding_capture(capture_time: datetime, current: int) -> int:
+        api_event_id = await connection.fetchval(
+            """INSERT INTO public.plaid_api_events
+               (endpoint, item_id, status, request_json, response_json, created_at)
+               VALUES ('investments/holdings/get', $1, 'ok', '{}'::jsonb, '{}'::jsonb, $2)
+               RETURNING id""",
+            "portfolio-item",
+            capture_time,
+        )
+        capture_id: int = await connection.fetchval(
+            """INSERT INTO public.holding_captures (item_id, captured_at, api_event_id)
+               VALUES ($1, $2, $3) RETURNING id""",
+            "portfolio-item",
+            capture_time,
+            api_event_id,
+        )
+        await connection.execute(
+            """INSERT INTO public.holding_capture_accounts
+               (capture_id, account_id, item_id, current, iso_currency_code)
+               VALUES ($1, 'portfolio-brokerage', 'portfolio-item', $2, 'USD')""",
+            capture_id,
+            current,
+        )
+        return capture_id
+
+    previous_capture_id = await add_holding_capture(previous_capture_at, 1500)
+    capture_id = await add_holding_capture(captured_at, 1000)
+    for security_id, holdings_time, value, row_capture_id in (
+        ("portfolio-sold", previous_capture_at, 500, previous_capture_id),
+        ("portfolio-held", captured_at, 1000, capture_id),
+        ("portfolio-zero", captured_at, 0, capture_id),
     ):
         await connection.execute(
             """INSERT INTO public.holding_snapshots
-               (account_id, security_id, item_id, captured_at, institution_value, iso_currency_code, raw_json)
-               VALUES ($1, $2, $3, $4, $5, 'USD', '{}'::json)""",
+               (account_id, security_id, item_id, captured_at, institution_value, iso_currency_code, raw_json,
+                capture_id)
+               VALUES ($1, $2, $3, $4, $5, 'USD', '{}'::json, $6)""",
             "portfolio-brokerage",
             security_id,
             "portfolio-item",
             holdings_time,
             value,
+            row_capture_id,
         )
 
     await add_link(connection, "revoked-portfolio-item", synced=captured_at)
@@ -782,11 +819,17 @@ async def test_read_sustainability_uses_postgres_transactions_for_each_window(
         item_id,
         "synthetic-history-start",
         date(today.year - 1, 1, 1),
-        999,
+        Decimal("999.00"),
         category="FIXED",
     )
     await add_transaction(
-        connection, spending_account_id, item_id, "synthetic-90-day", today - timedelta(days=40), 20, category="FIXED"
+        connection,
+        spending_account_id,
+        item_id,
+        "synthetic-90-day",
+        today - timedelta(days=40),
+        Decimal("20.00"),
+        category="FIXED",
     )
     await add_transaction(
         connection,
@@ -794,7 +837,7 @@ async def test_read_sustainability_uses_postgres_transactions_for_each_window(
         item_id,
         "synthetic-outside-30",
         today - timedelta(days=31),
-        7,
+        Decimal("7.00"),
         category="FLEXIBLE",
     )
     await add_transaction(
@@ -803,11 +846,18 @@ async def test_read_sustainability_uses_postgres_transactions_for_each_window(
         item_id,
         "synthetic-window-boundary",
         today - timedelta(days=30),
-        3,
+        Decimal("3.00"),
         category="FIXED",
     )
     await add_transaction(
-        connection, spending_account_id, item_id, "synthetic-pending", yesterday, 100, pending=True, category="FLEXIBLE"
+        connection,
+        spending_account_id,
+        item_id,
+        "synthetic-pending",
+        yesterday,
+        Decimal("100.00"),
+        pending=True,
+        category="FLEXIBLE",
     )
     await add_transaction(
         connection,
@@ -815,16 +865,16 @@ async def test_read_sustainability_uses_postgres_transactions_for_each_window(
         item_id,
         "synthetic-posted-replacement",
         yesterday,
-        12,
+        Decimal("12.00"),
         pending_transaction_id="synthetic-pending",
         category="FLEXIBLE",
     )
     await add_transaction(
-        connection, spending_account_id, item_id, "synthetic-flexible", yesterday, 10, category="FLEXIBLE"
+        connection, spending_account_id, item_id, "synthetic-flexible", yesterday, Decimal("10.00"), category="FLEXIBLE"
     )
-    await add_transaction(connection, spending_account_id, item_id, "synthetic-provisional", yesterday, 5)
+    await add_transaction(connection, spending_account_id, item_id, "synthetic-provisional", yesterday, Decimal("5.00"))
     await add_transaction(
-        connection, spending_account_id, item_id, "synthetic-current-day", today, 999, category="FIXED"
+        connection, spending_account_id, item_id, "synthetic-current-day", today, Decimal("999.00"), category="FIXED"
     )
     config = _sustainability_configuration(today, spending_account_id)
     expected_label = "Example Bank credit"
@@ -905,10 +955,22 @@ async def test_read_sustainability_fails_closed_for_unusable_spending_source(
     await add_link(connection, item_id, synced=synced)
     await add_account(connection, account_id, item_id, type="credit")
     await add_transaction(
-        connection, account_id, item_id, "synthetic-source-history", date(today.year - 1, 1, 1), 25, category="FIXED"
+        connection,
+        account_id,
+        item_id,
+        "synthetic-source-history",
+        date(today.year - 1, 1, 1),
+        Decimal("25.00"),
+        category="FIXED",
     )
     await add_transaction(
-        connection, account_id, item_id, "synthetic-recent-charge", today - timedelta(days=1), 10, category="FLEXIBLE"
+        connection,
+        account_id,
+        item_id,
+        "synthetic-recent-charge",
+        today - timedelta(days=1),
+        Decimal("10.00"),
+        category="FLEXIBLE",
     )
     if source_state == "inactive":
         await connection.execute("UPDATE public.links SET status = 'removed' WHERE item_id = $1", item_id)
@@ -945,7 +1007,7 @@ async def test_event_stream_sends_initial_view_and_notification_update(
     await add_link(connection, "item-1", synced=datetime.now(UTC))
     await add_account(connection, "card-1", "item-1", type="credit")
     await add_liability(connection, "card-1", "item-1", today - timedelta(days=1))
-    await add_transaction(connection, "card-1", "item-1", "purchase", today, 10.0)
+    await add_transaction(connection, "card-1", "item-1", "purchase", today, Decimal("10.00"))
     service = SpendService(
         postgres_url,
         SpendConfiguration(
