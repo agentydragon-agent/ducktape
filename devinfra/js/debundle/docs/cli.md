@@ -1094,6 +1094,17 @@ counts by kind, symbol/file attribution for boundary crossings); treat them
 as graph evidence to pair with source reading, not as a substitute for
 understanding the implementation.
 
+### Synchronous execution precision
+
+In `dependency_graph.json`, inspect a node's `synchronous_execution.complete`
+and `precision_losses` to see why synchronous-effect inference retained a
+conservative fallback. Reasons distinguish unknown call targets, unsupported
+operations, recursion, and exhausted invocation or callback-pool budgets. Budget
+records include their limit; each loss carries its lexical statement ordinal and,
+when available, its source location. Nested reasons retain their original source
+site. This evidence is separate from purity reasons and does not certify author
+contracts. See [the report contract](../SPEC.md#synchronous-execution-diagnostics).
+
 ## Gate discipline
 
 The adapter-provided gate is authoritative. For suspicious green builds,
