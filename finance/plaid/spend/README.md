@@ -225,8 +225,9 @@ reads on the next request.
 Read-only analysis clients can reuse `plaid_valuation.value_plaid_rows` without importing the database or Coinbase
 clients. The `portfolio_queries` SQLAlchemy Select builders select current active account balances and each account's latest complete holding capture
 batch, with security metadata for allocation details. Convert transport timestamps to timezone-aware `datetime`
-objects and pass holdings for the configured correction/exclusion accounts. The result contains the source status,
-gross assets, signed liabilities and exclusions in USD cents; an unavailable source's zero totals must not be used.
+objects, validate them as `AccountObservation` / `HoldingObservation`, and pass holdings for the configured
+correction/exclusion accounts. Successful calls return `PlaidValuation` with named gross assets, signed liabilities
+and exclusions in USD cents. Unavailable data raises `PlaidValuationError`; it never returns a zero-valued portfolio.
 `corrected_holding_value` applies the same exact-position policy corrections to allocation detail rows.
 
 Every historical spending point uses **today's** eligible portfolio; historical asset values are not reconstructed.
@@ -235,3 +236,9 @@ not proof of complete linked spending. Asset
 observations, transaction posting and transfer settlement can arrive at different times. Private `known_issues` notes
 appear on the page alongside source errors. Historical asset-denominator charts and richer tax models remain
 follow-ups. No financial-account writes are performed.
+
+The Transactions page summarizes policy-excluded flows by analysis category and currency for the selected period.
+Gross debits and credits remain separate, including pending rows with a pending count; these are ledger flows, not
+additional consumption. Selecting a group filters the existing transaction list. Full reversals, replaced pending
+rows, foreign-currency dispositions and held refunds remain distinct accounting reasons and are not included in
+this policy-exclusion summary. Categories describe economic purpose independently of report inclusion.

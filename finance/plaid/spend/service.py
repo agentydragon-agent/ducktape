@@ -41,6 +41,7 @@ from finance.plaid.spend.models import (
     AnalysisCategoryView,
     CardConfigurationView,
     CardView,
+    ExcludedFlowSummary,
     PaceEffect,
     PlaidTransactionDetails,
     ProvisionalCardPeriod,
@@ -78,6 +79,27 @@ _TRANSACTION_DATES_COLUMNS = """
     t.raw_json->>'authorized_datetime' AS authorized_datetime,
     t.raw_json->>'datetime' AS posted_datetime
 """
+
+
+def summarize_excluded_flows(rows: list[SpendTransactionRow]) -> list[ExcludedFlowSummary]:
+    """Summarize only policy exclusions; other accounting dispositions stay separate."""
+    groups: dict[tuple[str, str], list[SpendTransactionRow]] = defaultdict(list)
+    uncategorized = AnalysisCategoryView(id="uncategorized", label="Uncategorized", color="#64748B")
+    for row in rows:
+        if row.disposition == Disposition.EXCLUDED:
+            category = row.category or uncategorized
+            groups[category.id, row.currency].append(row)
+    return [
+        ExcludedFlowSummary(
+            category=group[0].category or uncategorized,
+            currency=currency,
+            debit_minor_units=sum(max(row.amount_minor_units, 0) for row in group),
+            credit_minor_units=sum(max(-row.amount_minor_units, 0) for row in group),
+            transaction_count=len(group),
+            pending_count=sum(row.pending for row in group),
+        )
+        for (_, currency), group in sorted(groups.items())
+    ]
 
 
 class SpendService:
@@ -554,6 +576,7 @@ class SpendService:
                 net_allowance_spend_minor_units=sum(row.allowance_minor_units for row in rows),
                 unmatched_charge_count=len(unmatched_rows),
                 unmatched_charge_minor_units=sum(row.allowance_minor_units for row in unmatched_rows),
+                excluded_flows=summarize_excluded_flows(rows),
             ),
             allowance=view.allowance,
             rows=rows,
