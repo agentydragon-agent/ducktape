@@ -213,3 +213,14 @@ The sampler incorrectly applies its ten-second RPC timeout to lazy executor star
 Runner permits twenty seconds. The mock endpoint also starts its ten-second request wait before
 setup finishes. Startup and test-readiness changes remain unvalidated; this result does not
 validate the VM acceptance path.
+
+The [startup-context follow-up](https://app.buildbuddy.io/invocation/736ab387-4f84-41b7-bdc1-6569d508533a)
+passed the Go suite (57.117 seconds), setup acceptance (72.318 seconds), and the Pod k3s scenario
+(129.609 seconds). The VM scenario still failed before any provider request. Setup began at
+21:28:16.168Z and stopped at 21:28:37.607Z; sampler stderr identifies Gateway executor readiness
+as the failing boundary. The guest console records executor process reconciliation at
+21:28:16.017Z and the Runner relay's `context deadline exceeded` at 21:28:37.255Z, without a
+preceding exec-server readiness message. Teardown follows around 21:28:39Z, so this evidence
+does not establish that startup would have completed with a longer timeout. The relay has a
+separate twenty-second deadline overlapping the executor controller's readiness budget; that
+overlap and retained controller state are under investigation. VM acceptance remains unverified.

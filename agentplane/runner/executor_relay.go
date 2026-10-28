@@ -12,6 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/control"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"github.com/coder/websocket"
@@ -23,7 +24,7 @@ const (
 	maxExecutorChannelsPerRunner = 8
 	executorQueueDepth           = 4
 	maxExecutorMessageBytes      = 1 << 20
-	executorStartupTimeout       = 20 * time.Second
+	executorDialTimeout          = 20 * time.Second
 )
 
 // Each control connection has its own replay counter and joins its workers before reconnecting.
@@ -57,6 +58,8 @@ type executorRelay struct {
 	done      chan struct{}
 	cancel    context.CancelFunc
 	finish    sync.Once
+	readyMu   sync.Mutex
+	ready     bool
 }
 
 func newExecutorRelay(id, sessionID string, cancel context.CancelFunc) *executorRelay {
@@ -127,42 +130,52 @@ func (r *Runner) runExecutorRelay(
 		relay.finish.Do(func() { close(relay.done) })
 	}()
 
-	openCtx, cancel := context.WithTimeout(ctx, executorStartupTimeout)
 	// Demand is admitted with the relay under Runner.mu. Only this channel's
-	// worker waits for controller-owned readiness; the control stream stays free.
-	if err := r.lifecycle.waitFor(openCtx, func() (bool, error) {
-		current, _, err := r.codexExecServer.RuntimeState(openCtx)
-		if err != nil {
-			return false, err
-		}
-		if current.Refusal != "" {
-			return true, codexexecserver.Refusal{Reason: current.Refusal}
-		}
-		if r.lifecycle.desiredState().Mode != runnerlifecycle.Running {
-			return true, errors.New("Codex executor is stopping")
-		}
-		return current.Phase == codexexecserver.Ready, nil
-	}); err != nil {
-		cancel()
-		slog.Warn("central executor channel could not start", "session_id", relay.sessionID, "error", err)
+	// worker waits for controller-owned readiness; the control stream stays free. The
+	// Gateway owns the public readiness deadline, so do not cut off controller retries
+	// with a second, shorter timer here.
+	last, err := r.waitForExecutorReadiness(ctx)
+	if err != nil {
+		slog.Warn(
+			"central executor channel could not start",
+			"session_id", relay.sessionID, "error", err, "executor_runtime_found", last.runtimeFound,
+			"executor_phase", last.runtime.Phase, "executor_process_id", last.runtime.ProcessID,
+			"executor_generation", last.runtime.Generation, "executor_ready_deadline", last.runtime.ReadyDeadline,
+			"executor_error", last.runtime.Error, "executor_refusal", last.runtime.Refusal,
+			"executor_supervision_found", last.processFound, "executor_supervision_phase", last.process.Phase,
+			"executor_supervision_started", last.process.Started, "executor_supervision_start_error", last.process.StartError,
+			"executor_supervision_start_refusal", last.process.StartRefusal,
+			"executor_supervision_exit_error", last.process.ExitError,
+		)
 		_ = sendExecutorReady(send, relay.id, false)
 		return
 	}
-	conn, _, err := websocket.Dial(openCtx, r.codexExecServer.URL(), nil)
-	cancel()
+	dialCtx, cancelDial := context.WithTimeout(ctx, executorDialTimeout)
+	conn, _, err := websocket.Dial(dialCtx, r.codexExecServer.URL(), nil)
+	cancelDial()
 	if err != nil {
 		slog.Warn("central executor channel could not connect", "session_id", relay.sessionID, "error", err)
 		_ = sendExecutorReady(send, relay.id, false)
 		return
 	}
 	conn.SetReadLimit(maxExecutorMessageBytes)
+	relay.readyMu.Lock()
+	if ctx.Err() != nil {
+		relay.readyMu.Unlock()
+		_ = conn.Close(websocket.StatusGoingAway, "Executor channel closed before readiness")
+		return
+	}
+	// After connection, Close can use the ordered inbound queue. Do not hold
+	// readyMu while sending: frame routing must never wait on tunnel writes.
+	relay.ready = true
+	relay.readyMu.Unlock()
 	if err := sendExecutorReady(send, relay.id, true); err != nil {
 		_ = conn.Close(websocket.StatusGoingAway, "Runner control stream ended")
 		return
 	}
 	slog.Debug("central executor channel opened", "session_id", relay.sessionID)
 
-	ctx, cancel = context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	closeOnce := sync.Once{}
 	sendClose := func(code uint32, reason string) {
@@ -262,6 +275,50 @@ func (r *Runner) runExecutorRelay(
 	}
 }
 
+type executorReadinessObservation struct {
+	runtime      codexexecserver.Runtime
+	runtimeFound bool
+	process      supervision.Status
+	processFound bool
+}
+
+func (r *Runner) waitForExecutorReadiness(ctx context.Context) (executorReadinessObservation, error) {
+	var last executorReadinessObservation
+	err := r.lifecycle.waitFor(ctx, func() (bool, error) {
+		current, runtimeFound, err := r.codexExecServer.RuntimeState(ctx)
+		if err != nil {
+			return false, err
+		}
+		last.runtime, last.runtimeFound = current, runtimeFound
+		if current.ProcessID != "" {
+			process, found, err := supervision.ReadStatus(ctx, r.lifecycle.state, runnerlifecycle.Namespace, current.ProcessID)
+			if err != nil {
+				return false, err
+			}
+			last.process, last.processFound = process, found
+		} else {
+			last.process, last.processFound = supervision.Status{}, false
+		}
+		if current.Refusal != "" {
+			return true, codexexecserver.Refusal{Reason: current.Refusal}
+		}
+		if r.lifecycle.desiredState().Mode != runnerlifecycle.Running {
+			return true, errors.New("Codex executor is stopping")
+		}
+		if current.StopError != "" {
+			return true, errors.New(current.StopError)
+		}
+		if current.Phase == codexexecserver.Ready {
+			return true, nil
+		}
+		if current.Phase == codexexecserver.Stopped && current.Error != "" {
+			return true, errors.New(current.Error)
+		}
+		return false, nil
+	})
+	return last, err
+}
+
 func sendExecutorReady(send func(*controlpb.RunnerFrame) error, id string, accepted bool) error {
 	return send(&controlpb.RunnerFrame{Frame: &controlpb.RunnerFrame_Executor{Executor: &executorpb.ExecutorFrame{
 		ChannelId: id,
@@ -329,6 +386,16 @@ func (r *Runner) routeExecutorFrame(ctx context.Context, frame *executorpb.Execu
 		r.mu.Unlock()
 		if relay == nil {
 			return nil // delayed data after a channel close cannot be replayed onto a later channel
+		}
+		if frame.GetClose() != nil {
+			// A Gateway timeout can close the channel while this worker waits for
+			// controller readiness. Cancel that wait immediately instead of leaving
+			// a stale relay until a future executor retry succeeds.
+			relay.readyMu.Lock()
+			if !relay.ready {
+				relay.cancel()
+			}
+			relay.readyMu.Unlock()
 		}
 		if message := frame.GetMessage(); message != nil && len(message.GetPayload()) > maxExecutorMessageBytes {
 			return status.Error(codes.ResourceExhausted, "executor message exceeds the size limit")

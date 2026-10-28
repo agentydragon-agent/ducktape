@@ -42,6 +42,100 @@ func TestExecutorEnsureReturnsTypedCompanionRefusal(t *testing.T) {
 	}
 }
 
+func TestExecutorRelayReadinessReturnsTypedCompanionRefusal(t *testing.T) {
+	r := newExecutorLifecycleRunner(t, func(context.Context) (*supervision.Instance, error) {
+		return nil, codexexecserver.Refusal{Reason: "Codex binary is unavailable"}
+	}, nil)
+	if err := requestExecutor(r); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), codexExecServerTestTimeout)
+	defer cancel()
+	_, err := r.waitForExecutorReadiness(ctx)
+	var refusal codexexecserver.Refusal
+	if !errors.As(err, &refusal) || refusal.Reason != "Codex binary is unavailable" {
+		t.Fatalf("relay readiness = %v (%T), want the typed companion refusal", err, err)
+	}
+}
+
+func TestExecutorRelayReadinessSurvivesTransientStartupFailure(t *testing.T) {
+	var starts atomic.Int32
+	r := newExecutorLifecycleRunner(t, func(context.Context) (*supervision.Instance, error) {
+		if starts.Add(1) == 1 {
+			return nil, errors.New("transient native executor launch failure")
+		}
+		return newTestExecutorInstance(&atomic.Int32{}), nil
+	}, nil)
+	if err := requestExecutor(r); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), codexExecServerTestTimeout)
+	defer cancel()
+	last, err := r.waitForExecutorReadiness(ctx)
+	if err != nil {
+		t.Fatalf("relay readiness after controller retry: %v", err)
+	}
+	if starts.Load() < 2 || last.runtime.Phase != codexexecserver.Ready {
+		t.Fatalf("startup attempts/runtime = %d/%+v, want a successful retry", starts.Load(), last.runtime)
+	}
+}
+
+func TestExecutorRelayGatewayCloseCancelsBlockedReadiness(t *testing.T) {
+	started := make(chan struct{})
+	r := newExecutorLifecycleRunner(t, func(ctx context.Context) (*supervision.Instance, error) {
+		close(started)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}, nil)
+	frames := make(chan *controlpb.RunnerFrame, 2)
+	send := func(frame *controlpb.RunnerFrame) error {
+		frames <- frame
+		return nil
+	}
+	var workers sync.WaitGroup
+	var lastOpen uint64
+	open := &executorpb.ExecutorFrame{
+		ChannelId: "7-1",
+		Frame:     &executorpb.ExecutorFrame_Open{Open: &executorpb.ExecutorOpen{SessionId: "session-1"}},
+	}
+	if err := r.routeExecutorFrame(context.Background(), open, 7, &lastOpen, send, send, &workers); err != nil {
+		t.Fatalf("open executor relay: %v", err)
+	}
+	select {
+	case <-started:
+	case <-time.After(codexExecServerTestTimeout):
+		t.Fatal("executor start did not block as expected")
+	}
+	r.mu.Lock()
+	relay := r.executorRelays[open.GetChannelId()]
+	r.mu.Unlock()
+	if relay == nil {
+		t.Fatal("executor relay disappeared before Gateway close")
+	}
+	closeFrame := &executorpb.ExecutorFrame{
+		ChannelId: open.GetChannelId(),
+		Frame:     &executorpb.ExecutorFrame_Close{Close: &executorpb.ExecutorClose{Code: 1001}},
+	}
+	if err := r.routeExecutorFrame(context.Background(), closeFrame, 7, &lastOpen, send, send, &workers); err != nil {
+		t.Fatalf("close executor relay: %v", err)
+	}
+	select {
+	case <-relay.done:
+	case <-time.After(codexExecServerTestTimeout):
+		t.Fatal("Gateway close did not drain readiness wait")
+	}
+	workers.Wait()
+	select {
+	case frame := <-frames:
+		executor := frame.GetExecutor()
+		if executor == nil || executor.GetReady() == nil || executor.GetReady().GetAccepted() {
+			t.Fatalf("relay readiness response = %v, want rejected readiness after close", frame)
+		}
+	case <-time.After(codexExecServerTestTimeout):
+		t.Fatal("relay did not report readiness rejection")
+	}
+}
+
 func TestReopeningRunnerAdmissionClearsExecServerDemand(t *testing.T) {
 	var starts atomic.Int32
 	r := newExecutorLifecycleRunner(t, func(context.Context) (*supervision.Instance, error) {
@@ -193,6 +287,12 @@ func TestExecutorFailedFenceRetainsOwnershipAndBlocksSuccessor(t *testing.T) {
 		blocked := executorRuntimeState(r)
 		if blocked.Phase != codexexecserver.Stopped || blocked.Generation != ready.Generation || blocked.StopError == "" || starts.Load() != 1 {
 			t.Fatalf("executor advanced after failed fence and new demand: runtime=%+v starts=%d", blocked, starts.Load())
+		}
+		readinessCtx, cancelReadiness := context.WithTimeout(context.Background(), time.Second)
+		defer cancelReadiness()
+		_, readinessErr := r.waitForExecutorReadiness(readinessCtx)
+		if readinessErr == nil || !strings.Contains(readinessErr.Error(), fenceFailure.Error()) {
+			t.Fatalf("executor readiness after failed fence = %v, want terminal fence failure", readinessErr)
 		}
 
 		closeErr := r.Close()
