@@ -1511,6 +1511,7 @@ py_library(
 
 py_test(
     name = "test_sandbox_access",
+    size = "medium",
     srcs = ["test_sandbox_access.py"],
     deps = [
         ":conftest",
