@@ -17,8 +17,23 @@ package(
         "//agentplane/sandboxes:__subpackages__",
         "//agentplane/system_tests:__pkg__",
         "//agentplane/system_tests/k3s:__pkg__",
+        "//agentplane/x/postgres_codex:__pkg__",
         "//agentplane/x/runner_layering:__pkg__",
         "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+)
+
+py_library(
+    name = "codex_fixtures",
+    testonly = True,
+    srcs = ["codex_fixtures.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],
+    deps = [
+        "//util/bazel:runfiles",
+        "//util/testing:postgres",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
     ],
 )
 
