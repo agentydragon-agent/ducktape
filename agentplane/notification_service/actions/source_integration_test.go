@@ -374,7 +374,7 @@ func TestEventsReturnsTheOwnersEventsAndRefusesAnotherAccount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 1 || events[0].Sequence != 2 || events[0].State != store.ActionDecisionPending {
+	if len(events) != 1 || events[0].Sequence != 2 || events[0].State != actionpb.ActionState_ACTION_STATE_DECISION_PENDING {
 		t.Errorf("events = %+v, want the second", events)
 	}
 	call := f.service.log()[1]
@@ -412,13 +412,13 @@ func TestEventsMapsTheActionEventActors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 2 || events[0].State != store.ActionAllowed || events[1].State != store.ActionDenied {
+	if len(events) != 2 || events[0].State != actionpb.ActionState_ACTION_STATE_ALLOWED || events[1].State != actionpb.ActionState_ACTION_STATE_DENIED {
 		t.Fatalf("events = %+v", events)
 	}
-	if actor, ok := events[0].Actor.(store.CallerActor); !ok || actor.Account != testOwner {
+	if actor := events[0].Actor.GetCaller(); actor.GetNamespace() != testOwner.Namespace || actor.GetName() != testOwner.Name {
 		t.Errorf("caller actor = %#v", events[0].Actor)
 	}
-	if actor, ok := events[1].Actor.(store.OperatorActor); !ok || actor.Issuer != "test-issuer" || actor.Subject != "test-subject" {
+	if actor := events[1].Actor.GetOperator(); actor.GetIssuer() != "test-issuer" || actor.GetSubject() != "test-subject" {
 		t.Errorf("operator actor = %#v", events[1].Actor)
 	}
 }

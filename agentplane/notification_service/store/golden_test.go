@@ -7,6 +7,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"google.golang.org/protobuf/proto"
 )
@@ -110,6 +111,45 @@ func TestActionEventsPythonRefusesAreRefused(t *testing.T) {
 			var event ActionEvent
 			if err := decode(vector.Wire, &event); err == nil {
 				t.Errorf("accepted %s", vector.Wire)
+			}
+		})
+	}
+}
+
+func TestActionActorDecoderKeepsExplicitNullCompatibility(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		json string
+		want *action_servicepb.Principal
+	}{
+		{
+			name: "caller with null operator fields",
+			json: `{"account":{"namespace":"test-namespace","name":"test-caller"},"issuer":null,"subject":null}`,
+			want: &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}.Proto()}},
+		},
+		{
+			name: "operator with null account",
+			json: `{"account":null,"issuer":"test-issuer","subject":"test-subject"}`,
+			want: &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{Issuer: "test-issuer", Subject: "test-subject"}}},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			actor, err := decodeActionActor(json.RawMessage(test.json))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !proto.Equal(actor, test.want) {
+				t.Fatalf("actor = %#v, want %#v", actor, test.want)
+			}
+			written, err := encodeActionActor(actor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch {
+			case test.want.GetCaller() != nil:
+				sameJSON(t, written, []byte(`{"account":{"namespace":"test-namespace","name":"test-caller"}}`))
+			case test.want.GetOperator() != nil:
+				sameJSON(t, written, []byte(`{"issuer":"test-issuer","subject":"test-subject"}`))
 			}
 		})
 	}

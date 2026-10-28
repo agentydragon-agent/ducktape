@@ -16,6 +16,12 @@ import (
 	"github.com/google/uuid"
 )
 
+// ServiceAccount is comparable so ownership checks use namespace/name values, not protobuf pointer identity.
+type ServiceAccount struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+}
+
 // DestinationRef is the Sandbox a Session runs in, by the UID that tells it from a Sandbox recreated under
 // the same name. It is stored as `inbox.destination_ref` and inside a subscription's creation.
 type DestinationRef struct {
@@ -490,18 +496,17 @@ func (e GitHubMergeabilitySnapshotEvent) MarshalJSON() ([]byte, error) {
 	}{"github_mergeability_snapshot", e.AppID, e.RepositoryID, e.PullRequestNumber, e.Version})
 }
 
-type serviceAccountJSON struct {
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
-}
-
 func (e MessageEvent) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
-		Provider  string             `json:"provider"`
-		MessageID uuid.UUID          `json:"message_id"`
-		Sender    serviceAccountJSON `json:"sender"`
-	}{"message", e.MessageID, serviceAccountJSON(e.Sender)})
+		Provider  string         `json:"provider"`
+		MessageID uuid.UUID      `json:"message_id"`
+		Sender    ServiceAccount `json:"sender"`
+	}{"message", e.MessageID, e.Sender})
 }
+
+// serviceAccountJSON is the historical Notification event wire shape. Unlike the shared validated identity codec,
+// this stored-event reader accepts absent or empty namespace/name fields.
+type serviceAccountJSON ServiceAccount
 
 // decode reads one JSON value into v, refusing fields v does not name, as the stored models do.
 func decode(data []byte, v any) error {

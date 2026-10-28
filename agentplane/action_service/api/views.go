@@ -8,25 +8,12 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
-	"github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // The views turn what the store reads into the messages the API answers with. A stored request no message can
 // show fails with errStoredRequest.
-
-var actionStates = map[store.ActionState]action_servicepb.ActionState{
-	store.StateDecisionPending:  action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING,
-	store.StateAllowed:          action_servicepb.ActionState_ACTION_STATE_ALLOWED,
-	store.StateDenied:           action_servicepb.ActionState_ACTION_STATE_DENIED,
-	store.StateDispatching:      action_servicepb.ActionState_ACTION_STATE_DISPATCHING,
-	store.StateRunning:          action_servicepb.ActionState_ACTION_STATE_RUNNING,
-	store.StateSucceeded:        action_servicepb.ActionState_ACTION_STATE_SUCCEEDED,
-	store.StateFailed:           action_servicepb.ActionState_ACTION_STATE_FAILED,
-	store.StateCancelled:        action_servicepb.ActionState_ACTION_STATE_CANCELLED,
-	store.StateExecutionUnknown: action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN,
-}
 
 var executionStates = map[store.ExecutionState]action_servicepb.ExecutionState{
 	store.ExecutionPendingDispatch: action_servicepb.ExecutionState_EXECUTION_STATE_PENDING_DISPATCH,
@@ -62,6 +49,16 @@ var policySources = map[string]action_servicepb.PolicySource{
 	store.PolicySourceRules: action_servicepb.PolicySource_POLICY_SOURCE_RULES,
 }
 
+func reversed[Stored, View comparable](views map[Stored]View) map[View]Stored {
+	stored := make(map[View]Stored, len(views))
+	for value, view := range views {
+		stored[view] = value
+	}
+	return stored
+}
+
+var storedVerdicts = reversed(verdicts)
+
 // lookup is a stored value's message form; a value the API has no form for is a stored request it cannot show.
 func lookup[Stored comparable, View any](views map[Stored]View, field string, value Stored) (View, error) {
 	view, known := views[value]
@@ -78,10 +75,6 @@ func timestamp(t *time.Time) *timestamppb.Timestamp {
 	return timestamppb.New(*t)
 }
 
-func serviceAccount(account store.ServiceAccount) *sandboxes.ServiceAccount {
-	return &sandboxes.ServiceAccount{Namespace: account.Namespace, Name: account.Name}
-}
-
 func operator(principal store.OperatorPrincipal) *action_servicepb.Operator {
 	return &action_servicepb.Operator{Issuer: principal.Issuer, Subject: principal.Subject}
 }
@@ -95,9 +88,9 @@ func jsonView(field string, document json.RawMessage, view interface{ UnmarshalJ
 }
 
 func requestView(request store.ActionRequest) (*action_servicepb.ActionRequest, error) {
-	state, err := lookup(actionStates, "state", request.State)
-	if err != nil {
-		return nil, err
+	ok := validActionState(request.State)
+	if !ok {
+		return nil, fmt.Errorf("%w: state %q", errStoredRequest, request.State)
 	}
 	arguments := &structpb.Struct{}
 	if err := jsonView("arguments", request.Arguments, arguments); err != nil {
@@ -115,7 +108,7 @@ func requestView(request store.ActionRequest) (*action_servicepb.ActionRequest, 
 		Id: request.ID.String(), IdempotencyKey: request.IdempotencyKey,
 		Action:    &action_servicepb.ActionIdentity{Group: request.Action.Group, Name: request.Action.Name},
 		Arguments: arguments, Title: request.Title, Description: request.Description,
-		Caller: serviceAccount(request.Caller), State: state, Version: request.Version,
+		Caller: request.Caller.Proto(), State: request.State, Version: request.Version,
 		CreatedAt: timestamppb.New(request.CreatedAt), UpdatedAt: timestamppb.New(request.UpdatedAt),
 		Decision: decision, Execution: execution,
 	}, nil
@@ -220,46 +213,47 @@ func executionView(execution *store.Execution) (*action_servicepb.Execution, err
 }
 
 func eventView(event store.Event) (*action_servicepb.ActionEvent, error) {
-	state, err := lookup(actionStates, "event state", event.State)
-	if err != nil {
-		return nil, err
+	ok := validActionState(event.State)
+	if !ok {
+		return nil, fmt.Errorf("%w: event state %q", errStoredRequest, event.State)
 	}
 	if event.Sequence > math.MaxInt32 {
 		return nil, fmt.Errorf("%w: event sequence %d", errStoredRequest, event.Sequence)
 	}
-	view := &action_servicepb.ActionEvent{Sequence: int32(event.Sequence), State: state, At: timestamppb.New(event.At)}
-	switch actor := event.Actor.(type) {
-	case store.CallerPrincipal:
-		view.Actor = &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: serviceAccount(actor.Account)}}
-	case store.OperatorPrincipal:
-		view.Actor = &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: operator(actor)}}
+	view := &action_servicepb.ActionEvent{Sequence: int32(event.Sequence), State: event.State, At: timestamppb.New(event.At)}
+	err := validateActionActor(event.Actor)
+	if err != nil {
+		return nil, fmt.Errorf("%w: event actor: %w", errStoredRequest, err)
 	}
+	view.Actor = event.Actor
 	return view, nil
 }
 
-// reversed is the store's form of each value a request may name, from the views of the stored values.
-func reversed[Stored, View comparable](views map[Stored]View) map[View]Stored {
-	stored := make(map[View]Stored, len(views))
-	for value, view := range views {
-		stored[view] = value
-	}
-	return stored
-}
-
-var (
-	storedStates   = reversed(actionStates)
-	storedVerdicts = reversed(verdicts)
-)
-
 // requestedStates reads a request's state filter; `ACTION_STATE_UNSPECIFIED` and a number the API does not
 // define are malformed.
-func requestedStates(states []action_servicepb.ActionState) ([]store.ActionState, error) {
-	stored := make([]store.ActionState, len(states))
-	for i, state := range states {
-		var known bool
-		if stored[i], known = storedStates[state]; !known {
+func requestedStates(states []action_servicepb.ActionState) ([]action_servicepb.ActionState, error) {
+	for _, state := range states {
+		if !validActionState(state) {
 			return nil, invalidRequest("state %v is not an action state", state)
 		}
 	}
-	return stored, nil
+	return states, nil
+}
+
+func validActionState(state action_servicepb.ActionState) bool {
+	_, known := action_servicepb.ActionState_name[int32(state)]
+	return known && state != action_servicepb.ActionState_ACTION_STATE_UNSPECIFIED
+}
+
+func validateActionActor(actor *action_servicepb.Principal) error {
+	if actor == nil {
+		return nil
+	}
+	if caller := actor.GetCaller(); caller != nil && caller.GetNamespace() != "" && caller.GetName() != "" {
+		return nil
+	}
+	if operator := actor.GetOperator(); operator != nil && operator.GetIssuer() != "" && operator.GetSubject() != "" {
+		return nil
+	}
+	return fmt.Errorf("an Action actor needs a caller account or an operator issuer and subject")
 }

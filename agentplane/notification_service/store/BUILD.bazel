@@ -14,6 +14,7 @@ go_library(
         "github_state.go",
         "github_status.go",
         "inboxes.go",
+        "legacy_action.go",
         "messages.go",
         "models.go",
         "notices.go",
@@ -23,8 +24,10 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/store",
     deps = [
+        "//agentplane/action_service:action_service_go_proto",
         "//agentplane/postgres/go:postgres",
         "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:sandboxes_go_proto",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_protobuf//proto",
     ],
@@ -39,6 +42,7 @@ go_test(
     embed = [":store"],
     embedsrcs = ["golden.json"],
     deps = [
+        "//agentplane/action_service:action_service_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_protobuf//encoding/protojson",
@@ -78,6 +82,7 @@ go_test(
     embedsrcs = ["golden.json"],
     tags = ["requires_docker"],
     deps = [
+        "//agentplane/action_service:action_service_go_proto",
         "//agentplane/notification_service/migrations",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/proto:command_go_proto",

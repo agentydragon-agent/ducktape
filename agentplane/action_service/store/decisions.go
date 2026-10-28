@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/google/uuid"
 )
 
@@ -49,9 +50,9 @@ func recordDecision(ctx context.Context, tx *sql.Tx, row *requestRow, at time.Ti
 		decision.ReasonCode, decision.ReasonDescription, evidence, decision.IdempotencyKey, at); err != nil {
 		return false, err
 	}
-	state := StateDenied
+	state := action_servicepb.ActionState_ACTION_STATE_DENIED
 	if decision.Verdict == VerdictAllow {
-		state = StateAllowed
+		state = action_servicepb.ActionState_ACTION_STATE_ALLOWED
 	}
 	if err := advance(ctx, tx, row, state, at, nil); err != nil {
 		return false, err
@@ -116,10 +117,10 @@ func (s *Store) Decide(ctx context.Context, id uuid.UUID, input DecisionInput, o
 					input.ExpectedVersion, row.Version),
 			}
 		}
-		if row.State != StateDecisionPending {
+		if row.State != action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING {
 			return &ConflictError{
 				Reason:  ConflictAlreadyDecided,
-				Message: fmt.Sprintf("request was already decided; current state is %s", row.State),
+				Message: fmt.Sprintf("request was already decided; current state is %s", storedState(row.State)),
 			}
 		}
 		if dispatch, err = recordDecision(ctx, tx, &row, now(), decisionRecord{

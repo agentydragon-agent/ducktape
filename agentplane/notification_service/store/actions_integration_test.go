@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/google/uuid"
 )
 
@@ -16,7 +17,7 @@ func eventsThrough(first, last int64) []ActionEvent {
 	var events []ActionEvent
 	for sequence := first; sequence <= last; sequence++ {
 		events = append(events, ActionEvent{
-			Sequence: sequence, State: ActionDecisionPending, At: time.Date(2026, 10, 20, 3, 56, 3, 0, time.UTC),
+			Sequence: sequence, State: action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING, At: time.Date(2026, 10, 20, 3, 56, 3, 0, time.UTC),
 		})
 	}
 	return events
@@ -84,7 +85,7 @@ func TestRecordActionEventsAppendsTheNewEventsAndMovesTheSubscriptionOn(t *testi
 		t.Fatal("the new subscription is not due")
 	}
 	events := eventsThrough(1, 3)
-	events[2].Actor = CallerActor{Account: ServiceAccount{Namespace: "test-namespace", Name: "test-sandbox"}}
+	events[2].Actor = &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: ServiceAccount{Namespace: "test-namespace", Name: "test-sandbox"}.Proto()}}
 
 	before := time.Now()
 	if err := f.RecordActionEvents(t.Context(), claim, *due, events); err != nil {

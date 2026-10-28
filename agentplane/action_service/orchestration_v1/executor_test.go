@@ -10,8 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+
+	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"

@@ -13,7 +13,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -286,7 +285,7 @@ func TestAStdioServerRunsWithoutThisProcesssEnvironment(t *testing.T) {
 	awaitGroup(t, groups, offering("test_environment"))
 	f.work(t, groups, s.Executor, workerTiming())
 
-	request := f.await(t, f.allowed(t, "test_environment", `{}`), store.StateSucceeded)
+	request := f.await(t, f.allowed(t, "test_environment", `{}`), action_servicepb.ActionState_ACTION_STATE_SUCCEEDED)
 	var result struct {
 		StructuredContent struct{ Names []string } `json:"structuredContent"`
 	}

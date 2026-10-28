@@ -33,7 +33,7 @@ func (s *Service) GetActionPolicy(ctx context.Context, request *action_servicepb
 	case subject == nil && own == nil:
 		return nil, invalidRequest("an operator has no account of its own: name the subject")
 	case subject == nil:
-		subject = serviceAccount(*own)
+		subject = own.Proto()
 	case subject.GetNamespace() == "" || subject.GetName() == "":
 		return nil, invalidRequest("subject must set both namespace and name")
 	}

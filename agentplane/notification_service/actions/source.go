@@ -106,59 +106,17 @@ func actionEvent(event *action_servicepb.ActionEvent) (store.ActionEvent, error)
 	if event == nil || event.GetSequence() < 1 || event.GetAt() == nil || event.GetAt().CheckValid() != nil {
 		return store.ActionEvent{}, validationFailure()
 	}
-	state, ok := actionState(event.GetState())
-	if !ok {
+	state := event.GetState()
+	if !validActionState(state) {
 		return store.ActionEvent{}, validationFailure()
 	}
-	actor, err := actionActor(event.GetActor())
-	if err != nil {
-		return store.ActionEvent{}, err
+	actor := event.GetActor()
+	if err := validateActionActor(actor); err != nil {
+		return store.ActionEvent{}, validationFailure()
 	}
 	return store.ActionEvent{
 		Sequence: int64(event.GetSequence()), State: state, At: event.GetAt().AsTime().UTC().Truncate(time.Microsecond), Actor: actor,
 	}, nil
-}
-
-func actionState(state action_servicepb.ActionState) (store.ActionState, bool) {
-	switch state {
-	case action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING:
-		return store.ActionDecisionPending, true
-	case action_servicepb.ActionState_ACTION_STATE_ALLOWED:
-		return store.ActionAllowed, true
-	case action_servicepb.ActionState_ACTION_STATE_DENIED:
-		return store.ActionDenied, true
-	case action_servicepb.ActionState_ACTION_STATE_DISPATCHING:
-		return store.ActionDispatching, true
-	case action_servicepb.ActionState_ACTION_STATE_RUNNING:
-		return store.ActionRunning, true
-	case action_servicepb.ActionState_ACTION_STATE_SUCCEEDED:
-		return store.ActionSucceeded, true
-	case action_servicepb.ActionState_ACTION_STATE_FAILED:
-		return store.ActionFailed, true
-	case action_servicepb.ActionState_ACTION_STATE_CANCELLED:
-		return store.ActionCancelled, true
-	case action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN:
-		return store.ActionExecutionUnknown, true
-	default:
-		return "", false
-	}
-}
-
-func actionActor(principal *action_servicepb.Principal) (store.ActionActor, error) {
-	if principal == nil {
-		return nil, nil
-	}
-	if caller := principal.GetCaller(); caller != nil {
-		account, err := serviceAccount(caller)
-		if err != nil {
-			return nil, err
-		}
-		return store.CallerActor{Account: account}, nil
-	}
-	if operator := principal.GetOperator(); operator != nil && operator.GetIssuer() != "" && operator.GetSubject() != "" {
-		return store.OperatorActor{Issuer: operator.GetIssuer(), Subject: operator.GetSubject()}, nil
-	}
-	return nil, validationFailure()
 }
 
 func rpcFailure(ctx context.Context, err error) error {
@@ -184,4 +142,22 @@ func rpcFailure(ctx context.Context, err error) error {
 
 func validationFailure() error {
 	return &worker.ProviderError{Kind: store.FailureProcessingError, Message: "ValidationError"}
+}
+
+func validActionState(state action_servicepb.ActionState) bool {
+	_, known := action_servicepb.ActionState_name[int32(state)]
+	return known && state != action_servicepb.ActionState_ACTION_STATE_UNSPECIFIED
+}
+
+func validateActionActor(actor *action_servicepb.Principal) error {
+	if actor == nil {
+		return nil
+	}
+	if caller := actor.GetCaller(); caller != nil && caller.GetNamespace() != "" && caller.GetName() != "" {
+		return nil
+	}
+	if operator := actor.GetOperator(); operator != nil && operator.GetIssuer() != "" && operator.GetSubject() != "" {
+		return nil
+	}
+	return fmt.Errorf("an Action actor needs a caller account or an operator issuer and subject")
 }

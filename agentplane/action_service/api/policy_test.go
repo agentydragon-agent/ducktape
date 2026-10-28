@@ -73,7 +73,7 @@ func refusedSchema() policyapi.Rule {
 
 // accountView is the account as a request or a view names it.
 func accountView(account auth.Account) *sandboxes.ServiceAccount {
-	return serviceAccount(store.ServiceAccount(account))
+	return store.ServiceAccount(account).Proto()
 }
 
 // readPolicy is the policy the bearer is shown of the subject, its own when subject is nil.

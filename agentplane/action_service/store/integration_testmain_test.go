@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
@@ -109,8 +110,8 @@ func (f fixture) events(t *testing.T, id uuid.UUID) []Event {
 	return events
 }
 
-func eventStates(events []Event) []ActionState {
-	states := make([]ActionState, len(events))
+func eventStates(events []Event) []action_servicepb.ActionState {
+	states := make([]action_servicepb.ActionState, len(events))
 	for i, event := range events {
 		states[i] = event.State
 	}

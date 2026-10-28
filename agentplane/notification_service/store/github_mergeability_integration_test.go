@@ -747,7 +747,7 @@ func TestRetargetedPullRequestBasePushFencesInFlightRefresh(t *testing.T) {
 		State: GitHubPullRequestOpen, Mergeability: GitHubMergeable, MergeCommit: testMergeCommit(commitB, commitA),
 	})
 	// The PR webhook schedules a refresh, but the saved snapshot still names main.
-	g.deliver(t, "pull_request", onPullRequest(7), action("edited"))
+	g.deliver(t, "pull_request", onPullRequest(7), withAction("edited"))
 	lease, err := g.state.Acquire(t.Context(), sub.Subject)
 	if err != nil || lease == nil {
 		t.Fatalf("retarget refresh lease = %v, %v", lease, err)

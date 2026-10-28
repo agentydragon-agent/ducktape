@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/SherClockHolmes/webpush-go"
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/google/uuid"
@@ -254,7 +255,7 @@ type retract struct {
 func (n *Notifier) message(requests []store.ActionRequest, shown map[uuid.UUID]bool) (any, map[uuid.UUID]string) {
 	var arrived, left []store.ActionRequest
 	for _, request := range requests {
-		switch pending := request.State == store.StateDecisionPending; {
+		switch pending := request.State == action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING; {
 		case pending && !shown[request.ID]:
 			arrived = append(arrived, request)
 		case !pending && shown[request.ID]:
@@ -278,7 +279,7 @@ func (n *Notifier) message(requests []store.ActionRequest, shown map[uuid.UUID]b
 	case len(left) > 0:
 		newest := left[len(left)-1]
 		return retract{
-			Kind: kindRetract, ActionID: newest.ID.String(), Outcome: strings.ReplaceAll(string(newest.State), "_", " "),
+			Kind: kindRetract, ActionID: newest.ID.String(), Outcome: stateWords(newest.State),
 		}, ledger
 	default:
 		return nil, nil
@@ -364,4 +365,8 @@ func deleteGone(ctx context.Context, conn *sql.Conn, subscription webpush.Subscr
 		SELECT pg_notify($4, '') FROM deleted`,
 		subscription.Endpoint, subscription.Keys.P256dh, subscription.Keys.Auth, UpdatesChannel)
 	return err
+}
+
+func stateWords(state action_servicepb.ActionState) string {
+	return strings.ReplaceAll(strings.TrimPrefix(strings.ToLower(state.String()), "action_state_"), "_", " ")
 }
