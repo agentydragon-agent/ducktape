@@ -25,7 +25,19 @@ from finance.plaid.spend.allowance import (
     resolve_reversal_pairs,
 )
 from finance.plaid.spend.portfolio_models import PlaidSourcePolicy, PortfolioPolicy, PortfolioSources, PortfolioView
-from finance.plaid.spend.sustainability import SustainabilityPolicy, WithdrawalTax, calculate_sustainability
+from finance.plaid.spend.reconciliation import (
+    ReconciliationReport,
+    ReportStatus,
+    ReversalIssueCode,
+    ReversalRole,
+    describe_reconciliation,
+)
+from finance.plaid.spend.sustainability import (
+    SustainabilityPolicy,
+    SustainabilityView,
+    WithdrawalTax,
+    calculate_sustainability,
+)
 
 _ZONE = ZoneInfo("UTC")
 _NOW = datetime(2026, 4, 1, tzinfo=UTC)
@@ -134,7 +146,10 @@ def test_ambiguous_selector_does_not_exclude_any_leg(ambiguous_leg: int) -> None
     rows.append(rows[ambiguous_leg].model_copy(update={"transaction_id": "another-retained-row"}))
     result = resolve_reversal_pairs(policy([pair()]), rows, time_zone=_ZONE, today=_NOW.date())
     assert result.pairs_by_transaction == {}
-    assert any("matched 2" in issue for issue in result.resolutions[0].issues)
+    assert any(issue.code == ReversalIssueCode.AMBIGUOUS_MATCH for issue in result.resolutions[0].issues)
+    assert any(
+        "matched 2" in message for message in describe_reconciliation(ReconciliationReport(tuple(result.resolutions)))
+    )
 
 
 @pytest.mark.parametrize(
@@ -155,7 +170,7 @@ def test_inconsistent_pair_is_not_applied(changes: dict[str, object], issue: str
     rows[1] = rows[1].model_copy(update=changes)
     result = resolve_reversal_pairs(policy([configured]), rows, time_zone=_ZONE, today=_NOW.date())
     assert not result.pairs_by_transaction
-    assert any(issue in problem for problem in result.resolutions[0].issues)
+    assert any(issue in message for message in describe_reconciliation(ReconciliationReport(tuple(result.resolutions))))
 
 
 def test_missing_currency_means_policy_currency_and_pending_replacement_is_deduplicated() -> None:
@@ -164,7 +179,7 @@ def test_missing_currency_means_policy_currency_and_pending_replacement_is_dedup
     rows.append(rows[1].model_copy(update={"pending": True, "transaction_id": "pending-credit"}))
     result = resolve_reversal_pairs(policy([pair()]), rows, time_zone=_ZONE, today=_NOW.date())
     assert len(result.pairs_by_transaction) == 2
-    assert result.resolutions[0].issues == []
+    assert result.resolutions[0].issues == ()
 
 
 def test_overlapping_assertions_are_both_unresolved() -> None:
@@ -173,14 +188,138 @@ def test_overlapping_assertions_are_both_unresolved() -> None:
     )
     assert not result.pairs_by_transaction
     assert all(
-        any("another reversal pair" in issue for issue in resolution.issues) for resolution in result.resolutions
+        any(issue.code == ReversalIssueCode.OVERLAPPING_PAIR for issue in resolution.issues)
+        for resolution in result.resolutions
     )
 
 
 def test_future_reversal_does_not_rewrite_history_yet() -> None:
     result = resolve_reversal_pairs(policy([pair()]), legs(), time_zone=_ZONE, today=date(2026, 3, 3))
     assert not result.pairs_by_transaction
-    assert any("Reversal selector matched 0" in issue for issue in result.resolutions[0].issues)
+    assert any(
+        issue.code == ReversalIssueCode.MISSING_LEG and issue.role == ReversalRole.REVERSAL
+        for issue in result.resolutions[0].issues
+    )
+
+
+def mismatched_pair() -> ReversalPair:
+    configured = pair()
+    return configured.model_copy(update={"reversal": AllOf(conditions=configured.reversal.conditions[:2])})
+
+
+def mismatched_rows() -> list[Transaction]:
+    return [legs()[0], legs()[1].model_copy(update={"amount": Decimal(-79)})]
+
+
+def test_known_scope_uses_purchase_days_and_not_posting_selectors() -> None:
+    rows = [
+        mismatched_rows()[0].model_copy(update={"authorized_date": date(2026, 1, 10)}),
+        mismatched_rows()[1].model_copy(update={"authorized_date": date(2026, 1, 12)}),
+    ]
+    resolved = resolve_reversal_pairs(policy([mismatched_pair()]), rows, time_zone=_ZONE, today=_NOW.date())
+    report = ReconciliationReport(resolutions=tuple(resolved.resolutions))
+    assert report.status == ReportStatus.PROVISIONAL
+    assert report.for_period(start=date(2026, 3, 1), end=date(2026, 3, 31)).status == ReportStatus.READY
+    january = report.for_period(start=date(2026, 1, 1), end=date(2026, 1, 31))
+    assert january.status == ReportStatus.PROVISIONAL
+    assert january.resolutions[0].original.matches[0].report_day == date(2026, 1, 10)
+    assert january.resolutions[0].original.posting_start == date(2026, 3, 2)
+    assert [issue.code for issue in january.resolutions[0].issues] == [ReversalIssueCode.AMOUNT_MISMATCH]
+    # Dates between the two affected days are not automatically tainted.
+    assert report.for_period(start=date(2026, 1, 11), end=date(2026, 1, 11)).status == ReportStatus.READY
+
+
+def test_missing_leg_scope_is_unknown_and_messages_omit_record_identifiers() -> None:
+    rows = [legs()[0].model_copy(update={"transaction_id": "SYNTHETIC-PRIVATE-IDENTIFIER"})]
+    resolved = resolve_reversal_pairs(policy([pair()]), rows, time_zone=_ZONE, today=_NOW.date())
+    report = ReconciliationReport(resolutions=tuple(resolved.resolutions)).for_period(
+        start=date(2026, 6, 1), end=date(2026, 6, 30)
+    )
+    assert report.status == ReportStatus.PROVISIONAL
+    assert report.resolutions[0].reversal.matches == ()
+    assert report.resolutions[0].issues[0].code == ReversalIssueCode.MISSING_LEG
+    messages = " ".join(describe_reconciliation(report))
+    assert "scope is unknown" in messages
+    assert "2026-03-05" in messages
+    assert "SYNTHETIC-PRIVATE-IDENTIFIER" not in messages
+
+
+def test_old_issue_still_marks_allowance_carryforward_provisional() -> None:
+    now = datetime(2026, 6, 1, tzinfo=UTC)
+    result = calculate(policy([mismatched_pair()]), mismatched_rows(), time_zone=_ZONE, now=now, last_synced_at=now)
+    assert result.available_minor_units == 392_000
+    assert result.note is not None
+    assert result.note.startswith("Provisional:")
+    # Moving activation past both legs also moves them outside every dependency.
+    configured = policy([mismatched_pair()]).model_copy(update={"activation_at": date(2026, 5, 1)})
+    unrelated = calculate(configured, mismatched_rows(), time_zone=_ZONE, now=now, last_synced_at=now)
+    assert unrelated.note is None
+    assert unrelated.posted_minor_units == 0
+
+
+@pytest.mark.parametrize("missing", [False, True])
+def test_affected_sustainability_retains_numeric_results_but_is_provisional(missing: bool) -> None:
+    rows = [mismatched_rows()[0]] if missing else mismatched_rows()
+    result = sustainability_result(rows, policy([mismatched_pair()]))
+    assert result.status == ReportStatus.PROVISIONAL
+    assert result.spending_minor_units == 8_000
+    assert result.estimated_annual_draw_minor_units is not None
+    assert result.spending_draw_rate is not None
+    assert any("Ordinary accounting retained" in issue for issue in result.issues)
+    assert any(point.status == ReportStatus.PROVISIONAL for point in result.history)
+
+
+def test_recent_headline_is_ready_while_affected_historical_points_are_provisional() -> None:
+    result = sustainability_result(mismatched_rows(), policy([mismatched_pair()]), now=datetime(2026, 6, 1, tzinfo=UTC))
+    assert result.status == ReportStatus.READY
+    assert result.spending_minor_units == 0
+    assert result.history[-1].status == ReportStatus.READY
+    assert any(point.status == ReportStatus.PROVISIONAL for point in result.history)
+    assert any(issue.startswith("Historical chart: Reversal pair example-return:") for issue in result.issues)
+
+
+def test_source_failure_overrides_provisional_reconciliation() -> None:
+    result = sustainability_result(
+        mismatched_rows(), policy([mismatched_pair()]), source_issues=["Synthetic source gap."]
+    )
+    assert result.status == ReportStatus.UNAVAILABLE
+    assert result.annualized_spending_minor_units is None
+    assert result.estimated_annual_draw_minor_units is None
+    assert any("Ordinary accounting retained" in issue for issue in result.issues)
+
+
+def test_reconciliation_rejects_inverted_report_bounds() -> None:
+    with pytest.raises(ValueError, match="start must not follow"):
+        ReconciliationReport().for_period(start=date(2026, 4, 2), end=date(2026, 4, 1))
+
+
+def sustainability_result(
+    rows: list[Transaction],
+    configured: AllowancePolicy,
+    *,
+    now: datetime = _NOW,
+    source_issues: list[str] | None = None,
+) -> SustainabilityView:
+    return calculate_sustainability(
+        SustainabilityPolicy(
+            portfolio=PortfolioPolicy(sources=PortfolioSources(plaid=PlaidSourcePolicy(asset_account_ids=["assets"]))),
+            withdrawal_tax=WithdrawalTax(rate=0.2, assumption_note="Synthetic assumption", as_of=date(2026, 1, 1)),
+        ),
+        configured.model_copy(update={"spending_account_ids": {"card"}}),
+        [transaction(date(2026, 1, 1), "0", "HISTORY", "coverage"), *rows],
+        PortfolioView(
+            status="ready",
+            assets_minor_units=1_000_000,
+            liabilities_minor_units=0,
+            excluded_minor_units=0,
+            net_minor_units=1_000_000,
+            sources=[],
+        ),
+        time_zone=_ZONE,
+        now=now,
+        window_days=30,
+        source_issues=source_issues or [],
+    )
 
 
 @pytest.mark.parametrize("original_day", [date(2026, 1, 1), date(2026, 3, 2)])

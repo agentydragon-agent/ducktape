@@ -17,6 +17,7 @@ from finance.plaid.spend.allowance import (
     accounting_disposition,
     prepare_accounting,
 )
+from finance.plaid.spend.reconciliation import ReconciliationReport
 
 
 class ConsumptionMode(StrEnum):
@@ -40,7 +41,7 @@ class ConsumptionEntry:
 @dataclass(frozen=True)
 class PreparedConsumption:
     entries: list[ConsumptionEntry]
-    issues: list[str]
+    reconciliation: ReconciliationReport
 
 
 def prepare_consumption(
@@ -86,4 +87,4 @@ def prepare_consumption(
                 amount_minor_units=entry.amount_minor_units if disposition == Disposition.COUNTED else 0,
             )
         )
-    return PreparedConsumption(entries=entries, issues=prepared.issues)
+    return PreparedConsumption(entries=entries, reconciliation=prepared.reconciliation)

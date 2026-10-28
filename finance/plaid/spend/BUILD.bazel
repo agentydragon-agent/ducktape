@@ -24,7 +24,10 @@ py_library(
     name = "allowance",
     srcs = ["allowance.py"],
     visibility = ["//finance/plaid/spend:__subpackages__"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        ":reconciliation",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -262,6 +265,7 @@ py_library(
         ":allowance",
         ":consumption",
         ":portfolio_models",
+        ":reconciliation",
         "@pypi//pydantic",
     ],
 )
@@ -273,6 +277,7 @@ py_test(
         ":allowance",
         ":conftest",
         ":portfolio_models",
+        ":reconciliation",
         ":sustainability",
         "//:conftest",
         "@pypi//pydantic",
@@ -322,7 +327,10 @@ py_test(
 py_library(
     name = "consumption",
     srcs = ["consumption.py"],
-    deps = [":allowance"],
+    deps = [
+        ":allowance",
+        ":reconciliation",
+    ],
 )
 
 py_test(
@@ -332,8 +340,14 @@ py_test(
         ":allowance",
         ":conftest",
         ":consumption",
+        ":reconciliation",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "reconciliation",
+    srcs = ["reconciliation.py"],
 )

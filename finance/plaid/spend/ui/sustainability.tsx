@@ -723,8 +723,15 @@ export function SustainabilityPage() {
       window.history.replaceState(window.history.state, "", windowHash(view.window_days));
     }
   }, [selectedWindowDays, view?.window_days]);
-  const statusLabel = view?.status ?? "loading";
-  const statusColor = view?.status === "ready" ? "blue" : view?.status === "unavailable" ? "orange" : "gray";
+  const statusLabel = view?.status === "provisional" ? "Provisional" : (view?.status ?? "loading");
+  const statusColor =
+    view?.status === "ready"
+      ? "blue"
+      : view?.status === "provisional"
+        ? "yellow"
+        : view?.status === "unavailable"
+          ? "orange"
+          : "gray";
 
   return (
     <Stack gap="lg">
@@ -737,6 +744,11 @@ export function SustainabilityPage() {
             <Badge color="violet" variant="light">
               Experimental
             </Badge>
+            {view?.status === "provisional" && (
+              <Badge color="yellow" variant="light">
+                Provisional
+              </Badge>
+            )}
             <HelpTooltip
               topic="About this estimate"
               description="This scenario estimate uses observed spending and portfolio data. It depends on spending coverage, current valuations, and tax assumptions; it cannot guarantee that assets will last."
@@ -762,6 +774,12 @@ export function SustainabilityPage() {
           {view.status === "disabled" && (
             <Alert color="gray" title="Sustainability estimate is disabled">
               The service has not enabled this experimental estimate.
+            </Alert>
+          )}
+          {view.status === "provisional" && (
+            <Alert color="yellow" title="Provisional estimate">
+              Ordinary accounting remains in this estimate while a reversal is unverified. Review the issue below before
+              relying on it.
             </Alert>
           )}
           {view.status !== "disabled" && (
@@ -813,7 +831,7 @@ export function SustainabilityPage() {
                       status and issues below.
                     </Alert>
                   )}
-                  {view.status === "ready" && (
+                  {(view.status === "ready" || view.status === "provisional") && (
                     <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
                       <DrawGauge view={view} />
                       <SpendingComposition view={view} />

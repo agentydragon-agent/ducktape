@@ -136,6 +136,7 @@ async def _expand_accordion(control: Locator) -> None:
 def _example_sustainability(variant: str = "ready") -> dict[str, object]:
     stale = variant == "stale"
     unavailable = variant == "unavailable"
+    is_provisional = variant == "provisional"
     tax_unmodeled = variant == "tax_unmodeled"
     low_draw = variant == "low_draw"
     portfolio_unavailable = stale or unavailable
@@ -164,8 +165,11 @@ def _example_sustainability(variant: str = "ready") -> dict[str, object]:
                 "annualized_spending_minor_units": annualized,
                 "spending_draw_rate": spending_rate,
                 "tax_adjusted_draw_rate": tax_adjusted_rate,
+                "status": "unavailable" if portfolio_unavailable else "ready",
             }
         )
+    if is_provisional:
+        history[-1]["status"] = "provisional"
 
     spending_draw_rate, tax_adjusted_draw_rate = rates_for(annualized_spending)
     estimated_annual_draw = (
@@ -178,7 +182,7 @@ def _example_sustainability(variant: str = "ready") -> dict[str, object]:
     )
     return {
         "generated_at": "2026-10-15T12:00:00Z",
-        "status": "unavailable" if portfolio_unavailable else "ready",
+        "status": "provisional" if is_provisional else "unavailable" if portfolio_unavailable else "ready",
         "currency": "USD",
         "time_zone": "UTC",
         "window_days": 90,
@@ -227,7 +231,13 @@ def _example_sustainability(variant: str = "ready") -> dict[str, object]:
         },
         "history": history,
         "account_coverage": [],
-        "issues": ["Synthetic source has delayed updates."] if stale or unavailable else [],
+        "issues": (
+            ["Review the unverified reversal and confirm its classification before relying on this estimate."]
+            if is_provisional
+            else ["Synthetic source has delayed updates."]
+            if stale or unavailable
+            else []
+        ),
         "known_issues": [
             "Synthetic fixture: investment values are illustrative and can lag market changes.",
             "No income outside observed spending and portfolio sources is represented.",
@@ -272,6 +282,7 @@ def _example_sustainability_window(days: int) -> dict[str, object]:
                 "annualized_spending_minor_units": annual,
                 "spending_draw_rate": annual / 125_000_000,
                 "tax_adjusted_draw_rate": funding / 125_000_000,
+                "status": "ready",
             }
             for day in dates
         ],
@@ -356,6 +367,7 @@ def _example_sustainability_with_historical_coverage_gap() -> dict[str, object]:
             "annualized_spending_minor_units": 4_700_000,
             "spending_draw_rate": 0.0376,
             "tax_adjusted_draw_rate": 0.0427272727,
+            "status": "ready",
         },
         {
             "date": "2026-10-09",
@@ -363,6 +375,7 @@ def _example_sustainability_with_historical_coverage_gap() -> dict[str, object]:
             "annualized_spending_minor_units": 4_850_000,
             "spending_draw_rate": 0.0388,
             "tax_adjusted_draw_rate": 0.0440909091,
+            "status": "ready",
         },
         *[
             {
@@ -371,6 +384,7 @@ def _example_sustainability_with_historical_coverage_gap() -> dict[str, object]:
                 "annualized_spending_minor_units": None,
                 "spending_draw_rate": None,
                 "tax_adjusted_draw_rate": None,
+                "status": "unavailable",
             }
             for day in range(10, 15)
         ],
@@ -509,7 +523,7 @@ def dashboard_url() -> Iterator[str]:
             spending_signal=PaceAlert.UNAVAILABLE if warmup else PaceAlert.NORMAL,
             last_synced_at=datetime(2026, 10, 15, 11, tzinfo=UTC),
             prior_carry_minor_units=0 if warmup else 5000,
-            note="Reversal pair example-reversal-needs-review: "
+            note="Provisional: Reversal pair example-reversal-needs-review: "
             "Original selector matched 0 retained transactions; exactly one is required.",
         )
 
@@ -1944,6 +1958,85 @@ async def test_sustainability_scenario_tooltip_explains_unmodeled_tax(
         animations="disabled",
     )
     view.errors.assert_none(context="Sustainability with unmodeled tax")
+
+
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
+async def test_sustainability_provisional_reversal_keeps_estimate_and_marks_history(
+    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
+) -> None:
+    async def serve_provisional(route: Route) -> None:
+        provisional = _example_sustainability("provisional")
+        history = provisional["history"]
+        assert isinstance(history, list)
+        provisional["history"] = history[-1:]
+        await route.fulfill(json=_sustainability_dashboard(provisional))
+
+    await page.route("**/api/v1/sustainability/windows", serve_provisional)
+    await page.set_viewport_size({"width": width, "height": height})
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await _select_spend_page(page, "Sustainability")
+
+    await expect(page.get_by_text("Provisional", exact=True).first).to_be_visible()
+    warning = page.get_by_role("alert").filter(has_text="Ordinary accounting remains in this estimate")
+    await expect(warning).to_contain_text("while a reversal is unverified")
+    reversal_issue = page.get_by_role("alert").filter(has_text="Review the unverified reversal")
+    await expect(reversal_issue).to_be_visible()
+
+    gauge = page.get_by_role("region", name="Tax-adjusted implied draw rate")
+    await expect(gauge).to_be_visible()
+    await expect(gauge).to_contain_text("4.5%")
+    await expect(gauge).to_contain_text("$56,262")
+    composition = page.get_by_role("region", name="Spending in this window")
+    await expect(composition).to_be_visible()
+    await expect(composition.get_by_text("$12,200", exact=True)).to_be_visible()
+
+    history = page.get_by_role("region", name="Spending and funding history")
+    canvas = history.get_by_role("img", name="Annual funding including taxes by day")
+    await expect(canvas).to_be_visible()
+    bounds = await canvas.bounding_box()
+    assert bounds is not None
+    await canvas.hover(position={"x": bounds["width"] / 2, "y": bounds["height"] / 2})
+    tooltip = page.get_by_role("tooltip", name="History ending October 14, 2026")
+    await expect(tooltip).to_be_visible()
+    await expect(tooltip).to_contain_text("Provisional point: a reversal is unverified")
+
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    await view.capture(
+        f"sustainability-provisional-reversal-{width}",
+        label=f"{width}px provisional reversal estimate with retained funding and marked history",
+        full_page=True,
+        animations="disabled",
+    )
+
+    async def serve_historical_provisional(route: Route) -> None:
+        historical = _example_sustainability()
+        history_points = historical["history"]
+        assert isinstance(history_points, list)
+        history_points[-1]["status"] = "provisional"
+        historical["history"] = history_points[-1:]
+        historical["issues"] = [
+            "Historical chart: Review the unverified reversal and confirm its classification "
+            "before relying on this point."
+        ]
+        await route.fulfill(json=_sustainability_dashboard(historical))
+
+    await page.unroute("**/api/v1/sustainability/windows", serve_provisional)
+    await page.route("**/api/v1/sustainability/windows", serve_historical_provisional)
+    await page.reload(wait_until="domcontentloaded")
+    await expect(page.get_by_text("Provisional", exact=True)).to_have_count(0)
+    historical_issue = page.get_by_role("alert").filter(has_text="Historical chart: Review the unverified reversal")
+    await expect(historical_issue).to_be_visible()
+    await expect(page.get_by_role("region", name="Tax-adjusted implied draw rate")).to_contain_text("$56,262")
+    history = page.get_by_role("region", name="Spending and funding history")
+    canvas = history.get_by_role("img", name="Annual funding including taxes by day")
+    await expect(canvas).to_be_visible()
+    bounds = await canvas.bounding_box()
+    assert bounds is not None
+    await canvas.hover(position={"x": bounds["width"] / 2, "y": bounds["height"] / 2})
+    tooltip = page.get_by_role("tooltip", name="History ending October 14, 2026")
+    await expect(tooltip).to_contain_text("Provisional point: a reversal is unverified")
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    view.errors.assert_none(context="Provisional sustainability estimate")
 
 
 @pytest.mark.parametrize("variant", ["stale", "unavailable"])

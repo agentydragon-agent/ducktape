@@ -41,8 +41,9 @@ authenticated detail view remain decimal strings in major units.
 - `GET /api/v1/transactions?period=rolling_30d` returns transaction explanations and a period summary. If a requested
   credit cycle is unavailable, the response identifies the actual `rolling_30d` period.
 - `GET /api/v1/configuration` returns the loaded policy for the read-only Configuration tab without Plaid account IDs.
-- Allowance views report unresolved full reversal pairs in their existing note field; transaction rows identify both matched legs. The
-  Spending page shows unresolved pair issues even when the allowance is otherwise ready.
+- Allowance views mark relevant unresolved full reversal pairs as `Provisional:` in their existing note field;
+  transaction rows identify both matched legs. The active/unavailable lifecycle and wire shape stay compatible
+  with terminal clients. The allowance's dependencies include carryforward since activation and recent pace.
 - `GET /api/v1/events` accepts the same optional estimate period and sends a complete `view` SSE event immediately and
   after `plaid_spend_changed` notifications; idle streams send heartbeat comments.
 
@@ -158,6 +159,15 @@ effective tax fraction is a share of gross withdrawals, so estimated annual fund
 is tax-inclusive funding divided by current eligible portfolio value, assuming no other income. Without a documented
 tax assumption, funding and withdrawal percentages remain unavailable; consumption amounts are still available.
 The reference markers are scenarios, not guarantees of lifetime sustainability.
+
+Reversal reconciliation is shared with private reports through typed reason codes, matched record references,
+purchase days and posting selector bounds. Resolve all retained history before selecting a report period.
+An unresolved assertion excludes neither leg: ordinary classification and refund handling continue. Affected
+numeric estimates have status `provisional`; irrelevant fully matched assertions do not change a period's status.
+Missing legs have unknown purchase-day scope, so posting bounds alone cannot establish that a period is unaffected.
+Source/unit failures still block valid calculation. `ready` means no relevant unresolved reversal assertion in
+addition to the existing readiness checks; it is not an assurance that all financial assumptions are verified.
+Historical points carry their own status, and historical-only issues are labeled separately from the current estimate.
 
 `GET /api/v1/sustainability/windows` returns all configured windows from one transaction snapshot,
 portfolio valuation and observation time. The page overlays their annualized trailing simple moving averages;
