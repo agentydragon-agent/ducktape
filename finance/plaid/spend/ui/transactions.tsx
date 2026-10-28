@@ -479,7 +479,7 @@ function ExcludedFlowsPanel({
                           {flow.category.label}
                         </Text>
                       </Group>
-                      <Badge size="sm" variant="light" color="gray">
+                      <Badge size="sm" variant="light" color="gray" style={{ flexShrink: 0 }}>
                         {flow.currency}
                       </Badge>
                     </Group>
