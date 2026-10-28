@@ -28,6 +28,21 @@ js_binary(
     visibility = ["//visibility:public"],
 )
 
+js_binary(
+    name = "openapi_typescript_codegen",
+    data = [
+        ":schema_remote_fetch_guard",
+        "//:node_modules/openapi-typescript",
+    ],
+    entry_point = "openapi_typescript_codegen.mjs",
+    visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "schema_remote_fetch_guard",
+    srcs = ["schema_remote_fetch_guard.mjs"],
+)
+
 py_library(
     name = "spa_fingerprint",
     srcs = ["spa_fingerprint.py"],
