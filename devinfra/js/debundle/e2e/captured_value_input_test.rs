@@ -47,7 +47,7 @@ fn captured_input(source: &str) -> ValueInputContract {
 }
 
 fn fixture_opts(inputs: Vec<ValueInputContract>) -> FixtureOpts<'static> {
-    let source = "import './opaque.js';\nimport { factory } from './peer.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconst localMap = new Map();\nconst copied = [...[1, 2]];\nconsole.log(queue.size, queue.label(), localMap.size, copied.length, globalThis.runtimeSettings.events.join(','));\nexport { queue, Later };\n";
+    let source = "import './opaque.js';\nimport { factory } from './peer.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nclass Store { entries = new Set(); }\nconst store = new Store();\nclass PlainStore { ready = 0; }\nconst plainStore = new PlainStore();\nconst localMap = new Map();\nconst copied = [...[1, 2]];\nconsole.log(queue.size, queue.label(), localMap.size, copied.length, globalThis.runtimeSettings.events.join(','));\nexport { queue, Later };\n";
     let opts = FixtureOpts::new(
         source,
         vec![
@@ -128,6 +128,43 @@ fn unmaterialized_provider_value_input_restores_only_the_captured_receiver() {
     assert!(
         array_guard_use,
         "native guard must report its author-conditioned input: {graph}"
+    );
+
+    let source_units = graph["nodes"]
+        .as_array()
+        .expect("dependency graph source units");
+    let store_construction = source_units
+        .iter()
+        .find(|node| {
+            node["declared_bindings"]
+                .as_array()
+                .is_some_and(|bindings| {
+                    bindings.iter().any(|binding| binding["binding"] == "store")
+                })
+        })
+        .expect("the native-backed local class construction source unit");
+    let heap_uses = store_construction["heap_native_integrity_uses"]
+        .as_array()
+        .expect("heap proof dependencies should be reported on the construction source unit");
+    assert_eq!(heap_uses.len(), 1, "{graph}");
+    assert_eq!(heap_uses[0]["guard"], "local_class_construction");
+    assert!(input_refs(&heap_uses[0]["value_input_refs"]), "{graph}");
+
+    let plain_store_construction = source_units
+        .iter()
+        .find(|node| {
+            node["declared_bindings"]
+                .as_array()
+                .is_some_and(|bindings| {
+                    bindings
+                        .iter()
+                        .any(|binding| binding["binding"] == "plainStore")
+                })
+        })
+        .expect("the source-only local class construction source unit");
+    assert!(
+        plain_store_construction["heap_native_integrity_uses"].is_null(),
+        "a configured input unused by this source-only proof must not be reported: {graph}"
     );
 
     let native_call_use = graph["nodes"].as_array().unwrap().iter().any(|node| {
@@ -540,4 +577,132 @@ fn prototype_absence_keeps_captured_census_provenance() {
                     && input_refs(&usage["value_input_refs"]))),
         "{result}"
     );
+}
+
+#[test]
+fn primitive_set_split_keeps_the_same_input_in_purity_and_callback_timing() {
+    let provider = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport const ready = true;\n";
+    let source = "import './opaque.js';\nimport { ready } from './peer.js';\nglobalThis.saved = () => later;\nconst unique = new Set(['a', 'b']);\nconst later = 42;\nconsole.log(ready, unique.size, globalThis.saved());\n";
+    let chunks = [("static/peer", provider)];
+    let modules = || {
+        vec![
+            logical_module_with_anon(
+                "collection",
+                &[Member::new("unique")],
+                &["globalThis.saved = () => later;"],
+            ),
+            logical_module("value", &[Member::new("later")]),
+        ]
+    };
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(source, modules())
+            .with_extra_chunks(&chunks)
+            .with_extra_files(OPAQUE_FILES),
+        &["collection", "value"],
+        &[],
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(source, modules())
+            .with_extra_chunks(&chunks)
+            .with_extra_files(OPAQUE_FILES)
+            .with_value_inputs("static/peer", vec![captured_input(provider)]),
+    );
+    assert_preserved_entry_output(&fixture, "true 2 42\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let unique = graph["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| {
+            node["declared_bindings"]
+                .as_array()
+                .is_some_and(|names| names.iter().any(|name| name["binding"] == "unique"))
+        })
+        .expect("Set construction node");
+    assert_eq!(unique["purity"]["kind"], "pure", "{unique}");
+    assert!(
+        input_refs(&unique["purity"]["dependencies"]["value_inputs"]),
+        "{unique}"
+    );
+    assert_eq!(
+        unique["synchronous_execution"]["complete"], true,
+        "{unique}"
+    );
+    assert!(
+        unique["synchronous_execution"]["native_integrity_uses"]
+            .as_array()
+            .is_some_and(|uses| uses
+                .iter()
+                .any(|usage| usage["guard"] == "set_iterable"
+                    && input_refs(&usage["value_input_refs"]))),
+        "{unique}"
+    );
+}
+
+#[test]
+fn captured_input_cannot_override_a_set_replacement_that_calls_a_later_callback() {
+    let provider = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport const ready = true;\n";
+    let replacement = "globalThis.Set = function () { try { globalThis.saved(); return { observed: 'ready' }; } catch (error) { return { observed: error.name }; } };";
+    let source = format!(
+        "import './opaque.js';\nimport {{ ready }} from './peer.js';\nglobalThis.saved = () => later;\n{replacement}\nconst unique = new Set(['a', 'b']);\nconst later = 42;\nconsole.log(ready, unique.observed);\n"
+    );
+    let chunks = [("static/peer", provider)];
+    let opts = |modules| {
+        FixtureOpts::new(&source, modules)
+            .with_extra_chunks(&chunks)
+            .with_extra_files(OPAQUE_FILES)
+            .with_value_inputs("static/peer", vec![captured_input(provider)])
+    };
+    let fixture = run_fixture(opts(vec![]));
+    assert_preserved_entry_output(&fixture, "true ReferenceError\n");
+    expect_atomic_conflict_rejection(
+        opts(vec![
+            logical_module_with_anon(
+                "collection",
+                &[Member::new("unique")],
+                &["globalThis.saved = () => later;", replacement],
+            ),
+            logical_module("value", &[Member::new("later")]),
+        ]),
+        &["collection", "value"],
+        &[],
+    );
+}
+
+#[test]
+fn inferred_pure_imports_keep_captured_inputs_through_two_modules() {
+    let provider = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport function make() { return new Set(['ready']); }\n";
+    let middle = "import { make } from './peer.js';\nexport function forward() { return make(); }\nexport function unrelated() { return 7; }\n";
+    let chunks = [("static/peer", provider), ("static/middle", middle)];
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import './opaque.js';\nimport { forward, unrelated } from './middle.js';\nconst collection = forward();\nconst number = unrelated();\nconsole.log(collection.size, number);\n",
+            vec![],
+        )
+        .with_extra_chunks(&chunks)
+        .with_extra_files(OPAQUE_FILES)
+        .with_value_inputs("static/peer", vec![captured_input(provider)]),
+    );
+    assert_preserved_entry_output(&fixture, "1 7\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let nodes = graph["nodes"].as_array().unwrap();
+    let node_for = |binding| {
+        nodes
+            .iter()
+            .find(|node| {
+                node["declared_bindings"]
+                    .as_array()
+                    .is_some_and(|names| names.iter().any(|name| name["binding"] == binding))
+            })
+            .expect("source unit for inferred import call")
+    };
+    let collection = node_for("collection");
+    assert_eq!(collection["purity"]["kind"], "pure", "{collection}");
+    assert!(
+        input_refs(&collection["purity"]["dependencies"]["value_inputs"]),
+        "the actual import fixpoint must preserve the provider's required input: {collection}"
+    );
+    let unrelated = node_for("number");
+    assert_eq!(unrelated["purity"]["kind"], "pure", "{unrelated}");
+    assert!(unrelated["purity"]["dependencies"].is_null(), "{unrelated}");
 }

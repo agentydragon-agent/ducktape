@@ -133,6 +133,11 @@ its own opaque heap effect and constructor-body promotion. Other calls or
 constructors in the same statement, including another invocation of that callee,
 keep their own effects. Callee and argument evaluation, binding initialization
 order, and deferred method/callback effects remain independently constrained.
+When native receiver refinements condition this heap certificate, the exact
+construction source unit reports the consumed input references in
+`heap_native_integrity_uses`. Source-only certificates have no such use, and
+configured inputs that the proof did not consume are not reported. Empty uses
+are omitted from JSON and default to empty when reading older reports.
 This adds no author flag or purity exemption.
 The census tracks `ArrayLit` source origins, not arbitrary arrays returned by
 `Array()`, `Object.entries`, or foreign imports; it does not claim full heap
@@ -685,6 +690,18 @@ recognized native replacement invalidates both. This uses the existing local
 and whole-program native census and does not change the catalogue's A11
 assumption for other whitelist admissions.
 
+When a Set or local-class purity certificate consumes a captured value input,
+the resulting pure verdict carries the exact `value_inputs` references in its
+`dependencies` field. Those references are unioned through pure local calls,
+binding initializers, and inferred cross-module exports, including fixpoint
+rounds where the verdict stays pure but learns another dependency. Empty
+dependency sets are omitted, preserving the existing `{ "kind": "pure" }`
+report shape. An author `pure_exports` assertion remains its own axiom and
+does not acquire captured-value references from unrelated inference. The
+dependency field records the assumption used by that purity decision. The
+captured-object assertion itself does not declare the capture initializer pure,
+prevent callbacks or throws, or establish freshness or initialization order.
+
 At-init callback analysis also records possible implicit primitive conversions
 from arithmetic, relational and loose-equality operators, the left operand of
 `in`, numeric unary operators, updates and non-logical compound assignments.
@@ -904,12 +921,13 @@ elsewhere in the analyzed program remain effective.
 
 The census records each input reference actually consumed by a receiver
 refinement. Those dependencies flow into successful native guards, native-call
-identity uses and inferred imported returned-record certificates and uses.
-Native Set-iteration and local-class field proofs that require a native premise
-stay conservative while such dependencies are present; source-only local-class
-proofs with no native field premise remain available. The source digest binds
-the input to parsed bytes, but it does not establish the external runtime audit,
-code outside the analyzed prefix, or host behavior.
+identity uses, inferred imported returned-record certificates and uses, and
+the separate timing, purity and heap results for Set or local-class proofs.
+Heap reports associate each use with the source unit where the certified
+construction removes its opaque heap barrier. A source-only local-class proof
+carries no value-input use. The source digest
+binds the input to parsed bytes, but it does not establish the external runtime
+audit, code outside the analyzed prefix, or host behavior.
 
 ## Ordinary own descriptor inspection
 

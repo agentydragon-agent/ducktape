@@ -275,11 +275,7 @@ where
     });
     let local_class_construction_proof =
         prepared_sync_index.local_class_construction_proof().clone();
-    let set_iterable_proof = if prepared_sync_index.set_iterable_intrinsics_are_unmodified() {
-        set_iterable_proof
-    } else {
-        super::SetIterableProof::default()
-    };
+    let set_iterable_proof = prepared_sync_index.validate_set_iterable_proof(set_iterable_proof);
     let graph = {
         let mut locate = |span| {
             let source_path = source_path?;
@@ -642,6 +638,7 @@ fn assemble_statement_facts(
         cell_writes_summarizable,
         dataflow_summarizable,
         array_contents: super::ArrayContentEffects::default(),
+        heap_native_integrity_uses: Vec::new(),
         purity,
         kind,
     }
