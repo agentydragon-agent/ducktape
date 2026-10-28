@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import cast
 
 import httpx
 import jwt
@@ -52,25 +52,25 @@ def _policy(
 
 def _balance(
     account_id: str, current: float, captured_at: datetime, *, account_type: str = "depository"
-) -> dict[str, object]:
-    return {
-        "account_id": account_id,
-        "account_type": account_type,
-        "account_currency": "USD",
-        "current": current,
-        "balance_currency": "USD",
-        "captured_at": captured_at,
-    }
+) -> AccountObservation:
+    return AccountObservation(
+        account_id=account_id,
+        account_type=account_type,
+        account_currency="USD",
+        current=current,
+        balance_currency="USD",
+        captured_at=captured_at,
+    )
 
 
 def _seed_plaid(
-    engine: Engine, *, balances: list[dict[str, Any]], holdings: list[dict[str, Any]] | None = None
+    engine: Engine, *, balances: list[AccountObservation], holdings: list[HoldingObservation] | None = None
 ) -> None:
     item_id = "fake-item"
     now = datetime.now(UTC)
     holdings = holdings or []
-    accounts = {row["account_id"]: row for row in balances}
-    securities = {row["security_id"] for row in holdings}
+    accounts = {row.account_id: row for row in balances}
+    securities = {row.security_id for row in holdings}
 
     with engine.begin() as connection:
         connection.execute(
@@ -97,10 +97,10 @@ def _seed_plaid(
                         "account_id": account_id,
                         "item_id": item_id,
                         "name": "Synthetic account",
-                        "type": row["account_type"],
-                        "iso_currency_code": row["account_currency"],
+                        "type": row.account_type,
+                        "iso_currency_code": row.account_currency,
                         "raw_json": {},
-                        "updated_at": row["captured_at"],
+                        "updated_at": row.captured_at,
                     }
                     for account_id, row in accounts.items()
                 ],
@@ -110,11 +110,11 @@ def _seed_plaid(
                 insert(BalanceSnapshotRow),
                 [
                     {
-                        "account_id": row["account_id"],
+                        "account_id": row.account_id,
                         "item_id": item_id,
-                        "captured_at": row["captured_at"],
-                        "current": row["current"],
-                        "iso_currency_code": row["balance_currency"],
+                        "captured_at": row.captured_at,
+                        "current": row.current,
+                        "iso_currency_code": row.balance_currency,
                     }
                     for row in balances
                 ],
@@ -140,12 +140,12 @@ def _seed_plaid(
                 insert(HoldingSnapshotRow),
                 [
                     {
-                        "account_id": row["account_id"],
-                        "security_id": row["security_id"],
+                        "account_id": row.account_id,
+                        "security_id": row.security_id,
                         "item_id": item_id,
-                        "captured_at": row["captured_at"],
-                        "institution_value": row["institution_value"],
-                        "iso_currency_code": row["holding_currency"],
+                        "captured_at": row.captured_at,
+                        "institution_value": row.institution_value,
+                        "iso_currency_code": row.holding_currency,
                         "raw_json": {},
                     }
                     for row in holdings
@@ -204,13 +204,13 @@ async def test_plaid_values_use_latest_balances_signed_liabilities_and_coherent_
             _balance("card-account", 250, captured_at, account_type="credit"),
         ],
         holdings=[
-            {
-                "account_id": "asset-brokerage",
-                "security_id": "security-fake-1",
-                "captured_at": captured_at,
-                "institution_value": 125,
-                "holding_currency": "USD",
-            }
+            HoldingObservation(
+                account_id="asset-brokerage",
+                security_id="security-fake-1",
+                captured_at=captured_at,
+                institution_value=125,
+                holding_currency="USD",
+            )
         ],
     )
 
@@ -239,20 +239,20 @@ async def test_correction_reconciles_with_independent_capture_times_across_accou
         _balance("card-account", 0, now - timedelta(minutes=8), account_type="credit"),
     ]
     holdings = [
-        {
-            "account_id": "asset-brokerage",
-            "security_id": "security-fake-1",
-            "captured_at": now - timedelta(minutes=15),
-            "institution_value": 10,
-            "holding_currency": "USD",
-        },
-        {
-            "account_id": "asset-brokerage",
-            "security_id": "security-unadjusted",
-            "captured_at": now - timedelta(minutes=15),
-            "institution_value": 1000,
-            "holding_currency": "USD",
-        },
+        HoldingObservation(
+            account_id="asset-brokerage",
+            security_id="security-fake-1",
+            captured_at=now - timedelta(minutes=15),
+            institution_value=10,
+            holding_currency="USD",
+        ),
+        HoldingObservation(
+            account_id="asset-brokerage",
+            security_id="security-unadjusted",
+            captured_at=now - timedelta(minutes=15),
+            institution_value=1000,
+            holding_currency="USD",
+        ),
     ]
 
     _seed_plaid(postgres_engine, balances=balances, holdings=holdings)
@@ -293,12 +293,9 @@ def test_plaid_adjustments_require_the_same_account_sync_capture(adjustment: str
         ),
     )
     accounts = [
-        AccountObservation.model_validate(row)
-        for row in [
-            _balance("asset-checking", 0, captured_at),
-            _balance("asset-brokerage", 200, captured_at, account_type="investment"),
-            _balance("card-account", 0, captured_at, account_type="credit"),
-        ]
+        _balance("asset-checking", 0, captured_at),
+        _balance("asset-brokerage", 200, captured_at, account_type="investment"),
+        _balance("card-account", 0, captured_at, account_type="credit"),
     ]
     holdings = [
         HoldingObservation(
@@ -335,13 +332,13 @@ async def test_corrected_holdings_that_do_not_reconcile_fail_closed(
             _balance("card-account", 0, now, account_type="credit"),
         ],
         holdings=[
-            {
-                "account_id": "asset-brokerage",
-                "security_id": "security-fake-1",
-                "captured_at": now,
-                "institution_value": 100,
-                "holding_currency": "USD",
-            }
+            HoldingObservation(
+                account_id="asset-brokerage",
+                security_id="security-fake-1",
+                captured_at=now,
+                institution_value=100,
+                holding_currency="USD",
+            )
         ],
     )
 
@@ -376,13 +373,13 @@ async def test_missing_excluded_position_with_other_holdings_fails_closed(
             _balance("card-account", 0, captured_at, account_type="credit"),
         ],
         holdings=[
-            {
-                "account_id": "asset-brokerage",
-                "security_id": "security-still-held",
-                "captured_at": captured_at,
-                "institution_value": 2000,
-                "holding_currency": "USD",
-            }
+            HoldingObservation(
+                account_id="asset-brokerage",
+                security_id="security-still-held",
+                captured_at=captured_at,
+                institution_value=2000,
+                holding_currency="USD",
+            )
         ],
     )
 
@@ -410,13 +407,13 @@ async def test_missing_correction_position_with_other_holdings_fails_closed(
             _balance("card-account", 0, captured_at, account_type="credit"),
         ],
         holdings=[
-            {
-                "account_id": "asset-brokerage",
-                "security_id": "security-still-held",
-                "captured_at": captured_at,
-                "institution_value": 2000,
-                "holding_currency": "USD",
-            }
+            HoldingObservation(
+                account_id="asset-brokerage",
+                security_id="security-still-held",
+                captured_at=captured_at,
+                institution_value=2000,
+                holding_currency="USD",
+            )
         ],
     )
 
@@ -751,11 +748,32 @@ def test_holding_value_correction_multiplier_must_be_positive_and_finite(multipl
 def test_plaid_row_valuation_accepts_transport_numeric_strings_and_extra_metadata() -> None:
     now = datetime(2026, 1, 2, tzinfo=UTC)
     balances = [
-        _balance("asset-checking", 10, now),
-        _balance("asset-brokerage", 20, now, account_type="investment"),
-        _balance("card-account", -5, now, account_type="credit"),
+        {
+            "account_id": "asset-checking",
+            "account_type": "depository",
+            "account_currency": "USD",
+            "current": "10.005",
+            "balance_currency": "USD",
+            "captured_at": now,
+            "label": "ignored metadata",
+        },
+        {
+            "account_id": "asset-brokerage",
+            "account_type": "investment",
+            "account_currency": "USD",
+            "current": 20,
+            "balance_currency": "USD",
+            "captured_at": now,
+        },
+        {
+            "account_id": "card-account",
+            "account_type": "credit",
+            "account_currency": "USD",
+            "current": -5,
+            "balance_currency": "USD",
+            "captured_at": now,
+        },
     ]
-    balances[0].update(current="10.005", label="ignored metadata")
     result = value_plaid_rows(
         _policy(), account_rows=[AccountObservation.model_validate(row) for row in balances], holding_rows=[], now=now
     )
@@ -792,7 +810,14 @@ def test_plaid_valuation_failure_does_not_return_zero_totals() -> None:
 
 @pytest.mark.parametrize("amount", ["invalid", "NaN", "Infinity", True])
 def test_account_observation_rejects_malformed_amounts(amount: object) -> None:
-    row = _balance("asset-checking", 10, datetime(2026, 1, 2, tzinfo=UTC))
+    row = {
+        "account_id": "asset-checking",
+        "account_type": "depository",
+        "account_currency": "USD",
+        "current": 10,
+        "balance_currency": "USD",
+        "captured_at": datetime(2026, 1, 2, tzinfo=UTC),
+    }
     row["current"] = amount
     with pytest.raises(ValidationError):
         AccountObservation.model_validate(row)
