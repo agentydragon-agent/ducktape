@@ -1,6 +1,9 @@
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
+import pytest
 import pytest_bazel
+from sqlalchemy.exc import IntegrityError
 
 from finance.plaid.db.models import AccountRow, LinkRow, TransactionRow, async_session_factory
 from finance.plaid.transaction_queries import select_transactions
@@ -45,7 +48,7 @@ async def test_selected_retained_active_attached_rows(db_url: str) -> None:
                         account_id=account,
                         item_id=item,
                         date=date(2026, 1, 2),
-                        amount=12.5,
+                        amount=Decimal("12.5"),
                         name="Synthetic purchase",
                         pending=pending,
                         removed=removed,
@@ -66,15 +69,31 @@ async def test_selected_retained_active_attached_rows(db_url: str) -> None:
                         ("detached-row", "detached", "active-item", False, False),
                         ("inactive-row", "inactive", "inactive-item", False, False),
                         ("unselected-row", "unselected", "active-item", False, False),
-                        ("wrong-item", "chosen", "inactive-item", False, False),
                     ]
                 ]
             )
             await session.commit()
+            session.add(
+                TransactionRow(
+                    transaction_id="wrong-item",
+                    account_id="chosen",
+                    item_id="inactive-item",
+                    date=date(2026, 1, 2),
+                    amount=Decimal("12.5"),
+                    name="Synthetic ownership mismatch",
+                    pending=False,
+                    removed=False,
+                    raw_json={},
+                )
+            )
+            with pytest.raises(IntegrityError, match="fk_transactions_account_item"):
+                await session.flush()
+            await session.rollback()
             rows = (await session.execute(select_transactions(["chosen", "detached", "inactive"]))).mappings().all()
             assert {row["transaction_id"] for row in rows} == {"posted", "pending"}
             posted = next(row for row in rows if row["transaction_id"] == "posted")
-            assert posted["amount"] == "12.5"
+            assert isinstance(posted["amount"], str)
+            assert Decimal(posted["amount"]) == Decimal("12.5")
             assert posted["currency"] == "USD"
             assert posted["date"] == "2026-01-02"
             assert posted["authorized_date"] == "2026-01-01"
@@ -115,7 +134,7 @@ async def test_currency_preserves_unofficial_units_and_unknown_currency(db_url: 
                         account_id="currency-account",
                         item_id="currency-item",
                         date=date(2026, 1, 2),
-                        amount=0.01,
+                        amount=Decimal("0.01"),
                         name="Synthetic currency case",
                         pending=False,
                         removed=False,
