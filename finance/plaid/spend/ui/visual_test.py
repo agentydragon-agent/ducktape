@@ -143,7 +143,7 @@ async def _expand_accordion(control: Locator) -> None:
     )
 
 
-def _example_sustainability(variant: str = "ready") -> SustainabilityView:
+def _example_sustainability(variant: str = "ready", *, window_days: int = 90) -> SustainabilityView:
     stale = variant == "stale"
     unavailable = variant == "unavailable"
     is_provisional = variant == "provisional"
@@ -239,8 +239,8 @@ def _example_sustainability(variant: str = "ready") -> SustainabilityView:
         status=view_status,
         currency="USD",
         time_zone="UTC",
-        window_days=90,
-        available_windows_days=[30, 90],
+        window_days=window_days,
+        available_windows_days=sorted({30, 90, window_days}),
         period_start=date(2026, 7, 17),
         period_end=date(2026, 10, 14),
         covered_days=90,
@@ -1754,7 +1754,7 @@ async def test_sustainability_shorter_curve_survives_missing_yearly_history(
     page: Page, view: VisualPage, dashboard_url: str, width: int
 ) -> None:
     async def serve_windows(route: Route) -> None:
-        yearly = _example_sustainability_window(365, history=[])
+        yearly = _with_sustainability_history(_example_sustainability(window_days=365), [])
         await route.fulfill(
             json=_sustainability_dashboard(
                 _example_sustainability_window(30), _example_sustainability(), yearly
