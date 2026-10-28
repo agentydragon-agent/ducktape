@@ -2,8 +2,10 @@
 
 from typing import Any, cast
 
+import httpx2
 import pytest
 import pytest_bazel
+from openai import AsyncOpenAI
 from openai.types.responses import (
     Response,
     ResponseFunctionToolCall,
@@ -27,12 +29,12 @@ from openai_utils.model import (
 )
 
 
-def test_response_usage_serializes_required_cache_write_tokens() -> None:
+def test_response_usage_serializes_reported_cache_write_tokens() -> None:
     usage = ResponseUsage(
         input_tokens=0,
         output_tokens=1,
         total_tokens=1,
-        input_tokens_details=InputTokensDetails(cached_tokens=0),
+        input_tokens_details=InputTokensDetails(cached_tokens=0, cache_write_tokens=0),
         output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
     )
 
@@ -51,6 +53,68 @@ def test_response_usage_serializes_required_cache_write_tokens() -> None:
 
     assert response.usage is not None
     assert response.usage.input_tokens_details.cache_write_tokens == 0
+
+
+@pytest.mark.parametrize(
+    ("details", "expected_input", "expected_output"),
+    [
+        ({}, None, None),
+        ({"input_tokens_details": None, "output_tokens_details": None}, None, None),
+        ({"input_tokens_details": {}, "output_tokens_details": {}}, InputTokensDetails(), OutputTokensDetails()),
+        (
+            {"input_tokens_details": {"cache_write_tokens": 2}, "output_tokens_details": {"reasoning_tokens": None}},
+            InputTokensDetails(cache_write_tokens=2),
+            OutputTokensDetails(),
+        ),
+        (
+            {
+                "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+                "output_tokens_details": {"reasoning_tokens": 0},
+            },
+            InputTokensDetails(cached_tokens=0, cache_write_tokens=0),
+            OutputTokensDetails(reasoning_tokens=0),
+        ),
+        (
+            {
+                "input_tokens_details": {"cached_tokens": 3, "cache_write_tokens": 2, "audio_tokens": 1},
+                "output_tokens_details": {"reasoning_tokens": 4},
+            },
+            InputTokensDetails(cached_tokens=3, cache_write_tokens=2, audio_tokens=1),
+            OutputTokensDetails(reasoning_tokens=4),
+        ),
+    ],
+    ids=["omitted", "null", "empty", "partial", "zero", "positive"],
+)
+async def test_response_usage_preserves_reported_details(
+    details: dict[str, Any], expected_input: InputTokensDetails | None, expected_output: OutputTokensDetails | None
+) -> None:
+    def handler(_: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            200,
+            json={
+                "id": "resp_usage",
+                "object": "response",
+                "created_at": 1,
+                "model": "test-model",
+                "output": [],
+                "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15, **details},
+            },
+        )
+
+    async with AsyncOpenAI(
+        base_url="http://test/v1",
+        api_key="sk-test",
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
+    ) as client:
+        response = await client.responses.create(model="test-model", input="hello")
+
+    assert ResponsesResult.from_sdk(response).usage == ResponseUsage(
+        input_tokens=10,
+        output_tokens=5,
+        total_tokens=15,
+        input_tokens_details=expected_input,
+        output_tokens_details=expected_output,
+    )
 
 
 def test_reasoning_content_item_stays_strict() -> None:
