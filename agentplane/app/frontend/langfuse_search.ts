@@ -23,3 +23,12 @@ export function langfuseSandboxTraceUrl(settings: LangfuseSearchSettings, sandbo
   );
   return url.toString();
 }
+
+/** Central sampling belongs to the conversation even when its executor changes or disappears. */
+export function langfuseSessionTraceUrl(settings: LangfuseSearchSettings, sessionId: string): string {
+  const base = settings.base_url.endsWith("/") ? settings.base_url : `${settings.base_url}/`;
+  const url = new URL(`project/${encodeURIComponent(settings.project_id)}/traces`, base);
+  url.searchParams.set("dateRange", "1d");
+  url.searchParams.set("filter", metadataFilter(settings.session_metadata_key, sessionId));
+  return url.toString();
+}

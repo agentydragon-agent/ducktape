@@ -6,6 +6,7 @@ import (
 	"time"
 
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	executor_gatewaypb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
@@ -26,6 +27,9 @@ type Config struct {
 	HolderIP                 string
 	ProxyPort                int32
 	ControlTiming            ControlTiming
+	// ExecutorCallers enables the opt-in raw executor WebSocket tunnel independently from the
+	// Runner proxy's caller allowlist. An empty set leaves the public RPC unregistered.
+	ExecutorCallers []auth.Account
 }
 
 // ControlTiming bounds stream liveness and Lease renewal work.
@@ -68,14 +72,15 @@ func validateControlTiming(timing ControlTiming) error {
 // Gateway serves the per-Sandbox Runner proxy and accepts runner-initiated connections on the
 // separately registered control listener.
 type Gateway struct {
-	config      Config
-	callerAuth  *auth.Resolver
-	runnerAuth  *auth.Resolver
-	callers     map[auth.Account]struct{}
-	sandboxes   *sandboxResolver
-	connections *connections
-	records     *connectionRecords
-	controller  *auth.Account
+	config          Config
+	callerAuth      *auth.Resolver
+	runnerAuth      *auth.Resolver
+	callers         map[auth.Account]struct{}
+	executorCallers map[auth.Account]struct{}
+	sandboxes       *sandboxResolver
+	connections     *connections
+	records         *connectionRecords
+	controller      *auth.Account
 }
 
 func New(
@@ -114,6 +119,13 @@ func New(
 		}
 		callers[account] = struct{}{}
 	}
+	executorCallers := make(map[auth.Account]struct{}, len(config.ExecutorCallers))
+	for _, account := range config.ExecutorCallers {
+		if account.Namespace == "" || account.Name == "" {
+			return nil, fmt.Errorf("Gateway executor caller account namespace and name are required")
+		}
+		executorCallers[account] = struct{}{}
+	}
 	var controller *auth.Account
 	if config.SandboxControllerAccount != nil {
 		if config.SandboxControllerAccount.Namespace == "" || config.SandboxControllerAccount.Name == "" {
@@ -123,7 +135,7 @@ func New(
 		controller = &copy
 	}
 	return &Gateway{
-		config: config, callerAuth: callerAuth, runnerAuth: runnerAuth, callers: callers,
+		config: config, callerAuth: callerAuth, runnerAuth: runnerAuth, callers: callers, executorCallers: executorCallers,
 		sandboxes: sandboxes, connections: newConnections(), records: records,
 		controller: controller,
 	}, nil
@@ -133,6 +145,15 @@ func New(
 // registered on a separate listener.
 func (g *Gateway) RegisterProxy(server *grpc.Server) {
 	runnerservicepb.RegisterRunnerServer(server, &runnerProxy{gateway: g})
+}
+
+// RegisterExecutorGateway enables the central executor path only when its own caller allowlist is
+// configured. Existing Gateway deployments therefore keep the RPC absent by default.
+func (g *Gateway) RegisterExecutorGateway(server *grpc.Server) {
+	if len(g.executorCallers) == 0 {
+		return
+	}
+	executor_gatewaypb.RegisterExecutorGatewayServer(server, &executorGatewayServer{gateway: g})
 }
 
 // RegisterRunnerControl serves the runner-initiated bidirectional connection, authenticated

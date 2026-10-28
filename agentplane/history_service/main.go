@@ -188,8 +188,9 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, i
 	)
 	runneringresspb.RegisterRunnerIngressServer(ingressServer, &ingress.Service{
 		Principals: writerAuth, SandboxUIDs: ingress.NewServiceAccountSandboxUIDResolver(kube),
-		History: storage.NewStore(ingressDB, c.Ingress.SettleDeltas),
-		Timing:  ingress.Timing{IdleAck: ingressIdleAck, SilenceLimit: ingressSilenceLimit},
+		History:         storage.NewStore(ingressDB, c.Ingress.SettleDeltas),
+		SamplerAccounts: c.Ingress.SamplerAccounts,
+		Timing:          ingress.Timing{IdleAck: ingressIdleAck, SilenceLimit: ingressSilenceLimit},
 	})
 	changes, unsubscribe, err := hub.Subscribe(storage.ChannelHistory)
 	if err != nil {

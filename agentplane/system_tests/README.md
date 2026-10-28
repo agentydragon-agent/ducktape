@@ -198,6 +198,30 @@ create and edit controls let the operator opt in explicitly, and changing the se
 not wake a Sandbox. The Dispatcher charges at most ten
 distinct wake generations per authenticated caller per rolling minute.
 
+## Central sampler
+
+`test_central_sampler` and `test_central_sampler_vm` run the same scripted scenario on disposable
+k3s stacks, using a Pod and a VM Sandbox respectively. Each submits a central Session and user input
+through the deployed Dispatcher, runs setup and a model-requested shell command through the
+Sandbox's holding Gateway and pinned exec-server, then verifies the reasoning, final answer, setup
+output, and command evidence retained by authenticated History ingress. The VM tool also checks the
+real systemd guest's PID 1 and that the executor runs in its systemd-managed executor cgroup. The
+History reader must report the same Session and Sandbox UID and fold the completed turn into
+reasoning, assistant, tool, and confirmed-input entities. The tool reads the file setup created, so
+the assertion requires both operations to reach the same executor workspace.
+
+The scenario runs the Go sampler binary on the test node with real PostgreSQL and Kubernetes
+TokenReview; it uses fixture mode, which omits delegated host cgroup limits. It does not cover an
+in-cluster sampler deployment or those host limits. Only this disposable stack's Gateway and
+History configuration is extended with the test sampler's address and ServiceAccount. The provider
+fixture is direct; LLM ingress routing is covered separately. Evidence, including the VM executor
+probe output and cgroup, is written to `test.outputs/central-sampler-k3s.json`.
+
+```bash
+bbr test //agentplane/system_tests:test_central_sampler
+bbr test //agentplane/system_tests:test_central_sampler_vm
+```
+
 ## MCP integration
 
 `test_mcp` and `test_dcr` run on a stack with Dex, the standalone MCP edge, `mcp-everything` and the

@@ -128,6 +128,7 @@ async def test_sandbox_cel_relationships_and_opaque_fields() -> None:
 
         for status, valid in [
             ({"suspendedBy": "Requested"}, True),
+            ({"idleSuspendBlockers": [{"reason": "ExecutorRelay"}]}, True),
             ({"suspendedBy": "Requested", "suspendedAtWakeGeneration": 0}, False),
             ({"suspendedAtWakeGeneration": 0}, False),
             ({"suspendedBy": "Unrecognised"}, False),

@@ -9,6 +9,7 @@ import (
 
 	runneringresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 )
@@ -44,9 +45,9 @@ func TestABurstIsCommittedInBoundedBatches(t *testing.T) {
 				frames.queue <- received{frame: entryFrame(testEntry(cursor, burst.text))}
 			}
 			frames.queue <- received{err: io.EOF}
-			c := &pushCall{history: service.History, timing: testTiming, stream: acknowledgementSink{}, frames: frames, log: slog.Default()}
+			c := &pushCall{history: service.History, timing: testTiming, stream: acknowledgementSink{}, frames: frames, log: slog.Default(), service: service}
 			writer := storage.Writer{Namespace: testNamespace, Name: "test-sandbox-a", UID: "test-account-a-uid"}
-			if err := c.failure(c.run(context.Background(), writer, "")); err != nil {
+			if err := c.failure(c.run(context.Background(), writer, auth.Account{Namespace: writer.Namespace, Name: writer.Name})); err != nil {
 				t.Fatal(err)
 			}
 			var stored, transactions int

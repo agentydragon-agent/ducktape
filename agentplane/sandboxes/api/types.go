@@ -134,7 +134,7 @@ type QuiesceAttempt struct {
 }
 
 // AutosuspendBlockerReason is a current runner fact that keeps the Sandbox from being idle.
-// +kubebuilder:validation:Enum=ActiveTurn;PendingCommand;Setup;Activation;Bootstrap;Admission
+// +kubebuilder:validation:Enum=ActiveTurn;PendingCommand;Setup;Activation;Bootstrap;Admission;ExecutorRelay
 type AutosuspendBlockerReason string
 
 const (
@@ -144,6 +144,7 @@ const (
 	AutosuspendBlockerActivation     AutosuspendBlockerReason = "Activation"
 	AutosuspendBlockerBootstrap      AutosuspendBlockerReason = "Bootstrap"
 	AutosuspendBlockerAdmission      AutosuspendBlockerReason = "Admission"
+	AutosuspendBlockerExecutorRelay  AutosuspendBlockerReason = "ExecutorRelay"
 )
 
 // AutosuspendBlocker is one live reason the controller must wait before suspending a Sandbox.
@@ -161,7 +162,7 @@ func ValidateAutosuspendBlockers(blockers []AutosuspendBlocker) error {
 			if blocker.SessionID == nil || *blocker.SessionID == "" {
 				return fmt.Errorf("autosuspend blocker %q requires a session ID", blocker.Reason)
 			}
-		case AutosuspendBlockerBootstrap, AutosuspendBlockerAdmission:
+		case AutosuspendBlockerBootstrap, AutosuspendBlockerAdmission, AutosuspendBlockerExecutorRelay:
 			if blocker.SessionID != nil {
 				return fmt.Errorf("autosuspend blocker %q cannot have a session ID", blocker.Reason)
 			}

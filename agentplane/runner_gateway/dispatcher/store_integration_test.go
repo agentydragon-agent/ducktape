@@ -561,7 +561,7 @@ func TestInterruptTurnRequiresTurnAndPropagatesRunnerRejection(t *testing.T) {
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+callerToken))
 
 	blocked := &Service{
-		Auth: resolver, Callers: callers, WakeCallers: callers, Sandboxes: blockedSandbox{},
+		Store: testStore(t, 3), Auth: resolver, Callers: callers, WakeCallers: callers, Sandboxes: blockedSandbox{},
 	}
 	_, err := blocked.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
 		CommandId: "interrupt-empty-turn", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID,
@@ -573,7 +573,7 @@ func TestInterruptTurnRequiresTurnAndPropagatesRunnerRejection(t *testing.T) {
 	rejection := status.Error(codes.FailedPrecondition, "turn is no longer current")
 	runner := &rejectingRunner{err: rejection}
 	service := &Service{
-		Auth: resolver, Callers: callers, WakeCallers: callers, Sandboxes: oneSandbox{}, Runner: runner,
+		Store: testStore(t, 3), Auth: resolver, Callers: callers, WakeCallers: callers, Sandboxes: oneSandbox{}, Runner: runner,
 	}
 	_, err = service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
 		CommandId: "interrupt-stale-turn", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID, TurnId: "turn-stale",
@@ -1236,5 +1236,35 @@ func TestWorkerSerializesCommandsPerSession(t *testing.T) {
 	runner.mu.Unlock()
 	if peak != 1 {
 		t.Fatalf("parallel deliveries for one Session: %d", peak)
+	}
+}
+
+func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+callerToken))
+	store := testStore(t, 3)
+	spec := &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, CentralSampler: &runnerpb.CentralSamplerConfig{Service: "central", Provider: "responses"}}
+	opening, err := store.OpenSession(ctx, "central-unready-session", "sandbox-api", sandboxUID, spec, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, err := store.Enqueue(ctx, opening.SessionID, "sandbox-api", sandboxUID, input("central-unready-input", "hello"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sandbox, _, _ := (blockedSandbox{}).GetSandbox(ctx, "sandbox-api")
+	worker := &DeliveryWorker{Store: store}
+	worker.init()
+	defer worker.queue.ShutDown()
+	if ready, err := worker.prepareDispatch(ctx, row, sandbox, Owner{}); err != nil || !ready {
+		t.Fatalf("central command readiness %v %v", ready, err)
+	}
+	runner := &acceptingRunner{calls: make(chan string, 1)}
+	service := &Service{Store: store, Auth: callerResolver(t), Callers: map[auth.Account]struct{}{caller: {}}, Sandboxes: blockedSandbox{}, Runner: runner}
+	result, err := service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{CommandId: "central-interrupt", SessionId: opening.SessionID, Sandbox: "sandbox-api", SandboxUid: sandboxUID, TurnId: "active-turn"})
+	if err != nil || result.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED {
+		t.Fatalf("central interrupt: %v %v", result, err)
+	}
+	if got := <-runner.calls; got != "central-interrupt" {
+		t.Fatalf("wrong command %s", got)
 	}
 }

@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 
 import type { LangfuseSearchSettings } from "./schema";
-import { langfuseSandboxTraceUrl } from "./langfuse_search";
+import { langfuseSandboxTraceUrl, langfuseSessionTraceUrl } from "./langfuse_search";
 import { LANGFUSE_SEARCH_SETTINGS } from "./testing/langfuse_search";
 
 const settings: LangfuseSearchSettings = {
@@ -54,4 +54,23 @@ it("uses the Langfuse origin when the configured base URL has no path", () => {
     )
   );
   expect(url.pathname).toBe("/project/langfuse-litellm-project/traces");
+});
+
+it("scopes central sampling traces to the public Session independently of its execution Sandbox", () => {
+  const url = new URL(
+    langfuseSessionTraceUrl(
+      { ...settings, session_metadata_key: "attributes.agentplane.session_id" },
+      "central-session"
+    )
+  );
+  expect(url.searchParams.get("filter")).toBe(
+    "metadata;stringObject;attributes.agentplane.session_id;=;central-session"
+  );
+});
+
+it("uses the metadata attribute promoted from trusted ingress attribution by default", () => {
+  const url = new URL(langfuseSessionTraceUrl(settings, "central-session"));
+  expect(url.searchParams.get("filter")).toBe(
+    "metadata;stringObject;attributes.litellm.metadata.spend_logs_metadata.agentplane.session_id;=;central-session"
+  );
 });

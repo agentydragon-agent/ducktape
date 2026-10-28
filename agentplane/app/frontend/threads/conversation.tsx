@@ -6,8 +6,9 @@ import { type JSX, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 
 import { displayableError } from "../client";
+import { harnessBehavior } from "../harness_behavior";
 import { harnessLabel, models, modelsForHarness } from "../model_catalog";
-import { langfuseSandboxTraceUrl } from "../langfuse_search";
+import { langfuseSandboxTraceUrl, langfuseSessionTraceUrl } from "../langfuse_search";
 import { traceSearchUrl } from "../trace_search";
 import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadWindow } from "./thread_sync";
 import { historyRows } from "./history_rows";
@@ -238,6 +239,7 @@ function ConversationBody({
     threadsLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread.sandbox),
     snapshotFresh(threadsLive)
   );
+  const { llmTraceScope } = harnessBehavior(thread.harness);
   const currentSandbox = threadsLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread.sandbox);
   const sandboxAutosuspend = autosuspendHint(currentSandbox, snapshotFresh(threadsLive), Math.max(clock, Date.now()));
   useEffect(
@@ -437,17 +439,21 @@ function ConversationBody({
                     Find Thread traces in Grafana
                   </Menu.Item>
                 )}
-                {langfuseSearch && sandbox && (
+                {langfuseSearch && (sandbox || llmTraceScope === "session") && (
                   <Menu.Item
                     component="a"
-                    href={langfuseSandboxTraceUrl(langfuseSearch, {
-                      namespace: sandbox.service_account.namespace,
-                      serviceAccount: sandbox.service_account.name,
-                    })}
+                    href={
+                      llmTraceScope === "session"
+                        ? langfuseSessionTraceUrl(langfuseSearch, thread.id)
+                        : langfuseSandboxTraceUrl(langfuseSearch, {
+                            namespace: sandbox!.service_account.namespace,
+                            serviceAccount: sandbox!.service_account.name,
+                          })
+                    }
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Sandbox LLM traces in Langfuse
+                    {llmTraceScope === "session" ? "Session" : "Sandbox"} LLM traces in Langfuse
                   </Menu.Item>
                 )}
                 <Menu.Divider />

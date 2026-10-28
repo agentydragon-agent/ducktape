@@ -32,7 +32,7 @@ _VM_FIXTURE = "//agentplane/system_tests/k3s:rendered/local-model-vm.json"
 _REAL_MODEL_FIXTURE = "//agentplane/system_tests/k3s:rendered/public-litellm.json"
 _REAL_MODEL_SECRET = "OPENAI_API_KEY"
 
-def system_test(name, srcs, deps, k3s = None, vm_sandboxes = None, real_model = False, mcp_fixtures = False):
+def system_test(name, srcs, deps, data = [], k3s = None, vm_sandboxes = None, real_model = False, mcp_fixtures = False):
     """Generates `name` when `k3s` names its scenarios' kind, `name + "_vm"` when `vm_sandboxes` says
     where it runs, and `name + "_real_model"` when `real_model` is True.
 
@@ -52,6 +52,7 @@ def system_test(name, srcs, deps, k3s = None, vm_sandboxes = None, real_model = 
         name = name + "_lib",
         testonly = True,
         srcs = srcs,
+        data = data,
         deps = deps,
     )
     common = {

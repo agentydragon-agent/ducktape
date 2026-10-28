@@ -4,6 +4,7 @@ import { type JSX, useEffect, useState } from "react";
 import type { SandboxView, ThreadView } from "../schema";
 import { displayableError } from "../client";
 import { getThread } from "./client";
+import { harnessBehavior } from "../harness_behavior";
 import { harnessLabel } from "../model_catalog";
 import { resumeSandbox } from "../sandboxes/client";
 import { useRequiredSandboxesLive } from "../sandboxes/live";
@@ -78,12 +79,22 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
   const environment = useRequiredSandboxesLive();
   const inventoryFresh = environment.stream.standing === "current" && environment.health?.fresh === true;
   const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
-  const notice = thread && environment.snapshot && sandboxNotice(sandbox, inventoryFresh);
+  const { commandsRequireReadySandbox } = harnessBehavior(thread?.harness);
+  const notice =
+    !commandsRequireReadySandbox && sandbox && inventoryFresh && !sandboxReady(sandbox)
+      ? "Execution Sandbox is unavailable. Central sampling controls remain available."
+      : thread && environment.snapshot && sandboxNotice(sandbox, inventoryFresh);
   const suspended = sandboxSuspended(sandbox);
-  const composerPlaceholder = sandboxComposerPlaceholder(sandbox, inventoryFresh);
+  const composerPlaceholder = !commandsRequireReadySandbox
+    ? DEFAULT_COMPOSER_PLACEHOLDER
+    : sandboxComposerPlaceholder(sandbox, inventoryFresh);
   const canQueueCommands =
-    inventoryFresh && sandbox !== undefined && ((suspended && sandbox.wake_on_send) || sandboxStarting(sandbox));
-  const canResumeSandbox = inventoryFresh && suspended && sandbox?.wake_on_send === false;
+    commandsRequireReadySandbox &&
+    inventoryFresh &&
+    sandbox !== undefined &&
+    ((suspended && sandbox.wake_on_send) || sandboxStarting(sandbox));
+  const canResumeSandbox =
+    commandsRequireReadySandbox && inventoryFresh && suspended && sandbox?.wake_on_send === false;
   useEffect(() => {
     let current = true;
     setError(null);
@@ -161,7 +172,9 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
             <ThreadConversation
               threadId={threadId}
               thread={thread}
-              available={inventoryFresh && sandboxReady(sandbox)}
+              available={
+                inventoryFresh && (commandsRequireReadySandbox ? sandboxReady(sandbox) : sandbox !== undefined)
+              }
               canQueueCommands={canQueueCommands}
               canResumeSandbox={canResumeSandbox}
               composerPlaceholder={composerPlaceholder}

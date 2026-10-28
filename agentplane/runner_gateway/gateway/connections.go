@@ -1,9 +1,11 @@
 package gateway
 
 import (
+	"context"
 	"sync"
 
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -19,17 +21,19 @@ type runnerConnection struct {
 	epoch    uint64
 	bootID   string
 	tunnel   *tunnel
+	executor *executorTunnel
 	runner   runnerservicepb.RunnerClient
 	ended    chan struct{}
 	endMu    sync.Mutex
 	endErr   error
 }
 
-func newRunnerConnection(identity sandboxreader.Identity, podUID, bootID string, epoch uint64, send sendServiceFrame) *runnerConnection {
+func newRunnerConnection(identity sandboxreader.Identity, podUID, bootID string, epoch uint64, send, sendExecutorData sendServiceFrame) *runnerConnection {
 	tunnel := newTunnel(send)
 	return &runnerConnection{
 		identity: identity, podUID: podUID, epoch: epoch, bootID: bootID,
-		tunnel: tunnel, runner: runnerservicepb.NewRunnerClient(&tunnelClientConn{tunnel: tunnel}), ended: make(chan struct{}),
+		tunnel: tunnel, executor: newExecutorTunnel(epoch, send, sendExecutorData),
+		runner: runnerservicepb.NewRunnerClient(&tunnelClientConn{tunnel: tunnel}), ended: make(chan struct{}),
 	}
 }
 
@@ -45,6 +49,19 @@ func (c *runnerConnection) end(err error) {
 	}
 	c.endMu.Unlock()
 	c.tunnel.close(err)
+	c.executor.close(err)
+}
+
+func (c *runnerConnection) routeExecutor(frame *executorpb.ExecutorFrame) error {
+	return c.executor.receive(frame)
+}
+
+func (c *runnerConnection) sendExecutorMessage(ctx context.Context, channelID string, message *executorpb.ExecutorMessage) error {
+	return c.executor.sendMessage(ctx, channelID, message)
+}
+
+func (c *runnerConnection) closeExecutor(channelID string, closeFrame *executorpb.ExecutorClose) error {
+	return c.executor.sendClose(channelID, closeFrame)
 }
 
 func (c *runnerConnection) error() error {

@@ -1044,6 +1044,13 @@ agentplane_vitest_test(
 )
 
 ts_library(
+    name = "harness_behavior",
+    srcs = ["harness_behavior.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":schema"],
+)
+
+ts_library(
     name = "model_catalog",
     srcs = ["model_catalog.ts"],
     tsconfig = TSCONFIG,

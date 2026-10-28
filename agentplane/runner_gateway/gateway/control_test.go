@@ -14,8 +14,10 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	tunnelpb "github.com/agentydragon/ducktape/agentplane/proto/grpc_tunnel"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
+	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/sandbox_controller"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -50,6 +52,7 @@ var (
 	namespaces atomic.Int32
 
 	appAccount        = auth.Account{Namespace: "test-apps", Name: "test-app"}
+	executorAccount   = auth.Account{Namespace: "test-samplers", Name: "test-sampler"}
 	controllerAccount = auth.Account{Namespace: "test-system", Name: "test-sandbox-controller"}
 )
 
@@ -61,12 +64,12 @@ func useAPIServer(server *kubeapiserver.Server) error {
 // sandboxFixture is a Running Sandbox whose runner Pod is Ready, in a namespace of the test's own, with
 // tokens for that runner and for the Gateway's callers, and resolvers that review them.
 type sandboxFixture struct {
-	namespace                              string
-	sandbox                                *sandboxapi.Sandbox
-	pod                                    *corev1.Pod
-	objects                                client.Client
-	runnerToken, appToken, controllerToken string
-	callerAuth, runnerAuth                 *auth.Resolver
+	namespace                                             string
+	sandbox                                               *sandboxapi.Sandbox
+	pod                                                   *corev1.Pod
+	objects                                               client.Client
+	runnerToken, appToken, executorToken, controllerToken string
+	callerAuth, runnerAuth                                *auth.Resolver
 }
 
 func newSandboxFixture(t *testing.T) *sandboxFixture {
@@ -133,10 +136,14 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 	if f.appToken, err = api.WorkloadToken(ctx, appAccount, testAudience); err != nil {
 		t.Fatal(err)
 	}
+	if f.executorToken, err = api.WorkloadToken(ctx, executorAccount, testAudience); err != nil {
+		t.Fatal(err)
+	}
 	if f.controllerToken, err = api.WorkloadToken(ctx, controllerAccount, testAudience); err != nil {
 		t.Fatal(err)
 	}
-	if f.callerAuth, err = auth.NewResolver(api.TokenReviews(), testAudience, []string{appAccount.Namespace, controllerAccount.Namespace}); err != nil {
+	if f.callerAuth, err = auth.NewResolver(api.TokenReviews(), testAudience,
+		[]string{appAccount.Namespace, controllerAccount.Namespace, executorAccount.Namespace}); err != nil {
 		t.Fatal(err)
 	}
 	if f.runnerAuth, err = auth.NewResolver(api.TokenReviews(), testAudience, []string{f.namespace}); err != nil {
@@ -147,11 +154,12 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 
 // newGateway is a Gateway replica serving the fixture's namespace that names itself holderName at
 // holderIP in the control routes it writes.
-func (f *sandboxFixture) newGateway(t *testing.T, holderName, holderIP string) *Gateway {
+func (f *sandboxFixture) newGateway(t *testing.T, holderName, holderIP string, executorCallers ...auth.Account) *Gateway {
 	t.Helper()
 	gateway, err := New(Config{
 		Namespace:                f.namespace,
 		CallerAccounts:           []auth.Account{appAccount},
+		ExecutorCallers:          executorCallers,
 		SandboxControllerAccount: &controllerAccount,
 		HolderName:               holderName, HolderIP: holderIP, ProxyPort: sandboxapi.ControlServicePort,
 		ControlTiming: ControlTiming{
@@ -655,16 +663,14 @@ func TestControlFrameSenderRejectsWritesAfterTimeout(t *testing.T) {
 	started := make(chan struct{}, 2)
 	returned := make(chan struct{}, 1)
 	release := make(chan struct{})
-	sender := &controlFrameSender{
-		ctx:     context.Background(),
-		timeout: 50 * time.Millisecond,
-		send: func(*runnercontrolpb.ServiceFrame) error {
-			started <- struct{}{}
-			<-release
-			returned <- struct{}{}
-			return nil
-		},
-	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	sender := newControlFrameSender(ctx, 50*time.Millisecond, func(*runnercontrolpb.ServiceFrame) error {
+		started <- struct{}{}
+		<-release
+		returned <- struct{}{}
+		return nil
+	})
 
 	firstDone := make(chan error, 1)
 	go func() {
@@ -698,13 +704,10 @@ func TestControlFrameSenderPreservesTerminalErrors(t *testing.T) {
 				want = codes.Canceled
 			}
 			var calls atomic.Int32
-			sender := &controlFrameSender{
-				ctx: ctx, timeout: time.Second,
-				send: func(*runnercontrolpb.ServiceFrame) error {
-					calls.Add(1)
-					return context.Canceled
-				},
-			}
+			sender := newControlFrameSender(ctx, time.Second, func(*runnercontrolpb.ServiceFrame) error {
+				calls.Add(1)
+				return context.Canceled
+			})
 			first := sender.Send(&runnercontrolpb.ServiceFrame{})
 			if status.Code(first) != want {
 				t.Fatalf("Send code = %v, want %v", status.Code(first), want)
@@ -725,10 +728,11 @@ func TestControlFrameSenderPreservesTerminalErrors(t *testing.T) {
 
 func TestGeneratedRunnerClientPreservesTunnelStatusTrailersAndCancellation(t *testing.T) {
 	frames := make(chan *runnercontrolpb.ServiceFrame, 2)
-	connection := newRunnerConnection(sandboxreader.Identity{}, "pod-uid", "boot-id", 1, func(frame *runnercontrolpb.ServiceFrame) error {
+	sendFrame := func(frame *runnercontrolpb.ServiceFrame) error {
 		frames <- frame
 		return nil
-	})
+	}
+	connection := newRunnerConnection(sandboxreader.Identity{}, "pod-uid", "boot-id", 1, sendFrame, sendFrame)
 	nextCall := func() *tunnelpb.Call {
 		t.Helper()
 		select {
@@ -779,5 +783,191 @@ func TestGeneratedRunnerClientPreservesTunnelStatusTrailersAndCancellation(t *te
 		}
 	case <-time.After(time.Second):
 		t.Fatal("canceled Runner call remained blocked in tunnel")
+	}
+}
+
+func TestExecutorGatewayRoutesBoundedMessageFrames(t *testing.T) {
+	f := newSandboxFixture(t)
+	gateway := f.newGateway(t, "test-runner-gateway-0", "192.0.2.10", executorAccount)
+	listener := newBufconnListener()
+	server := grpc.NewServer()
+	gateway.RegisterRunnerControl(server)
+	gateway.RegisterExecutorGateway(server)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	connection, err := grpc.NewClient(
+		"passthrough:///executor-gateway-test",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = connection.Close() })
+
+	executorClient := executorpb.NewExecutorGatewayClient(connection)
+	callerContext, stopCaller := context.WithTimeout(t.Context(), 10*time.Second)
+	defer stopCaller()
+	unauthorizedContext := metadata.NewOutgoingContext(callerContext, metadata.Pairs("authorization", "Bearer "+f.appToken))
+	unauthorized, err := executorClient.Connect(unauthorizedContext)
+	if err == nil {
+		_, err = unauthorized.Recv()
+	}
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("executor Gateway accepted a caller outside its independent allowlist: %v", err)
+	}
+
+	destination := &sandboxespb.SandboxDestination{
+		Owner:      &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: testSandbox},
+		Sandbox:    testSandbox,
+		SandboxUid: string(f.sandbox.UID),
+	}
+	staleContext := metadata.NewOutgoingContext(callerContext, metadata.Pairs("authorization", "Bearer "+f.executorToken))
+	stale, err := executorClient.Connect(staleContext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stale.Send(&executorpb.ExecutorFrame{Frame: &executorpb.ExecutorFrame_Open{Open: &executorpb.ExecutorOpen{
+		Destination: destination, ExpectedIncarnationUid: "stale-pod-uid", SessionId: "session-a",
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stale.Recv(); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("executor Gateway did not fence a stale incarnation: %v", err)
+	}
+
+	runnerContext := metadata.NewOutgoingContext(callerContext, metadata.Pairs("authorization", "Bearer "+f.runnerToken))
+	runnerStream, err := runnercontrolpb.NewRunnerControlClient(connection).Connect(runnerContext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runnerStream.Send(&runnercontrolpb.RunnerFrame{Frame: &runnercontrolpb.RunnerFrame_Hello{
+		Hello: &runnercontrolpb.Hello{RunnerBootId: "executor-runner-boot"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	welcome, err := runnerStream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if welcome.GetWelcome() == nil || welcome.GetWelcome().GetConnectionEpoch() == 0 || welcome.GetWelcome().GetIncarnationUid() != string(f.pod.UID) {
+		t.Fatalf("runner control stream returned an unexpected Welcome: %v", welcome)
+	}
+
+	publicContext := metadata.NewOutgoingContext(callerContext, metadata.Pairs("authorization", "Bearer "+f.executorToken))
+	public, err := executorClient.Connect(publicContext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := public.Send(&executorpb.ExecutorFrame{Frame: &executorpb.ExecutorFrame_Open{Open: &executorpb.ExecutorOpen{
+		Destination: destination, ExpectedIncarnationUid: string(f.pod.UID), SessionId: "session-a",
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	open := receiveRunnerExecutorFrame(t, runnerStream)
+	if open.GetOpen() == nil || open.GetChannelId() == "" || open.GetOpen().GetSessionId() != "session-a" {
+		t.Fatalf("runner did not receive the attributed executor open: %v", open)
+	}
+	if err := runnerStream.Send(&runnercontrolpb.RunnerFrame{Frame: &runnercontrolpb.RunnerFrame_Executor{Executor: &executorpb.ExecutorFrame{
+		ChannelId: open.GetChannelId(),
+		Frame:     &executorpb.ExecutorFrame_Ready{Ready: &executorpb.ExecutorReady{Accepted: true}},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	ready, err := public.Recv()
+	if err != nil || !ready.GetReady().GetAccepted() {
+		t.Fatalf("executor Gateway did not confirm Runner readiness: frame=%v err=%v", ready, err)
+	}
+
+	textMessage := []byte(`{"op":"shell","command":"pwd"}`)
+	if err := public.Send(&executorpb.ExecutorFrame{Frame: &executorpb.ExecutorFrame_Message{Message: &executorpb.ExecutorMessage{
+		Opcode: executorpb.ExecutorMessage_OPCODE_TEXT, Payload: textMessage,
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	toRunner := receiveRunnerExecutorFrame(t, runnerStream)
+	if toRunner.GetChannelId() != open.GetChannelId() || toRunner.GetMessage().GetOpcode() != executorpb.ExecutorMessage_OPCODE_TEXT || string(toRunner.GetMessage().GetPayload()) != string(textMessage) {
+		t.Fatalf("executor message changed on its way to the Runner: %v", toRunner)
+	}
+
+	binaryMessage := []byte{0, 1, 2, 0xff}
+	if err := runnerStream.Send(&runnercontrolpb.RunnerFrame{Frame: &runnercontrolpb.RunnerFrame_Executor{Executor: &executorpb.ExecutorFrame{
+		ChannelId: open.GetChannelId(),
+		Frame: &executorpb.ExecutorFrame_Message{Message: &executorpb.ExecutorMessage{
+			Opcode: executorpb.ExecutorMessage_OPCODE_BINARY, Payload: binaryMessage,
+		}},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	toCaller, err := public.Recv()
+	if err != nil || toCaller.GetMessage().GetOpcode() != executorpb.ExecutorMessage_OPCODE_BINARY || string(toCaller.GetMessage().GetPayload()) != string(binaryMessage) {
+		t.Fatalf("binary executor message changed on its way to the caller: frame=%v err=%v", toCaller, err)
+	}
+
+	finalMessage := []byte(`{"op":"last-message-before-close"}`)
+	if err := public.Send(&executorpb.ExecutorFrame{Frame: &executorpb.ExecutorFrame_Message{Message: &executorpb.ExecutorMessage{
+		Opcode: executorpb.ExecutorMessage_OPCODE_TEXT, Payload: finalMessage,
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	closeFrame := &executorpb.ExecutorClose{Code: 1000, Reason: "done"}
+	if err := public.Send(&executorpb.ExecutorFrame{Frame: &executorpb.ExecutorFrame_Close{Close: closeFrame}}); err != nil {
+		t.Fatal(err)
+	}
+	toRunner = receiveRunnerExecutorFrame(t, runnerStream)
+	if toRunner.GetMessage() == nil || string(toRunner.GetMessage().GetPayload()) != string(finalMessage) {
+		t.Fatalf("executor close overtook the preceding caller message: %v", toRunner)
+	}
+	toRunner = receiveRunnerExecutorFrame(t, runnerStream)
+	if toRunner.GetClose().GetCode() != closeFrame.GetCode() || toRunner.GetClose().GetReason() != closeFrame.GetReason() {
+		t.Fatalf("executor close frame changed on its way to the Runner: %v", toRunner)
+	}
+	toCaller, err = public.Recv()
+	if err != nil || toCaller.GetClose().GetCode() != closeFrame.GetCode() || toCaller.GetClose().GetReason() != closeFrame.GetReason() {
+		t.Fatalf("executor close frame changed on its way to the caller: frame=%v err=%v", toCaller, err)
+	}
+}
+
+func receiveRunnerExecutorFrame(t *testing.T, stream interface {
+	Recv() (*runnercontrolpb.ServiceFrame, error)
+},
+) *executorpb.ExecutorFrame {
+	t.Helper()
+	for {
+		frame, err := stream.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if executor := frame.GetExecutor(); executor != nil {
+			return executor
+		}
+	}
+}
+
+func TestExecutorGatewayIsAbsentWithoutIndependentAllowlist(t *testing.T) {
+	f := newSandboxFixture(t)
+	gateway := f.newGateway(t, "test-runner-gateway-0", "192.0.2.10")
+	listener := newBufconnListener()
+	server := grpc.NewServer()
+	gateway.RegisterExecutorGateway(server)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	connection, err := grpc.NewClient(
+		"passthrough:///disabled-executor-gateway-test",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = connection.Close() })
+
+	ctx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs("authorization", "Bearer "+f.executorToken))
+	stream, err := executorpb.NewExecutorGatewayClient(connection).Connect(ctx)
+	if err == nil {
+		_, err = stream.Recv()
+	}
+	if status.Code(err) != codes.Unimplemented {
+		t.Fatalf("executor Gateway RPC was registered without its opt-in caller allowlist: %v", err)
 	}
 }

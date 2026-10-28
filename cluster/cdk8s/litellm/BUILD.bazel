@@ -14,6 +14,7 @@ oci_image_py(
 
 py_test(
     name = "test_attribution_export",
+    size = "medium",
     srcs = ["test_attribution_export.py"],
     data = ["attribution_export_smoke.py"],
     requires_docker = True,

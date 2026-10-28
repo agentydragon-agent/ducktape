@@ -24,6 +24,10 @@ class Settings(YamlFileSettings):
         "only client, so this must admit at least what the proxy's own allowlist does: a workload it "
         "authenticated and sent on is refused here if its namespace is missing.",
     )
+    central_sampler_accounts: frozenset[str] = Field(
+        default_factory=frozenset,
+        description="Trusted namespace/name sampler producers allowed to attribute public Session IDs.",
+    )
     token_audience: str = Field(min_length=1, description="Accepted projected-token audience.")
     log_llm_requests: bool = Field(
         default=False,

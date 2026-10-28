@@ -194,6 +194,7 @@ async def go_history_service(
     directory: Path,
     writer_namespaces: Sequence[str] = (WRITER.namespace,),
     watch_lease_s: float = 300,
+    sampler_accounts: Sequence[ServiceAccountRef] = (),
 ) -> AsyncIterator[GoHistoryService]:
     """The Go History Service on `database_url`, which the Go migrator has built, authenticating through `api`."""
     with ExitStack() as listeners:
@@ -215,6 +216,7 @@ async def go_history_service(
                     "ingress": {
                         "token_audience": WRITER_AUDIENCE,
                         "writer_namespaces": list(writer_namespaces),
+                        "sampler_accounts": [account.model_dump() for account in sampler_accounts],
                         "listen_address": f"fd:{ingress_fd}",
                         # Tests compare the archive with the runner's journal entry by entry.
                         "settle_deltas": False,

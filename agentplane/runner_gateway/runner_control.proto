@@ -8,6 +8,7 @@ package agentplane.runner_gateway;
 
 import "agentplane/proto/grpc_tunnel.proto";
 import "agentplane/proto/sandboxes.proto";
+import "agentplane/runner_gateway/executor_gateway.proto";
 import "google/protobuf/timestamp.proto";
 
 // Served by the Runner Gateway; the runner opens one `Connect` stream and serves `Runner` on it.
@@ -20,6 +21,7 @@ message RunnerFrame {
     Hello hello = 1;  // first frame, exactly once
     RunnerHeartbeat heartbeat = 3;
     agentplane.proto.Reply reply = 5;  // to a `call` on this stream
+    ExecutorFrame executor = 7;  // multiplexed, opaque executor WebSocket traffic
   }
   reserved 2, 4;
   reserved "receipt", "control_result";
@@ -30,6 +32,7 @@ message ServiceFrame {
     Welcome welcome = 1;  // reply to Hello, exactly once
     Heartbeat heartbeat = 3;
     agentplane.proto.Call call = 7;  // a `Runner` call
+    ExecutorFrame executor = 8;  // multiplexed, opaque executor WebSocket traffic
   }
   reserved 2, 4, 5, 6;
   reserved "deliver", "open_follow", "close_follow", "control";
@@ -79,8 +82,9 @@ message RunnerFacts {
   }
 
   QuiesceStage quiesce_stage = 1;
-  // When the whole Sandbox became idle: an active turn, pending command, setup, activation, bootstrap
-  // or command admission makes it busy. Absent while busy, and from a runner that does not track it.
+  // When the whole Sandbox became idle: active turns, pending commands, setup, activation, bootstrap,
+  // command admission and connected executor relays make it busy. Absent while busy, and from a runner
+  // that does not track it.
   google.protobuf.Timestamp idle_since = 2;
   Bootstrap bootstrap = 3;
   // Some Session's setup script is running. A suspend waits for it to finish.

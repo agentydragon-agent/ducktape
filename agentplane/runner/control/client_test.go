@@ -12,6 +12,7 @@ import (
 	tunnelpb "github.com/agentydragon/ducktape/agentplane/proto/grpc_tunnel"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -192,6 +193,7 @@ func TestClientKeepsStreamLiveAndFencesCallsDuringIncarnationAdoption(t *testing
 	livenessHeartbeats := make(chan *controlpb.RunnerHeartbeat, 16)
 	factHeartbeats := make(chan *controlpb.RunnerHeartbeat, 2)
 	replies := make(chan *tunnelpb.Reply, 4)
+	executorReplies := make(chan *executorpb.ExecutorFrame, 1)
 	service := &controlService{connect: func(stream grpc.BidiStreamingServer[controlpb.RunnerFrame, controlpb.ServiceFrame]) error {
 		if err := welcome(stream); err != nil {
 			return err
@@ -237,6 +239,12 @@ func TestClientKeepsStreamLiveAndFencesCallsDuringIncarnationAdoption(t *testing
 				case <-stream.Context().Done():
 					return stream.Context().Err()
 				}
+			case frame.GetExecutor() != nil:
+				select {
+				case executorReplies <- frame.GetExecutor():
+				case <-stream.Context().Done():
+					return stream.Context().Err()
+				}
 			default:
 				return errors.New("unexpected Runner control frame")
 			}
@@ -264,6 +272,11 @@ func TestClientKeepsStreamLiveAndFencesCallsDuringIncarnationAdoption(t *testing
 			return ctx.Err()
 		}
 	}, nil)
+	var executorOpens atomic.Int32
+	client.openExecutor = func(ctx context.Context, epoch uint64, send, sendData func(*controlpb.RunnerFrame) error) ExecutorConnection {
+		executorOpens.Add(1)
+		return &testExecutorConnection{ctx: ctx, send: sendData, closed: make(chan struct{})}
+	}
 	client.heartbeatInterval = 10 * time.Millisecond
 	client.streamLiveness = 60 * time.Millisecond
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -294,6 +307,26 @@ func TestClientKeepsStreamLiveAndFencesCallsDuringIncarnationAdoption(t *testing
 		}
 	case <-ctx.Done():
 		t.Fatalf("pre-adoption call was not refused: %v", ctx.Err())
+	}
+	select {
+	case framesToRunner <- &controlpb.ServiceFrame{Frame: &controlpb.ServiceFrame_Executor{Executor: &executorpb.ExecutorFrame{
+		ChannelId: "1-1", Frame: &executorpb.ExecutorFrame_Open{Open: &executorpb.ExecutorOpen{SessionId: "test-session"}},
+	}}}:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	select {
+	case reply := <-executorReplies:
+		if reply.ChannelId != "1-1" || reply.GetReady() == nil || reply.GetReady().Accepted {
+			t.Fatalf("pre-adoption executor reply = %v, want a refusal", reply)
+		}
+	case err := <-connected:
+		t.Fatalf("control connection ended instead of refusing executor: %v", err)
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if executorOpens.Load() != 0 {
+		t.Fatal("executor opened before incarnation adoption")
 	}
 	for range 8 {
 		select {
@@ -335,6 +368,9 @@ func TestClientKeepsStreamLiveAndFencesCallsDuringIncarnationAdoption(t *testing
 		}
 	case <-ctx.Done():
 		t.Fatalf("post-adoption call was not relayed: %v", ctx.Err())
+	}
+	if executorOpens.Load() != 1 {
+		t.Fatal("executor connection was not opened after adoption")
 	}
 	if got := relayedCalls.Load(); got != 1 {
 		t.Fatalf("Runner methods after adoption = %d, want 1", got)
@@ -682,4 +718,97 @@ func first(values []string) string {
 		return ""
 	}
 	return values[0]
+}
+
+// The executor lifetime must end before the connection returns and can reconnect.
+type testExecutorConnection struct {
+	ctx      context.Context
+	send     func(*controlpb.RunnerFrame) error
+	closed   chan struct{}
+	canceled bool
+}
+
+func (e *testExecutorConnection) Route(frame *executorpb.ExecutorFrame) error {
+	return e.send(&controlpb.RunnerFrame{Frame: &controlpb.RunnerFrame_Executor{Executor: frame}})
+}
+
+func (e *testExecutorConnection) Close() {
+	e.canceled = e.ctx.Err() != nil
+	close(e.closed)
+}
+
+func TestClientRoutesExecutorWithinConnectionLifetime(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	frame := &executorpb.ExecutorFrame{ChannelId: "1-1", Frame: &executorpb.ExecutorFrame_Message{Message: &executorpb.ExecutorMessage{
+		Opcode: executorpb.ExecutorMessage_OPCODE_TEXT, Payload: []byte("executor-payload"),
+	}}}
+	audited := make(chan *executorpb.ExecutorFrame, 1)
+	serverResult := make(chan error, 1)
+	service := &controlService{connect: func(stream grpc.BidiStreamingServer[controlpb.RunnerFrame, controlpb.ServiceFrame]) (err error) {
+		defer func() { serverResult <- err }()
+		if err = welcome(stream); err != nil {
+			return err
+		}
+		if _, err = receiveFacts(stream); err != nil {
+			return err
+		}
+		if err = stream.Send(&controlpb.ServiceFrame{Frame: &controlpb.ServiceFrame_Executor{Executor: frame}}); err != nil {
+			return err
+		}
+		var response *controlpb.RunnerFrame
+		if response, err = stream.Recv(); err != nil {
+			return err
+		}
+		audited <- response.GetExecutor()
+		return nil
+	}}
+	endpoint := controlServer(t, service)
+	closed := make(chan struct{})
+	var executor *testExecutorConnection
+	var epoch uint64
+	client, err := New(Dependencies{
+		BootID: "test-boot-id", Server: &runnerService{},
+		AdoptIncarnation: func(context.Context, string) error { return nil },
+		Facts:            func() (*controlpb.RunnerFacts, error) { return &controlpb.RunnerFacts{}, nil },
+		Changes:          func() <-chan struct{} { return nil },
+		OpenExecutor: func(ctx context.Context, connectionEpoch uint64, send, sendData func(*controlpb.RunnerFrame) error) ExecutorConnection {
+			epoch = connectionEpoch
+			executor = &testExecutorConnection{ctx: ctx, send: sendData, closed: closed}
+			return executor
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = client.connect(ctx, Endpoint{Target: endpoint, Bearer: "loopback-token"}); err == nil {
+		t.Fatal("connection returned no error after peer closed")
+	}
+	select {
+	case err = <-serverResult:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	select {
+	case got := <-audited:
+		if !proto.Equal(got, frame) {
+			t.Fatalf("executor response = %v, want %v", got, frame)
+		}
+	default:
+		t.Fatal("executor frame was not routed")
+	}
+	if epoch != 1 {
+		t.Fatalf("executor connection epoch = %d", epoch)
+	}
+	select {
+	case <-closed:
+	default:
+		t.Fatal("control connection returned without closing executor workers")
+	}
+	if !executor.canceled {
+		t.Fatal("executor workers closed before context cancellation")
+	}
 }

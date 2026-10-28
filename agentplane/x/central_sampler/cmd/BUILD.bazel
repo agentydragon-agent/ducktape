@@ -1,0 +1,31 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "main_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/x/central_sampler/cmd",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//agentplane/postgres/go:postgres",
+        "//agentplane/postgres/go/wakeups",
+        "//agentplane/workload_auth/go/auth",
+        "//agentplane/x/central_sampler",
+        "//agentplane/x/central_sampler:sampler_go_proto",
+        "//util/netlistener",
+        "@io_k8s_client_go//kubernetes",
+        "@io_k8s_client_go//rest",
+        "@io_k8s_client_go//tools/clientcmd",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//health",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_x_sync//errgroup",
+    ],
+)
+
+go_binary(
+    name = "main_bin",
+    embed = [":main_lib"],
+    pure = "on",
+)

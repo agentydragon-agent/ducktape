@@ -83,6 +83,8 @@ enum EventKind {
   EVENT_KIND_SETUP_INTERRUPTED = 28;
   EVENT_KIND_HARNESS_LAUNCH_FAILED = 29;
   EVENT_KIND_JOURNAL_REOPENED = 30;
+  EVENT_KIND_BOUNDARY_RECORD = 31;
+  EVENT_KIND_EXECUTION_PROGRESS = 32;
 }
 
 message Entries {
@@ -226,7 +228,7 @@ message SessionSummary {
   FeedStatus feed_status = 12;
   // With FEED_STATUS_FAILED: why the runner's history was rejected.
   optional string feed_error = 13;
-  // The Sandbox that wrote the Session; absent until recorded.
+  // The execution Sandbox; the authenticated producer may be a central sampler. Absent until recorded.
   optional SandboxRef sandbox = 14;
   // When the harness last became idle: running with no turn in progress, from the event that
   // ended its last turn or started it. Absent while a turn runs, while the harness is stopped,

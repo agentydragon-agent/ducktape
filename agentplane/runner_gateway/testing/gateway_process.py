@@ -200,6 +200,7 @@ async def run_gateway(
     namespace: str,
     dispatcher_callers: Sequence[ServiceAccountRef],
     gateway_callers: Sequence[ServiceAccountRef],
+    executor_callers: Sequence[ServiceAccountRef] = (),
     dispatcher_audience: str,
     gateway_audience: str,
     runner_audience: str,
@@ -236,6 +237,7 @@ async def run_gateway(
             runner_audience=runner_audience,
             dispatcher_callers={f"{account.namespace}/{account.name}" for account in dispatcher_callers},
             gateway_callers={f"{account.namespace}/{account.name}" for account in gateway_callers},
+            executor_callers={f"{account.namespace}/{account.name}" for account in executor_callers},
             wake_callers=set(),
             _cli_parse_args=[],
         )
@@ -246,7 +248,7 @@ async def run_gateway(
             exclude_unset=True,
             exclude={"dispatcher_database_url", "pod_name", "pod_ip"},
         )
-        for caller_list in ("dispatcher_callers", "gateway_callers", "wake_callers"):
+        for caller_list in ("dispatcher_callers", "gateway_callers", "executor_callers", "wake_callers"):
             settings[caller_list] = sorted(settings[caller_list])
         with tempfile.TemporaryDirectory() as settings_dir, log_path.open("wb") as log_file:
             settings_path = Path(settings_dir) / "settings.yaml"

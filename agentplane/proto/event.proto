@@ -213,6 +213,31 @@ message DebugCheckpoint {
   string command_id = 2;
 }
 
+// Exact payload observed at a sampler boundary. Authentication headers are not payload.
+// The original bytes remain available independently of the frontend projection.
+message BoundaryRecord {
+  string boundary = 1;
+  string direction = 2;
+  bytes payload = 3;
+  string media_type = 4;
+  string correlation_id = 5;
+  string parent_id = 6;
+  // Fragments with the same record_id reconstruct the original payload in fragment_index order.
+  // An unfragmented record has index 0 and count 1. The media type describes the whole payload.
+  string record_id = 7;
+  uint32 fragment_index = 8;
+  uint32 fragment_count = 9;
+}
+
+// Nested code-mode execution progress; parent_id links the operation to a cell or call.
+message ExecutionProgress {
+  string operation_id = 1;
+  string parent_id = 2;
+  string kind = 3;
+  string phase = 4;
+  string payload_json = 5;
+}
+
 message Event {
   google.protobuf.Timestamp at = 1;
   // Causal Native EventEntry origin sequences in this Event's original source.
@@ -245,5 +270,7 @@ message Event {
     SetupInterrupted setup_interrupted = 28;
     HarnessLaunchFailed harness_launch_failed = 29;
     JournalReopened journal_reopened = 30;
+    BoundaryRecord boundary_record = 31;
+    ExecutionProgress execution_progress = 32;
   }
 }

@@ -110,10 +110,10 @@ reader is revoked. Errors carry a gRPC status and fixed detail:
 | `PERMISSION_DENIED` | The authenticated caller is outside `reader_accounts`.                            |
 | `UNAUTHENTICATED`   | Missing or invalid caller credentials.                                            |
 
-## Which Sandbox wrote a Session
+## Session writer and execution Sandbox
 
 The History Service never routes to, reads or manages Sandboxes; it records and reports the
-Sandbox a Session was written by. Every Sandbox runs as a ServiceAccount of its own name, so the
+execution Sandbox associated with a Session. Every Sandbox runs as a ServiceAccount of its own name, so the
 first push that binds a writer records the namespace, name and UID of the Sandbox which controls
 that ServiceAccount (`SessionSummary.sandbox`, absent until recorded). History gets the UID from the
 ServiceAccount's controller ownerReference. The nullable UID lets a later push by the same writer
@@ -203,3 +203,13 @@ variables or the YAML file named by `AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE` (`c
 The read API listens on `listen_address`, where `grpc.health.v1.Health` reports process liveness only.
 Both listener settings accept TCP addresses or inherited descriptors as documented by
 [`util/netlistener`](../../util/netlistener/README.md).
+
+## Optional central producers
+
+`ingress.sampler_accounts` explicitly admits central sampler accounts (empty by default). Their
+`sampler_announce` authenticates the producer separately from the executor Sandbox and keeps both
+identities fixed. Native announcements cannot claim central metadata. The same cursor, exact-replay,
+writer fencing and commit-before-ack rules apply. Central outboxes retain evidence in sampler
+PostgreSQL while History is unavailable. Raw boundary and execution-progress observations remain
+retained evidence; source-linked normalized Events drive the ordinary Thread fold. History does
+not own the provider continuation. See the [sampler contract](../x/central_sampler/SPEC.md).

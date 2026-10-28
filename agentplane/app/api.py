@@ -1693,8 +1693,8 @@ def create_app(
 ) -> FastAPI:
     """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
     and an app given neither answers 401 to everything but /healthz."""
-    if set(catalog.harnesses) != set(Harness) or not any(catalog.harnesses.values()):
-        raise ValueError(f"the model catalog needs every harness key and at least one offered model: {catalog=}")
+    if not {Harness.CLAUDE, Harness.CODEX}.issubset(catalog.harnesses) or not any(catalog.harnesses.values()):
+        raise ValueError(f"the model catalog needs both native harness keys and at least one offered model: {catalog=}")
     if operator_grpc is None and any(
         service is not None
         for service in (action_service, operator_action_service, web_push_service, connection_service)

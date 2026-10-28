@@ -160,6 +160,18 @@ func (row *historyRow) checkpoint() (Checkpoint, error) {
 // BindWriter binds the Session to writer if it has no writer yet, creating its row; any other writer
 // is refused. Of two concurrent first writers, the row lock lets one bind and refuses the other.
 func (s *Store) BindWriter(ctx context.Context, sessionID uuid.UUID, writer Writer, sandboxUID string) (Checkpoint, error) {
+	return s.bindWriter(ctx, sessionID, writer, writer.Namespace, writer.Name, sandboxUID)
+}
+
+// BindSamplerWriter retains the producer identity independently of its fixed execution target.
+func (s *Store) BindSamplerWriter(ctx context.Context, sessionID uuid.UUID, writer Writer, namespace, name, sandboxUID string) (Checkpoint, error) {
+	if namespace == "" || name == "" || sandboxUID == "" {
+		return Checkpoint{}, ErrInvalidArgument
+	}
+	return s.bindWriter(ctx, sessionID, writer, namespace, name, sandboxUID)
+}
+
+func (s *Store) bindWriter(ctx context.Context, sessionID uuid.UUID, writer Writer, namespace, name, sandboxUID string) (Checkpoint, error) {
 	var checkpoint Checkpoint
 	err := transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
 		created := false
@@ -179,8 +191,8 @@ func (s *Store) BindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 			}
 			result, err := tx.ExecContext(ctx, `INSERT INTO session_history
 				(id, writer_namespace, writer_name, writer_uid, sandbox_namespace, sandbox_name, sandbox_uid, source_id, last_cursor)
-				VALUES ($1, $2, $3, $4, $2, $3, $5, NULL, 0) ON CONFLICT DO NOTHING`,
-				sessionID, writer.Namespace, writer.Name, writer.UID, sandboxUIDValue)
+				VALUES ($1, $2, $3, $4, $6, $7, $5, NULL, 0) ON CONFLICT DO NOTHING`,
+				sessionID, writer.Namespace, writer.Name, writer.UID, sandboxUIDValue, namespace, name)
 			if err != nil {
 				return err
 			}
@@ -197,8 +209,8 @@ func (s *Store) BindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 		switch {
 		case row.writer == nil:
 			if _, err := tx.ExecContext(ctx, `UPDATE session_history SET writer_namespace = $2, writer_name = $3, writer_uid = $4,
-				sandbox_namespace = COALESCE(sandbox_namespace, $2), sandbox_name = COALESCE(sandbox_name, $3), sandbox_uid = $5
-				WHERE id = $1`, sessionID, writer.Namespace, writer.Name, writer.UID, sandboxUIDValue); err != nil {
+				sandbox_namespace = COALESCE(sandbox_namespace, $6), sandbox_name = COALESCE(sandbox_name, $7), sandbox_uid = $5
+				WHERE id = $1`, sessionID, writer.Namespace, writer.Name, writer.UID, sandboxUIDValue, namespace, name); err != nil {
 				return err
 			}
 			row.sandboxUID = optionalString(sandboxUID)

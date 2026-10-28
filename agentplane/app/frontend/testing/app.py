@@ -21,6 +21,7 @@ BOUND_CONNECTION = "10000000-0000-4000-8000-000000000001"
 class Flag(StrEnum):
     """A switch on the harness's mock services; the value is its name in harness.tsx's `Flag`."""
 
+    CENTRAL_SAMPLER_ENABLED = "centralSamplerEnabled"
     CLAUDE_PAUSED = "claudePaused"
     WATCH_STALE = "watchStale"
     THREAD_DATABASE_DISCONNECTED = "threadDatabaseDisconnected"
@@ -89,6 +90,11 @@ class AgentplaneFixture:
 
     async def name_thread(self, thread_id: str, name: str) -> None:
         await self.page.evaluate("([id, name]) => window.agentplaneVisual.nameThread(id, name)", [thread_id, name])
+
+    async def update_thread(self, thread_id: str, changes: dict[str, str]) -> None:
+        await self.page.evaluate(
+            "([id, changes]) => window.agentplaneVisual.updateThread(id, changes)", [thread_id, changes]
+        )
 
     async def mount_thread(self, thread_id: str) -> None:
         await self.mount_app(f"/threads/{thread_id}")

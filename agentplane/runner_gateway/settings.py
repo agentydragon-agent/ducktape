@@ -9,12 +9,18 @@ from collections.abc import Set
 from pathlib import Path
 from typing import Annotated, ClassVar
 
-from pydantic import Field, SecretStr, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints
 from pydantic_settings import SettingsConfigDict
 
 from util.yaml_file_settings import YamlFileSettings
 
 type ServiceAccountName = Annotated[str, StringConstraints(pattern=r"^[^/]+/[^/]+$")]
+
+
+class CentralSamplerTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target: str = Field(min_length=1)
+    token_file: Path
 
 
 class Settings(YamlFileSettings):
@@ -74,3 +80,10 @@ class Settings(YamlFileSettings):
     max_queued_per_session: int = Field(default=1000, ge=1, description="Queued commands per Session.")
     dispatcher_watch_lease_seconds: int = Field(default=300, ge=1, description="WatchDispatches stream lease.")
     runner_request_timeout_seconds: int = Field(default=10, ge=1, description="Per-Sandbox Runner call timeout.")
+
+    central_samplers: dict[str, CentralSamplerTarget] = Field(
+        default_factory=dict, description="Enabled named central services; empty disables central Session admission."
+    )
+    executor_callers: Set[ServiceAccountName] = Field(
+        default_factory=frozenset, description="ServiceAccounts allowed to open fixed exec-server tunnels."
+    )

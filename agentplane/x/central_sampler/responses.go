@@ -1,0 +1,388 @@
+package centralsampler
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"io"
+	"strings"
+)
+
+type ResponsesItemType string
+
+const (
+	ResponsesItemAdditionalTools   ResponsesItemType = "additional_tools"
+	ResponsesItemMessage           ResponsesItemType = "message"
+	ResponsesItemReasoning         ResponsesItemType = "reasoning"
+	ResponsesItemCustomToolCall    ResponsesItemType = "custom_tool_call"
+	ResponsesItemCustomToolOutput  ResponsesItemType = "custom_tool_call_output"
+	ResponsesItemCompaction        ResponsesItemType = "compaction"
+	ResponsesItemCompactionTrigger ResponsesItemType = "compaction_trigger"
+)
+
+type ResponsesEventType string
+
+const (
+	ResponsesEventOutputItemAdded ResponsesEventType = "response.output_item.added"
+	ResponsesEventOutputItemDone  ResponsesEventType = "response.output_item.done"
+	ResponsesEventCompleted       ResponsesEventType = "response.completed"
+	ResponsesEventFailed          ResponsesEventType = "response.failed"
+	ResponsesEventIncomplete      ResponsesEventType = "response.incomplete"
+	ResponsesEventError           ResponsesEventType = "error"
+)
+
+// ResponsesItem is the Codex Responses item envelope. Raw retains provider-owned fields and
+// numeric precision when an item is read from the provider or the durable conversation.
+type ResponsesItem struct {
+	Type             ResponsesItemType         `json:"type"`
+	ID               string                    `json:"id,omitempty"`
+	Role             string                    `json:"role,omitempty"`
+	CallID           string                    `json:"call_id,omitempty"`
+	Name             string                    `json:"name,omitempty"`
+	Input            string                    `json:"input,omitempty"`
+	Content          json.RawMessage           `json:"content,omitempty"`
+	Summary          json.RawMessage           `json:"summary,omitempty"`
+	Output           []ResponsesContentPart    `json:"output,omitempty"`
+	EncryptedContent string                    `json:"encrypted_content,omitempty"`
+	Tools            []ResponsesAdditionalTool `json:"tools,omitempty"`
+	Raw              json.RawMessage           `json:"-"`
+}
+
+func (item *ResponsesItem) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 || data[0] != '{' {
+		return errors.New("Responses item must be an object")
+	}
+	var wire struct {
+		Type             ResponsesItemType         `json:"type"`
+		ID               string                    `json:"id"`
+		Role             string                    `json:"role"`
+		CallID           string                    `json:"call_id"`
+		Name             string                    `json:"name"`
+		Input            string                    `json:"input"`
+		Content          json.RawMessage           `json:"content"`
+		Summary          json.RawMessage           `json:"summary"`
+		Output           []ResponsesContentPart    `json:"output"`
+		EncryptedContent string                    `json:"encrypted_content"`
+		Tools            []ResponsesAdditionalTool `json:"tools"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	*item = ResponsesItem{
+		Type: wire.Type, ID: wire.ID, Role: wire.Role, CallID: wire.CallID, Name: wire.Name,
+		Input: wire.Input, Content: cloneJSON(wire.Content), Summary: cloneJSON(wire.Summary),
+		Output: wire.Output, EncryptedContent: wire.EncryptedContent, Tools: wire.Tools, Raw: cloneJSON(data),
+	}
+	return nil
+}
+
+func (item ResponsesItem) MarshalJSON() ([]byte, error) {
+	if len(item.Raw) != 0 {
+		return cloneJSON(item.Raw), nil
+	}
+	type wire ResponsesItem
+	return json.Marshal(wire(item))
+}
+
+func (item ResponsesItem) ToolCall() (ResponsesToolCall, bool) {
+	if item.Type != ResponsesItemCustomToolCall {
+		return ResponsesToolCall{}, false
+	}
+	return ResponsesToolCall{Type: item.Type, CallID: item.CallID, Name: item.Name, Input: item.Input}, true
+}
+
+func (item ResponsesItem) TextParts() ([]ResponsesContentPart, error) {
+	raw := item.Content
+	if item.Type == ResponsesItemReasoning {
+		raw = item.Summary
+	}
+	if len(raw) == 0 || !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("[")) {
+		return nil, ErrInvalid
+	}
+	var parts []ResponsesContentPart
+	if err := json.Unmarshal(raw, &parts); err != nil {
+		return nil, err
+	}
+	return parts, nil
+}
+
+type ResponsesToolCall struct {
+	Type   ResponsesItemType `json:"type"`
+	CallID string            `json:"call_id"`
+	Name   string            `json:"name"`
+	Input  string            `json:"input"`
+}
+
+type ResponsesContentPart struct {
+	Type string          `json:"type"`
+	Text string          `json:"text"`
+	Raw  json.RawMessage `json:"-"`
+}
+
+func (part *ResponsesContentPart) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 || data[0] != '{' {
+		return errors.New("Responses content part must be an object")
+	}
+	var wire struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	*part = ResponsesContentPart{Type: wire.Type, Text: wire.Text, Raw: cloneJSON(data)}
+	return nil
+}
+
+func (part ResponsesContentPart) MarshalJSON() ([]byte, error) {
+	if len(part.Raw) != 0 {
+		return cloneJSON(part.Raw), nil
+	}
+	type wire ResponsesContentPart
+	return json.Marshal(wire(part))
+}
+
+type ResponsesAdditionalTool struct {
+	Type        string              `json:"type"`
+	Name        string              `json:"name"`
+	Description string              `json:"description"`
+	Format      ResponsesToolFormat `json:"format"`
+}
+
+type ResponsesToolFormat struct {
+	Type string `json:"type"`
+}
+
+type ResponsesCodeToolDefinition struct {
+	Name         string                 `json:"name"`
+	ToolName     ResponsesToolName      `json:"tool_name"`
+	Description  string                 `json:"description"`
+	Kind         string                 `json:"kind"`
+	InputSchema  *ResponsesObjectSchema `json:"input_schema"`
+	OutputSchema json.RawMessage        `json:"output_schema"`
+}
+
+type ResponsesToolName struct {
+	Name      string  `json:"name"`
+	Namespace *string `json:"namespace"`
+}
+
+type ResponsesObjectSchema struct {
+	Type                 string                             `json:"type"`
+	Properties           map[string]ResponsesPropertySchema `json:"properties"`
+	Required             []string                           `json:"required"`
+	AdditionalProperties bool                               `json:"additionalProperties"`
+}
+
+type ResponsesPropertySchema struct {
+	Type string `json:"type"`
+}
+
+type ResponsesRequest struct {
+	Model          string                    `json:"model"`
+	Input          []ResponsesItem           `json:"input"`
+	Stream         bool                      `json:"stream"`
+	Store          bool                      `json:"store"`
+	Include        []string                  `json:"include"`
+	PromptCacheKey string                    `json:"prompt_cache_key"`
+	ClientMetadata ResponsesClientMetadata   `json:"client_metadata"`
+	Reasoning      *ResponsesReasoningConfig `json:"reasoning,omitempty"`
+}
+
+type ResponsesClientMetadata struct {
+	SessionID string `json:"session_id"`
+	ThreadID  string `json:"thread_id"`
+	TurnID    string `json:"turn_id"`
+}
+
+type ResponsesReasoningConfig struct {
+	Effort string `json:"effort"`
+}
+
+type ResponsesEvent struct {
+	Type        ResponsesEventType `json:"type"`
+	ItemID      string             `json:"item_id,omitempty"`
+	Delta       *string            `json:"delta,omitempty"`
+	Item        *ResponsesItem     `json:"item,omitempty"`
+	Response    *ResponsesTerminal `json:"-"`
+	ResponseRaw json.RawMessage    `json:"-"`
+	Raw         json.RawMessage    `json:"-"`
+}
+
+func (event *ResponsesEvent) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 || data[0] != '{' {
+		return errors.New("Responses event must be an object")
+	}
+	var wire struct {
+		Type     ResponsesEventType `json:"type"`
+		ItemID   string             `json:"item_id"`
+		Delta    *string            `json:"delta"`
+		Item     *ResponsesItem     `json:"item"`
+		Response json.RawMessage    `json:"response"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	if wire.Type == "" {
+		return errors.New("Responses event has no type")
+	}
+	var response *ResponsesTerminal
+	if len(wire.Response) > 0 && bytes.HasPrefix(bytes.TrimSpace(wire.Response), []byte("{")) {
+		response = new(ResponsesTerminal)
+		if err := json.Unmarshal(wire.Response, response); err != nil {
+			return err
+		}
+	}
+	*event = ResponsesEvent{
+		Type: wire.Type, ItemID: wire.ItemID, Delta: wire.Delta, Item: wire.Item,
+		Response: response, ResponseRaw: cloneJSON(wire.Response), Raw: cloneJSON(data),
+	}
+	return nil
+}
+
+func (event ResponsesEvent) MarshalJSON() ([]byte, error) {
+	if len(event.Raw) != 0 {
+		return cloneJSON(event.Raw), nil
+	}
+	type wire ResponsesEvent
+	return json.Marshal(wire(event))
+}
+
+type ResponsesTerminal struct {
+	Status json.RawMessage `json:"status,omitempty"`
+	Output json.RawMessage `json:"output,omitempty"`
+	Usage  json.RawMessage `json:"usage,omitempty"`
+	Raw    json.RawMessage `json:"-"`
+}
+
+func (terminal *ResponsesTerminal) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 || data[0] != '{' {
+		return errors.New("Responses terminal response must be an object")
+	}
+	var wire struct {
+		Status json.RawMessage `json:"status"`
+		Output json.RawMessage `json:"output"`
+		Usage  json.RawMessage `json:"usage"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	*terminal = ResponsesTerminal{
+		Status: cloneJSON(wire.Status), Output: cloneJSON(wire.Output),
+		Usage: cloneJSON(wire.Usage), Raw: cloneJSON(data),
+	}
+	return nil
+}
+
+func (terminal ResponsesTerminal) StatusValue() (string, bool) {
+	if len(terminal.Status) == 0 {
+		return "", false
+	}
+	var status string
+	if err := json.Unmarshal(terminal.Status, &status); err != nil {
+		return "", false
+	}
+	return status, true
+}
+
+func (terminal ResponsesTerminal) MarshalJSON() ([]byte, error) {
+	if len(terminal.Raw) != 0 {
+		return cloneJSON(terminal.Raw), nil
+	}
+	type wire ResponsesTerminal
+	return json.Marshal(wire(terminal))
+}
+
+func (terminal ResponsesTerminal) OutputItems() ([]ResponsesItem, bool, error) {
+	if len(terminal.Output) == 0 {
+		return nil, false, nil
+	}
+	if !bytes.HasPrefix(bytes.TrimSpace(terminal.Output), []byte("[")) {
+		return nil, true, errors.New("terminal output is not an array")
+	}
+	var items []ResponsesItem
+	if err := json.Unmarshal(terminal.Output, &items); err != nil {
+		return nil, true, err
+	}
+	return items, true, nil
+}
+
+func (terminal ResponsesTerminal) TotalTokens() *int {
+	if len(terminal.Usage) == 0 || !bytes.HasPrefix(bytes.TrimSpace(terminal.Usage), []byte("{")) {
+		return nil
+	}
+	var usage struct {
+		TotalTokens json.RawMessage `json:"total_tokens"`
+	}
+	if err := json.Unmarshal(terminal.Usage, &usage); err != nil || len(usage.TotalTokens) == 0 {
+		return nil
+	}
+	var tokens int64
+	if err := json.Unmarshal(usage.TotalTokens, &tokens); err != nil {
+		return nil
+	}
+	if int64(int(tokens)) != tokens {
+		return nil
+	}
+	value := int(tokens)
+	return &value
+}
+
+func cloneJSON(value []byte) json.RawMessage {
+	if value == nil {
+		return nil
+	}
+	return append(json.RawMessage(nil), value...)
+}
+
+func decodeJSONValue(data []byte) (any, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return nil, err
+	}
+	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return nil, errors.New("JSON contains trailing data")
+		}
+		return nil, err
+	}
+	return value, nil
+}
+
+func equalResponsesItems(left, right []ResponsesItem) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		leftJSON, leftErr := json.Marshal(left[index])
+		rightJSON, rightErr := json.Marshal(right[index])
+		if leftErr != nil || rightErr != nil {
+			return false
+		}
+		leftValue, leftErr := decodeJSONValue(leftJSON)
+		rightValue, rightErr := decodeJSONValue(rightJSON)
+		if leftErr != nil || rightErr != nil {
+			return false
+		}
+		leftCanonical, leftErr := json.Marshal(leftValue)
+		rightCanonical, rightErr := json.Marshal(rightValue)
+		if leftErr != nil || rightErr != nil || !bytes.Equal(leftCanonical, rightCanonical) {
+			return false
+		}
+	}
+	return true
+}
+
+func responsesText(item ResponsesItem) (string, error) {
+	parts, err := item.TextParts()
+	if err != nil {
+		return "", err
+	}
+	var result strings.Builder
+	for _, part := range parts {
+		result.WriteString(part.Text)
+	}
+	return result.String(), nil
+}

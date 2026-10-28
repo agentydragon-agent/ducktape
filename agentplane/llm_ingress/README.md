@@ -129,3 +129,14 @@ configuration path.
 ```sh
 bbr test //agentplane/llm_ingress/...
 ```
+
+## Trusted central Session attribution
+
+`central_sampler_accounts` is a default-empty list of authenticated `namespace/name` accounts.
+Only those callers may supply `x-agentplane-session-id`, and its value must be a canonical UUID.
+The ingress strips that header and generates `agentplane.session_id` in the trusted LiteLLM spend
+metadata alongside the Kubernetes principal fields. A non-allowlisted caller's claim is rejected.
+This is an asserted conversation identity from an explicitly trusted shared sampler; it does not
+replace TokenReview or authorize arbitrary Session reads. LiteLLM promotes the configured Session
+metadata into exported traces; the frontend's metadata-key setting selects the matching Langfuse
+filter. Existing wrapped harness attribution continues to use its Sandbox identity.

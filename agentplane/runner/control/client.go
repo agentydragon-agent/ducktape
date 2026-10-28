@@ -11,6 +11,7 @@ import (
 	tunnelpb "github.com/agentydragon/ducktape/agentplane/proto/grpc_tunnel"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/runner/stream"
+	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -29,6 +30,13 @@ type Endpoint struct {
 	Bearer string
 }
 
+// ExecutorConnection owns the Runner's executor channels for one control connection.
+// Route must not wait for executor startup or I/O. Close joins workers after context cancellation.
+type ExecutorConnection interface {
+	Route(*executorpb.ExecutorFrame) error
+	Close()
+}
+
 // Dependencies are the Runner-owned operations used by the control connection.
 type Dependencies struct {
 	BootID           string
@@ -37,6 +45,7 @@ type Dependencies struct {
 	Facts            func() (*controlpb.RunnerFacts, error)
 	Changes          func() <-chan struct{}
 	StopRetry        func(error) bool
+	OpenExecutor     func(context.Context, uint64, func(*controlpb.RunnerFrame) error, func(*controlpb.RunnerFrame) error) ExecutorConnection
 }
 
 // Client owns the Runner Gateway control stream and its reconnect lifecycle.
@@ -49,6 +58,7 @@ type Client struct {
 	stopRetry         func(error) bool
 	heartbeatInterval time.Duration
 	streamLiveness    time.Duration
+	openExecutor      func(context.Context, uint64, func(*controlpb.RunnerFrame) error, func(*controlpb.RunnerFrame) error) ExecutorConnection
 }
 
 func New(dependencies Dependencies) (*Client, error) {
@@ -64,6 +74,7 @@ func New(dependencies Dependencies) (*Client, error) {
 		stopRetry:         dependencies.StopRetry,
 		heartbeatInterval: heartbeatInterval,
 		streamLiveness:    streamLiveness,
+		openExecutor:      dependencies.OpenExecutor,
 	}, nil
 }
 
@@ -82,8 +93,12 @@ func (c *Client) connect(ctx context.Context, endpoint Endpoint) (bool, error) {
 	defer conn.Close()
 	ctx, cancel := context.WithCancel(ctx)
 	var receiving, calls, adoption sync.WaitGroup
+	var executor ExecutorConnection
 	defer func() {
 		cancel()
+		if executor != nil {
+			executor.Close()
+		}
 		calls.Wait()
 		receiving.Wait()
 		adoption.Wait()
@@ -92,12 +107,8 @@ func (c *Client) connect(ctx context.Context, endpoint Endpoint) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	var sending sync.Mutex
-	send := func(frame *controlpb.RunnerFrame) error {
-		sending.Lock()
-		defer sending.Unlock()
-		return controlStream.Send(frame)
-	}
+	sender := newSender(ctx, controlStream.Send)
+	send := sender.Send
 	if err := send(&controlpb.RunnerFrame{Frame: &controlpb.RunnerFrame_Hello{Hello: &controlpb.Hello{RunnerBootId: c.bootID}}}); err != nil {
 		return false, err
 	}
@@ -135,7 +146,7 @@ func (c *Client) connect(ctx context.Context, endpoint Endpoint) (bool, error) {
 		return false, first.err
 	}
 	welcome := first.frame.GetWelcome()
-	if welcome == nil || welcome.IncarnationUid == "" {
+	if welcome == nil || welcome.IncarnationUid == "" || welcome.ConnectionEpoch == 0 {
 		return false, status.Error(codes.InvalidArgument, "expected Welcome naming the Sandbox incarnation")
 	}
 	// Adoption may wait for the previous generation to flush. Keep the stream
@@ -172,12 +183,17 @@ func (c *Client) connect(ctx context.Context, endpoint Endpoint) (bool, error) {
 		select {
 		case <-ctx.Done():
 			return false, ctx.Err()
+		case <-sender.done:
+			return false, sender.error()
 		case err := <-adopted:
 			if err != nil {
 				return false, err
 			}
 			if err := ctx.Err(); err != nil {
 				return false, err
+			}
+			if c.openExecutor != nil {
+				executor = c.openExecutor(ctx, welcome.ConnectionEpoch, send, sender.SendExecutor)
 			}
 			incarnationAdopted = true
 			started = time.Now()
@@ -208,6 +224,23 @@ func (c *Client) connect(ctx context.Context, endpoint Endpoint) (bool, error) {
 					case <-ctx.Done():
 					}
 				}()
+			} else if frame := message.frame.GetExecutor(); frame != nil {
+				if !incarnationAdopted {
+					if frame.GetOpen() != nil {
+						if err := send(&controlpb.RunnerFrame{Frame: &controlpb.RunnerFrame_Executor{Executor: &executorpb.ExecutorFrame{
+							ChannelId: frame.GetChannelId(), Frame: &executorpb.ExecutorFrame_Ready{Ready: &executorpb.ExecutorReady{Accepted: false}},
+						}}}); err != nil {
+							return false, err
+						}
+					}
+					continue
+				}
+				if executor == nil {
+					return false, status.Error(codes.Unimplemented, "executor relay is not configured")
+				}
+				if err := executor.Route(frame); err != nil {
+					return false, err
+				}
 			} else if message.frame.GetHeartbeat() == nil {
 				return false, status.Error(codes.InvalidArgument, "unexpected control frame")
 			}

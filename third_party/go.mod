@@ -43,6 +43,9 @@ require (
 	go.uber.org/zap v1.28.0
 )
 
+// Direct dependency for the central sampler's isolated JavaScript host
+require github.com/containerd/cgroups/v3 v3.1.3
+
 // Direct dependencies for Agentplane integration-test fixtures
 require (
 	github.com/moby/moby/client v0.5.1

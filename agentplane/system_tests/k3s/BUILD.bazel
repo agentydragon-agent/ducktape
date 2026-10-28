@@ -220,6 +220,7 @@ py_library(
         "//agentplane/crds",
         K3S_BINARY,
     ] + [":" + name + "_layout" for name in _IMAGES],
+    visibility = ["//agentplane/system_tests:__pkg__"],
     deps = [
         ":block_storage",
         ":bootstrap",

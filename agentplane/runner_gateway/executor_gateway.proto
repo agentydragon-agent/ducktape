@@ -1,0 +1,49 @@
+// Runner Gateway's authenticated bridge to a Sandbox's configured Codex exec-server.
+syntax = "proto3";
+
+package agentplane.runner_gateway;
+
+import "agentplane/proto/sandboxes.proto";
+
+// The Gateway assigns a private channel ID and carries these frames over the Sandbox's existing
+// authenticated RunnerControl.Connect stream. Callers choose only a Sandbox identity and Session.
+service ExecutorGateway {
+  rpc Connect(stream ExecutorFrame) returns (stream ExecutorFrame);
+}
+
+message ExecutorFrame {
+  // Empty on the public RPC. The Gateway sets this only on RunnerControl frames.
+  string channel_id = 1;
+  oneof frame {
+    ExecutorOpen open = 2;  // first frame from the caller
+    ExecutorReady ready = 3;  // first response after the Runner opens its configured endpoint
+    ExecutorMessage message = 4;
+    ExecutorClose close = 5;
+  }
+}
+
+message ExecutorOpen {
+  agentplane.proto.SandboxDestination destination = 1;
+  string expected_incarnation_uid = 2;
+  string session_id = 3;  // attribution supplied by the authorized caller
+}
+
+message ExecutorReady {
+  bool accepted = 1;
+}
+
+// One message payload and its WebSocket opcode. Payload bytes are preserved verbatim.
+message ExecutorMessage {
+  enum Opcode {
+    OPCODE_TEXT = 0;
+    OPCODE_BINARY = 1;
+  }
+  Opcode opcode = 1;
+  bytes payload = 2;
+}
+
+// A WebSocket close frame. Leaving the public gRPC stream open until cancellation maps to normal close.
+message ExecutorClose {
+  uint32 code = 1;
+  string reason = 2;
+}

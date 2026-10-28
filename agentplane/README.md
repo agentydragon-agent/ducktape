@@ -30,6 +30,11 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
 - [Integration app](app/README.md): the human-facing frontend over the services above, and a
   client of them. Its static browser shell has a separate [frontend image](app/frontend/serving/README.md).
 
+The opt-in [central code-mode sampler](x/central_sampler/README.md) keeps sampling, JavaScript
+and continuation in a separate service and database; the Sandbox supplies only its executor.
+Wrapped Codex and Claude continue to sample and execute inside their Sandbox. No central service
+is deployed by default.
+
 ## Go service images
 
 The Go Action Service, MCP edge, relay, LLM ingress, Runner Gateway, queue migrator, Policy Controller, Sandbox
@@ -65,6 +70,8 @@ flowchart LR
         egress[Egress proxy]
         llm[LLM ingress]
         electric[Electric]
+        sampler[Experimental central sampler]
+        samplerdb[(Sampler PostgreSQL)]
     end
     subgraph runtimes[Runner runtimes]
       direction LR
@@ -111,6 +118,11 @@ flowchart LR
     sdk_services -->|OTLP/gRPC| alloy
     app -->|browser trace relay: OTLP/HTTP| alloy
 
+    gw -->|central Session commands: Sampler gRPC| sampler
+    sampler --> samplerdb
+    sampler -->|exec-server relay: ExecutorGateway gRPC| gw
+    sampler -->|RunnerIngress.Push| hs
+    sampler -->|Responses API, Session attribution| llm
     gw --> k8s
     notif --> k8s
     actions -->|Action Pods, launched Sandboxes and their launcher grants| k8s
@@ -131,8 +143,8 @@ flowchart LR
     guest -.->|OTLP/gRPC telemetry route| relay
     relay -.->|outbound platform route| gw
     relay -->|OTLP/gRPC| alloy
-    gw -->|tunneled Runner RPCs| runner
-    gw -->|tunneled Runner RPCs| guest
+    gw -->|tunneled Runner RPCs and exec-server frames| runner
+    gw -->|tunneled Runner RPCs and exec-server frames| guest
     runner -.->|dials RunnerIngress.Push| sidecar
     sidecar -.->|outbound ingress route| hs
     guest -.->|dials RunnerIngress.Push| relay

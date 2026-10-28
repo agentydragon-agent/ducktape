@@ -143,3 +143,10 @@ describe("a failed last turn colors only an otherwise idle thread", () => {
     });
   });
 });
+
+it("keeps a central sampler turn visible when the execution Sandbox is unavailable", () => {
+  const central = thread({ harness: "HARNESS_CENTRAL_SAMPLER", active_turn_id: "turn-central" });
+  expect(threadStatusFromSnapshot(central, SUSPENDED_SANDBOX, true).kind).toBe("running");
+  expect(threadStatusFromSnapshot(central, undefined, true).kind).toBe("running");
+  expect(threadStatusFromSnapshot(central, undefined, false).kind).toBe("inactive");
+});

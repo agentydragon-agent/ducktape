@@ -73,3 +73,17 @@ compatible with the version still serving during a rollout.
 
 `//agentplane/runner_gateway/migrations:test_migrations` covers fresh schema creation,
 idempotent application and concurrent migrations.
+
+## Optional central sampler
+
+`central_samplers` maps named runtimes to server-owned gRPC targets and rotating token files.
+Dispatcher routes central Session opens and commands directly there; wrapped native Sessions
+continue through ProxyRunner. Central controls bypass executor readiness/wake checks after open.
+The existing Sandbox UID/incarnation binding is fixed; v1 requires the bound Sandbox object.
+
+The separate, default-empty `executor_callers` policy enables `ExecutorGateway.Connect` for trusted
+samplers. It relays pinned Codex exec-server frames over the existing outbound Runner connection
+to a configured loopback executor, with UID/incarnation fencing and bounded flow control. It does
+not interpret or replay tools. Active executor relays participate in Runner activity and quiesce.
+The Dispatcher is absent from this tool path. See the
+[central sampler contract](../x/central_sampler/SPEC.md).

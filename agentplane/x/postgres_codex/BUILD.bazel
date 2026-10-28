@@ -191,6 +191,7 @@ py_test(
 
 py_test(
     name = "test_schema",
+    size = "medium",
     srcs = ["test_schema.py"],
     data = [
         "migrations/0001_compaction.sql",

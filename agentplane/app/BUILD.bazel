@@ -1666,6 +1666,20 @@ py_test(
 )
 
 py_test(
+    name = "test_model_catalog",
+    size = "medium",
+    srcs = ["test_model_catalog.py"],
+    deps = [
+        ":conftest",
+        ":model_catalog",
+        "//:conftest",
+        "//agentplane/runner:harness",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_electric_window_traffic",
     size = "medium",
     srcs = ["test_electric_window_traffic.py"],
