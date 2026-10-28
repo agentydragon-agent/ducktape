@@ -39,6 +39,20 @@ operation, or read-only analysis. Unrecognized shapes remain unclassified.
 Running an edit gate does not establish full pipeline, reconstruction, or
 runtime validation.
 
+## Read-only query failures
+
+Once Clap accepts the command line, runtime failures from `describe`,
+`inspect-source`, `graph-summary`, `atoms`, `coverage`, `scc`, and `cluster`
+follow the selected output format. In `json` mode the CLI writes one object
+with a typed `reason` and the full actionable error chain in `message`; in
+`ndjson` mode it writes that object as one row. Both modes exit nonzero.
+Both modes retain the same diagnostic on stderr. Reason codes are `io`,
+`invalid_json`, `source_unit_not_found`, and `query_failed`. Graph compatibility
+failures retain the existing `graph_compatibility` rejection payload. In `text`
+mode, runtime errors keep the existing stderr diagnostic and leave stdout
+without an error report.
+Clap parse and usage failures occur before this runtime boundary.
+
 ## Input and spec scope
 
 One run or validation resolves one exact spec against one configured input
@@ -140,6 +154,18 @@ Snapshot creation requires a graph produced by `run` from a tree-shaped spec.
 Embedded source and vendor-bundle paths must be relative to the configured
 source root, and all captured files must belong to declared relocatable roots.
 Unsupported inputs are refused before a worker directory is published.
+`describe` returns at most 20 rows per report section by default. `--limit N`
+sets a positive per-section cap; `--all` returns every row and conflicts with
+`--limit`. Each section has `total`, `emitted`, and `truncated` values under
+`limits.sections`; `limits.limit` is the selected cap and is `0` for `--all`.
+Filtering by `--direction` or repeated `--reason` flags happens before section
+totals and limits are computed. Direction filters dependency, atomic-group, and
+module-quotient edges. Reason values are the serialized `DepKind` names:
+`eager_use`, `lazy_use`, `hoisted_use`, `eager_rebind`, `lazy_rebind`,
+`deferred_rebind`, `sequenced`, `co_declaration`, and `local_effect`; repeated
+values are combined with OR. Rows have stable ID ordering, with the selected
+binding, source unit, atomic group, proposal, or diagnostic kept first in its
+matching section before truncation.
 
 ## Unassigned source
 

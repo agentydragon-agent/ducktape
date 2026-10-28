@@ -5,6 +5,8 @@
 //! human-oriented "views".
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error;
+use std::fmt::{Display, Formatter};
 use std::fs;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -21,7 +23,7 @@ use clap::{Args as ClapArgs, ValueEnum};
 use serde::Serialize;
 
 use analysis::{
-    AtomicGroupEdgeReport, AtomicGroupReport, BindingReport, DependencyEdgeReport,
+    AtomicGroupEdgeReport, AtomicGroupReport, BindingReport, DepKind, DependencyEdgeReport,
     DependencyGraphReport, QuotientEdgeReport, SourceLocation, SourceUnitReport,
 };
 use spec_modules::{
@@ -156,11 +158,25 @@ pub struct ExplainArgs {
     pub source_root: Option<PathBuf>,
     /// Maximum number of rows to emit per report section. Zero means unlimited.
     pub limit: usize,
+    /// Which dependency-graph edge directions to include in the report.
+    pub direction: ExplainDirection,
+    /// Keep edges whose typed reason matches any listed kind; empty means all.
+    pub reasons: Vec<DepKind>,
     /// Also run the proposal proposer to annotate matching proposals and
     /// diagnostics. This is intentionally opt-in because it is expensive on
     /// large graphs.
     pub include_proposals: bool,
 }
+
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+#[value(rename_all = "snake_case")]
+pub enum ExplainDirection {
+    Incoming,
+    Outgoing,
+    Both,
+}
+
+pub const DEFAULT_DESCRIBE_LIMIT: usize = 20;
 
 #[derive(Debug, Clone)]
 pub struct SourceSelectionArgs {
@@ -675,7 +691,7 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
     let include_proposal_sections = propose.is_some();
     let ResolvedSelection {
         source_unit_ids,
-        unknown_binding_ids,
+        mut unknown_binding_ids,
     } = resolve_source_unit_ids(
         selection,
         &graph,
@@ -712,7 +728,7 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         .collect();
     let mut neighbor_source_units = source_units_for_ids(&graph, &neighbor_ids);
     let selected_atomic_group_ids = atomic_group_ids_for_source_unit_set(&graph, &source_unit_set);
-    let mut atomic_groups = graph
+    let mut atomic_groups: Vec<AtomicGroupReport> = graph
         .atomic_graph
         .nodes
         .iter()
@@ -750,7 +766,7 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         .iter()
         .map(|source_unit| source_unit.destination.clone())
         .collect();
-    let mut quotient_edges = graph
+    let mut quotient_edges: Vec<QuotientEdgeReport> = graph
         .quotient
         .edges
         .iter()
@@ -761,7 +777,10 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         .cloned()
         .collect();
 
-    let (mut module_proposals, mut module_proposal_diagnostics) = if let Some(propose) = propose {
+    let (mut module_proposals, mut module_proposal_diagnostics): (
+        Vec<ModuleProposal>,
+        Vec<ProposalDiagnostic>,
+    ) = if let Some(propose) = propose {
         (
             propose
                 .proposals
@@ -777,7 +796,122 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
     } else {
         (Vec::new(), Vec::new())
     };
+
+    let matches_reason = |kinds: &[DepKind]| {
+        args.reasons.is_empty() || kinds.iter().any(|kind| args.reasons.contains(kind))
+    };
+    if matches!(args.direction, ExplainDirection::Outgoing) {
+        incoming_edges.clear();
+        incoming_atomic_edges.clear();
+    }
+    if matches!(args.direction, ExplainDirection::Incoming) {
+        outgoing_edges.clear();
+        outgoing_atomic_edges.clear();
+    }
+    incoming_edges.retain(|edge| matches_reason(std::slice::from_ref(&edge.edge_kind)));
+    outgoing_edges.retain(|edge| matches_reason(std::slice::from_ref(&edge.edge_kind)));
+    incoming_atomic_edges.retain(|edge| matches_reason(&edge.edge_kinds));
+    outgoing_atomic_edges.retain(|edge| matches_reason(&edge.edge_kinds));
+    quotient_edges.retain(|edge| {
+        let incoming = selected_destinations.contains(&edge.target);
+        let outgoing = selected_destinations.contains(&edge.source);
+        let direction_matches = match args.direction {
+            ExplainDirection::Incoming => incoming,
+            ExplainDirection::Outgoing => outgoing,
+            ExplainDirection::Both => incoming || outgoing,
+        };
+        direction_matches && matches_reason(&edge.edge_kinds)
+    });
+
+    let mut neighbor_ids = BTreeSet::new();
+    for edge in &incoming_edges {
+        if !source_unit_set.contains(&edge.source) {
+            neighbor_ids.insert(edge.source.clone());
+        }
+    }
+    for edge in &outgoing_edges {
+        if !source_unit_set.contains(&edge.target) {
+            neighbor_ids.insert(edge.target.clone());
+        }
+    }
+    neighbor_source_units.retain(|source_unit| neighbor_ids.contains(&source_unit.id));
+
+    source_units.sort_by(|left, right| left.id.cmp(&right.id));
+    neighbor_source_units.sort_by(|left, right| left.id.cmp(&right.id));
+    bindings.sort();
+    binding_homes.sort();
+    incoming_edges.sort_by(|left, right| left.id.cmp(&right.id));
+    outgoing_edges.sort_by(|left, right| left.id.cmp(&right.id));
+    atomic_groups.sort_by(|left, right| left.id.cmp(&right.id));
+    incoming_atomic_edges.sort_by(|left, right| left.id.cmp(&right.id));
+    outgoing_atomic_edges.sort_by(|left, right| left.id.cmp(&right.id));
+    quotient_edges.sort_by(|left, right| left.id.cmp(&right.id));
+    unknown_binding_ids.sort_unstable();
+    module_proposals.sort_by(|left, right| left.proposed_module_id.cmp(&right.proposed_module_id));
+    module_proposal_diagnostics.sort_by(|left, right| left.diagnostic_id.cmp(&right.diagnostic_id));
+
+    let mut preferred_source_unit_ids = BTreeSet::new();
+    match selection {
+        SelectionKind::SourceUnit(source_unit_id) => {
+            preferred_source_unit_ids.insert(source_unit_id.clone());
+        }
+        SelectionKind::Binding(binding_id) => {
+            move_to_front(&mut bindings, |binding| {
+                binding.binding.as_str() == binding_id || binding.export_name.as_str() == binding_id
+            });
+            move_to_front(&mut binding_homes, |home| {
+                home.binding == *binding_id || home.name == *binding_id
+            });
+            preferred_source_unit_ids.extend(
+                source_units
+                    .iter()
+                    .filter(|source_unit| {
+                        source_unit.declared_bindings.iter().any(|binding| {
+                            binding.binding.as_str() == binding_id
+                                || binding.export_name.as_str() == binding_id
+                        })
+                    })
+                    .map(|source_unit| source_unit.id.clone()),
+            );
+        }
+        SelectionKind::AtomicGroup(atomic_group_id) => {
+            move_to_front(&mut atomic_groups, |group| group.id == *atomic_group_id);
+            if let Some(group) = atomic_groups
+                .iter()
+                .find(|group| group.id == *atomic_group_id)
+            {
+                preferred_source_unit_ids.extend(group.source_unit_ids.iter().cloned());
+            }
+        }
+        SelectionKind::Proposal(proposal_id) => {
+            move_to_front(&mut module_proposals, |proposal| {
+                proposal.proposed_module_id == *proposal_id
+            });
+            if let Some(proposal) = module_proposals
+                .iter()
+                .find(|proposal| proposal.proposed_module_id == *proposal_id)
+            {
+                preferred_source_unit_ids.extend(proposal.source_unit_ids.iter().cloned());
+            }
+        }
+        SelectionKind::Diagnostic(diagnostic_id) => {
+            move_to_front(&mut module_proposal_diagnostics, |diagnostic| {
+                diagnostic.diagnostic_id == *diagnostic_id
+            });
+            if let Some(diagnostic) = module_proposal_diagnostics
+                .iter()
+                .find(|diagnostic| diagnostic.diagnostic_id == *diagnostic_id)
+            {
+                preferred_source_unit_ids.extend(diagnostic.source_unit_ids.iter().cloned());
+            }
+        }
+        SelectionKind::ModulePath(_) | SelectionKind::Module(_) => {}
+    }
+
+    source_units.sort_by_key(|source_unit| !preferred_source_unit_ids.contains(&source_unit.id));
     let mut limited_source_unit_ids = source_unit_ids;
+    limited_source_unit_ids.sort();
+    limited_source_unit_ids.sort_by_key(|id| !preferred_source_unit_ids.contains(id));
 
     let mut sections = BTreeMap::new();
     apply_limits!(
@@ -794,6 +928,7 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         (incoming_atomic_edges, "incoming_atomic_edges"),
         (outgoing_atomic_edges, "outgoing_atomic_edges"),
         (quotient_edges, "quotient_edges"),
+        (unknown_binding_ids, "unknown_binding_ids"),
         (module_proposals, "module_proposals"),
         (module_proposal_diagnostics, "module_proposal_diagnostics"),
     );
@@ -815,7 +950,10 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         module_proposals: include_proposal_sections.then_some(module_proposals),
         module_proposal_diagnostics: include_proposal_sections
             .then_some(module_proposal_diagnostics),
-        limits: limit_report(args.limit, sections),
+        limits: Some(LimitReport {
+            limit: args.limit,
+            sections,
+        }),
     })
 }
 
@@ -901,9 +1039,6 @@ fn apply_limit_with_metadata<T>(
     sections: &mut BTreeMap<&'static str, LimitSectionReport>,
     section: &'static str,
 ) {
-    if limit == 0 {
-        return;
-    }
     let total = records.len();
     apply_limit(records, limit);
     let emitted = records.len();
@@ -915,6 +1050,12 @@ fn apply_limit_with_metadata<T>(
             truncated: emitted < total,
         },
     );
+}
+
+fn move_to_front<T>(records: &mut [T], mut matches: impl FnMut(&T) -> bool) {
+    if let Some(index) = records.iter().position(&mut matches) {
+        records[..=index].rotate_right(1);
+    }
 }
 
 fn limit_report(
@@ -1296,6 +1437,23 @@ struct ResolvedSelection {
     unknown_binding_ids: Vec<String>,
 }
 
+#[derive(Debug)]
+pub struct SourceUnitNotFound {
+    source_unit_id: String,
+}
+
+impl Display for SourceUnitNotFound {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "source-unit ID {:?} not found in dependency graph",
+            self.source_unit_id
+        )
+    }
+}
+
+impl Error for SourceUnitNotFound {}
+
 fn resolve_source_unit_ids(
     selection: &SelectionKind,
     graph: &DependencyGraphReport,
@@ -1310,7 +1468,10 @@ fn resolve_source_unit_ids(
             if graph.nodes.iter().any(|node| node.id == *source_unit_id) {
                 vec![source_unit_id.clone()]
             } else {
-                bail!("source-unit ID {source_unit_id:?} not found in dependency graph");
+                return Err(SourceUnitNotFound {
+                    source_unit_id: source_unit_id.clone(),
+                }
+                .into());
             }
         }
         SelectionKind::ModulePath(module_path) => {

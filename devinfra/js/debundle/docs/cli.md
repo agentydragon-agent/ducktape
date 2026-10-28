@@ -10,7 +10,7 @@ The source-built CLI target is `@ducktape//devinfra/js/debundle:debundle` in
 consuming repositories, or `//devinfra/js/debundle:debundle` inside Ducktape.
 Prefer the project's CLI wrapper when provided: it supplies the matching
 graph, modules tree, and source root. All commands share the same
-JSON-on-stdout / structured-diagnostic-on-stderr convention.
+JSON-on-stdout / readable-diagnostic-on-stderr convention.
 
 ## Find a workflow
 
@@ -190,6 +190,22 @@ If `--format` isn't passed and stdout is **not** a tty (i.e. the command is
 in a pipeline), the default flips to `json`. So
 `debundle modules propose | jq …` works without an explicit `--format json`.
 
+### Runtime failures from top-level queries
+
+After Clap has accepted the command line, `describe`, `inspect-source`,
+`graph-summary`, `atoms`, `coverage`, `scc`, and `cluster` keep runtime errors
+machine-readable in JSON modes. A `json` failure writes one object with a
+typed `reason` code and `message`; `ndjson` writes that same object as one row.
+The message contains the full actionable error chain, and the command exits
+nonzero while retaining the same diagnostic on stderr. Current reason codes are
+`io`, `invalid_json`, `source_unit_not_found`, and `query_failed`.
+
+Graph compatibility failures retain the existing `graph_compatibility`
+rejection object, including `mismatch.reason` and regeneration details. With
+`--format text`, runtime failures keep the existing stderr diagnostic and do
+not write an error report to stdout. Clap usage and argument-parsing failures
+remain Clap diagnostics because dispatch has not begun.
+
 Read-only inspection commands prefer fast graph/spec lookups. `modules
 propose` is the command that runs the proposal proposer by default;
 `describe`, `coverage`, and `graph-summary` do not run it unless the
@@ -266,6 +282,23 @@ list. Use the minified form to disambiguate.
 bindings (minified or readable), module paths (`runtime/plugins`) or
 unambiguous module filenames, module ids (`logical:7`), source-unit IDs
 (`unit:42`), atom ids (`atomic:N`), proposal ids, diagnostic ids.
+
+`describe` emits at most 20 rows in each report section by default. Use
+`--limit N` for a different positive per-section cap, or `--all` to return
+every matching row; `--all` conflicts with `--limit`, and `--limit 0` directs
+you to use `--all`. Its `limits.sections` object records `total`, `emitted`,
+and `truncated` after filtering; `limits.limit` is the cap, or `0` with
+`--all`. The selected binding/source-unit/group/proposal/diagnostic row comes
+first in its matching section so it remains available under a small limit.
+
+`--direction incoming|outgoing|both` selects edge direction relative to the
+query and defaults to `both`. It filters dependency, atomic-group, and
+module-quotient edges; neighbor source units are derived from the remaining
+dependency edges. Repeat `--reason KIND` to retain any of several dependency
+reasons, using the `edge_kind` spellings from `dependency_graph.json`:
+`eager_use`, `lazy_use`, `hoisted_use`, `eager_rebind`, `lazy_rebind`,
+`deferred_rebind`, `sequenced`, `co_declaration`, or `local_effect`. Both
+filters are applied before totals and row limits.
 
 ## Validate-by-default (mutating commands)
 
