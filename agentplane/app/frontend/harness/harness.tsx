@@ -1069,7 +1069,7 @@ function autosuspendStarting(): void {
     service_account: { namespace: ready.namespace, name: "starting-sandbox" },
     phase: "Creating",
     pod: null,
-    status: null,
+    status: {},
     idle_suspend_at: null,
     autosuspend_blockers: [],
   });
