@@ -159,13 +159,16 @@ py_test(
 
 py_test(
     name = "test_portfolio",
+    size = "medium",
     srcs = ["test_portfolio.py"],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":plaid_valuation",
         ":portfolio",
         ":portfolio_models",
         "//:conftest",
+        "//finance/plaid/db:models",
         "@pypi//cryptography",
         "@pypi//httpx",
         "@pypi//pydantic",
@@ -254,7 +257,11 @@ py_library(
         "//finance/plaid/db:testing",
         "//util:db_url",
         "//util/testing:postgres_fixtures",
+        "@pypi//asyncpg",
+        "@pypi//psycopg",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -311,7 +318,9 @@ py_library(
 
 py_test(
     name = "test_portfolio_queries",
+    size = "medium",
     srcs = ["test_portfolio_queries.py"],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":portfolio_queries",
