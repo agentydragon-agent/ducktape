@@ -3,19 +3,40 @@
 COSI controllers own demand, readiness, restart backoff, quiesce and sealing. They schedule
 asynchronous operations whose completion wakes reconciliation. Harness and server code builds
 `supervision.ProcessConfig` values containing command, working directory and explicit environment.
+The reusable process-lifetime controller, its resources and `Host` registry live in `supervision/`.
+Runner injects the lifecycle context, state, namespace, shared worker tracking and error callback into
+the host, then registers `Host.Controller()` in the same COSI engine as its other lifecycle
+controllers. The host does not start a second runtime. Runner's `launchProcess` adapter in
+`lifecycle_runtime.go` supplies the admitted owner and generation to `Host.Launch`;
+`supervision.ManagedProcess` publishes
+process intent and exposes streams and waits through that controller.
 
 Runner selects a `supervision.Supervisor` during startup while holding state ownership, before
 opening Session stores. Each supervisor creates `Process` handles through a private backend
 interface. `Process` owns the common streams, PID and completion result; backend implementations
 own launch, observation and execution-domain cleanup. `Start` bounds startup independently of
 process lifetime. `Stop` requests graceful shutdown and cleanup; `Wait` returns only after exit
-and cleanup. A canceled wait cancels observation, not execution.
+and cleanup. A canceled wait cancels observation, not execution. `ManagedProcess` places the COSI
+intent and cleanup barrier around that backend process, while callers retain stream access.
 
 VMs prepare systemd supervision, including slice budgets and prior-owner cleanup. Pods use the
 subprocess supervisor with its inherited state-owner descriptor. Backend choice stays out of
 controllers and per-launch specifications. A manager failure never switches a VM to the Pod
 backend. The Pod exec-server container retains its separate control-socket ownership protocol.
-The shared API is imperative; there is no generic COSI process-intent resource.
+The generic COSI process controller is part of the shared `supervision` package and runs in Runner's
+existing lifecycle engine. Every Runner-managed
+native launch uses `ProcessDesiredStates`, `ProcessStatuses` and a finalizer per attempt: Codex
+exec-server, shared Codex app-server, per-Session harnesses, bootstrap/setup scripts and credentialed
+workspace helpers. Owning controllers keep readiness, restart and journal policy. Protocol and
+script workers use `supervision.ManagedProcess` to publish intent, consume streams and await the cleanup barrier;
+they never invoke backend start/stop themselves. Canceling a wait leaves execution owned until an
+explicit stop. Canceling startup instead tears down its intent and joins any late launch.
+Process resources contain lifecycle values; launch callbacks and native handles stay in the host
+registry. Teardown cancellation joins an in-flight start and fences any instance it returns before
+releasing the finalizer. A completed attempt never relaunches during reconciliation.
+Runner checks every remaining process intent before sealing or closing, so a failed fence cannot
+be hidden by a protocol reader reporting the leader's exit. The standalone Pod executor still
+supervises its own container-local child; Runner owns it through the container-ownership adapter.
 
 ## VM services
 

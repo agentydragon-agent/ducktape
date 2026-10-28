@@ -20,16 +20,17 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 
 ## Layout
 
-- `lifecycle_runtime.go`, `lifecycle_resources.go`, and `lifecycle_inputs.go`: COSI runtime wiring,
-  typed resources, and host input publication ([ownership](docs/lifecycle.md)).
+- `lifecycle_runtime.go`, `lifecycle_resources.go`, and `lifecycle_inputs.go`: Runner COSI runtime
+  wiring, Runner-specific typed resources, host input publication, and the adapter that supplies
+  admitted process owners and generations to `supervision.Host` ([ownership](docs/lifecycle.md)).
 - `runner_controller.go`, `session_controller.go`, `codex_exec_server_controller.go`, `codex_app_server_controller.go`,
   and `bootstrap_controller.go`: one lifecycle controller per file.
-- `operations.go`: owned asynchronous native operations and completion routing.
+- `operations.go`: owned asynchronous protocol/setup operations and completion routing.
 - `bootstrap.go`: durable bootstrap selection and the one-shot script effect.
 - `runner.go`: Runner construction, durable inventory, incarnation adoption and lifetime.
 - `admission.go` and `status.go`: public admission and status/facts RPCs.
 - `session.go`: Session host state, readiness and recovery; `session_events.go` owns journal-backed
-  Event effects, and `session_native.go` owns native process, dispatch and stream effects.
+  Event effects, and `session_native.go` owns harness preparation, dispatch and stream effects.
 - `session_setup.go`: the accepted one-shot Session setup effect.
 - `codex_exec_server.go`: isolated Codex execution operations, RPC probes and container ownership fencing
   ([execution modes](docs/codex_executor.md)).
@@ -44,10 +45,11 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   to their originating commands, session metadata, ingress acknowledgements and ownership lock.
   Transactions use `database/sql` with the cgo-free SQLite driver. Outcomes and all
   coalesced command receipts commit together; publication and startup handshake replies follow commit.
-- `supervision/`: the shared native-process API and its private systemd/subprocess backends.
-  Runner prepares supervision while holding state ownership; controllers launch through the
-  selected supervisor. The package owns streams, exit observation and execution-domain cleanup.
-  `systemd/` contains the static guest units. See [supervision](docs/supervision.md).
+- `supervision/`: the shared native-process API, COSI process resources and controller, host registry,
+  and private systemd/subprocess backends. Runner wires its `Host` and controller into the same COSI
+  engine as its lifecycle controllers; the package owns streams, exit observation and
+  execution-domain cleanup. `systemd/` contains the static guest units. See
+  [supervision](docs/supervision.md).
 - `claude/` and `codex/`: harness-specific launch, frame translation and native
   history readers. They depend on the shared adapter contract and recovery types in
   `harness/`, independently of the runner runtime. Unknown frames remain in raw history,

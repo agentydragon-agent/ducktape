@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/cosi-project/runtime/pkg/controller"
 
 	// Avoid the collision with the runner runtime state.
@@ -22,6 +23,7 @@ type lifecycle struct {
 	done      chan struct{}
 	publishMu sync.Mutex
 	workers   sync.WaitGroup
+	processes *supervision.Host
 }
 
 func newLifecycle(r *Runner) (*lifecycle, error) {
@@ -34,6 +36,7 @@ func newLifecycle(r *Runner) (*lifecycle, error) {
 		return nil, err
 	}
 	l := &lifecycle{runner: r, state: store, engine: engine, done: make(chan struct{})}
+	l.processes = supervision.NewHost(r.ctx, l.state, lifecycleNamespace, &l.workers, r.fail)
 	if err := engine.RegisterController(&runnerLifecycleController{l: l}); err != nil {
 		return nil, err
 	}
@@ -41,6 +44,7 @@ func newLifecycle(r *Runner) (*lifecycle, error) {
 		return nil, err
 	}
 	for _, c := range []controller.QController{
+		l.processes.Controller(),
 		&codexExecServerLifecycleController{l: l, host: r.codexExecServer},
 		&codexAppServerLifecycleController{l: l, host: r.codexAppServer, codexExecServer: r.codexExecServer},
 		&bootstrapLifecycleController{l: l},
@@ -63,6 +67,14 @@ func newLifecycle(r *Runner) (*lifecycle, error) {
 		return nil, err
 	}
 	return l, nil
+}
+
+// The owning controller has already admitted this operation. Accepted setup and
+// bootstrap work still finish if Close has since closed new admissions; their
+// operation slots keep shutdown from advancing until they settle.
+func (r *Runner) launchProcess(ctx context.Context, owner string, supervisor *supervision.Supervisor, config supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
+	generation := r.lifecycle.desiredState().Generation
+	return r.lifecycle.processes.Launch(ctx, owner, generation, supervisor, config)
 }
 
 func (l *lifecycle) run() {
