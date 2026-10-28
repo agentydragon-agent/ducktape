@@ -138,9 +138,13 @@ export function SustainabilityHistoryChart({
   const [includeTaxes, setIncludeTaxes] = useState(true);
   const [hiddenWindowDays, setHiddenWindowDays] = useState<Set<number>>(() => new Set());
   const [tooltip, setTooltip] = useState<HistoryTooltip | null>(null);
-  const hasRates = effectiveTaxRate != null && portfolioMinorUnits != null && portfolioMinorUnits > 0;
   const taxesIncluded = includeTaxes && effectiveTaxRate != null;
   const amountLabel = taxesIncluded ? "Annual funding including taxes" : "Annual spending excluding taxes";
+  const amountPerRate = useMemo(() => {
+    if (effectiveTaxRate == null || portfolioMinorUnits == null || portfolioMinorUnits <= 0) return null;
+    return new Decimal(portfolioMinorUnits).mul(taxesIncluded ? 1 : new Decimal(1).minus(effectiveTaxRate));
+  }, [effectiveTaxRate, portfolioMinorUnits, taxesIncluded]);
+  const hasRates = amountPerRate != null;
 
   const historyWindows = useMemo(
     () =>
@@ -165,22 +169,20 @@ export function SustainabilityHistoryChart({
     const curveValues = visibleWindows.map(({ pointsByDate }) =>
       dates.map((date) => {
         const point = pointsByDate.get(date);
-        if (!hasRates) {
-          const spending = point?.annualized_spending_minor_units;
-          if (spending == null) return null;
-          return taxesIncluded && effectiveTaxRate != null
-            ? annualFundingFromSpendingMinorUnits(spending, effectiveTaxRate).toNumber()
-            : spending;
-        }
-        const rate = point?.tax_adjusted_draw_rate;
-        return rate == null ? null : new Decimal(rate).toNumber();
+        const spending = point?.annualized_spending_minor_units;
+        if (spending == null) return null;
+        return taxesIncluded && effectiveTaxRate != null
+          ? annualFundingFromSpendingMinorUnits(spending, effectiveTaxRate).toNumber()
+          : spending;
       })
     );
+    const referenceAmounts =
+      amountPerRate == null ? [] : referenceDrawRates.map((rate) => amountPerRate.mul(rate).toNumber());
     const fittedValues = [
       ...curveValues.flatMap((values) =>
         values.filter((value): value is number => value != null && Number.isFinite(value))
       ),
-      ...(hasRates ? referenceDrawRates.map((rate) => new Decimal(rate).toNumber()).filter(Number.isFinite) : []),
+      ...referenceAmounts.filter(Number.isFinite),
     ];
     const minimum = fittedValues.length > 0 ? Math.min(...fittedValues) : 0;
     const maximum = fittedValues.length > 0 ? Math.max(...fittedValues) : 1;
@@ -204,11 +206,11 @@ export function SustainabilityHistoryChart({
           yAxisID: "amount",
         };
       }),
-      ...(hasRates
+      ...(amountPerRate != null
         ? referenceDrawRates.map((rate, index) => ({
             type: "line" as const,
             label: `Reference scenario ${index + 1} (${percent(rate)})`,
-            data: dates.map(() => new Decimal(rate).toNumber()),
+            data: dates.map(() => referenceAmounts[index]),
             borderColor: REFERENCE_SCENARIO_COLOR,
             backgroundColor: REFERENCE_SCENARIO_COLOR,
             borderWidth: 1,
@@ -225,7 +227,7 @@ export function SustainabilityHistoryChart({
       datasets,
       curveValues,
     };
-  }, [dates, effectiveTaxRate, hasRates, referenceDrawRates, selectedWindowDays, taxesIncluded, visibleWindows]);
+  }, [amountPerRate, dates, effectiveTaxRate, referenceDrawRates, selectedWindowDays, taxesIncluded, visibleWindows]);
 
   const hasVisibleCurveData = chart.curveValues.some((values) =>
     values.some((value) => value != null && Number.isFinite(value))
@@ -237,9 +239,6 @@ export function SustainabilityHistoryChart({
 
   useEffect(() => {
     if (!canvasRef.current || !canPlot) return;
-    const amountPerRate = hasRates
-      ? new Decimal(portfolioMinorUnits).mul(taxesIncluded ? 1 : new Decimal(1).minus(effectiveTaxRate ?? 0))
-      : new Decimal(1);
     const instance = new Chart(canvasRef.current, {
       type: "line",
       data: { labels: chart.labels, datasets: chart.datasets },
@@ -301,14 +300,19 @@ export function SustainabilityHistoryChart({
             ticks: {
               count: 6,
               autoSkip: false,
-              callback: (value) => money(new Decimal(value).mul(amountPerRate), currency),
+              callback: (value) => money(new Decimal(value), currency),
             },
           },
           rate: {
             type: "linear",
             position: "right",
             display: hasRates,
-            ...chart.bounds,
+            ...(amountPerRate == null
+              ? {}
+              : {
+                  min: new Decimal(chart.bounds.min).div(amountPerRate).toNumber(),
+                  max: new Decimal(chart.bounds.max).div(amountPerRate).toNumber(),
+                }),
             title: { display: true, text: "Required withdrawal rate including taxes" },
             grid: { drawOnChartArea: false },
             ticks: { count: 6, autoSkip: false, callback: (value) => percent(Number(value)) },
@@ -323,14 +327,13 @@ export function SustainabilityHistoryChart({
     };
   }, [
     amountLabel,
+    amountPerRate,
     canPlot,
     chart,
     currency,
     dates,
     effectiveTaxRate,
     hasRates,
-    taxesIncluded,
-    portfolioMinorUnits,
     referenceDrawRates,
     visibleWindows,
   ]);
