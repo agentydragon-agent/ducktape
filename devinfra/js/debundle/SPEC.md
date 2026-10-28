@@ -97,6 +97,47 @@ rewritten HTML, and enumerates copied assets. Invalid loading topology rejects
 the plan before any accepted output is written, including during a dry run.
 The browser writer materializes those decisions without rediscovering entries.
 
+## Dependency-graph array ordering
+
+The dependency graph preserves source order for content observations on array
+literal identities that the chunk value-flow analysis can track, including
+aliases and reads promoted from directly invoked chunk functions. Allocation
+seeds a separate pending frontier for each tracked array origin, so later
+opaque barriers remain connected even through unsupported protocols. Allocation
+alone does not depend on preceding opaque operations or reset existing content
+writers/readers: one source origin can represent multiple runtime arrays.
+Before any recognized eager literal-origin array exists, opaque operations do
+not start an array-content chain. Lazy literal-allocation origins are
+conservatively live from the start because hoisted or escaped functions may
+allocate before their lexical statement. This ordering also applies to pure readers:
+call purity does not make an observed array's contents immutable. It is emitted
+in both strict and dataflow-aware S-chain modes.
+
+Array member writes, method calls such as `push`, escaped arrays, and calls
+whose callable body has no direct graph summary remain opaque heap barriers.
+The shared synchronous-call analysis also makes a source unit an opaque heap
+barrier when it reports incomplete execution effects, regardless of a purity
+hint. This covers observations through unsupported coercion or property-access
+protocols, and unresolved synchronous calls, without duplicating the call
+analyzer. Key enumeration (`for-in`), optional calls, and tagged templates are
+also barriers when their array effects are not represented precisely. Barriers
+constrain the preceding array-content frontier and later array observations.
+
+Purity and binding-effect completeness do not prove heap locality or argument
+nonretention. Native calls consuming array literals and checked local
+constructors can therefore remain heap barriers once tracked arrays are live.
+Recovering those extraction patterns requires a reusable operation-specific
+heap-effect capability; this contract adds no author flag or purity exemption.
+The census tracks `ArrayLit` source origins, not arbitrary arrays returned by
+`Array()`, `Object.entries`, or foreign imports; it does not claim full heap
+ordering coverage.
+
+These are scheduling dependencies only; they do not certify call purity,
+no-reentry, property-descriptor integrity, or prototype integrity.
+`trusted_dataflow_summaries` does not weaken these barriers. Unrecognized or
+ambiguous origins remain conservative rather than receiving a precise
+per-array ordering claim.
+
 ## Authoring reports
 
 Each per-chunk `modules.json` may include `imported_callables`, keyed by the

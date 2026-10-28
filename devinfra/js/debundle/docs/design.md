@@ -581,6 +581,38 @@ globalThis`) marks the bindings it flows into (transitively,
     suspect bails — `g.tag` touches the same cells as
     `globalThis.tag` but the summary only sees `Binding(g)`.
 
+  The graph also keeps an identity-based `ArrayContents(origin)` timeline for
+  tracked array literals. Allocation seeds a separate pending frontier, so
+  a later opaque barrier remains connected even if unsupported syntax hides
+  every read or mutation. Allocation alone does not depend on preceding
+  opaque operations or reset content writers/readers: one source origin can
+  represent multiple runtime allocations. Opaque calls before the first live
+  eager literal-origin array do not start an array-content chain. Any lazy
+  allocation origin is conservatively live initially because hoisted or escaped
+  functions may create it before its lexical statement. It follows aliases
+  through the chunk value-flow
+  facts and promotes first-order reads from directly invoked chunk functions,
+  including pure readers that the S-chain intentionally omits. Per-array
+  last-writer and readers-since-write frontiers preserve read-after-write,
+  write-after-write, and write-after-read order in both graph modes. Array
+  member writes, method calls such as `push`, escaped arrays, unresolved
+  callees, and inline or constructor calls whose bodies lack the graph's direct
+  call summary remain opaque heap barriers. The shared synchronous-call
+  analysis also makes a source unit a heap barrier when it reports incomplete
+  execution effects, regardless of a purity hint. This reuses its canonical
+  precision-loss facts for observations through unsupported coercion or
+  property-access protocols and unresolved synchronous calls. Key enumeration
+  (`for-in`), optional calls, and tagged templates stay barriers when their
+  array effects are not represented precisely. A barrier depends on the
+  current array-content frontier and later array observations depend on that
+  barrier; the frontier resets there, so unknown operations do not materialize
+  edges against every array cell. These facts constrain scheduling only: they
+  do not reclassify calls as pure or establish a
+  no-reentry/descriptor-integrity premise. In particular,
+  `trusted_dataflow_summaries` does not make an array member write safe to
+  summarize; absent a separate array-specific proof, it remains an opaque
+  barrier.
+
   The bit is `dataflow_summarizable` in `facts/statement_facts.rs`. Only the
   bailing statements pay the conservative cost, so the mode is safe
   on chunks mixing audited and unaudited code, but call-heavy
