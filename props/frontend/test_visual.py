@@ -76,5 +76,20 @@ async def test_llm_request_chat_completions(visual: VisualHarness, capture_name:
         await view.capture("LLMRequestsChatCompletions", target=shot)
 
 
+async def test_llm_request_anthropic(visual: VisualHarness, capture_name: str) -> None:
+    async with visual.open("LLMRequestsAnthropic", viewport=Viewport(), capture_name=capture_name) as view:
+        shot = view.page.locator("#shot")
+        await expect(shot.locator("details[open]")).to_have_count(1)
+        await expect(shot.get_by_text("Anthropic Request JSON")).to_be_visible()
+        await expect(shot.get_by_text("Anthropic Response JSON")).to_be_visible()
+        sections = shot.locator(".p-4.space-y-3")
+        await expect(sections).to_have_count(2)
+        await view.capture("LLMRequestsAnthropicRequest", target=sections.nth(0))
+        await sections.nth(1).scroll_into_view_if_needed()
+        code = shot.locator(".agentplane-code-block .cm-content")
+        await expect(code).to_have_count(2)
+        await view.capture("LLMRequestsAnthropicResponse", target=sections.nth(1))
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
