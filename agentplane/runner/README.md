@@ -36,6 +36,8 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 - `session/`: durable Session inventory, recovery, journal and native protocol effects, setup,
   status projection, owned operation results, COSI input/runtime resources and controller. Runner
   supplies the synchronous admission barrier and shared process, workspace and ingress facilities.
+  Its native connection owns stream framing, reader joins and handshake waiters; Session supplies
+  frame translation and lifecycle callbacks and retains the exact-turn native-write gate.
 - `codex/execserver/`: isolated executor configuration, COSI resources and controller, host-owned probe
   operations, native launch adapter, RPC probes and container ownership fencing
   ([execution modes](docs/codex_executor.md)). The package takes explicit process, state and admission
@@ -50,12 +52,15 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 - `codexappserver/`: the one shared Codex process, its COSI lifecycle resources and controller,
   startup, protocol routing, reader drain, and process exit. `Session` supplies callbacks that
   commit routed frame batches and exit observations to its journal.
-- `transport.go`: the outbound control tunnel and independent per-Session ingress
-  connection, authentication and discovery worker scheduling. Runner retains one inventory
-  notification seam and owns starting and joining per-Session delivery workers.
+- `control/`: the outbound control tunnel, authentication, reconnect and tunneled Runner RPCs.
+  It receives the generated Runner server plus narrow callbacks for incarnation adoption, facts
+  and inventory changes.
+- `transport.go`: Runner-wide orchestration and the independent per-Session ingress connection,
+  authentication and discovery worker scheduling. Runner retains one inventory notification seam
+  and owns starting and joining per-Session delivery workers.
 - `ingress/`: each Session's history push protocol, including replay, acknowledgements,
   backpressure, sealing, journal wakeups and retry. Runner retains discovery and worker lifecycle.
-- `stream/`: the neutral reconnect policy shared by control and ingress.
+- `stream/`: shared outbound gRPC setup and reconnect policy for control and ingress.
 - `journal/`: the Goose-managed SQLite schema, verbatim protobuf Event blobs, native request records
   with foreign-key links to their originating commands, and recovery queries. It depends on the
   neutral harness contract and protobuf types, with no dependency on `Runner`. Transactions use

@@ -11,6 +11,7 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/runner/operation"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"
@@ -86,9 +87,9 @@ func TestQuiesceDuringPreparationKeepsJournalWritable(t *testing.T) {
 					close(adapter.release)
 				}
 			})
-			s.readers.Add(2)
-			go s.readStdout(p, adapter)
-			go s.readStderr(p)
+			s.connection.readers.Add(2)
+			go s.connection.readStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
+			go s.connection.readStderr(p)
 			preparing := make(chan context.Context, 1)
 			s.startOperation(&s.preparation, func(ctx context.Context) error {
 				preparing <- ctx
@@ -191,7 +192,7 @@ func TestPreparationJoinsExitedProcessReadersBeforeReplacingAttachment(t *testin
 		if _, err := previous.Wait(context.Background()); err != nil {
 			t.Fatal(err)
 		}
-		s.readers.Add(1)
+		s.connection.readers.Add(1)
 		returned := make(chan struct{})
 		var prepareErr error
 		go func() { prepareErr = s.ensureReady(context.Background()); close(returned) }()
@@ -201,7 +202,7 @@ func TestPreparationJoinsExitedProcessReadersBeforeReplacingAttachment(t *testin
 			t.Error("preparation reached successor startup before prior reader completed")
 		default:
 		}
-		s.readers.Done()
+		s.connection.readers.Done()
 		synctest.Wait()
 		<-returned
 		if prepareErr == nil {
@@ -244,12 +245,16 @@ func TestPreparationCompletionRefreshesStaleSchedulingInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	done := make(chan struct{})
-	close(done)
-	op := &operation{id: "completed-preparation", done: done}
+	op := operation.New(m.ctx)
+	op.Register(&s.work)
 	s.mu.Lock()
 	s.preparation = op
 	s.mu.Unlock()
-	m.publishOperation(s.id, op, true)
+	if err := op.Start(
+		func(done bool) error { return m.publishOperation(s.id, op.ID(), done) },
+		m.fail, func(context.Context) error { return nil }, nil, nil,
+	); err != nil {
+		t.Fatal(err)
+	}
 	waitSession(t, s, func(current Runtime) bool { return current.Phase == Ready && current.ProcessID == p.ID() }, "preparation ready after stale input")
 }
