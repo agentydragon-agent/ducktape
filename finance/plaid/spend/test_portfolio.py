@@ -51,13 +51,13 @@ def _policy(
 
 
 def _balance(
-    account_id: str, current: float, captured_at: datetime, *, account_type: str = "depository"
+    account_id: str, current: int, captured_at: datetime, *, account_type: str = "depository"
 ) -> AccountObservation:
     return AccountObservation(
         account_id=account_id,
         account_type=account_type,
         account_currency="USD",
-        current=current,
+        current=Decimal(current),
         balance_currency="USD",
         captured_at=captured_at,
     )
@@ -208,7 +208,7 @@ async def test_plaid_values_use_latest_balances_signed_liabilities_and_coherent_
                 account_id="asset-brokerage",
                 security_id="security-fake-1",
                 captured_at=captured_at,
-                institution_value=125,
+                institution_value=Decimal(125),
                 holding_currency="USD",
             )
         ],
@@ -243,14 +243,14 @@ async def test_correction_reconciles_with_independent_capture_times_across_accou
             account_id="asset-brokerage",
             security_id="security-fake-1",
             captured_at=now - timedelta(minutes=15),
-            institution_value=10,
+            institution_value=Decimal(10),
             holding_currency="USD",
         ),
         HoldingObservation(
             account_id="asset-brokerage",
             security_id="security-unadjusted",
             captured_at=now - timedelta(minutes=15),
-            institution_value=1000,
+            institution_value=Decimal(1000),
             holding_currency="USD",
         ),
     ]
@@ -336,7 +336,7 @@ async def test_corrected_holdings_that_do_not_reconcile_fail_closed(
                 account_id="asset-brokerage",
                 security_id="security-fake-1",
                 captured_at=now,
-                institution_value=100,
+                institution_value=Decimal(100),
                 holding_currency="USD",
             )
         ],
@@ -377,7 +377,7 @@ async def test_missing_excluded_position_with_other_holdings_fails_closed(
                 account_id="asset-brokerage",
                 security_id="security-still-held",
                 captured_at=captured_at,
-                institution_value=2000,
+                institution_value=Decimal(2000),
                 holding_currency="USD",
             )
         ],
@@ -411,7 +411,7 @@ async def test_missing_correction_position_with_other_holdings_fails_closed(
                 account_id="asset-brokerage",
                 security_id="security-still-held",
                 captured_at=captured_at,
-                institution_value=2000,
+                institution_value=Decimal(2000),
                 holding_currency="USD",
             )
         ],
