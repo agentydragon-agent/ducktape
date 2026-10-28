@@ -7,6 +7,17 @@ is a separate control of the cancellation API's scope.
 
 Related evidence in this folder:
 
+- [Bazel client-disconnection fix](bazel_client_disconnect_comparison.md): a
+  matched parent/fix pair changed a killed native client from a busy server to
+  confirmed command completion; [selected evidence](bazel_client_disconnect_comparison.json).
+
+- [Hosted worker trace request](host_trace_request.md): unsent operator handoff
+  for the blocked-analysis case, with [API access evidence](host_trace_access.json).
+
+- [Producer-stop witness](producer_stop_witness.md): one normal zero-retry build
+  finished and its original Java server accepted another command; the blocked-
+  analysis case retained no stop receipt. [Selected evidence](producer_stop_witness.json).
+
 - [RPC retry trace](rpc_retry_trace.md): a child-only control directly captured
   terminal action `CANCELLED` followed 105 ms later by a fresh same-action
   `Execute`; [selected evidence](rpc_retry_trace.json). Normal-path trace
