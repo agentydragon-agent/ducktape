@@ -20,10 +20,17 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 
 ## Layout
 
-- `lifecycle.go`, `executor_controller.go`, `codex_controller.go`, and `bootstrap.go`: the five
-  COSI controller roles and their observed lifecycle state ([ownership](docs/lifecycle.md)).
-- `runner.go` and `session.go`: durable Session reservations, admission, native operations,
-  journal recovery and quiesce entry points.
+- `lifecycle_runtime.go`, `lifecycle_resources.go`, and `lifecycle_inputs.go`: COSI runtime wiring,
+  typed resources, and host input publication ([ownership](docs/lifecycle.md)).
+- `runner_controller.go`, `session_controller.go`, `executor_controller.go`, `codex_controller.go`,
+  and `bootstrap_controller.go`: one lifecycle controller per file.
+- `operations.go`: owned asynchronous native operations and completion routing.
+- `bootstrap.go`: durable bootstrap selection and the one-shot script effect.
+- `runner.go`: Runner construction, durable inventory, incarnation adoption and lifetime.
+- `admission.go` and `status.go`: public admission and status/facts RPCs.
+- `session.go`: Session host state, readiness and recovery; `session_events.go` owns journal-backed
+  Event effects, and `session_native.go` owns native process, dispatch and stream effects.
+- `session_setup.go`: the accepted one-shot Session setup effect.
 - `executor.go` and `executor_container.go`: isolated Codex execution operations, RPC probes
   and container ownership fencing ([execution modes](docs/codex_executor.md)).
 - `codex_server.go`: the Runner's one Codex app-server, its startup and exit, and the journaling of
