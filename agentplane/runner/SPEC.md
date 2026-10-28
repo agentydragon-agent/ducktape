@@ -159,6 +159,10 @@ budget remains authoritative across all of its native services.
   fence and to answer a later claim.
 - Code-mode workers, MCP helpers and external daemons are outside the executor budget in the pinned
   Codex release. Details and configuration: [Codex executor isolation](docs/codex_executor.md).
+- Central sampler executor channels wait for controller-owned readiness and retries within the
+  Gateway's readiness deadline. Closing a channel cancels its pending readiness wait or connection
+  attempt without blocking the Runner control stream. A refused launch or terminal fencing failure
+  rejects readiness; it never enables local execution.
 
 ## Runner control stream
 
