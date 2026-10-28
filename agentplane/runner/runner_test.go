@@ -179,20 +179,49 @@ func TestRunnerFactsExposeBusyReasonsAndReturnToIdle(t *testing.T) {
 		t.Fatal(err)
 	}
 	session := r.sessions["session-1"]
+	bootstrapScript := "unused test bootstrap"
+	r.config.Launch.Bootstrap = &bootstrapScript
+	setBootstrapRuntime := func(phase bootstrapPhase) error {
+		ctx, cancel := context.WithTimeout(r.ctx, lifecycleTestTimeout)
+		defer cancel()
+		return modifyLifecycleForTest(ctx, r, bootstrapRuntimeType, "bootstrap", bootstrapControllerName, func(current *bootstrapRuntimeSpec) {
+			current.Phase = phase
+		})
+	}
+	if err := setBootstrapRuntime(bootstrapRunning); err != nil {
+		t.Fatal(err)
+	}
+	if err := publishLifecycle(r.lifecycle, bootstrapInputType, "bootstrap", bootstrapInputSpec{Requested: true, Demand: 1}); err != nil {
+		t.Fatal(err)
+	}
+	resetManualState := func() {
+		r.mu.Lock()
+		r.admissions = 0
+		r.mu.Unlock()
+		session.mu.Lock()
+		session.activeTurn = ""
+		session.pending = map[string]bool{}
+		session.setup = runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED
+		session.mu.Unlock()
+		session.wake()
+		if err := setSessionRuntimePhaseForTest(r, session, executionDormant); err != nil {
+			t.Errorf("restore session runtime: %v", err)
+		}
+		if err := setBootstrapRuntime(bootstrapSucceeded); err != nil {
+			t.Errorf("restore bootstrap runtime: %v", err)
+		}
+		if err := publishLifecycle(r.lifecycle, bootstrapInputType, "bootstrap", bootstrapInputSpec{}); err != nil {
+			t.Errorf("restore bootstrap input: %v", err)
+		}
+	}
+	defer resetManualState()
+
 	session.mu.Lock()
 	session.activeTurn = "turn-1"
 	session.pending["command-1"] = true
 	session.setup = runnerpb.SetupState_SETUP_STATE_RUNNING
-	session.activating = true
 	session.mu.Unlock()
-	r.bootstrapMu.Lock()
-	r.initLog = &InitializationLog{events: []*runnerpb.InitializationEvent{{
-		Sequence: 1,
-		Observation: &runnerpb.InitializationEvent_Output{Output: &runnerpb.InitializationOutput{
-			Data: []byte("test-bootstrap-output"),
-		}},
-	}}}
-	r.bootstrapMu.Unlock()
+	setRuntimePhase(t, session, executionPreparing)
 	r.mu.Lock()
 	r.admissions = 1
 	r.mu.Unlock()
@@ -217,18 +246,7 @@ func TestRunnerFactsExposeBusyReasonsAndReturnToIdle(t *testing.T) {
 		t.Fatalf("busy facts = (%v, setups=%t, idleSince=%v), want (%v, true, nil)", got, facts.SetupsRunning, facts.IdleSince, want)
 	}
 
-	session.mu.Lock()
-	session.activeTurn = ""
-	session.pending = map[string]bool{}
-	session.setup = runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED
-	session.activating = false
-	session.mu.Unlock()
-	r.bootstrapMu.Lock()
-	r.initLog = nil
-	r.bootstrapMu.Unlock()
-	r.mu.Lock()
-	r.admissions = 0
-	r.mu.Unlock()
+	resetManualState()
 
 	facts, err = r.facts()
 	if err != nil {
@@ -410,6 +428,7 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 	if err != nil || len(statusResponse.Sessions) != 1 || statusResponse.Sessions[0].SetupState != runnerpb.SetupState_SETUP_STATE_SUCCEEDED {
 		t.Fatalf("restarted setup state = %v, %v", statusResponse, err)
 	}
+	waitLifecycle(t, restarted, restarted.bootstrapSettled, "reconstructed bootstrap outcome")
 	facts, err := restarted.facts()
 	if err != nil || facts.Bootstrap != controlpb.RunnerFacts_BOOTSTRAP_SUCCEEDED {
 		t.Fatalf("restarted bootstrap state = %v, %v", facts, err)

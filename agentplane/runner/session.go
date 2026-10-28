@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"maps"
 	"sync"
 	"time"
@@ -22,6 +21,7 @@ import (
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -73,60 +73,58 @@ type pendingReconciliation struct {
 }
 
 type Session struct {
-	runner                                                      *Runner
-	id                                                          string
-	record                                                      *SessionRecord
-	journal                                                     *Journal
-	mu                                                          sync.Mutex
-	admitMu                                                     sync.Mutex
-	writeMu                                                     sync.Mutex
-	shutdownMu                                                  sync.Mutex
-	reconcileMu                                                 sync.Mutex
-	process                                                     *Process
-	adapter                                                     harness.Adapter
-	processID                                                   string
-	processState                                                runnerpb.ProcessState
-	ready, resuming, stopping, sealing, tearingDown, activating bool
-	reconciliations                                             []*pendingReconciliation
-	reconciling                                                 bool
-	activeTurn                                                  string
-	setup                                                       runnerpb.SetupState
-	launch                                                      runnerpb.LaunchOutcome
-	failure                                                     *uint64
-	setupDone                                                   chan struct{}
-	activationDone                                              chan struct{}
-	activationCancel                                            context.CancelFunc
-	readers                                                     sync.WaitGroup
-	work                                                        sync.WaitGroup
-	pending                                                     map[string]bool
-	dispatched                                                  map[string]bool
-	interrupts                                                  map[string]string
-	waiters                                                     []*nativeWaiter
-	replies                                                     []matchedReply
-	kick                                                        chan struct{}
+	runner                                                 *Runner
+	id                                                     string
+	record                                                 *SessionRecord
+	journal                                                *Journal
+	mu                                                     sync.Mutex
+	admitMu                                                sync.Mutex
+	writeMu                                                sync.Mutex
+	process                                                *Process
+	adapter                                                harness.Adapter
+	processID                                              string
+	processState                                           runnerpb.ProcessState
+	nativeStop                                             stopReason
+	preparation, dispatching, inspection, halting, sealing *sessionOperation
+	controlDispatches                                      map[string]*sessionOperation
+	reconciliations                                        []*pendingReconciliation
+	activeTurn                                             string
+	setup                                                  runnerpb.SetupState
+	launch                                                 runnerpb.LaunchOutcome
+	failure                                                *uint64
+	setupScript                                            *string
+	setupJob, stopping                                     *sessionOperation
+	readers                                                sync.WaitGroup
+	work                                                   sync.WaitGroup
+	pending                                                map[string]bool
+	dispatched                                             map[string]bool
+	interrupts                                             map[string]string
+	waiters                                                []*nativeWaiter
+	replies                                                []matchedReply
 
 	// codex is the shared app-server incarnation hosting this Codex Session's thread.
 	codex *codexProcess
 }
 
 func newSession(r *Runner, id string, record *SessionRecord, journal *Journal) *Session {
-	s := &Session{runner: r, id: id, record: record, journal: journal, pending: map[string]bool{}, dispatched: map[string]bool{}, interrupts: map[string]string{}, kick: make(chan struct{}, 1), launch: runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING, setup: runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED}
+	s := &Session{runner: r, id: id, record: record, journal: journal, pending: map[string]bool{}, dispatched: map[string]bool{}, controlDispatches: map[string]*sessionOperation{}, interrupts: map[string]string{}, launch: runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING, setup: runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED}
 	if record.SetupScriptSHA256 != nil {
 		s.setup = runnerpb.SetupState_SETUP_STATE_RUNNING
 	}
 	s.activeTurn = journal.RecoveryState().ActiveTurnID
-	s.sealing = journal.SealState() != nil
 	return s
 }
 
 func (s *Session) Session() harness.SessionSnapshot {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	native := ""
 	if s.record.NativeSessionID != nil {
 		native = *s.record.NativeSessionID
 	}
-	return harness.SessionSnapshot{Directory: s.directory(), Cwd: s.record.CWD, Model: s.record.Model, ReasoningEffort: s.record.ReasoningEffort, Instructions: s.record.Instructions, NativeSessionID: native, TotalContextBudgetTokens: s.record.TotalContextBudgetTokens, Resuming: s.resuming, ActiveTurnID: s.activeTurn, Environment: s.environment()}
+	snapshot := harness.SessionSnapshot{Directory: s.directory(), Cwd: s.record.CWD, Model: s.record.Model, ReasoningEffort: s.record.ReasoningEffort, Instructions: s.record.Instructions, NativeSessionID: native, TotalContextBudgetTokens: s.record.TotalContextBudgetTokens, ActiveTurnID: s.activeTurn, Environment: s.environment()}
+	s.mu.Unlock()
+	snapshot.Resuming = s.runtimeState().Resuming
+	return snapshot
 }
 
 // environment is this Session's own harness environment: its notification destination, which the
@@ -175,14 +173,10 @@ func (s *Session) apply(entry *eventlogpb.EventEntry, ids []string) {
 		s.failure = nil
 	}
 	if e.GetHarnessExited() != nil {
-		s.ready = false
 		if !e.GetHarnessExited().StoppedByRunner {
 			cursor := entry.Cursor
 			s.failure = &cursor
 		}
-	}
-	if e.GetHarnessLost() != nil {
-		s.ready = false
 	}
 	if turn := e.GetTurnStarted(); turn != nil {
 		s.activeTurn = turn.TurnId
@@ -230,7 +224,7 @@ func (s *Session) completeTurn(ctx context.Context, turn *eventpb.TurnCompleted,
 	interrupt := s.interrupts[turn.TurnId]
 	delete(s.interrupts, turn.TurnId)
 	adapter := s.adapter
-	teardown := s.tearingDown
+	teardown := s.nativeStop == stopQuiesce
 	if turn.Status == eventpb.TurnStatus_TURN_STATUS_INTERRUPTED && adapter != nil {
 		reconciliation = &pendingReconciliation{turnID: turn.TurnId, adapter: adapter, sources: append([]uint64(nil), sources...)}
 		s.reconciliations = append(s.reconciliations, reconciliation)
@@ -396,13 +390,6 @@ func (s *Session) checkpointNativeResponse(ctx context.Context, line []byte) err
 	return nil
 }
 
-func (s *Session) wake() {
-	select {
-	case s.kick <- struct{}{}:
-	default:
-	}
-}
-
 func (s *Session) admit(ctx context.Context, command *commandpb.Command, lameduck bool) (*eventlogpb.EventEntry, error) {
 	s.admitMu.Lock()
 	defer s.admitMu.Unlock()
@@ -410,7 +397,8 @@ func (s *Session) admit(ctx context.Context, command *commandpb.Command, lameduc
 	if err != nil {
 		return nil, err
 	}
-	if old == nil && lameduck && command.GetInterruptTurn() == nil {
+	closed := s.executionClosed()
+	if old == nil && (lameduck || closed) && command.GetInterruptTurn() == nil {
 		return nil, status.Error(codes.Aborted, "this Sandbox is quiesced")
 	}
 	expected := ""
@@ -422,10 +410,7 @@ func (s *Session) admit(ctx context.Context, command *commandpb.Command, lameduc
 		return nil, err
 	}
 	if old != nil {
-		s.mu.Lock()
-		sealing := s.sealing
-		s.mu.Unlock()
-		if sealing {
+		if closed {
 			return entry, nil
 		}
 	}
@@ -434,77 +419,35 @@ func (s *Session) admit(ctx context.Context, command *commandpb.Command, lameduc
 	}
 	s.mu.Lock()
 	s.pending[command.CommandId] = true
-	ready := s.ready
+	ready := s.readyLocked()
 	s.mu.Unlock()
 	if command.GetInterruptTurn() != nil {
 		if ready {
-			s.dispatchControl(command)
+			s.requestExecution()
 		} else {
 			if err := s.NoopCommand(ctx, command.CommandId, "the harness is not ready to receive this interruption", nil); err != nil {
 				return nil, err
 			}
 		}
-	} else if !lameduck {
-		s.activate()
-		s.wake()
+	} else if !lameduck && !closed {
+		s.requestExecution()
 	}
 	s.runner.changed()
 	return entry, nil
 }
 
-func (s *Session) activate() {
-	s.mu.Lock()
-	if s.activating || s.sealing || s.ready {
-		s.mu.Unlock()
-		return
-	}
-	s.activating = true
-	s.activationDone = make(chan struct{})
-	done := s.activationDone
-	ctx, cancel := context.WithCancel(s.runner.ctx)
-	s.activationCancel = cancel
-	s.work.Add(1)
-	s.mu.Unlock()
-	s.runner.changed()
-	go func() {
-		defer s.work.Done()
-		defer cancel()
-		err := s.ensureReady(ctx)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			slog.Error("session activation failed", "session", s.id, "error", err)
-			if failure := s.settleUndispatched(s.runner.ctx, "harness startup failed before this command was dispatched: "+err.Error()); failure != nil {
-				s.runner.fail(failure)
-			}
-			if failure := s.Emit(s.runner.ctx, observation(&eventpb.HarnessLaunchFailed{Reason: err.Error()}), nil); failure != nil {
-				s.runner.fail(failure)
-			}
-		}
-		s.mu.Lock()
-		s.activating = false
-		close(done)
-		s.mu.Unlock()
-		s.runner.changed()
-		s.wake()
-	}()
-}
-
 func (s *Session) ensureReady(ctx context.Context) error {
+	if err := s.runner.lifecycle.waitFor(ctx, func() (bool, error) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.setup != runnerpb.SetupState_SETUP_STATE_RUNNING, nil
+	}); err != nil {
+		return err
+	}
 	s.mu.Lock()
-	setupDone := s.setupDone
 	setup := s.setup
 	s.mu.Unlock()
-	if setupDone != nil {
-		select {
-		case <-setupDone:
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-	s.mu.Lock()
-	setup = s.setup
-	sealed := s.sealing
-	s.mu.Unlock()
-	if sealed {
+	if s.executionClosed() {
 		return errors.New("the session is sealed")
 	}
 	if setup == runnerpb.SetupState_SETUP_STATE_FAILED || setup == runnerpb.SetupState_SETUP_STATE_INTERRUPTED || setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
@@ -513,22 +456,21 @@ func (s *Session) ensureReady(ctx context.Context) error {
 	if err := s.runner.bootstrap(ctx); err != nil {
 		return err
 	}
+	s.mu.Lock()
+	previous, shared := s.process, s.codex != nil
+	s.mu.Unlock()
+	if previous != nil && !shared && !previous.Running() {
+		// The exited process may still be recording frames and clearing its
+		// attachment. Join those callbacks before installing a successor.
+		s.readers.Wait()
+	}
 	return s.startHarness(ctx)
 }
 
 func (s *Session) startHarness(ctx context.Context) error {
-	started, err := s.journal.HasStartedTurn(ctx)
-	if err != nil {
-		return err
-	}
 	s.mu.Lock()
-	if s.sealing {
-		s.mu.Unlock()
-		return errors.New("the session is sealed")
-	}
-	s.resuming = s.record.NativeSessionID != nil && started
-	s.ready = false
 	s.processState = runnerpb.ProcessState_PROCESS_STATE_STARTING
+	s.nativeStop = stopNone
 	harnessKind := s.record.Harness
 	s.mu.Unlock()
 	switch {
@@ -584,20 +526,20 @@ func (s *Session) startProcess(ctx context.Context, adapter harness.ProcessAdapt
 	s.process = process
 	s.adapter = adapter
 	s.processID = uuid.NewString()
-	s.stopping = false
+	s.nativeStop = stopNone
 	s.mu.Unlock()
 	s.readers.Add(2)
 	go s.readStdout(process, adapter)
 	go s.readStderr(process)
 	if err := s.prepare(ctx, adapter, process.PID()); err != nil {
 		s.mu.Lock()
-		s.stopping = true
+		s.nativeStop = stopStartupFailure
+		s.processState = runnerpb.ProcessState_PROCESS_STATE_STOPPING
 		s.mu.Unlock()
 		stopErr := process.Stop(context.WithoutCancel(ctx), 5*time.Second)
 		s.readers.Wait()
 		return errors.Join(fmt.Errorf("harness startup failed: %w; %s", err, process.ExitDescription()), stopErr)
 	}
-	s.markReady()
 	return nil
 }
 
@@ -615,7 +557,7 @@ func (s *Session) startOnCodexServer(ctx context.Context) error {
 	// it is hosted.
 	s.mu.Lock()
 	s.adapter = adapter
-	s.stopping = false
+	s.nativeStop = stopNone
 	s.mu.Unlock()
 	p, err := server.host(ctx, s)
 	if err != nil {
@@ -638,7 +580,6 @@ func (s *Session) startOnCodexServer(ctx context.Context) error {
 		s.mu.Unlock()
 		return fmt.Errorf("harness startup failed: %w", err)
 	}
-	s.markReady()
 	return nil
 }
 
@@ -652,8 +593,8 @@ func (s *Session) prepare(ctx context.Context, adapter harness.Adapter, pid int)
 	s.mu.Lock()
 	s.record.NativeSessionID = &native
 	record := *s.record
-	resuming := s.resuming
 	s.mu.Unlock()
+	resuming := s.runtimeState().Resuming
 	if err := s.runner.store.Write(s.id, record); err != nil {
 		return err
 	}
@@ -679,100 +620,55 @@ func (s *Session) prepare(ctx context.Context, adapter harness.Adapter, pid int)
 	return nil
 }
 
-func (s *Session) markReady() {
-	s.mu.Lock()
-	s.ready = true
-	s.processState = runnerpb.ProcessState_PROCESS_STATE_RUNNING
-	s.mu.Unlock()
-	s.runner.changed()
-	s.wake()
-}
-
-func (s *Session) commandLoop() {
-	defer s.work.Done()
-	for {
-		select {
-		case <-s.runner.ctx.Done():
-			return
-		case <-s.kick:
-		}
-		s.mu.Lock()
-		running := s.ready
-		s.mu.Unlock()
-		if !running {
-			continue
-		}
-		if err := s.reconcilePending(s.runner.ctx); err != nil {
-			s.runner.fail(err)
-			return
-		}
-		s.mu.Lock()
-		ready := s.ready && !s.sealing
-		s.mu.Unlock()
-		if !ready {
-			continue
-		}
-		commands, err := s.journal.PendingCommands(s.runner.ctx)
-		if err != nil {
-			s.runner.fail(err)
-			return
-		}
-		s.mu.Lock()
-		adapter := s.adapter
-		s.mu.Unlock()
-		for _, command := range commands {
-			if command.GetInterruptTurn() != nil {
-				s.dispatchControl(command)
-				continue
-			}
-			if err := s.dispatch(s.runner.ctx, command); err != nil {
-				s.runner.fail(err)
-				return
-			}
-			if adapter != nil && adapter.BlocksCommandDispatch() {
-				break
-			}
-		}
+// dispatchControl starts each pending exact-turn interrupt independently from ordinary dispatch.
+// An ordinary native RPC can block the dispatch operation while the interrupt must still reach the
+// currently active turn.
+func (s *Session) dispatchControl(ctx context.Context) error {
+	phase := s.runtimeState().Phase
+	if phase != executionReady && phase != executionStopping {
+		return nil
 	}
-}
-
-func (s *Session) reconcilePending(ctx context.Context) error {
-	s.reconcileMu.Lock()
-	defer s.reconcileMu.Unlock()
-	for {
+	commands, err := s.journal.PendingCommands(ctx)
+	if err != nil {
+		return err
+	}
+	for _, command := range commands {
+		if command.GetInterruptTurn() == nil {
+			continue
+		}
 		s.mu.Lock()
-		if len(s.reconciliations) == 0 || !s.reconciliations[0].ready {
-			s.reconciling = false
+		if s.runtimeState().Phase == executionHalted || operationDone(s.halting) || s.dispatched[command.CommandId] || s.controlDispatches[command.CommandId] != nil {
 			s.mu.Unlock()
-			return nil
+			continue
 		}
-		pending := s.reconciliations[0]
-		s.reconciliations = s.reconciliations[1:]
-		s.reconciling = true
+		op := &sessionOperation{id: command.CommandId, done: make(chan struct{})}
+		s.controlDispatches[command.CommandId] = op
+		s.work.Add(1)
 		s.mu.Unlock()
-		report, err := pending.adapter.Reconcile(ctx, pending.turnID, false)
-		if err != nil {
-			return err
-		}
-		if err := s.Emit(ctx, observation(report), pending.sources); err != nil {
-			return err
-		}
+		go func(command *commandpb.Command, op *sessionOperation) {
+			defer s.work.Done()
+			// The reconciliation context may end as soon as this controller pass
+			// returns. Native control RPCs belong to the Session host lifetime.
+			err := s.dispatch(s.runner.ctx, command)
+			s.mu.Lock()
+			op.err = err
+			delete(s.controlDispatches, command.CommandId)
+			close(op.done)
+			s.mu.Unlock()
+			if err != nil {
+				s.runner.fail(err)
+			}
+			s.wake()
+			s.runner.changed()
+		}(command, op)
 	}
-}
-
-func (s *Session) dispatchControl(command *commandpb.Command) {
-	s.work.Add(1)
-	go func() {
-		defer s.work.Done()
-		if err := s.dispatch(s.runner.ctx, command); err != nil {
-			s.runner.fail(err)
-		}
-	}()
+	return nil
 }
 
 func (s *Session) dispatch(ctx context.Context, c *commandpb.Command) error {
 	s.mu.Lock()
-	if s.dispatched[c.CommandId] || s.adapter == nil || !s.ready || s.reconciling || len(s.reconciliations) != 0 || (s.sealing && c.GetInterruptTurn() == nil) {
+	interrupt := c.GetInterruptTurn() != nil
+	if s.dispatched[c.CommandId] || s.adapter == nil || !s.readyLocked() || (!interrupt && (s.inspection != nil || len(s.reconciliations) != 0 || s.executionClosed())) {
 		s.mu.Unlock()
 		return nil
 	}
@@ -823,10 +719,7 @@ func (s *Session) dispatch(ctx context.Context, c *commandpb.Command) error {
 		}
 	}
 	s.admitMu.Lock()
-	s.mu.Lock()
-	sealing := s.sealing
-	s.mu.Unlock()
-	if sealing && c.GetInterruptTurn() == nil {
+	if s.executionClosed() && c.GetInterruptTurn() == nil {
 		s.admitMu.Unlock()
 		return nil
 	}
@@ -946,7 +839,7 @@ func (s *Session) receive(ctx context.Context, line []byte, adapter harness.Adap
 		return err
 	}
 	if !json.Valid(line) || len(bytes.TrimSpace(line)) == 0 || bytes.TrimSpace(line)[0] != '{' {
-		slog.Warn("non-object frame on harness stdout", "session", s.id, "sequence", entry.Origin.Sequence)
+		zap.L().Warn("non-object frame on harness stdout", zap.String("session", s.id), zap.Uint64("sequence", entry.Origin.Sequence))
 		return nil
 	}
 	frame := append(json.RawMessage(nil), line...)
@@ -957,7 +850,7 @@ func (s *Session) receive(ctx context.Context, line []byte, adapter harness.Adap
 		if errors.Is(err, context.Canceled) || errors.As(err, &storageErr) {
 			return err
 		}
-		slog.Error("native frame translation failed", "session", s.id, "sequence", entry.Origin.Sequence, "error", err)
+		zap.L().Error("native frame translation failed", zap.String("session", s.id), zap.Uint64("sequence", entry.Origin.Sequence), zap.Error(err))
 	}
 	s.mu.Lock()
 	waiting := s.waiters[:0]
@@ -1077,8 +970,7 @@ func (s *Session) harnessEnded(ctx context.Context, code int) error {
 		waiting = append(waiting, reply.waiter)
 	}
 	s.replies = nil
-	stopping := s.stopping
-	s.ready = false
+	stoppedByRunner := s.nativeStop != stopNone
 	s.codex = nil
 	s.processID = ""
 	s.processState = runnerpb.ProcessState_PROCESS_STATE_UNSPECIFIED
@@ -1086,9 +978,10 @@ func (s *Session) harnessEnded(ctx context.Context, code int) error {
 	for _, w := range waiting {
 		w.result <- nativeResult{err: fmt.Errorf("the harness exited with exit_code=%d", code)}
 	}
-	if err := s.Emit(ctx, observation(&eventpb.HarnessExited{ExitCode: int32(code), StoppedByRunner: stopping}), nil); err != nil {
+	if err := s.Emit(ctx, observation(&eventpb.HarnessExited{ExitCode: int32(code), StoppedByRunner: stoppedByRunner}), nil); err != nil {
 		return err
 	}
+	s.wake()
 	if turn := s.Session().ActiveTurnID; turn != "" {
 		return s.completeTurn(ctx, &eventpb.TurnCompleted{TurnId: turn, Status: eventpb.TurnStatus_TURN_STATUS_PROCESS_LOST, Error: fmt.Sprintf("the harness exited with exit_code=%d during the turn", code)}, nil)
 	}
@@ -1198,41 +1091,49 @@ func (s *Session) settleUndispatched(ctx context.Context, reason string) error {
 	return nil
 }
 
-// halt ends this Session's work on its harness: it settles activation and setup, then interrupts the
-// active turn and waits for it to end. The caller holds shutdownMu. The harness stops afterwards, in
+// halt ends this Session's work on its harness: it cancels preparation, waits for setup and dispatch,
+// then interrupts the active turn and waits for it to end. The harness stops afterwards, in
 // stopProcess or with the shared Codex app-server.
-func (s *Session) halt(ctx context.Context, seal bool) {
+func (s *Session) halt(ctx context.Context, reason stopReason) {
 	s.admitMu.Lock()
 	s.mu.Lock()
-	if seal {
-		s.sealing = true
-		s.tearingDown = true
-	}
-	cancel := s.activationCancel
-	done := s.activationDone
-	setupDone := s.setupDone
+	preparation := s.preparation
+	dispatching := s.dispatching
+	setupJob := s.setupJob
 	s.mu.Unlock()
 	s.admitMu.Unlock()
-	if cancel != nil {
-		cancel()
+	if preparation != nil {
+		preparation.cancel()
+		<-preparation.done
 	}
-	if done != nil {
-		<-done
+	if dispatching != nil {
+		<-dispatching.done
 	}
-	if setupDone != nil {
-		<-setupDone
+	if setupJob != nil {
+		<-setupJob.done
 	}
 	s.mu.Lock()
+	controls := make([]*sessionOperation, 0, len(s.controlDispatches))
+	for _, control := range s.controlDispatches {
+		controls = append(controls, control)
+	}
+	s.mu.Unlock()
+	for _, control := range controls {
+		<-control.done
+	}
+	s.admitMu.Lock()
+	s.mu.Lock()
+	s.nativeStop = reason
+	s.processState = runnerpb.ProcessState_PROCESS_STATE_STOPPING
 	process := s.process
 	adapter := s.adapter
 	turn := s.activeTurn
-	s.stopping = true
-	s.processState = runnerpb.ProcessState_PROCESS_STATE_STOPPING
 	s.mu.Unlock()
+	s.admitMu.Unlock()
 	if process != nil && process.Running() && adapter != nil && turn != "" {
 		interruptCtx := context.WithValue(ctx, interruptTargetKey{}, turn)
 		if err := adapter.Interrupt(interruptCtx, turn); err != nil && !errors.Is(err, errStaleInterrupt) {
-			slog.Warn("teardown interrupt failed", "session", s.id, "error", err)
+			zap.L().Warn("teardown interrupt failed", zap.String("session", s.id), zap.Error(err))
 		}
 		waitCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		for s.Session().ActiveTurnID == turn && process.Running() {
@@ -1261,6 +1162,11 @@ func (s *Session) stopProcess(ctx context.Context) error {
 
 // sealJournal fails the commands never dispatched and seals the journal, once the harness has stopped.
 func (s *Session) sealJournal(ctx context.Context) error {
+	// Serialize sealing with command admission. An interrupt admitted while a
+	// lameduck halt is in progress must either be dispatched before halt completes
+	// or be durably settled before the journal is sealed.
+	s.admitMu.Lock()
+	defer s.admitMu.Unlock()
 	if err := s.settleUndispatched(ctx, "the Sandbox was quiesced before this command was dispatched"); err != nil {
 		return err
 	}
@@ -1289,8 +1195,8 @@ func (s *Session) attached() *runnerpb.Attached {
 }
 
 func (s *Session) autosuspendBlockers() []*sandboxpb.AutosuspendBlocker {
+	preparing := s.runtimeState().Phase == executionPreparing
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	var blockers []*sandboxpb.AutosuspendBlocker
 	add := func(reason string) {
 		sessionID := s.id
@@ -1302,53 +1208,49 @@ func (s *Session) autosuspendBlockers() []*sandboxpb.AutosuspendBlocker {
 	if len(s.pending) > 0 {
 		add(autosuspendPendingCommand)
 	}
+	if preparing {
+		add(autosuspendActivation)
+	}
 	if s.setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
 		add(autosuspendSetup)
 	}
-	if s.activating {
-		add(autosuspendActivation)
-	}
+	s.mu.Unlock()
 	return blockers
 }
 
-func (s *Session) startSetup(script string) {
-	s.mu.Lock()
-	s.setupDone = make(chan struct{})
-	done := s.setupDone
-	s.mu.Unlock()
-	go func() {
-		defer close(done)
-		err := s.runner.bootstrap(s.runner.ctx)
+// runSetup performs one claimed script operation. The Session controller owns
+// whether it runs; cancellation of an admission or preparation cannot cancel it.
+func (s *Session) runSetup(ctx context.Context, script string) error {
+	err := s.runner.bootstrap(ctx)
+	if err == nil {
+		err = s.Emit(ctx, observation(&eventpb.SetupStarted{}), nil)
+	}
+	if err == nil {
+		cwd, e := s.runner.ensureWorkspace(ctx, s.Session().Cwd)
+		err = e
 		if err == nil {
-			err = s.Emit(s.runner.ctx, observation(&eventpb.SetupStarted{}), nil)
-		}
-		if err == nil {
-			cwd, e := s.runner.ensureWorkspace(s.runner.ctx, s.Session().Cwd)
-			err = e
-			if err == nil {
-				var code int
-				code, err = s.runner.runScript(s.runner.ctx, script, cwd, func(stdout bool, data []byte) error {
-					out := &eventpb.SetupOutput{}
-					if stdout {
-						out.Stream = &eventpb.SetupOutput_Stdout{Stdout: data}
-					} else {
-						out.Stream = &eventpb.SetupOutput_Stderr{Stderr: data}
-					}
-					return s.Emit(s.runner.ctx, observation(out), nil)
-				})
-				if err == nil {
-					err = s.Emit(s.runner.ctx, observation(&eventpb.SetupFinished{ExitCode: int32(code)}), nil)
+			var code int
+			code, err = s.runner.runScript(ctx, script, cwd, func(stdout bool, data []byte) error {
+				out := &eventpb.SetupOutput{}
+				if stdout {
+					out.Stream = &eventpb.SetupOutput_Stdout{Stdout: data}
+				} else {
+					out.Stream = &eventpb.SetupOutput_Stderr{Stderr: data}
 				}
+				return s.Emit(ctx, observation(out), nil)
+			})
+			if err == nil {
+				err = s.Emit(ctx, observation(&eventpb.SetupFinished{ExitCode: int32(code)}), nil)
 			}
 		}
-		if err != nil {
-			slog.Error("session setup interrupted", "session", s.id, "error", err)
-			if e := s.Emit(s.runner.ctx, observation(&eventpb.SetupInterrupted{}), nil); e != nil {
-				s.runner.fail(e)
-			}
+	}
+	if err != nil {
+		zap.L().Error("session setup interrupted", zap.String("session", s.id), zap.Error(err))
+		if outcomeErr := s.Emit(ctx, observation(&eventpb.SetupInterrupted{}), nil); outcomeErr != nil {
+			return errors.Join(err, outcomeErr)
 		}
-		s.runner.changed()
-	}()
+	}
+	return nil
 }
 
 func (s *Session) directory() string {
