@@ -224,3 +224,13 @@ preceding exec-server readiness message. Teardown follows around 21:28:39Z, so t
 does not establish that startup would have completed with a longer timeout. The relay has a
 separate twenty-second deadline overlapping the executor controller's readiness budget; that
 overlap and retained controller state are under investigation. VM acceptance remains unverified.
+
+The [Gateway-lifetime follow-up](https://app.buildbuddy.io/invocation/76472dd5-4a0a-49d7-9981-0dc71dd9db05)
+passed the Runner race suite (39.051 seconds), Pod k3s acceptance (131.026 seconds), and VM k3s
+acceptance (320.568 seconds). The relay now waits within the Gateway's readiness lifetime and
+cancels a pending readiness wait or connection attempt when the Gateway closes the channel;
+executor-controller readiness budgets are unchanged. The VM's retained `central-sampler-k3s.json`
+reports PID 1 `systemd`, executor UID 107, a native service under `agentplane-executors.slice`,
+successful setup, and `terminal_cursor == folded_through == 163`. The test exercised mocked-model
+sampling, real remote execution, and retained/folded History. This validates that VM scenario;
+one passing run does not establish the frequency of the earlier startup failure.
