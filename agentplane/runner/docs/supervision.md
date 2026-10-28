@@ -19,8 +19,9 @@ process lifetime. `Stop` requests graceful shutdown and cleanup; `Wait` returns 
 and cleanup. A canceled wait cancels observation, not execution. `ManagedProcess` places the COSI
 intent and cleanup barrier around that backend process, while callers retain stream access.
 
-VMs prepare systemd supervision, including slice budgets and prior-owner cleanup. Pods use the
-subprocess supervisor with its inherited state-owner descriptor. Backend choice stays out of
+VMs prepare systemd supervision, including slice budgets and prior-owner cleanup. Production Pods
+explicitly select the PID1 backend, which directly spawns natives and inherits the state-owner
+descriptor. Non-PID1 integration fixtures explicitly select the subprocess supervisor. Backend choice stays out of
 controllers and per-launch specifications. A manager failure never switches a VM to the Pod
 backend. The Pod exec-server container retains its separate control-socket ownership protocol.
 The generic COSI process controller is part of the shared `supervision` package and runs in Runner's
@@ -104,10 +105,58 @@ work after the replacement's inventory scan. A skipped start condition never cou
 
 ## Pods and tests
 
-Pods retain the internal supervisor's parent-liveness pipe, inherited owner descriptor and process
-group cleanup. Deliberately escaped process groups are outside that per-harness boundary. The Pod
-exec-server's separate container provides its stronger execution-domain fence. This change adds
-neither systemd nor privileges to containers.
+### PID 1 and the outer fence
+
+`environment.supervision` explicitly selects `pid1` or `subprocess` for a Pod. The production
+Sandbox template selects `pid1`, invokes Runner directly, and disables shared process namespaces.
+The PID1 backend rejects a Runner whose PID is not 1. Non-PID1 integration fixtures select
+`subprocess` and retain the internal supervisor's parent-liveness pipe and trusted owner-descriptor
+copy. VM systemd supervision cannot be combined with Pod PID1 policy and never falls back to it.
+
+PID1 launches each native directly in its own process group. The owner descriptor is inherited,
+but native runtimes may close inherited descriptors. Runner keeps ownership through ordinary
+process cleanup and journal closure. `Stop` closes stdin and sends TERM, then KILL after its grace
+budget; a canceled stop escalates and leaves the cleanup barrier owned. Native leader exit kills
+its remaining group. `Wait` completes only after the group disappears; a failed fence blocks the
+process finalizer. Escaped groups are contained by whole-container teardown, as with the subprocess
+backend. They can retain stdout/stderr pipes. The backend container fixture deliberately exits
+without joining those escaped readers. Actual Runner graceful shutdown still joins script and
+protocol readers; an escaped writer can hold it until the outer runtime's termination grace expires
+and SIGKILL ends the container. The production Runner container cases prove clean TERM and abrupt
+bootstrap death, not graceful TERM with escaped pipe holders.
+
+One process-wide reaper owns every PID1 native and adopted orphan. No PID1 native uses
+`exec.Cmd.Wait`. Start's exec handshake and registration share a mutex with reaping. Managed exits
+are observed with `waitid(WNOWAIT)`: the zombie leader reserves its group identity while KILL is
+sent, then its targeted `wait4` consumes the status. Orphan discovery reads every runtime thread's
+`/proc/self/task/*/children`; only unregistered children use orphan `wait4`. Mixing active subprocess
+wait owners with PID1 reaping is rejected. Unexpected wait or discovery failures terminate PID1,
+leaving the outer runtime to fence the namespace, instead of silently stranding children.
+
+The namespace fence is complete when the outer runtime has observed the container's init exit.
+Successful acquisition of the state lock alone does not prove that boundary. Linux's
+[`do_exit`](https://github.com/torvalds/linux/blob/v6.12/kernel/exit.c) closes the exiting task's files
+before `exit_notify` reaches namespace teardown;
+[`zap_pid_ns_processes`](https://github.com/torvalds/linux/blob/v6.12/kernel/pid_namespace.c) then kills
+and joins the remaining namespace tasks. This ordering applies to both Pod backends: abrupt PID1
+death kills an internal supervisor too. Its descriptor is not an independent whole-container fence.
+
+The Sandbox Controller waits for the previous Pod's deletion event before creating its successor
+(`converge` in `sandbox_controller/controller.go`). Normal kubelet restarts and graceful Pod deletion
+supply the outer runtime boundary. An API deletion event after force deletion or loss of a node is
+not evidence that the old container stopped. Both backends require that container teardown or an
+external node/storage fence be established before replacing such an incarnation. The checked-in
+node-local storage and fixed inode lock remain part of the supported contract; neither a Pod UID
+nor PVC access mode replaces runtime fencing. The systemd startup inventory fence is independent.
+
+`//agentplane/runner:test_pid1_container` runs both backends in real private PID namespaces. Its
+`runner_pid1_fixture` closes the native's inherited owner descriptor and starts TERM-resistant
+same-group and escaped descendants. It covers nonzero native exit, TERM, forced escalation, abrupt
+PID1 SIGKILL, stream lifetime, fast-exit wait ownership and adopted-orphan reaping. It checks lock
+exclusion while running, then waits for runtime exit, observes descendant death and reacquires the
+lock before restarting the same container. JSON evidence and logs go to undeclared test outputs.
+The Pod system tests exercise the selected production backend through the shared Sandbox template.
+This adds neither privileges nor a production service or endpoint.
 
 The system-test guest boots real systemd and a system bus with the same static runner/slice units.
 Before Runner starts, `//agentplane/runner/supervision:runner_systemd_fixture` exercises credentials, separate streams, kernel
