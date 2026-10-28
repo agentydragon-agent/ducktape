@@ -5,9 +5,34 @@ import { api, ok } from "../client";
 import { SessionSpecSchema, type SessionSpec } from "../../../proto/runner_pb";
 
 export type SandboxView = components["schemas"]["SandboxView"];
-export type RunnerStatusView = components["schemas"]["RunnerStatusView"];
-export type PodView = components["schemas"]["PodView"];
-export type NewSandbox = components["schemas"]["NewSandbox"];
+type Harness = NonNullable<components["schemas"]["ThreadView"]["harness"]>;
+/** The runner's protobuf JSON status; this route carries generated proto data as a raw JSON object. */
+export type RunnerStatusView = {
+  runner_boot_id: string;
+  processes: {
+    process_id: string;
+    pid: number | string | null;
+    harness: Harness | "HARNESS_UNSPECIFIED";
+    state: "PROCESS_STATE_STARTING" | "PROCESS_STATE_RUNNING" | "PROCESS_STATE_STOPPING" | "PROCESS_STATE_UNSPECIFIED";
+    assigned_session_ids: string[];
+  }[];
+  sessions: {
+    session_id: string;
+    process_id: string | null;
+    native_session_id: string | null;
+    execution_state:
+      | "SESSION_EXECUTION_STATE_DORMANT"
+      | "SESSION_EXECUTION_STATE_PREPARING"
+      | "SESSION_EXECUTION_STATE_READY"
+      | "SESSION_EXECUTION_STATE_FAILED"
+      | "SESSION_EXECUTION_STATE_UNSPECIFIED";
+    active_turn_id: string | null;
+    failure_cursor: number | string | null;
+    busy: boolean;
+  }[];
+};
+export type PodView = components["schemas"]["SandboxPodView"];
+export type NewSandbox = components["schemas"]["NewSandboxInputBody"];
 export type NewSandboxDefaults = components["schemas"]["NewSandboxDefaults"];
 type OtherRuleView = {
   kind: "other";
@@ -27,9 +52,22 @@ export type EgressRuleView = {
   credential: components["schemas"]["CredentialView"] | null;
   missing_credential: string | null;
 };
-export type Decision = components["schemas"]["Decision"];
+/** Views carried by the raw live egress stream and the sandbox stream's Action policy field. */
+export type Decision = {
+  at: string;
+  method: string;
+  host: string;
+  port: number;
+  outcome: "allow" | "deny";
+  reason: string | null;
+  binding: string | null;
+  policy: string | null;
+  rule: number | null;
+  substituted: boolean;
+  address: string | null;
+};
 export type SandboxPresetView = components["schemas"]["SandboxPresetView"];
-export type SessionDefaults = components["schemas"]["SessionDefaults"];
+export type SessionDefaults = components["schemas"]["SessionDefaultsView"];
 export type SessionOpening = {
   sessionId: string;
   sandbox: string;
@@ -73,7 +111,7 @@ export async function getRunnerStatus(sandbox: string): Promise<RunnerStatusView
     await api.GET("/sandboxes/{name}/runner-status", {
       params: { path: { name: sandbox } },
     })
-  );
+  ) as RunnerStatusView;
 }
 
 /** Asks for the Sandbox to run; the watch behind the live streams brings back the change. */

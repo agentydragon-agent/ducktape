@@ -1,5 +1,10 @@
-import type { Harness, ModelCatalog, ModelOption } from "./schema";
+import type { components } from "./schema";
 import { api, ok } from "./client";
+
+export type ModelOption = components["schemas"]["ModelOption"];
+export type ModelCatalog = components["schemas"]["ModelCatalog"];
+type ThreadView = components["schemas"]["ThreadView"];
+export type Harness = NonNullable<ThreadView["harness"]>;
 
 /** An empty model list disables new-session selection, not the native harness. */
 export function harnessOptions(catalog: ModelCatalog | null): { value: Harness; label: string; disabled: boolean }[] {
@@ -15,7 +20,7 @@ export function harnessOptions(catalog: ModelCatalog | null): { value: Harness; 
 }
 
 /** A harness as the pages name it; null while a Thread has no runner attachment to say. */
-export function harnessLabel(harness: Harness | null): string {
+export function harnessLabel(harness: Harness | "HARNESS_UNSPECIFIED" | null): string {
   switch (harness) {
     case "HARNESS_CLAUDE":
       return "Claude";
@@ -24,6 +29,7 @@ export function harnessLabel(harness: Harness | null): string {
     case "HARNESS_CENTRAL_SAMPLER":
       return "Central sampler";
     case null:
+    case "HARNESS_UNSPECIFIED":
       return "Unknown harness";
   }
 }
@@ -31,7 +37,7 @@ export function harnessLabel(harness: Harness | null): string {
 /** The models offered for one harness, resolved from the catalog's deduplicated `models`
  * list via its `harnesses` id references. */
 export function modelsForHarness(catalog: ModelCatalog, harness: Harness): ModelOption[] {
-  const byId = new Map(catalog.models.map((option) => [option.model, option]));
+  const byId = new Map((catalog.models ?? []).map((option) => [option.model, option]));
   return (catalog.harnesses[harness] ?? []).flatMap((id) => {
     const option = byId.get(id);
     return option ? [option] : [];
