@@ -662,6 +662,14 @@ func subscriptionLine(raw json.RawMessage) (string, error) {
 	if subscription.ErrorKind != nil {
 		line += "  error " + enumSuffix(subscription.ErrorKind.String(), failureKindPrefix)
 	}
+	if github := subscription.GetGithub(); github != nil {
+		status, err := protojson.Marshal(github)
+		if err != nil {
+			return "", invalidResponse("GitHub status: %v", err)
+		}
+		line = fields(line, "github status "+string(status))
+	}
+
 	return line, nil
 }
 
