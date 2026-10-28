@@ -39,6 +39,39 @@ without running a compiler action. The raw file defaults to `:<name>.d.ts` (`:sc
 allowed to consume the library can also address the output file directly. `ts_library` consumes the
 declaration for type checking and does not emit it as JavaScript source.
 
+## OpenAPI Zod source
+
+`openapi_zod_ts_library` generates Zod TypeScript using a local Hey API config and compiles it as a
+`ts_library`. The config and every local schema/config reference are declared inputs. The caller
+declares the shared tsconfig and runtime dependencies; the named target is the compiled library:
+
+```starlark
+load("//devinfra/js:openapi_zod_ts_library.bzl", "openapi_zod_ts_library")
+
+openapi_zod_ts_library(
+    name = "schema_zod",
+    schema = ":openapi_schema",
+    config = "openapi-ts.config.mjs",
+    tsconfig = ":tsconfig",
+    deps = ["//:node_modules/zod"],
+    schema_files = [":referenced_schema"],
+    config_files = [":local_config_helper"],
+)
+```
+
+The raw generated source is also available by file label, `:schema_zod.ts` by default. JavaScript
+consumers import the compiled `schema_zod.js`; TypeScript consumers resolve `schema_zod.d.ts`.
+Set `out` to choose another source path. An `.mts` output selects `.mjs` and `.d.mts` when an
+integration specifically requires those extensions.
+
+The config is an ES module with one default-exported configuration object. List local modules it
+imports in `config_files` and imported runtime packages in `config_deps`. The converter uses Hey
+API's config-file API with the declared schema path; plugin settings stay in the config.
+
+Both OpenAPI launchers use the shared remote-reference guard. They fail closed if a generator
+attempts HTTP resolution during the build. The production packages expose the conversion interfaces;
+generator-specific fixtures and no-fetch proof live in the separate schema spike PR #12342.
+
 Remote references are disabled during generation. Schema exporters remain responsible for their
 source contract and serialization choices; this rule does not normalize schema dialects or merge
 OpenAPI and JSON Schema inputs. Reference interpretation otherwise follows the pinned OpenAPI
