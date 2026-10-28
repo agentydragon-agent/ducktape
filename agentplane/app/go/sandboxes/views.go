@@ -16,9 +16,15 @@ import (
 func sandboxView(resource *sandboxapi.Sandbox, pod *corev1.Pod) (*sandboxespb.Sandbox, error) {
 	view := &sandboxespb.Sandbox{
 		Name: resource.Name, Uid: string(resource.UID), Namespace: resource.Namespace,
-		ServiceAccount: &sandboxespb.ServiceAccount{Namespace: resource.Namespace, Name: resource.Name},
-		WakeOnSend:     resource.Spec.WakeOnSend,
-		Phase:          sandboxPhase(resource),
+		ServiceAccount:      &sandboxespb.ServiceAccount{Namespace: resource.Namespace, Name: resource.Name},
+		WakeOnSend:          resource.Spec.WakeOnSend,
+		Phase:               sandboxPhase(resource),
+		AutosuspendBlockers: make([]*sandboxespb.AutosuspendBlocker, 0, len(resource.Status.IdleSuspendBlockers)),
+	}
+	for _, blocker := range resource.Status.IdleSuspendBlockers {
+		view.AutosuspendBlockers = append(view.AutosuspendBlockers, &sandboxespb.AutosuspendBlocker{
+			Reason: string(blocker.Reason), SessionId: blocker.SessionID,
+		})
 	}
 	if !resource.CreationTimestamp.IsZero() {
 		view.CreatedAt = timestamppb.New(resource.CreationTimestamp.Time)

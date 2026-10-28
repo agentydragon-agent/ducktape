@@ -45,6 +45,7 @@ const CREATED: SandboxView = {
   idle_suspend_after_seconds: null,
   preset: null,
   idle_suspend_at: null,
+  autosuspend_blockers: [],
   suspended_by: null,
 };
 

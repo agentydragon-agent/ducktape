@@ -45,6 +45,7 @@ const live = vi.hoisted(
           idle_suspend_after_seconds: null,
           idle_suspend_at: null,
           suspended_by: null,
+          autosuspend_blockers: [],
           status: { conditions: [{ type: "Ready", status: "True" }] },
           phase: "Running",
           pod: {

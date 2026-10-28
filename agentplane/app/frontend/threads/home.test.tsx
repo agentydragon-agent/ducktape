@@ -32,6 +32,7 @@ const SANDBOX: SandboxView = {
   service_account: { namespace: "agentplane-test", name: "test-sandbox" },
   idle_suspend_after_seconds: null,
   idle_suspend_at: null,
+  autosuspend_blockers: [],
   suspended_by: null,
   status: { conditions: [{ type: "Ready", status: "True" }] },
   phase: "Running",

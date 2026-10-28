@@ -81,6 +81,11 @@ func TestListGetAndTemplatesUseCRDsAndOnlyJoinCurrentPodUID(t *testing.T) {
 	first.Spec.IdleSuspendAfter = &metav1.Duration{Duration: 2 * time.Minute}
 	deadline := metav1.NewTime(time.Date(2026, 10, 20, 1, 4, 3, 0, time.UTC))
 	first.Status.IdleSuspendAt = &deadline
+	activeSession := "active-session"
+	first.Status.IdleSuspendBlockers = []sandboxapi.AutosuspendBlocker{
+		{Reason: sandboxapi.AutosuspendBlockerActiveTurn, SessionID: &activeSession},
+		{Reason: sandboxapi.AutosuspendBlockerBootstrap},
+	}
 	first.Labels = map[string]string{PresetLabel: "preset-a"}
 	first.Status.Incarnation = &sandboxapi.Incarnation{Name: "alpha", UID: "pod-alpha"}
 	first.Status.Conditions = []metav1.Condition{{Type: sandboxapi.ConditionReady, Status: metav1.ConditionTrue, Reason: "PodReady"}}
@@ -123,6 +128,15 @@ func TestListGetAndTemplatesUseCRDsAndOnlyJoinCurrentPodUID(t *testing.T) {
 	}
 	if views[0].GetIdleSuspendAt() == nil || !views[0].GetIdleSuspendAt().AsTime().Equal(deadline.Time) || views[1].GetIdleSuspendAt() != nil {
 		t.Fatalf("Sandbox idle deadlines = %v, %v", views[0].GetIdleSuspendAt(), views[1].GetIdleSuspendAt())
+	}
+	blockers := views[0].GetAutosuspendBlockers()
+	if len(blockers) != 2 || blockers[0].GetReason() != string(sandboxapi.AutosuspendBlockerActiveTurn) ||
+		blockers[0].GetSessionId() != activeSession || blockers[1].GetReason() != string(sandboxapi.AutosuspendBlockerBootstrap) ||
+		blockers[1].SessionId != nil {
+		t.Fatalf("alpha autosuspend blockers = %#v", blockers)
+	}
+	if views[1].AutosuspendBlockers == nil || len(views[1].AutosuspendBlockers) != 0 {
+		t.Fatalf("Sandbox without blockers has %#v, want an initialized empty list", views[1].AutosuspendBlockers)
 	}
 	if views[1].GetPod() != nil {
 		t.Fatalf("stale Pod UID was joined: %#v", views[1].GetPod())

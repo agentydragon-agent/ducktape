@@ -16,6 +16,7 @@ function sandboxView(name: string, overrides: Partial<SandboxView> = {}): Sandbo
     status: {},
     idle_suspend_after_seconds: null,
     idle_suspend_at: null,
+    autosuspend_blockers: [],
     suspended_by: null,
     phase: "Creating",
     pod: null,

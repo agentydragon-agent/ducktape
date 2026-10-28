@@ -17,6 +17,7 @@ function sandbox(conditions: { type: string; status: string }[]): SandboxView {
     wake_on_send: false,
     idle_suspend_after_seconds: null,
     idle_suspend_at: null,
+    autosuspend_blockers: [],
     suspended_by: null,
     service_account: { namespace: "agentplane-test", name: "test-sandbox" },
     status: { conditions },

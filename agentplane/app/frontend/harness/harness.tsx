@@ -90,6 +90,7 @@ const NULL_SANDBOX_FIELDS = {
   idle_suspend_after_seconds: null,
   suspended_by: null,
   idle_suspend_at: null,
+  autosuspend_blockers: [],
 };
 const NULL_THREAD_FIELDS = {
   sandbox_uid: null,

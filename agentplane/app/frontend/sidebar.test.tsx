@@ -47,6 +47,7 @@ function sandbox(name: string, overrides: Partial<SandboxView> = {}): SandboxVie
     service_account: { namespace: "agentplane-test", name },
     idle_suspend_after_seconds: null,
     idle_suspend_at: null,
+    autosuspend_blockers: [],
     suspended_by: null,
     status: { conditions: [{ type: "Ready", status: "True" }] },
     phase: "Running",

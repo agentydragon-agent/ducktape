@@ -43,6 +43,7 @@ func TestNewSandboxAcceptsPythonDefaultFieldsOmitted(t *testing.T) {
 }
 
 func TestSandboxViewKeepsBrowserFieldNamesAndDerivedValues(t *testing.T) {
+	sessionID := "session-a"
 	status, err := structpb.NewStruct(map[string]any{"conditions": []any{}, "ready": true})
 	if err != nil {
 		t.Fatal(err)
@@ -55,6 +56,10 @@ func TestSandboxViewKeepsBrowserFieldNamesAndDerivedValues(t *testing.T) {
 		Preset:         sandboxString("Default"), WakeOnSend: true, IdleSuspendAfter: durationpb.New(90 * time.Second),
 		IdleSuspendAt: timestamppb.New(time.Date(2026, 10, 1, 2, 5, 4, 0, time.UTC)),
 		SuspendedBy:   sandboxString("Idle"), Phase: sandboxespb.SandboxPhase_SANDBOX_PHASE_RUNNING,
+		AutosuspendBlockers: []*sandboxespb.AutosuspendBlocker{
+			{Reason: "ActiveTurn", SessionId: &sessionID},
+			{Reason: "Bootstrap"},
+		},
 		Pod: &sandboxespb.SandboxPod{
 			Name: "worker-pod", Namespace: "sandboxes", Uid: "pod-uid",
 			OwnerReferences: []*sandboxespb.OwnerReference{{ApiVersion: "agentplane.allegedly.works/v1alpha1", Kind: "Sandbox", Name: "worker", Uid: "sandbox-uid", Controller: true}},
@@ -83,7 +88,33 @@ func TestSandboxViewKeepsBrowserFieldNamesAndDerivedValues(t *testing.T) {
 	if object["idle_suspend_at"] != "2026-10-01T02:05:04Z" {
 		t.Fatalf("browser idle deadline = %v", object["idle_suspend_at"])
 	}
+	blockers, ok := object["autosuspend_blockers"].([]any)
+	if !ok || len(blockers) != 2 {
+		t.Fatalf("browser autosuspend blockers = %v, want two rows", object["autosuspend_blockers"])
+	}
+	firstBlocker, ok := blockers[0].(map[string]any)
+	if !ok || firstBlocker["reason"] != "ActiveTurn" || firstBlocker["session_id"] != sessionID {
+		t.Fatalf("session-scoped browser blocker = %v", blockers[0])
+	}
+	secondBlocker, ok := blockers[1].(map[string]any)
+	if !ok || secondBlocker["reason"] != "Bootstrap" || secondBlocker["session_id"] != nil {
+		t.Fatalf("global browser blocker = %v", blockers[1])
+	}
 	if _, ok := object["createdAt"]; ok {
 		t.Fatalf("browser JSON unexpectedly uses protobuf camelCase: %s", body)
+	}
+}
+
+func TestSandboxViewSerializesEmptyAutosuspendBlockersAsEmptyArray(t *testing.T) {
+	body, err := json.Marshal(sandboxView(&sandboxespb.Sandbox{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var object map[string]any
+	if err := json.Unmarshal(body, &object); err != nil {
+		t.Fatal(err)
+	}
+	if blockers, ok := object["autosuspend_blockers"].([]any); !ok || len(blockers) != 0 {
+		t.Fatalf("empty browser autosuspend blockers = %v, want []", object["autosuspend_blockers"])
 	}
 }

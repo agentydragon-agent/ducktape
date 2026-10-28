@@ -165,6 +165,52 @@ func TestExportOpenAPIUsesHumaSchemasForThreadRoutes(t *testing.T) {
 	}
 }
 
+func TestSandboxViewOpenAPIDocumentsAutosuspendBlockers(t *testing.T) {
+	var output bytes.Buffer
+	if err := exportOpenAPI(&output); err != nil {
+		t.Fatal(err)
+	}
+	document := assertSaneOpenAPI(t, output.Bytes())
+	sandbox := document.Components.Schemas["SandboxView"]
+	properties, ok := sandbox["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("SandboxView.properties = %T, want object", sandbox["properties"])
+	}
+	blockers, ok := properties["autosuspend_blockers"].(map[string]any)
+	if !ok || blockers["type"] != "array" {
+		t.Fatalf("SandboxView.autosuspend_blockers = %v, want a non-null array", properties["autosuspend_blockers"])
+	}
+	items, ok := blockers["items"].(map[string]any)
+	if !ok || items["$ref"] != "#/components/schemas/AutosuspendBlockerView" {
+		t.Fatalf("SandboxView.autosuspend_blockers.items = %v, want AutosuspendBlockerView", blockers["items"])
+	}
+	blocker := document.Components.Schemas["AutosuspendBlockerView"]
+	blockerProperties, ok := blocker["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("AutosuspendBlockerView.properties = %T, want object", blocker["properties"])
+	}
+	reason, ok := blockerProperties["reason"].(map[string]any)
+	if !ok {
+		t.Fatalf("AutosuspendBlockerView.reason = %v, want enum schema", blockerProperties["reason"])
+	}
+	enum, ok := reason["enum"].([]any)
+	values := make([]string, len(enum))
+	for index, value := range enum {
+		values[index], _ = value.(string)
+	}
+	if !ok || strings.Join(values, ",") != "ActiveTurn,PendingCommand,Setup,Activation,Bootstrap,Admission" {
+		t.Fatalf("AutosuspendBlockerView.reason.enum = %v, want the six browser blocker reasons", reason["enum"])
+	}
+	sessionID, ok := blockerProperties["session_id"].(map[string]any)
+	if !ok {
+		t.Fatalf("AutosuspendBlockerView.session_id = %v, want nullable string schema", blockerProperties["session_id"])
+	}
+	types, ok := sessionID["type"].([]any)
+	if !ok || len(types) != 2 || types[0] != "string" || types[1] != "null" {
+		t.Fatalf("AutosuspendBlockerView.session_id.type = %v, want string or null", sessionID["type"])
+	}
+}
+
 type openAPIDocument struct {
 	OpenAPI string `json:"openapi"`
 	Info    struct {

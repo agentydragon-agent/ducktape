@@ -18,21 +18,27 @@ import (
 
 // SandboxView is the browser contract for the Kubernetes Sandbox and its current Pod incarnation.
 type SandboxView struct {
-	Name                    string                `json:"name"`
-	UID                     string                `json:"uid"`
-	Namespace               string                `json:"namespace"`
-	CreatedAt               time.Time             `json:"created_at"`
-	OperatingMode           *string               `json:"operating_mode"`
-	Status                  map[string]any        `json:"status"`
-	ServiceAccount          SandboxServiceAccount `json:"service_account"`
-	Binding                 *SandboxBinding       `json:"binding"`
-	Preset                  *string               `json:"preset"`
-	WakeOnSend              bool                  `json:"wake_on_send"`
-	IdleSuspendAfterSeconds *int64                `json:"idle_suspend_after_seconds"`
-	IdleSuspendAt           *time.Time            `json:"idle_suspend_at"`
-	SuspendedBy             *string               `json:"suspended_by"`
-	Phase                   string                `json:"phase"`
-	Pod                     *SandboxPodView       `json:"pod"`
+	Name                    string                   `json:"name"`
+	UID                     string                   `json:"uid"`
+	Namespace               string                   `json:"namespace"`
+	CreatedAt               time.Time                `json:"created_at"`
+	OperatingMode           *string                  `json:"operating_mode"`
+	Status                  map[string]any           `json:"status"`
+	ServiceAccount          SandboxServiceAccount    `json:"service_account"`
+	Binding                 *SandboxBinding          `json:"binding"`
+	Preset                  *string                  `json:"preset"`
+	WakeOnSend              bool                     `json:"wake_on_send"`
+	IdleSuspendAfterSeconds *int64                   `json:"idle_suspend_after_seconds"`
+	IdleSuspendAt           *time.Time               `json:"idle_suspend_at"`
+	SuspendedBy             *string                  `json:"suspended_by"`
+	AutosuspendBlockers     []AutosuspendBlockerView `json:"autosuspend_blockers" nullable:"false"`
+	Phase                   string                   `json:"phase"`
+	Pod                     *SandboxPodView          `json:"pod"`
+}
+
+type AutosuspendBlockerView struct {
+	Reason    string  `json:"reason" enum:"ActiveTurn,PendingCommand,Setup,Activation,Bootstrap,Admission"`
+	SessionID *string `json:"session_id" nullable:"true"`
 }
 
 type SandboxServiceAccount struct {
@@ -227,6 +233,12 @@ func sandboxView(value *sandboxespb.Sandbox) SandboxView {
 		Name: value.GetName(), UID: value.GetUid(), Namespace: value.GetNamespace(),
 		ServiceAccount: SandboxServiceAccount{}, WakeOnSend: value.GetWakeOnSend(),
 		Phase: sandboxPhaseView(value.GetPhase()), Status: map[string]any{},
+		AutosuspendBlockers: make([]AutosuspendBlockerView, 0, len(value.GetAutosuspendBlockers())),
+	}
+	for _, blocker := range value.GetAutosuspendBlockers() {
+		view.AutosuspendBlockers = append(view.AutosuspendBlockers, AutosuspendBlockerView{
+			Reason: blocker.GetReason(), SessionID: blocker.SessionId,
+		})
 	}
 	if value.CreatedAt != nil && value.CreatedAt.IsValid() {
 		view.CreatedAt = value.CreatedAt.AsTime()

@@ -122,10 +122,21 @@ func (f *streamTestLive) Subscribe() (<-chan struct{}, func()) {
 }
 
 func TestLiveSandboxStreamSendsInitialUpdateAndStaleHealth(t *testing.T) {
+	activeSession := "active-session"
 	deadline := metav1.NewTime(time.Date(2026, 10, 20, 1, 4, 3, 0, time.UTC))
 	live := &streamTestLive{
 		snapshots: []liveinventory.Snapshot{
-			{Sandboxes: []sandboxapi.Sandbox{{ObjectMeta: metav1.ObjectMeta{Namespace: "tools", Name: "demo"}, Status: sandboxapi.SandboxStatus{IdleSuspendAt: &deadline}}}, Watch: liveinventory.WatchHealth{Fresh: true, StaleAfterSeconds: 30}},
+			{Sandboxes: []sandboxapi.Sandbox{{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "tools", Name: "demo"},
+				Status: sandboxapi.SandboxStatus{IdleSuspendBlockers: []sandboxapi.AutosuspendBlocker{
+					{Reason: sandboxapi.AutosuspendBlockerActiveTurn, SessionID: &activeSession},
+					{Reason: sandboxapi.AutosuspendBlockerBootstrap},
+				}},
+			}}, Watch: liveinventory.WatchHealth{Fresh: true, StaleAfterSeconds: 30}},
+			{Sandboxes: []sandboxapi.Sandbox{{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "tools", Name: "demo"},
+				Status:     sandboxapi.SandboxStatus{IdleSuspendAt: &deadline, IdleSuspendBlockers: []sandboxapi.AutosuspendBlocker{}},
+			}}, Watch: liveinventory.WatchHealth{Fresh: true, StaleAfterSeconds: 30}},
 			{Sandboxes: []sandboxapi.Sandbox{{ObjectMeta: metav1.ObjectMeta{Namespace: "tools", Name: "demo"}}}, Watch: liveinventory.WatchHealth{Fresh: false, StaleAfterSeconds: 30}},
 		},
 		changes: make(chan struct{}, 1),
@@ -141,7 +152,10 @@ func TestLiveSandboxStreamSendsInitialUpdateAndStaleHealth(t *testing.T) {
 		routes.liveSandboxes(response, request)
 		close(done)
 	}()
+	waitForStreamText(t, response, `"autosuspend_blockers":[{"reason":"ActiveTurn","session_id":"active-session"},{"reason":"Bootstrap","session_id":null}]`)
+	live.changes <- struct{}{}
 	waitForStreamText(t, response, `"idle_suspend_at":"2026-10-20T01:04:03Z"`)
+	waitForStreamText(t, response, `"autosuspend_blockers":[]`)
 	live.changes <- struct{}{}
 	waitForStreamText(t, response, `"fresh":false`)
 	waitForStreamText(t, response, `"idle_suspend_at":null`)
@@ -152,7 +166,7 @@ func TestLiveSandboxStreamSendsInitialUpdateAndStaleHealth(t *testing.T) {
 		t.Fatal("live sandbox stream did not stop after request cancellation")
 	}
 	body := response.String()
-	if !strings.Contains(body, `"name":"demo"`) || strings.Count(body, "event: snapshot") != 2 {
+	if !strings.Contains(body, `"name":"demo"`) || strings.Count(body, "event: snapshot") != 3 {
 		t.Fatalf("live sandbox frames = %s", body)
 	}
 }
