@@ -24,6 +24,13 @@ import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 
 type AccountCoverage = NonNullable<SustainabilityView["account_coverage"]>[number];
 
+const statusColors = {
+  ready: "blue",
+  provisional: "yellow",
+  unavailable: "orange",
+  disabled: "gray",
+} satisfies Record<SustainabilityView["status"], string>;
+
 function percent(value: number | null): string {
   if (value == null || !Number.isFinite(value)) return "Unavailable";
   return new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 }).format(value);
@@ -724,14 +731,7 @@ export function SustainabilityPage() {
     }
   }, [selectedWindowDays, view?.window_days]);
   const statusLabel = view?.status === "provisional" ? "Provisional" : (view?.status ?? "loading");
-  const statusColor =
-    view?.status === "ready"
-      ? "blue"
-      : view?.status === "provisional"
-        ? "yellow"
-        : view?.status === "unavailable"
-          ? "orange"
-          : "gray";
+  const statusColor = view ? statusColors[view.status] : "gray";
 
   return (
     <Stack gap="lg">
