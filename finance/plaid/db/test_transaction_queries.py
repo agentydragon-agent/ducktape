@@ -75,6 +75,7 @@ async def test_selected_retained_active_attached_rows(db_url: str) -> None:
             assert {row["transaction_id"] for row in rows} == {"posted", "pending"}
             posted = next(row for row in rows if row["transaction_id"] == "posted")
             assert posted["amount"] == "12.5"
+            assert posted["currency"] == "USD"
             assert posted["date"] == "2026-01-02"
             assert posted["authorized_date"] == "2026-01-01"
             assert posted["merchant_category_code"] == "1234"
@@ -82,6 +83,61 @@ async def test_selected_retained_active_attached_rows(db_url: str) -> None:
             assert posted["counterparties"] == '[{"name": "Synthetic merchant"}]'
             assert next(row for row in rows if row["pending"])["counterparties"] == "[]"
             assert not (await session.execute(select_transactions([]))).all()
+    finally:
+        await engine.dispose()
+
+
+async def test_currency_preserves_unofficial_units_and_unknown_currency(db_url: str) -> None:
+    engine, sessions = async_session_factory(db_url)
+    try:
+        async with sessions() as session:
+            session.add(
+                LinkRow(
+                    item_id="currency-item",
+                    products_requested=[],
+                    products_authorized=[],
+                    products_billed=[],
+                    status="active",
+                    access_token_secret="synthetic-token",
+                )
+            )
+            await session.flush()
+            session.add(
+                AccountRow(
+                    account_id="currency-account", item_id="currency-item", name="Synthetic", type="credit", raw_json={}
+                )
+            )
+            await session.flush()
+            session.add_all(
+                [
+                    TransactionRow(
+                        transaction_id=identity,
+                        account_id="currency-account",
+                        item_id="currency-item",
+                        date=date(2026, 1, 2),
+                        amount=0.01,
+                        name="Synthetic currency case",
+                        pending=False,
+                        removed=False,
+                        iso_currency_code=iso,
+                        raw_json={"unofficial_currency_code": unofficial},
+                    )
+                    for identity, iso, unofficial in [
+                        ("iso", "USD", None),
+                        ("unofficial", None, "BTC"),
+                        ("unknown", None, None),
+                        ("iso-first", "USD", "BTC"),
+                    ]
+                ]
+            )
+            await session.commit()
+            rows = (await session.execute(select_transactions(["currency-account"]))).mappings().all()
+            assert {row["transaction_id"]: row["currency"] for row in rows} == {
+                "iso": "USD",
+                "unofficial": "BTC",
+                "unknown": None,
+                "iso-first": "USD",
+            }
     finally:
         await engine.dispose()
 

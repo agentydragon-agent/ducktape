@@ -35,6 +35,7 @@ def select_transactions(account_ids: Sequence[str]) -> Select[Any]:
             TransactionRow.name,
             TransactionRow.pending,
             TransactionRow.iso_currency_code,
+            func.coalesce(TransactionRow.iso_currency_code, raw["unofficial_currency_code"].astext).label("currency"),
             raw["merchant_category_code"].astext.label("merchant_category_code"),
             raw["personal_finance_category"]["confidence_level"].astext.label("pfc_confidence"),
             case(
