@@ -689,3 +689,15 @@ func TestDefaultStoreKeepsEveryEntry(t *testing.T) {
 		t.Fatalf("entries %d, settled %v", len(page.Entries), settledRanges(page))
 	}
 }
+
+func TestReadSequencesRequiresAPositiveBatchAndNonzeroSequences(t *testing.T) {
+	store := NewStore(nil, false)
+	for _, batchSize := range []int{0, -1} {
+		_, err := store.ReadSequences(t.Context(), uuid.New(), []uint64{1}, batchSize)
+		assertError(t, err, ErrInvalidArgument)
+	}
+	for _, sequences := range [][]uint64{nil, {}, {0}} {
+		_, err := store.ReadSequences(t.Context(), uuid.New(), sequences, 1)
+		assertError(t, err, ErrInvalidArgument)
+	}
+}
