@@ -11,12 +11,23 @@ between Sessions or a safe place for another principal's credentials.
 
 ## Pods
 
-The template starts `agentplane-executor` from the Runner disk in a separate container on the same
-tools image. That standalone binary does not include the Runner runtime or SQLite storage.
+The template starts `/run/agentplane/runner/bin/agentplane-runner executor` in a separate container
+on the same tools image. This explicit process mode returns before Runner, COSI and telemetry startup.
 Kubernetes `resources` supplies its memory and CPU limits; kubelet restarts the container. Its PID
-namespace must be private (`shareProcessNamespace: false`), and the companion must be PID 1.
+namespace must be private (`shareProcessNamespace: false`), and the executor mode must be PID 1.
 Both containers mount the same state, workspace, home, temporary directory, runner binary disk,
 proxy trust bundle and kubeconfig. Projected workload tokens remain confined to the egress sidecar.
+
+The companion selects the shared PID1 `Supervisor` without a Runner state-owner descriptor. A claim's
+explicit environment reaches `exec-server` through `supervision.Process`; PID 1's process-wide
+reaper owns native and orphan waits. The claim connection and container lifetime remain the
+executor's ownership protocol, and it does not construct the Runner's COSI runtime or journals.
+Stdout/stderr readers are not joined before PID 1 exits, since escaped descendants can retain them.
+
+The Sandbox template command and runner disk image pin are separate manifest inputs. A template using
+the `executor` mode requires a disk image that includes that mode; roll them out together. To roll
+back, restore both the previous template command and the previous runner disk image pin. After Flux
+applies the rollback, verify a fresh Pod's executor health endpoint and Runner ownership claim.
 
 Runner holds a Unix connection to the companion through an `emptyDir`. Claiming it starts
 `exec-server`; EOF, a fence request, termination, or executor exit ends that whole container
