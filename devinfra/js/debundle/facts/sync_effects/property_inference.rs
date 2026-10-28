@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
 pub(super) enum OwnPropertyRequest {
+    Ordinary,
     Names { native_call_identity: SemanticKey },
     Descriptors { native_call_identity: SemanticKey },
 }
@@ -42,6 +43,7 @@ pub(super) struct OwnPropertyDescriptorProjection {
 
 #[derive(Debug, Clone)]
 pub(super) enum OwnPropertyProjection {
+    Ordinary { source_object: u32 },
     Names(OwnPropertyNamesProjection),
     Descriptors(OwnPropertyDescriptorProjection),
 }
@@ -196,13 +198,14 @@ impl<'a> RuleSet for OwnPropertyRules<'a> {
     ) -> Option<OwnPropertyFact<'a>> {
         match key {
             OwnPropertyKey::SourceOrigin(source_object) => {
-                if *source_object != self.source_object
-                    || !matches!(
-                        self.source_values.iter().collect::<Vec<_>>().as_slice(),
-                        [AbstractValue::Origin(crate::facts::ValueOrigin::Object(object))]
-                            if object == source_object
-                    )
-                {
+                let source_is_exact_object = self.source_values.len() == 1
+                    && matches!(
+                        self.source_values.first(),
+                        Some(AbstractValue::Origin(
+                            crate::facts::ValueOrigin::Object(object)
+                        )) if object == source_object
+                    );
+                if *source_object != self.source_object || !source_is_exact_object {
                     return None;
                 }
                 Some(OwnPropertyFact::SourceOrigin(*source_object))
@@ -318,6 +321,7 @@ pub(super) fn infer_own_property_projection(
     request: OwnPropertyRequest,
 ) -> Option<OwnPropertyProof> {
     let key = match &request {
+        OwnPropertyRequest::Ordinary => OwnPropertyKey::PrefixState(source_object),
         OwnPropertyRequest::Names { .. } => OwnPropertyKey::NamesProjection(source_object),
         OwnPropertyRequest::Descriptors { .. } => {
             OwnPropertyKey::DescriptorProjection(source_object)
@@ -357,9 +361,16 @@ pub(super) fn infer_own_property_projection(
         derivation_rules,
         value_input_refs: judgment.dependencies().value_inputs.clone(),
     };
-    let projection = match inference.into_value(&key)? {
-        OwnPropertyFact::NamesProjection(projection) => OwnPropertyProjection::Names(projection),
-        OwnPropertyFact::DescriptorProjection(projection) => {
+    let projection = match (&key, inference.into_value(&key)?) {
+        (OwnPropertyKey::PrefixState(_), OwnPropertyFact::PrefixState(state)) => {
+            OwnPropertyProjection::Ordinary {
+                source_object: state.source_object,
+            }
+        }
+        (_, OwnPropertyFact::NamesProjection(projection)) => {
+            OwnPropertyProjection::Names(projection)
+        }
+        (_, OwnPropertyFact::DescriptorProjection(projection)) => {
             OwnPropertyProjection::Descriptors(projection)
         }
         _ => return None,
@@ -372,7 +383,14 @@ pub(super) fn infer_own_property_projection(
 
 #[cfg(test)]
 mod tests {
-    use super::super::value_model::ordered_own_property_names;
+    use super::super::value_model::{
+        AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, ordered_own_property_names,
+    };
+    use super::{OwnPropertyProjection, OwnPropertyRequest, infer_own_property_projection};
+    use crate::facts::semantic_inference::SemanticFacts;
+    use crate::facts::value_flow::ValueOrigin;
+    use crate::reports::schema::InferenceRule;
+    use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
     fn own_name_order_matches_ecmascript_integer_index_boundary() {
@@ -387,6 +405,48 @@ mod tests {
         assert_eq!(
             ordered_own_property_names(&source),
             ["2", "10", "4294967294", "z", "01", "4294967295"]
+        );
+    }
+
+    #[test]
+    fn ordinary_projection_has_no_native_call_premise() {
+        let source_object = 7;
+        let source_values =
+            BTreeSet::from([AbstractValue::Origin(ValueOrigin::Object(source_object))]);
+        let shape = OwnPropertyShape {
+            properties: BTreeMap::from([("field".to_owned(), OwnPropertyDescriptorSyntax::Data)]),
+            creation_order: vec!["field".to_owned()],
+        };
+        let prefix_properties = BTreeMap::from([(
+            Some("field".to_owned()),
+            BTreeSet::from([AbstractValue::NonCallable]),
+        )]);
+        let proof = infer_own_property_projection(
+            source_object,
+            &source_values,
+            &shape,
+            &prefix_properties,
+            false,
+            &SemanticFacts::default(),
+            OwnPropertyRequest::Ordinary,
+        )
+        .expect("ordinary source projection");
+
+        assert!(matches!(
+            proof.projection,
+            OwnPropertyProjection::Ordinary { source_object: 7 }
+        ));
+        assert_eq!(
+            proof.inference_use.conclusion,
+            InferenceRule::OwnPropertyPrefixState
+        );
+        assert_eq!(
+            proof.inference_use.derivation_rules,
+            BTreeSet::from([
+                InferenceRule::OwnPropertySourceOrigin,
+                InferenceRule::OwnPropertyShape,
+                InferenceRule::OwnPropertyPrefixState,
+            ])
         );
     }
 }
