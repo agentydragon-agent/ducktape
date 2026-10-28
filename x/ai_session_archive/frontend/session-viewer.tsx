@@ -16,6 +16,7 @@ import {
   Text,
   Title,
 } from "@mantine/core";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 
 import { harnessLabel, httpApi, type SessionBrowserApi } from "./api";
 import { recordLabel, RecordContent, rawRecordText } from "./event-content";
@@ -122,20 +123,27 @@ function noVersionExplanation(status: SessionSummary["transcript_status"]): stri
 }
 
 export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): JSX.Element {
+  const { sessionId } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const search = new URLSearchParams(location.search);
+  const selectedMachineId = search.get("machine") ?? "";
+  const selectedHarness = search.get("harness") ?? "";
+  const requestedVersionId = search.get("version");
   const [machines, setMachines] = useState<Machine[]>([]);
   const [importProgress, setImportProgress] = useState<MachineImportProgress[]>([]);
   const [loadingImportProgress, setLoadingImportProgress] = useState(true);
   const [importProgressError, setImportProgressError] = useState<string | null>(null);
   const [importProgressRefreshRequest, setImportProgressRefreshRequest] = useState(0);
-  const [selectedMachineId, setSelectedMachineId] = useState("");
-  const [selectedHarness, setSelectedHarness] = useState("");
   const [sessionListRefreshRequest, setSessionListRefreshRequest] = useState(0);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [loadedSessionScope, setLoadedSessionScope] = useState<string | null>(null);
   const [sessionCursor, setSessionCursor] = useState<string | null>(null);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [fetchedSession, setFetchedSession] = useState<SessionSummary | null>(null);
+  const [loadingSelectedSession, setLoadingSelectedSession] = useState(false);
+  const [selectedSessionError, setSelectedSessionError] = useState<string | null>(null);
   const [versions, setVersions] = useState<SessionVersion[]>([]);
   const [versionsSessionId, setVersionsSessionId] = useState<string | null>(null);
-  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [eventCursor, setEventCursor] = useState<number | null>(null);
   const [parentSession, setParentSession] = useState<SessionSummary | null>(null);
@@ -153,21 +161,31 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   const sessionScope = `${selectedMachineId}\u0000${selectedHarness}`;
   const sessionScopeRef = useRef(sessionScope);
   sessionScopeRef.current = sessionScope;
-  const eventScope = `${selectedSessionId ?? ""}\u0000${selectedVersionId ?? ""}`;
+  const selectedSession =
+    sessions.find((session) => session.id === sessionId) ?? (fetchedSession?.id === sessionId ? fetchedSession : null);
+  const requestedVersionUnavailable =
+    requestedVersionId !== null &&
+    versionsSessionId === selectedSession?.id &&
+    !versions.some((version) => version.id === requestedVersionId);
+  const selectedVersionId =
+    versionsSessionId === selectedSession?.id
+      ? requestedVersionId !== null
+        ? (versions.find((version) => version.id === requestedVersionId)?.id ?? null)
+        : (versions.find((version) => version.id === selectedSession.latest_version_id)?.id ?? versions[0]?.id ?? null)
+      : null;
+  const eventScope = `${sessionId ?? ""}\u0000${selectedVersionId ?? ""}`;
   const eventScopeRef = useRef(eventScope);
   eventScopeRef.current = eventScope;
   const sessionPageRequest = useRef<AbortController | null>(null);
   const eventPageRequest = useRef<AbortController | null>(null);
   const relatedPageRequest = useRef<AbortController | null>(null);
-  const navigationRequest = useRef<AbortController | null>(null);
-  const selectedSessionIdRef = useRef(selectedSessionId);
-  selectedSessionIdRef.current = selectedSessionId;
+  const selectedSessionIdRef = useRef(sessionId);
+  selectedSessionIdRef.current = sessionId;
 
   const machineNames = useMemo(
     () => new Map(machines.map((machine) => [machine.id, machine.display_name])),
     [machines]
   );
-  const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
   const selectedVersion =
     versionsSessionId === selectedSession?.id
       ? (versions.find((version) => version.id === selectedVersionId) ?? null)
@@ -178,7 +196,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
       sessionPageRequest.current?.abort();
       eventPageRequest.current?.abort();
       relatedPageRequest.current?.abort();
-      navigationRequest.current?.abort();
     },
     []
   );
@@ -251,9 +268,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
         if (controller.signal.aborted) return;
         setSessions(page.data);
         setSessionCursor(page.next_cursor);
-        setSelectedSessionId((current) =>
-          current !== null && page.data.some((session) => session.id === current) ? current : (page.data[0]?.id ?? null)
-        );
+        setLoadedSessionScope(sessionScope);
       })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) setError(errorMessage(reason));
@@ -269,13 +284,43 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   }, [api, selectedMachineId, selectedHarness, sessionListRefreshRequest]);
 
   useEffect(() => {
+    if (sessionId === undefined && loadedSessionScope === sessionScope && !loadingSessions && sessions[0]) {
+      navigate(`/sessions/${encodeURIComponent(sessions[0].id)}${location.search}`, { replace: true });
+    }
+  }, [sessionId, loadedSessionScope, sessionScope, loadingSessions, sessions, location.search, navigate]);
+
+  useEffect(() => {
+    if (sessionId === undefined || sessions.some((session) => session.id === sessionId)) {
+      setFetchedSession(null);
+      setSelectedSessionError(null);
+      setLoadingSelectedSession(false);
+      return;
+    }
+    const controller = new AbortController();
+    setFetchedSession(null);
+    setSelectedSessionError(null);
+    setLoadingSelectedSession(true);
+    void api
+      .getSession(sessionId, controller.signal)
+      .then((session) => {
+        if (!controller.signal.aborted) setFetchedSession(session);
+      })
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) setSelectedSessionError(errorMessage(reason));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingSelectedSession(false);
+      });
+    return () => controller.abort();
+  }, [api, sessionId, sessions]);
+
+  useEffect(() => {
     eventPageRequest.current?.abort();
     eventPageRequest.current = null;
     setLoadingMoreEvents(false);
     if (selectedSession === null) {
       setVersions([]);
       setVersionsSessionId(null);
-      setSelectedVersionId(null);
       setEvents([]);
       setEventCursor(null);
       return;
@@ -283,7 +328,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     const controller = new AbortController();
     setVersions([]);
     setVersionsSessionId(null);
-    setSelectedVersionId(null);
     setEvents([]);
     setEventCursor(null);
     setLoadingVersions(true);
@@ -294,8 +338,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
         if (controller.signal.aborted) return;
         setVersions(items);
         setVersionsSessionId(selectedSession.id);
-        const latest = items.find((version) => version.id === selectedSession.latest_version_id);
-        setSelectedVersionId(latest?.id ?? items[0]?.id ?? null);
       })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) setError(errorMessage(reason));
@@ -466,22 +508,24 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     }
   };
 
-  const navigateToSession = async (sessionId: string): Promise<void> => {
-    const controller = new AbortController();
-    navigationRequest.current?.abort();
-    navigationRequest.current = controller;
-    try {
-      const target = await api.getSession(sessionId, controller.signal);
-      if (controller.signal.aborted) return;
-      setSessions((current) => mergeById(current, [target]));
-      setSelectedMachineId("");
-      setSelectedHarness("");
-      setSelectedSessionId(target.id);
-    } catch (reason) {
-      if (!controller.signal.aborted) setError(errorMessage(reason));
-    } finally {
-      if (navigationRequest.current === controller) navigationRequest.current = null;
-    }
+  const sessionPath = (targetId: string): string => {
+    const params = new URLSearchParams(location.search);
+    params.delete("version");
+    const query = params.toString();
+    return `/sessions/${encodeURIComponent(targetId)}${query ? `?${query}` : ""}`;
+  };
+
+  const changeFilter = (name: "machine" | "harness", value: string): void => {
+    if (value) search.set(name, value);
+    else search.delete(name);
+    search.delete("version");
+    navigate(`/?${search.toString()}`);
+  };
+
+  const changeVersion = (versionId: string): void => {
+    if (versionId) search.set("version", versionId);
+    else search.delete("version");
+    navigate(`${location.pathname}?${search.toString()}`);
   };
 
   return (
@@ -528,7 +572,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                 ...machines.map((machine) => ({ value: machine.id, label: machine.display_name })),
               ]}
               value={selectedMachineId}
-              onChange={(value) => setSelectedMachineId(value ?? "")}
+              onChange={(value) => changeFilter("machine", value ?? "")}
               disabled={loadingMachines}
               placeholder={loadingMachines ? "Loading machines…" : "All machines"}
             />
@@ -536,7 +580,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
               label="Harness"
               aria-label="Filter by harness"
               value={selectedHarness}
-              onChange={(event) => setSelectedHarness(event.currentTarget.value)}
+              onChange={(event) => changeFilter("harness", event.currentTarget.value)}
               data={[
                 { value: "", label: "All harnesses" },
                 { value: "claude", label: "Claude Code" },
@@ -569,8 +613,8 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                       key={session.id}
                       session={session}
                       machineName={machineNames.get(session.machine_id) ?? session.machine_id}
-                      selected={session.id === selectedSessionId}
-                      onSelect={() => setSelectedSessionId(session.id)}
+                      selected={session.id === sessionId}
+                      to={sessionPath(session.id)}
                     />
                   ))}
                 </Stack>
@@ -600,7 +644,15 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
         >
           {selectedSession === null ? (
             <Center h="100%">
-              <Text c="dimmed">Select a session to view its captured versions.</Text>
+              {loadingSelectedSession ? (
+                <Loader size="sm" aria-label="Loading selected session" />
+              ) : (
+                <Text c="dimmed">
+                  {selectedSessionError !== null
+                    ? `Could not load session ${sessionId}: ${selectedSessionError}`
+                    : "Select a session to view its captured versions."}
+                </Text>
+              )}
             </Center>
           ) : (
             <Stack gap="md" style={{ height: "100%", minHeight: 0 }}>
@@ -648,16 +700,24 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                   <NativeSelect
                     label="Captured version"
                     aria-label="Captured version"
-                    value={selectedVersionId ?? ""}
-                    onChange={(event) => setSelectedVersionId(event.currentTarget.value || null)}
-                    disabled={loadingVersions || versions.length === 0}
+                    value={requestedVersionUnavailable ? (requestedVersionId ?? "") : (selectedVersionId ?? "")}
+                    onChange={(event) => changeVersion(event.currentTarget.value)}
+                    disabled={loadingVersions || (versions.length === 0 && !requestedVersionUnavailable)}
                     data={
-                      versions.length === 0
-                        ? [{ value: "", label: loadingVersions ? "Loading versions…" : "No captured versions" }]
-                        : versions.map((version) => ({
-                            value: version.id,
-                            label: `${version.id === selectedSession.latest_version_id ? "Latest captured · " : ""}${formatDateTime(version.captured_at)} · ${formatBytes(version.byte_size)}`,
-                          }))
+                      loadingVersions
+                        ? [{ value: "", label: "Loading versions…" }]
+                        : [
+                            ...(requestedVersionUnavailable
+                              ? [{ value: requestedVersionId ?? "", label: "Requested capture unavailable" }]
+                              : []),
+                            ...versions.map((version) => ({
+                              value: version.id,
+                              label: `${version.id === selectedSession.latest_version_id ? "Latest captured · " : ""}${formatDateTime(version.captured_at)} · ${formatBytes(version.byte_size)}`,
+                            })),
+                            ...(versions.length === 0 && !requestedVersionUnavailable
+                              ? [{ value: "", label: "No captured versions" }]
+                              : []),
+                          ]
                     }
                   />
                   {selectedVersion !== null && (
@@ -683,7 +743,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                           Parent
                         </Text>
                         {selectedSession.parent_session_id !== null && parentSession !== null ? (
-                          <Button variant="subtle" size="xs" onClick={() => void navigateToSession(parentSession.id)}>
+                          <Button component={Link} to={sessionPath(parentSession.id)} variant="subtle" size="xs">
                             {parentSession.title || "Untitled parent session"}
                           </Button>
                         ) : selectedSession.parent_session_id !== null ? (
@@ -723,7 +783,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                         </Text>
                         {childSessions.map((child) => (
                           <Group key={child.id} gap="xs" wrap="wrap">
-                            <Button variant="subtle" size="xs" onClick={() => void navigateToSession(child.id)}>
+                            <Button component={Link} to={sessionPath(child.id)} variant="subtle" size="xs">
                               {child.title || "Untitled child session"}
                             </Button>
                             {parentLinkLabel(child.parent_link_kind) !== null && (
@@ -752,7 +812,22 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                   </Stack>
                 </Paper>
               )}
-              {selectedVersion === null && !loadingVersions ? (
+              {requestedVersionUnavailable ? (
+                <Center h={180}>
+                  <Stack align="center" gap="xs" maw={480}>
+                    <Text size="sm" fw={600}>
+                      Requested capture unavailable
+                    </Text>
+                    <Text size="sm" c="dimmed" ta="center">
+                      This captured version is not available for this session. Choose another version or view the
+                      current capture.
+                    </Text>
+                    <Button variant="light" size="xs" onClick={() => changeVersion("")}>
+                      View current capture
+                    </Button>
+                  </Stack>
+                </Center>
+              ) : selectedVersion === null && !loadingVersions ? (
                 <Center h={180}>
                   <Stack align="center" gap="xs" maw={480}>
                     <Text size="sm" fw={600}>
@@ -894,21 +969,22 @@ function SessionRow({
   session,
   machineName,
   selected,
-  onSelect,
+  to,
 }: {
   session: SessionSummary;
   machineName: string;
   selected: boolean;
-  onSelect: () => void;
+  to: string;
 }): JSX.Element {
   return (
     <Button
+      component={Link}
+      to={to}
       variant={selected ? "light" : "subtle"}
       color={selected ? "blue" : "gray"}
       fullWidth
       justify="flex-start"
-      onClick={onSelect}
-      aria-pressed={selected}
+      aria-current={selected ? "page" : undefined}
       styles={{
         root: { height: "auto", padding: "8px", textAlign: "left" },
         label: { display: "block", width: "100%" },

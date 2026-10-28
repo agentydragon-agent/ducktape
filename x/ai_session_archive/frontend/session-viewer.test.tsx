@@ -3,9 +3,11 @@
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
+import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
 import type { SessionBrowserApi } from "./api";
+import { ApiError } from "./api";
 import { SessionViewer } from "./session-viewer";
 import { sessionFixtureApi } from "./fixtures/session-data";
 import type { EventPage, EventRecord, SessionPage, SessionSummary, SessionVersion } from "./schema";
@@ -23,14 +25,19 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
-async function renderViewer(api: SessionBrowserApi): Promise<HTMLDivElement> {
+async function renderViewer(api: SessionBrowserApi, initialPath = "/"): Promise<HTMLDivElement> {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   await act(async () => {
     root?.render(
       <MantineProvider env="test">
-        <SessionViewer api={api} />
+        <MemoryRouter initialEntries={[initialPath]}>
+          <Routes>
+            <Route path="/" element={<SessionViewer api={api} />} />
+            <Route path="/sessions/:sessionId" element={<SessionViewer api={api} />} />
+          </Routes>
+        </MemoryRouter>
       </MantineProvider>
     );
     await flush();
@@ -42,12 +49,12 @@ async function flush(): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
-function findButton(view: HTMLElement, text: string): HTMLButtonElement {
-  const button = [...view.querySelectorAll<HTMLButtonElement>("button")].find((item) =>
+function findControl(view: HTMLElement, text: string): HTMLButtonElement | HTMLAnchorElement {
+  const control = [...view.querySelectorAll<HTMLButtonElement | HTMLAnchorElement>("button, a")].find((item) =>
     item.textContent?.includes(text)
   );
-  if (button === undefined) throw new Error(`Could not find button containing ${JSON.stringify(text)}`);
-  return button;
+  if (control === undefined) throw new Error(`Could not find control containing ${JSON.stringify(text)}`);
+  return control;
 }
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
@@ -57,6 +64,137 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   });
   return { promise, resolve };
 }
+
+it("opens a direct session link outside the first page and restores the requested version and filters", async () => {
+  const api: SessionBrowserApi = {
+    ...sessionFixtureApi,
+    listSessions(query, signal) {
+      if (query.parentSessionId !== undefined) return sessionFixtureApi.listSessions(query, signal);
+      return sessionFixtureApi.listSessions(query, signal).then((page) => ({
+        ...page,
+        data: page.data.filter((session) => session.id !== "codex-thread-1"),
+      }));
+    },
+  };
+  const view = await renderViewer(
+    api,
+    "/sessions/codex-thread-1?machine=thinkpad&harness=codex&version=codex-version-1"
+  );
+
+  expect(view.querySelector('select[aria-label="Filter by harness"]')).toHaveProperty("value", "codex");
+  expect(view.querySelector('input[aria-label="Filter by machine"]')).toHaveProperty("value", "ThinkPad");
+  expect(view.querySelector('select[aria-label="Captured version"]')).toHaveProperty("value", "codex-version-1");
+  expect(view.querySelector('[aria-label="Session transcript"]')?.textContent).toContain(
+    "This is the earlier captured version."
+  );
+});
+
+it("keeps session selection in history for back and forward navigation", async () => {
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  const router = createMemoryRouter(
+    [
+      { path: "/", element: <SessionViewer api={sessionFixtureApi} /> },
+      { path: "/sessions/:sessionId", element: <SessionViewer api={sessionFixtureApi} /> },
+    ],
+    { initialEntries: ["/sessions/codex-thread-1"] }
+  );
+  await act(async () => {
+    root?.render(
+      <MantineProvider env="test">
+        <RouterProvider router={router} />
+      </MantineProvider>
+    );
+    await flush();
+  });
+  await act(async () => {
+    findControl(container!, "Inspect a local transcript").click();
+    await flush();
+  });
+  expect(router.state.location.pathname).toBe("/sessions/claude-session-1");
+  expect(container.querySelector('[aria-label="Session transcript"]')?.textContent).toContain(
+    "Review this local conversation."
+  );
+
+  await act(async () => {
+    await router.navigate(-1);
+    await flush();
+  });
+  expect(router.state.location.pathname).toBe("/sessions/codex-thread-1");
+  expect(container.querySelector('[aria-label="Session transcript"]')?.textContent).toContain(
+    "I found two snapshots for this session."
+  );
+
+  await act(async () => {
+    await router.navigate(1);
+    await flush();
+  });
+  expect(router.state.location.pathname).toBe("/sessions/claude-session-1");
+  expect(container.querySelector('[aria-label="Session transcript"]')?.textContent).toContain(
+    "Review this local conversation."
+  );
+});
+
+it("keeps a missing session link visible instead of silently selecting another session", async () => {
+  const api: SessionBrowserApi = {
+    ...sessionFixtureApi,
+    getSession(sessionId, signal) {
+      if (sessionId === "missing") return Promise.reject(new ApiError(404, "Session not found"));
+      return sessionFixtureApi.getSession(sessionId, signal);
+    },
+  };
+  const view = await renderViewer(api, "/sessions/missing");
+  expect(view.querySelector('[aria-label="Session transcript"]')?.textContent).toContain(
+    "Could not load session missing: Session not found"
+  );
+  expect(view.querySelector('[aria-label="Session transcript"]')?.textContent).not.toContain(
+    "I found two snapshots for this session."
+  );
+});
+
+it("renders session and related-session navigation as shareable links without carrying the old version", async () => {
+  const view = await renderViewer(
+    sessionFixtureApi,
+    "/sessions/claude-session-1?machine=atlas&harness=claude&version=claude-version-1"
+  );
+  const sidebar = view.querySelector('[aria-label="Session list"]');
+  const parentLink = [...view.querySelectorAll<HTMLAnchorElement>('[aria-label="Related sessions"] a')].find((link) =>
+    link.textContent?.includes("Inferred Claude parent")
+  );
+  const sidebarParentLink = [...(sidebar?.querySelectorAll<HTMLAnchorElement>("a") ?? [])].find((link) =>
+    link.textContent?.includes("Inferred Claude parent")
+  );
+  const expectedParentPath = "/sessions/inferred-claude-parent?machine=atlas&harness=claude";
+  expect(parentLink?.getAttribute("href")).toBe(expectedParentPath);
+  expect(sidebarParentLink?.getAttribute("href")).toBe(expectedParentPath);
+  expect(sidebar?.querySelector('a[aria-current="page"]')?.getAttribute("href")).toBe(
+    "/sessions/claude-session-1?machine=atlas&harness=claude"
+  );
+
+  await act(async () => {
+    parentLink!.click();
+    await flush();
+  });
+  const childLink = [...view.querySelectorAll<HTMLAnchorElement>('[aria-label="Related sessions"] a')].find((link) =>
+    link.textContent?.includes("Inspect a local transcript")
+  );
+  expect(childLink?.getAttribute("href")).toBe("/sessions/claude-session-1?machine=atlas&harness=claude");
+});
+
+it("does not show a different transcript for an unavailable version URL", async () => {
+  const view = await renderViewer(sessionFixtureApi, "/sessions/codex-thread-1?version=missing-version");
+  const transcript = view.querySelector('[aria-label="Session transcript"]');
+  expect(view.querySelector('select[aria-label="Captured version"]')).toHaveProperty("value", "missing-version");
+  expect(transcript?.textContent).toContain("Requested capture unavailable");
+  expect(transcript?.textContent).not.toContain("I found two snapshots for this session.");
+
+  await act(async () => {
+    findControl(view, "View current capture").click();
+    await flush();
+  });
+  expect(transcript?.textContent).toContain("I found two snapshots for this session.");
+});
 
 it("shows captured machines, readable records, malformed raw lines, and older versions", async () => {
   const view = await renderViewer(sessionFixtureApi);
@@ -87,7 +225,7 @@ it("shows captured machines, readable records, malformed raw lines, and older ve
   expect(rawDisclosure!.querySelector("pre")?.textContent).toBe('{"type":"response_item","payload":');
 
   await act(async () => {
-    findButton(view, "Load more records").click();
+    findControl(view, "Load more records").click();
     await flush();
   });
   const structured = view.querySelector('[data-event-ordinal="4"]');
@@ -167,26 +305,26 @@ it("distinguishes inventory, failed and missing imports from an empty captured v
   };
   const view = await renderViewer(api);
 
-  expect(findButton(view, "Inventory-only placeholder").textContent).toContain("Inventory only");
-  expect(findButton(view, "Failed import placeholder").textContent).toContain("Import failed");
-  expect(findButton(view, "Unavailable source placeholder").textContent).toContain("No captured version");
-  expect(findButton(view, "Captured empty transcript").textContent).toContain("Latest capture empty");
+  expect(findControl(view, "Inventory-only placeholder").textContent).toContain("Inventory only");
+  expect(findControl(view, "Failed import placeholder").textContent).toContain("Import failed");
+  expect(findControl(view, "Unavailable source placeholder").textContent).toContain("No captured version");
+  expect(findControl(view, "Captured empty transcript").textContent).toContain("Latest capture empty");
   expect(view.textContent).toContain("Restic inventory found a file, but no transcript version has been imported yet.");
 
   await act(async () => {
-    findButton(view, "Failed import placeholder").click();
+    findControl(view, "Failed import placeholder").click();
     await flush();
   });
   expect(view.textContent).toContain("Importing an inventoried file failed, so no transcript version is available.");
 
   await act(async () => {
-    findButton(view, "Unavailable source placeholder").click();
+    findControl(view, "Unavailable source placeholder").click();
     await flush();
   });
   expect(view.textContent).toContain("Inventory alone does not establish that a usable file was captured");
 
   await act(async () => {
-    findButton(view, "Captured empty transcript").click();
+    findControl(view, "Captured empty transcript").click();
     await flush();
   });
   expect(view.textContent).toContain("This captured version contains no JSONL records.");
@@ -214,7 +352,12 @@ it("refreshes import progress on demand and polls automatically", async () => {
   await act(async () => {
     root?.render(
       <MantineProvider env="test">
-        <SessionViewer api={api} />
+        <MemoryRouter>
+          <Routes>
+            <Route path="/" element={<SessionViewer api={api} />} />
+            <Route path="/sessions/:sessionId" element={<SessionViewer api={api} />} />
+          </Routes>
+        </MemoryRouter>
       </MantineProvider>
     );
     await Promise.resolve();
@@ -224,7 +367,7 @@ it("refreshes import progress on demand and polls automatically", async () => {
   expect(container.textContent).toContain("27 processed");
 
   await act(async () => {
-    findButton(container!, "Refresh").click();
+    findControl(container!, "Refresh").click();
     await Promise.resolve();
   });
   expect(requests).toBe(2);
@@ -248,7 +391,7 @@ it("lets the session list refresh separately from import progress", async () => 
   const requestsBeforeRefresh = sessionListRequests;
 
   await act(async () => {
-    findButton(view, "Refresh session list").click();
+    findControl(view, "Refresh session list").click();
     await flush();
   });
 
@@ -260,14 +403,14 @@ it("shows inferred subagent links and navigates to a placeholder parent", async 
   const view = await renderViewer(sessionFixtureApi);
 
   await act(async () => {
-    findButton(view, "Inspect a local transcript").click();
+    findControl(view, "Inspect a local transcript").click();
     await flush();
   });
   expect(view.textContent).toContain("Parent inferred from Claude subagent path");
   expect(view.textContent).toContain("Inferred Claude parent · session 12ab");
 
   await act(async () => {
-    findButton(view, "Inferred Claude parent · session 12ab").click();
+    findControl(view, "Inferred Claude parent · session 12ab").click();
     await flush();
   });
   expect(view.textContent).toContain("No transcript version is available. Inventory alone does not establish");
@@ -275,7 +418,7 @@ it("shows inferred subagent links and navigates to a placeholder parent", async 
   expect(view.textContent).toContain("Inspect a local transcript");
 
   await act(async () => {
-    findButton(view, "Inspect a local transcript").click();
+    findControl(view, "Inspect a local transcript").click();
     await flush();
   });
   expect(view.textContent).toContain("Review this local conversation.");
@@ -392,7 +535,7 @@ it("labels a resolved Codex parent_thread_id link and navigates to the captured 
   expect(view.textContent).toContain("Parent linked from Codex parent_thread_id");
   expect(view.textContent).toContain("Native parent ID: thread-parent-123");
   await act(async () => {
-    findButton(view, "Captured Codex parent").click();
+    findControl(view, "Captured Codex parent").click();
     await flush();
   });
   expect(view.textContent).toContain("Captured Codex parent");
@@ -413,11 +556,11 @@ it("does not append an event page after switching sessions", async () => {
   const view = await renderViewer(api);
 
   await act(async () => {
-    findButton(view, "Load more records").click();
+    findControl(view, "Load more records").click();
     await Promise.resolve();
   });
   await act(async () => {
-    findButton(view, "Inspect a local transcript").click();
+    findControl(view, "Inspect a local transcript").click();
     await flush();
   });
   expect(view.textContent).toContain("Review this local conversation.");
@@ -456,7 +599,7 @@ it("does not append a session page after changing the harness filter", async () 
   const view = await renderViewer(api);
 
   await act(async () => {
-    findButton(view, "Load more sessions").click();
+    findControl(view, "Load more sessions").click();
     await Promise.resolve();
   });
   const harness = view.querySelector<HTMLSelectElement>('select[aria-label="Filter by harness"]');
