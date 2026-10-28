@@ -142,7 +142,6 @@ py_library(
         ":models",
         "//gmail_api:labels",
         "//gmail_api:service",
-        "//util:fmt",
         "@pypi//google_api_python_client",
         "@pypi//tenacity",
     ],
@@ -221,5 +220,31 @@ py_test(
         "//gmail_api:labels",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_gmail_client",
+    srcs = ["test_gmail_client.py"],
+    deps = [
+        ":gmail_client",
+        ":models",
+        "//:conftest",
+        "@pypi//google_api_python_client",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_gmail_inbox",
+    srcs = ["test_gmail_inbox.py"],
+    deps = [
+        ":gmail_client",
+        ":inbox",
+        ":models",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//rich",
     ],
 )
