@@ -41,3 +41,8 @@ exports_files(
         "//cluster/validation:__pkg__",
     ],
 )
+
+exports_files(
+    ["agents/plaid-mcp/readonly-role.sql"],
+    visibility = ["//cluster/cdk8s/plaid_mcp:__pkg__"],
+)

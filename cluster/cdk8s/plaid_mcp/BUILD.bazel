@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "app",
@@ -91,5 +91,31 @@ py_library(
         "//util:settings_contract",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = ["//util/testing:postgres_fixtures"],
+)
+
+py_test(
+    name = "test_readonly_role",
+    size = "medium",
+    srcs = ["test_readonly_role.py"],
+    data = ["//cluster/k8s:agents/plaid-mcp/readonly-role.sql"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//finance/plaid/db:models",
+        "//finance/plaid/spend:portfolio_queries",
+        "//util/bazel:runfiles",
+        "//util/testing:postgres",
+        "@pypi//psycopg",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
