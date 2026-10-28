@@ -50,6 +50,6 @@ images:
   # The runner and `agentplane` command: a disk beside the VM guest, and an image volume in the
   # runner Pod, both reached through kustomizeconfig.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-disk
-    newTag: devel-20261028145353-b81909f # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
+    newTag: devel-20261028155833-18b5fe2 # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
 configurations:
   - kustomizeconfig
