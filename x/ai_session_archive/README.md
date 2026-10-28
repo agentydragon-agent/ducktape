@@ -17,6 +17,12 @@ bb run //x/ai_session_archive:ingest_cli -- \
 
 `DATABASE_URL` is read only from the environment so credentials do not appear in process arguments. Archive roots must be configured explicitly with `--claude-root` / `--codex-root` or `CLAUDE_ARCHIVE_ROOT` / `CODEX_ARCHIVE_ROOT`. These absolute paths must match file-node paths returned by `restic ls`; the importer does not infer them from its own home directory or harness environment. Repeat the root flags to map additional roots. The CLI runs the repository's pinned Restic binary from Bazel runfiles. Restic reads its normal environment settings; use `RESTIC_PASSWORD_FILE` for the repository password.
 
+Deployments that mount the canonical session-backup YAML source may pass it with
+`--credentials-file`. The importer selects the REST username, REST password and repository
+password for `--machine-id`, and passes those values to the Restic child process. This mode cannot
+be combined with `RESTIC_REST_USERNAME`, `RESTIC_REST_PASSWORD`, `RESTIC_PASSWORD` or
+`RESTIC_PASSWORD_FILE` in the importer environment.
+
 Before the first import, create or upgrade the schema with the versioned migration runner:
 
 ```sh
@@ -35,6 +41,6 @@ The first parser is fixed at `jsonl-v1`. A parser-version change needs an explic
 
 ## Read API and browser
 
-`//x/ai_session_archive:web_bin` serves the owner-authenticated read API and the frontend bundle packaged in its Bazel runfiles; no manual asset copy is needed. Set `AI_SESSION_ARCHIVE_DATABASE_URL`, `AI_SESSION_ARCHIVE_PUBLIC_BASE_URL`, `AI_SESSION_ARCHIVE_OIDC_ISSUER`, `AI_SESSION_ARCHIVE_OIDC_CLIENT_ID`, `AI_SESSION_ARCHIVE_OIDC_CLIENT_SECRET`, `AI_SESSION_ARCHIVE_OIDC_SESSION_SECRET`, and `AI_SESSION_ARCHIVE_OIDC_ALLOWED_SUBJECT`. `AI_SESSION_ARCHIVE_FRONTEND_DIR` is an optional override for a separately provisioned frontend directory. The only unauthenticated endpoint is `/healthz`.
+`//x/ai_session_archive:web_image` packages the owner-authenticated read API with the frontend bundle in its Bazel runfiles; `//x/ai_session_archive:web_bin` does the same for local runs. Set `AI_SESSION_ARCHIVE_DATABASE_URL`, `AI_SESSION_ARCHIVE_PUBLIC_BASE_URL`, `AI_SESSION_ARCHIVE_OIDC_ISSUER`, `AI_SESSION_ARCHIVE_OIDC_CLIENT_ID`, `AI_SESSION_ARCHIVE_OIDC_CLIENT_SECRET`, `AI_SESSION_ARCHIVE_OIDC_SESSION_SECRET`, and `AI_SESSION_ARCHIVE_OIDC_ALLOWED_SUBJECT`. `AI_SESSION_ARCHIVE_FRONTEND_DIR` is an optional override for a separately provisioned frontend directory. The only unauthenticated endpoint is `/healthz`.
 
-The API lists machines and sessions, supports filtering child sessions by `parent_session_id`, and serves captured versions and paginated records. Each event response includes replacement-decoded text and lossless base64 bytes. Claude path-derived parent links are explicitly marked as inferred. Codex metadata links distinguish resolved, unresolved, ambiguous, and conflicting parent IDs, with conflicting native-ID candidates available in the session summary. The web process does not ingest data or run migrations; the importer and deployment still need to be provisioned separately.
+The API lists machines and sessions, supports filtering child sessions by `parent_session_id`, and serves captured versions and paginated records. Each event response includes replacement-decoded text and lossless base64 bytes. Claude path-derived parent links are explicitly marked as inferred. Codex metadata links distinguish resolved, unresolved, ambiguous, and conflicting parent IDs, with conflicting native-ID candidates available in the session summary. The web process does not ingest data or run migrations; the cluster deployment supplies separate importer CronJobs and migration init containers.

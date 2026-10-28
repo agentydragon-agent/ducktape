@@ -406,6 +406,15 @@ spec:
       name: public-coder-agent-access
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/ai-session-archive/**"
+          to: "@artifact/cluster/generated/ai-session-archive/"
+        - from: "@repo/cluster/k8s/ai-session-archive-image-pins/**"
+          to: "@artifact/cluster/k8s/ai-session-archive-image-pins/"
+        - from: "@repo/secrets/shared/session-backup.yaml"
+          to: "@artifact/cluster/generated/ai-session-archive/session-backup.sops.yaml"
+      name: ai-session-archive
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/session-backup/**"
           to: "@artifact/cluster/k8s/session-backup/"
       name: session-backup

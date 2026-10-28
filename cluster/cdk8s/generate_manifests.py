@@ -58,6 +58,7 @@ from cluster.cdk8s import (
     reflector,
     reloader,
     route53_domain_delegation,
+    session_archive,
     session_backup,
     talos_cloud_controller_manager,
     tana_mcp,
@@ -120,6 +121,7 @@ from cluster.cdk8s.external_secrets import (
     operator as external_secrets_operator,
 )
 from cluster.cdk8s.fleet_rules import add_fleet_rules
+from cluster.cdk8s.flux import SecretGeneratorArgs
 from cluster.cdk8s.flux_grafana_secrets import flux_grafana_secrets
 from cluster.cdk8s.flux_image_automation_ghcr import image_automation as flux_image_automation_ghcr
 from cluster.cdk8s.flux_webhook import chart as flux_webhook_chart
@@ -1271,7 +1273,7 @@ def generate_manifests(root: Path) -> None:
         volsync_kustomization,
     )
     session_backup_artifact = artifact("session-backup", session_backup.OUTPUT_DIR)
-    session_backup.session_backup(
+    session_backup_kustomization = session_backup.session_backup(
         flux_chart,
         write_directory(root, session_backup_artifact, session_backup.chart, siblings=["rest-server-auth.sops.yaml"]),
         piraeus_cluster_kustomization,
@@ -1520,10 +1522,43 @@ def generate_manifests(root: Path) -> None:
     flux_image_automation_forgejo_artifact = artifact(
         "flux-image-automation-forgejo", forgejo_image_automation.OUTPUT_DIR
     )
-    forgejo_image_automation.flux_image_automation_forgejo(
+    forgejo_image_automation_kustomization = forgejo_image_automation.flux_image_automation_forgejo(
         flux_chart,
         write_directory(root, flux_image_automation_forgejo_artifact, forgejo_image_automation.chart),
         flux_image_automation_ghcr_kustomization,
+    )
+    session_archive_artifact = artifact(
+        "ai-session-archive",
+        session_archive.OUTPUT_DIR,
+        session_archive.PINS_DIR,
+        files={
+            "secrets/shared/session-backup.yaml": (
+                f"{session_archive.OUTPUT_DIR}/{session_backup.IMPORTER_CREDENTIALS_SOURCE}"
+            )
+        },
+    )
+    session_archive.archive(
+        flux_chart,
+        write_directory(
+            root,
+            session_archive_artifact,
+            session_archive.chart,
+            components=[posixpath.relpath(session_archive.PINS_DIR, session_archive.OUTPUT_DIR)],
+            secret_generator=[
+                SecretGeneratorArgs(
+                    name=session_backup.IMPORTER_CREDENTIALS_SECRET,
+                    namespace=session_backup.NAMESPACE,
+                    files=[f"session-backup.yaml={session_backup.IMPORTER_CREDENTIALS_SOURCE}"],
+                )
+            ],
+        ),
+        session_backup_kustomization,
+        cnpg_kustomization,
+        external_secrets_operator_kustomization,
+        forgejo_images_kustomization,
+        sso_providers_kustomization,
+        seaweedfs_operator_kustomization,
+        forgejo_image_automation_kustomization,
     )
     github_api_proxy_artifact = artifact("github-api-proxy", f"{HAND_WRITTEN_ROOT}/github-api-proxy")
     github_api_proxy_flux_kustomizations.github_api_proxy(
@@ -1991,6 +2026,7 @@ def generate_manifests(root: Path) -> None:
             loki_read_proxy_artifact,
             plaid_mcp_artifact,
             public_coder_agent_access_artifact,
+            session_archive_artifact,
             session_backup_artifact,
             activitywatch_artifact,
             airlock_artifact,
