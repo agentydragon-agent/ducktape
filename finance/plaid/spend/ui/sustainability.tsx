@@ -746,6 +746,7 @@ export function SustainabilityPage() {
   }, [selectedWindowDays, view?.window_days]);
   const statusLabel = view?.status === "provisional" ? "Provisional" : (view?.status ?? "loading");
   const statusColor = view ? statusColors[view.status] : "gray";
+  const spendingAvailable = view?.annualized_spending_minor_units != null;
 
   return (
     <Stack gap="lg">
@@ -832,7 +833,7 @@ export function SustainabilityPage() {
                       {view.window_days}-day estimate
                     </Title>
                     <Badge color={statusColor} variant="light">
-                      {statusLabel}
+                      {view.status === "unavailable" && spendingAvailable ? "Spending available" : statusLabel}
                     </Badge>
                   </Group>
                   <Text size="sm" c="dimmed">
@@ -840,9 +841,13 @@ export function SustainabilityPage() {
                     {view.period_end} (complete days, {view.time_zone})
                   </Text>
                   {view.status === "unavailable" && (
-                    <Alert color="orange" title="Estimate unavailable">
-                      Current spending or portfolio data is not sufficient to calculate this estimate. Review the source
-                      status and issues below.
+                    <Alert
+                      color="orange"
+                      title={spendingAvailable ? "Withdrawal rate unavailable" : "Spending estimate unavailable"}
+                    >
+                      {spendingAvailable
+                        ? "Spending totals and covered history are still shown. Withdrawal percentages cannot be calculated from the current portfolio data; review the portfolio details and estimate issues below."
+                        : "Current spending data is not sufficient to calculate this estimate. Review account coverage and the estimate issues below."}
                     </Alert>
                   )}
                   {(view.status === "ready" || view.status === "provisional") && (
@@ -851,9 +856,7 @@ export function SustainabilityPage() {
                       <SpendingComposition view={view} />
                     </SimpleGrid>
                   )}
-                  {view.status === "unavailable" && view.annualized_spending_minor_units != null && (
-                    <SpendingComposition view={view} />
-                  )}
+                  {view.status === "unavailable" && spendingAvailable && <SpendingComposition view={view} />}
                   <AccountHistoryCoverage accounts={view.account_coverage ?? []} />
                   {view.issues.length > 0 && (
                     <Alert color="orange" title={`${view.window_days}-day estimate issues`}>

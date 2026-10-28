@@ -4,7 +4,7 @@ import { CategoryScale, Chart, LinearScale, LineController, LineElement, PointEl
 import Decimal from "decimal.js";
 
 import type { SustainabilityView } from "./schema";
-import { annualFundingMinorUnits } from "./decimal_math";
+import { annualFundingFromSpendingMinorUnits } from "./decimal_math";
 import { money } from "./spend_display";
 import type { SustainabilityHistory } from "./types";
 
@@ -88,7 +88,7 @@ function tooltipLines(
   endpoint: string,
   hasRates: boolean,
   currency: string,
-  portfolioMinorUnits: number | null
+  effectiveTaxRate: string | null
 ): string[] {
   const lines = [`${window.view.window_days}-day window · ${inclusiveWindowRange(endpoint, window.view.window_days)}`];
   const point = window.pointsByDate.get(endpoint);
@@ -96,33 +96,26 @@ function tooltipLines(
     lines.push("No history point is available at this endpoint.");
     return lines;
   }
+  const spending = point.annualized_spending_minor_units;
   if (point.status === "provisional") {
     lines.push("Provisional point: a reversal is unverified, so ordinary accounting is retained.");
-  } else if (point.status === "unavailable") {
-    lines.push("This history point is unavailable.");
+  } else if (spending == null) {
+    lines.push("Spending history is unavailable at this endpoint.");
   }
 
-  const spending = point.annualized_spending_minor_units;
   lines.push(`Annual spending excluding taxes: ${spending == null ? "unavailable" : money(spending, currency)}`);
-  if (hasRates && portfolioMinorUnits != null) {
-    const rate = point.tax_adjusted_draw_rate;
-    if (rate == null || spending == null) {
-      lines.push("Estimated withdrawal taxes: unavailable · Annual funding including taxes: unavailable");
-      lines.push(
-        `Required withdrawal rate including taxes: unavailable · Based on ${point.covered_days} complete days`
-      );
-    } else {
-      const funding = annualFundingMinorUnits(portfolioMinorUnits, rate);
-      lines.push(
-        `Estimated withdrawal taxes: ${money(funding.minus(spending), currency)} · Annual funding including taxes: ${money(funding, currency)}`
-      );
-      lines.push(
-        `Required withdrawal rate including taxes: ${percent(rate)} · Based on ${point.covered_days} complete days`
-      );
-    }
+  if (spending != null && effectiveTaxRate != null) {
+    const funding = annualFundingFromSpendingMinorUnits(spending, effectiveTaxRate);
+    lines.push(
+      `Estimated withdrawal taxes: ${money(funding.minus(spending), currency)} · Annual funding including taxes: ${money(funding, currency)}`
+    );
   } else {
-    lines.push(`Based on ${point.covered_days} complete calendar days`);
+    lines.push("Estimated withdrawal taxes: unavailable · Annual funding including taxes: unavailable");
   }
+  const rate = hasRates ? point.tax_adjusted_draw_rate : null;
+  lines.push(
+    `Required withdrawal rate including taxes: ${rate == null ? "unavailable" : percent(rate)} · Based on ${point.covered_days} complete days`
+  );
   return lines;
 }
 
@@ -146,7 +139,8 @@ export function SustainabilityHistoryChart({
   const [hiddenWindowDays, setHiddenWindowDays] = useState<Set<number>>(() => new Set());
   const [tooltip, setTooltip] = useState<HistoryTooltip | null>(null);
   const hasRates = effectiveTaxRate != null && portfolioMinorUnits != null && portfolioMinorUnits > 0;
-  const amountLabel = includeTaxes ? "Annual funding including taxes" : "Annual spending excluding taxes";
+  const taxesIncluded = includeTaxes && effectiveTaxRate != null;
+  const amountLabel = taxesIncluded ? "Annual funding including taxes" : "Annual spending excluding taxes";
 
   const historyWindows = useMemo(
     () =>
@@ -171,7 +165,13 @@ export function SustainabilityHistoryChart({
     const curveValues = visibleWindows.map(({ pointsByDate }) =>
       dates.map((date) => {
         const point = pointsByDate.get(date);
-        if (!hasRates) return point?.annualized_spending_minor_units ?? null;
+        if (!hasRates) {
+          const spending = point?.annualized_spending_minor_units;
+          if (spending == null) return null;
+          return taxesIncluded && effectiveTaxRate != null
+            ? annualFundingFromSpendingMinorUnits(spending, effectiveTaxRate).toNumber()
+            : spending;
+        }
         const rate = point?.tax_adjusted_draw_rate;
         return rate == null ? null : new Decimal(rate).toNumber();
       })
@@ -225,12 +225,12 @@ export function SustainabilityHistoryChart({
       datasets,
       curveValues,
     };
-  }, [dates, hasRates, referenceDrawRates, selectedWindowDays, visibleWindows]);
+  }, [dates, effectiveTaxRate, hasRates, referenceDrawRates, selectedWindowDays, taxesIncluded, visibleWindows]);
 
   const hasVisibleCurveData = chart.curveValues.some((values) =>
     values.some((value) => value != null && Number.isFinite(value))
   );
-  const canPlot = visibleWindows.length > 0 && hasVisibleCurveData && (!includeTaxes || hasRates);
+  const canPlot = visibleWindows.length > 0 && hasVisibleCurveData;
   const missingMessages = historyWindows
     .map(({ view }) => ({ view, message: missingWindowMessage(view, hasRates) }))
     .filter((item): item is { view: SustainabilityView; message: string } => item.message != null);
@@ -238,7 +238,7 @@ export function SustainabilityHistoryChart({
   useEffect(() => {
     if (!canvasRef.current || !canPlot) return;
     const amountPerRate = hasRates
-      ? new Decimal(portfolioMinorUnits).mul(includeTaxes ? 1 : new Decimal(1).minus(effectiveTaxRate ?? 0))
+      ? new Decimal(portfolioMinorUnits).mul(taxesIncluded ? 1 : new Decimal(1).minus(effectiveTaxRate ?? 0))
       : new Decimal(1);
     const instance = new Chart(canvasRef.current, {
       type: "line",
@@ -282,7 +282,7 @@ export function SustainabilityHistoryChart({
                 windows: visibleWindows.map((window) => ({
                   label: `${window.view.window_days}-day trailing average`,
                   color: window.color,
-                  lines: tooltipLines(window, endpoint, hasRates, currency, portfolioMinorUnits),
+                  lines: tooltipLines(window, endpoint, hasRates, currency, effectiveTaxRate),
                 })),
                 references: hasRates
                   ? referenceDrawRates.map((rate, index) => `Reference scenario ${index + 1}: ${percent(rate)}`)
@@ -329,7 +329,7 @@ export function SustainabilityHistoryChart({
     dates,
     effectiveTaxRate,
     hasRates,
-    includeTaxes,
+    taxesIncluded,
     portfolioMinorUnits,
     referenceDrawRates,
     visibleWindows,
@@ -394,13 +394,14 @@ export function SustainabilityHistoryChart({
         </Text>
         <Switch
           label="Include withdrawal taxes in dollar amounts"
-          checked={includeTaxes}
+          checked={taxesIncluded}
+          disabled={effectiveTaxRate == null}
           onChange={(event) => setIncludeTaxes(event.currentTarget.checked)}
         />
         <Text size="xs" c="dimmed">
           {effectiveTaxRate == null
-            ? "Withdrawal taxes are not modeled; funding amounts and withdrawal percentages are unavailable. Turn off withdrawal taxes in dollar amounts to view spending."
-            : `Modeled withdrawal tax: ${percent(effectiveTaxRate)} of gross funding. Switching dollar amounts keeps the same tax-inclusive withdrawal percentage.`}
+            ? "Withdrawal taxes are not modeled; showing spending excluding taxes. Funding amounts and withdrawal percentages are unavailable."
+            : `Modeled withdrawal tax: ${percent(effectiveTaxRate)} of gross funding.`}
         </Text>
         {hasRates && referenceDrawRates.length > 0 && (
           <Group gap="xs" wrap="wrap" role="list" aria-label="Reference scenario legend">
@@ -430,10 +431,6 @@ export function SustainabilityHistoryChart({
         {visibleWindows.length === 0 ? (
           <Text size="sm" c="dimmed">
             Select at least one history window to show its curve.
-          </Text>
-        ) : includeTaxes && !hasRates ? (
-          <Text size="sm" c="dimmed">
-            Turn off withdrawal taxes in dollar amounts to view spending excluding taxes.
           </Text>
         ) : !hasVisibleCurveData ? (
           <Text size="sm" c="dimmed">

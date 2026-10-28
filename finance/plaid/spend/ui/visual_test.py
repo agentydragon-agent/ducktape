@@ -188,7 +188,7 @@ def _example_sustainability(variant: str = "ready", *, window_days: int = 90) ->
     spending_draw_rate, tax_adjusted_draw_rate = rates_for(annualized_spending)
     estimated_annual_draw = (
         None
-        if portfolio_unavailable or effective_tax_rate is None
+        if effective_tax_rate is None
         else int((Decimal(annualized_spending) / (Decimal(1) - effective_tax_rate)).quantize(Decimal(1)))
     )
     mandatory, flexible, provisional, total = (
@@ -1992,7 +1992,7 @@ async def test_sustainability_history_survives_current_coverage_gap(
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
-    await expect(page.get_by_role("alert").get_by_text("Estimate unavailable", exact=False)).to_be_visible()
+    await expect(page.get_by_role("alert").get_by_text("Spending estimate unavailable", exact=True)).to_be_visible()
     await expect(page.get_by_text("0 of 90 days covered · 2026-07-17 through 2026-10-14", exact=False)).to_be_visible()
     await expect(page.get_by_text("Valuation available", exact=True)).to_be_visible()
     await expect(page.get_by_text("Withdrawal taxes: 12% modeled", exact=True)).to_be_visible()
@@ -2087,8 +2087,9 @@ async def test_sustainability_scenario_tooltip_explains_unmodeled_tax(
     await expect(tooltip).to_contain_text("Spending comparison unavailable; withdrawal taxes are not modeled.")
     await page.mouse.move(0, 0)
     history = page.get_by_role("region", name="Spending and funding history")
-    await expect(history.get_by_role("img")).to_have_count(0)
-    await history.get_by_label("Include withdrawal taxes in dollar amounts").uncheck()
+    taxes = history.get_by_label("Include withdrawal taxes in dollar amounts")
+    await expect(taxes).not_to_be_checked()
+    await expect(taxes).to_be_disabled()
     await expect(history.get_by_role("img", name="Annual spending excluding taxes by day")).to_be_visible()
     await expect(history.get_by_text("Reference withdrawal scenarios", exact=True)).to_have_count(0)
     await view.capture(
@@ -2198,7 +2199,13 @@ async def test_sustainability_stale_and_unavailable_render(
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
-    await page.get_by_role("alert").get_by_text("Estimate unavailable", exact=False).wait_for()
+    await page.get_by_role("alert").get_by_text("Withdrawal rate unavailable", exact=True).wait_for()
+    history = page.get_by_role("region", name="Spending and funding history")
+    await expect(history.get_by_role("img", name="Annual funding including taxes by day")).to_be_visible()
+    taxes = history.get_by_label("Include withdrawal taxes in dollar amounts")
+    await taxes.uncheck()
+    await expect(history.get_by_role("img", name="Annual spending excluding taxes by day")).to_be_visible()
+    await taxes.check()
     await expect(page.get_by_text("Portfolio used in the estimate", exact=True)).to_be_visible()
     await expect(page.get_by_text("Valuation unavailable", exact=True)).to_be_visible()
     await expect(page.get_by_text("ANNUALIZED SPENDING", exact=True)).to_be_visible()
