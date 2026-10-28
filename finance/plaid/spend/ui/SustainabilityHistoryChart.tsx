@@ -91,6 +91,11 @@ function tooltipLines(
     lines.push("No history point is available at this endpoint.");
     return lines;
   }
+  if (point.status === "provisional") {
+    lines.push("Provisional point: a reversal is unverified, so ordinary accounting is retained.");
+  } else if (point.status === "unavailable") {
+    lines.push("This history point is unavailable.");
+  }
 
   const spending = point.annualized_spending_minor_units;
   lines.push(`Annual spending excluding taxes: ${spending == null ? "unavailable" : money(spending, currency)}`);

@@ -105,7 +105,11 @@ are not full reversals and must not be paired.
 Resolved pairs exclude both legs from the allowance and pace calculations while retaining their ordinary classification
 rule and category as context. Statement-cycle card totals remain based on the transactions as received. Unresolved pairs
 suppress neither leg: each transaction follows the existing classification and refund handling independently, and the
-Spending page shows each issue even when the allowance is otherwise ready. Review the selectors or transactions before
+Spending page explicitly marks affected results provisional. Relevance uses purchase dates and every calculation
+dependency, including carryforward since activation. A missing leg has unknown purchase-day scope; its posting-date
+selector bounds cannot establish that a report is unaffected. Other reports use the same typed reconciliation
+result, resolve against full history before slicing periods, and continue with a provisional numeric result when
+possible. Invalid source data or units still block calculation. Review the selectors or transactions before
 relying on an unresolved pair's totals. Pair matching is an explicit, conservative exception; it does not infer a
 relationship from merchant names or amount alone.
 

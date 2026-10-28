@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 from finance.plaid.spend.allowance import AllowancePolicy, Disposition, Kind, Transaction
 from finance.plaid.spend.consumption import ConsumptionMode, prepare_consumption
 from finance.plaid.spend.portfolio_models import PortfolioPolicy, PortfolioView
+from finance.plaid.spend.reconciliation import ReconciliationReport, ReportStatus
 
 _YEAR_DAYS = Decimal("365.2425")
 
@@ -126,6 +127,7 @@ class SpendingAccountCoverage(BaseModel):
 
 class SustainabilityHistoryPoint(BaseModel):
     date: date_type
+    status: ReportStatus
     covered_days: int
     annualized_spending_minor_units: int | None
     spending_draw_rate: float | None
@@ -134,7 +136,7 @@ class SustainabilityHistoryPoint(BaseModel):
 
 class SustainabilityView(BaseModel):
     generated_at: datetime
-    status: Literal["disabled", "ready", "unavailable"]
+    status: ReportStatus
     currency: Literal["USD"] = "USD"
     time_zone: str
     window_days: int
@@ -159,6 +161,13 @@ class SustainabilityView(BaseModel):
     issues: list[str]
     known_issues: list[str]
     account_coverage: list[SpendingAccountCoverage] = Field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class SustainabilityCalculation:
+    view: SustainabilityView
+    reconciliation: ReconciliationReport
+    historical_reconciliation: ReconciliationReport
 
 
 class SustainabilityDashboard(BaseModel):
@@ -205,7 +214,7 @@ def empty_portfolio() -> PortfolioView:
 def disabled_view(now: datetime, time_zone: str, today: date_type) -> SustainabilityView:
     return SustainabilityView(
         generated_at=now,
-        status="disabled",
+        status=ReportStatus.DISABLED,
         time_zone=time_zone,
         window_days=90,
         available_windows_days=[30, 90, 365],
@@ -240,7 +249,7 @@ def calculate_sustainability(
     window_days: int,
     source_issues: list[str],
     account_labels: dict[str, str] | None = None,
-) -> SustainabilityView:
+) -> SustainabilityCalculation:
     if now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
     if window_days not in policy.display.windows_days:
@@ -259,7 +268,6 @@ def calculate_sustainability(
         confirmed_refund_rule_ids=policy.confirmed_refund_rule_ids,
         mode=ConsumptionMode.NET,
     )
-    issues.extend(prepared.issues)
     days_by_account: dict[str, list[date_type]] = defaultdict(list)
     daily: dict[date_type, dict[Kind, int]] = defaultdict(lambda: defaultdict(int))
     contradictory_accounts: set[str] = set()
@@ -340,6 +348,7 @@ def calculate_sustainability(
     if portfolio.status != "ready":
         issues.append("Portfolio coverage or freshness is unavailable; see source details.")
     ready = source_ready and covered_days > 0 and net is not None and net > 0
+    reconciliation = prepared.reconciliation.for_period(start=start if covered_days else requested_start, end=end)
     if net is not None and net <= 0:
         issues.append("Eligible funding assets are not positive; a withdrawal percentage is unavailable.")
     totals = {kind: sum(values.get(kind, 0) for day, values in daily.items() if start <= day <= end) for kind in Kind}
@@ -373,6 +382,11 @@ def calculate_sustainability(
             history.append(
                 SustainabilityHistoryPoint(
                     date=chart_day,
+                    status=(
+                        prepared.reconciliation.for_period(start=point_start, end=chart_day).status
+                        if point_annual is not None and net is not None and net > 0
+                        else ReportStatus.UNAVAILABLE
+                    ),
                     covered_days=point_days,
                     annualized_spending_minor_units=point_annual,
                     spending_draw_rate=point_annual / net if point_annual is not None and net and net > 0 else None,
@@ -380,9 +394,18 @@ def calculate_sustainability(
                 )
             )
         chart_day += timedelta(days=1)
-    return SustainabilityView(
+    historical_reconciliation = ReconciliationReport()
+    if history:
+        history_reconciliation = prepared.reconciliation.for_period(
+            start=history[0].date - timedelta(days=window_days - 1), end=end
+        )
+        headline_pairs = {r.pair_id for r in reconciliation.resolutions}
+        historical_reconciliation = ReconciliationReport(
+            resolutions=tuple(r for r in history_reconciliation.resolutions if r.pair_id not in headline_pairs)
+        )
+    view = SustainabilityView(
         generated_at=now,
-        status="ready" if ready else "unavailable",
+        status=reconciliation.status if ready else ReportStatus.UNAVAILABLE,
         time_zone=time_zone.key,
         window_days=window_days,
         available_windows_days=policy.display.windows_days,
@@ -406,6 +429,10 @@ def calculate_sustainability(
         issues=issues,
         known_issues=policy.known_issues,
         account_coverage=account_coverage,
+    )
+
+    return SustainabilityCalculation(
+        view=view, reconciliation=reconciliation, historical_reconciliation=historical_reconciliation
     )
 
 

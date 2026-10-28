@@ -13,6 +13,16 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, Json, TypeAdapter, ValidationError, field_validator, model_validator
 
+from finance.plaid.spend.reconciliation import (
+    ReconciliationReport,
+    ReversalIssue,
+    ReversalIssueCode,
+    ReversalLeg,
+    ReversalMatch,
+    ReversalPairResolution,
+    ReversalRole,
+)
+
 
 class Kind(StrEnum):
     FLEXIBLE = "flexible"
@@ -327,14 +337,6 @@ class ReversalPair(BaseModel):
         return self
 
 
-@dataclass(frozen=True)
-class ReversalPairResolution:
-    """Safe reconciliation result. Empty issues confirms both legs; otherwise neither is adjusted."""
-
-    pair_id: str
-    issues: list[str]
-
-
 class AnalysisCategory(BaseModel):
     """Configured display metadata for a stable analysis-category key."""
 
@@ -509,6 +511,12 @@ class AllowanceView(BaseModel):
     prior_carry_minor_units: int = 0
 
 
+@dataclass(frozen=True)
+class AllowanceCalculation:
+    view: AllowanceView
+    reconciliation: ReconciliationReport
+
+
 def month_anniversary(start: datetime, months: int) -> datetime:
     year, month = divmod(start.year * 12 + start.month - 1 + months, 12)
     month += 1
@@ -609,14 +617,6 @@ class ResolvedReversals:
     pairs_by_transaction: dict[tuple[str, str], ReversalPair]
     resolutions: list[ReversalPairResolution]
 
-    @property
-    def issues(self) -> list[str]:
-        return [
-            f"Reversal pair {resolution.pair_id}: {issue}"
-            for resolution in self.resolutions
-            for issue in resolution.issues
-        ]
-
 
 def resolve_reversal_pairs(
     policy: AllowancePolicy, transactions: list[Transaction], *, time_zone: ZoneInfo, today: date_type
@@ -650,31 +650,57 @@ def resolve_reversal_pairs(
     resolutions = []
     for pair, (originals, reversals) in zip(policy.reversal_pairs, matches, strict=True):
         issues = []
-        for role, keys in (("Original", originals), ("Reversal", reversals)):
-            if len(keys) != 1:
-                issues.append(f"{role} selector matched {len(keys)} retained transactions; exactly one is required.")
+        for role, keys in ((ReversalRole.ORIGINAL, originals), (ReversalRole.REVERSAL, reversals)):
+            if not keys:
+                issues.append(ReversalIssue(code=ReversalIssueCode.MISSING_LEG, role=role))
+            elif len(keys) != 1:
+                issues.append(ReversalIssue(code=ReversalIssueCode.AMBIGUOUS_MATCH, role=role))
             elif retained[next(iter(keys))].pending:
-                issues.append(f"{role} transaction is still pending.")
+                issues.append(ReversalIssue(code=ReversalIssueCode.PENDING_LEG, role=role))
         if any(len(claims[key]) > 1 for key in originals | reversals):
-            issues.append("A transaction also matches another reversal pair.")
+            issues.append(ReversalIssue(code=ReversalIssueCode.OVERLAPPING_PAIR))
         if len(originals) == len(reversals) == 1:
             original = retained[next(iter(originals))]
             reversal = retained[next(iter(reversals))]
             if originals == reversals:
-                issues.append("Original and reversal must be distinct transactions.")
+                issues.append(ReversalIssue(code=ReversalIssueCode.SAME_TRANSACTION))
             if original.amount <= 0 or reversal.amount >= 0 or original.amount != -reversal.amount:
-                issues.append("Amounts must be equal and opposite, with a positive original and a negative reversal.")
+                issues.append(ReversalIssue(code=ReversalIssueCode.AMOUNT_MISMATCH))
             if original.account_id != reversal.account_id:
-                issues.append("Transactions must belong to the same account.")
+                issues.append(ReversalIssue(code=ReversalIssueCode.ACCOUNT_MISMATCH))
             if (original.currency or policy.currency) != policy.currency or (
                 reversal.currency or policy.currency
             ) != policy.currency:
-                issues.append("Both transactions must use the policy currency.")
+                issues.append(ReversalIssue(code=ReversalIssueCode.CURRENCY_MISMATCH))
         if not issues:
             for key in originals | reversals:
                 pairs_by_transaction[key] = pair
-        resolutions.append(ReversalPairResolution(pair_id=pair.id, issues=issues))
+        resolutions.append(
+            ReversalPairResolution(
+                pair_id=pair.id,
+                original=_reversal_leg(pair.original, originals, retained, time_zone),
+                reversal=_reversal_leg(pair.reversal, reversals, retained, time_zone),
+                issues=tuple(issues),
+            )
+        )
     return ResolvedReversals(pairs_by_transaction=pairs_by_transaction, resolutions=resolutions)
+
+
+def _reversal_leg(
+    selector: AllOf, keys: set[tuple[str, str]], retained: dict[tuple[str, str], Transaction], time_zone: ZoneInfo
+) -> ReversalLeg:
+    window = next(part for part in selector.conditions if isinstance(part, DateRange))
+    # Validated by ReversalPair.
+    assert window.start is not None
+    assert window.end is not None
+    return ReversalLeg(
+        posting_start=window.start,
+        posting_end=window.end,
+        matches=tuple(
+            ReversalMatch(account_id=key[0], transaction_id=key[1], report_day=retained[key].report_day(time_zone))
+            for key in sorted(keys)
+        ),
+    )
 
 
 class CreditTreatment(StrEnum):
@@ -717,7 +743,7 @@ class PreparedTransaction:
 @dataclass(frozen=True)
 class PreparedAccounting:
     entries: list[PreparedTransaction]
-    issues: list[str]
+    reconciliation: ReconciliationReport
 
 
 def round_minor_units(amount: Decimal, precision: int = 2) -> int:
@@ -766,7 +792,9 @@ def prepare_accounting(
                 reversal_pair=reversals.pairs_by_transaction.get(key),
             )
         )
-    return PreparedAccounting(entries=entries, issues=reversals.issues)
+    return PreparedAccounting(
+        entries=entries, reconciliation=ReconciliationReport(resolutions=tuple(reversals.resolutions))
+    )
 
 
 def accounting_disposition(entry: PreparedTransaction, policy: AccountingPolicy) -> Disposition:
@@ -806,7 +834,7 @@ def calculate(
     last_synced_at: datetime | None,
     decisions: list[TransactionDecision] | None = None,
     estimate_period_id: EstimatePeriodId | None = None,
-) -> AllowanceView:
+) -> AllowanceCalculation:
     if now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
     now = now.astimezone(UTC)
@@ -970,7 +998,8 @@ def calculate(
     current_cycle_spend = next(
         report.spend_minor_units for report in spend_periods if report.period.id == PeriodId.CREDIT_CYCLE
     )
-    return AllowanceView(
+    reconciliation = prepared.reconciliation.for_period(start=min(start.date(), *rolling_starts.values()), end=today)
+    view = AllowanceView(
         status=Status.ACTIVE,
         currency=policy.currency,
         monthly_minor_units=policy.monthly_minor_units,
@@ -995,5 +1024,5 @@ def calculate(
         spending_signal=signal,
         last_synced_at=last_synced_at,
         prior_carry_minor_units=(credits - 1) * policy.monthly_minor_units - (posted + pending - current_cycle_spend),
-        note=" ".join(prepared.issues) or None,
     )
+    return AllowanceCalculation(view=view, reconciliation=reconciliation)

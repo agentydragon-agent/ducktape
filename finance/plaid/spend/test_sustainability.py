@@ -21,6 +21,7 @@ from finance.plaid.spend.allowance import (
 )
 from finance.plaid.spend.models import SpendConfiguration
 from finance.plaid.spend.portfolio_models import PlaidSourcePolicy, PortfolioPolicy, PortfolioSources, PortfolioView
+from finance.plaid.spend.reconciliation_views import sustainability_view
 from finance.plaid.spend.sustainability import (
     AccountHistory,
     AccountOpening,
@@ -111,16 +112,18 @@ def evaluate_account_history(
     window_days: int = 90,
 ) -> SustainabilityView:
     selected_ids = {"card"} if spending_account_ids is None else spending_account_ids
-    return calculate_sustainability(
-        policy(tax_rate=0.2, account_history=account_history),
-        allowance(spending_account_ids=selected_ids),
-        transactions,
-        portfolio(),
-        time_zone=ZoneInfo("America/Los_Angeles"),
-        now=_NOW,
-        window_days=window_days,
-        source_issues=[],
-        account_labels=account_labels,
+    return sustainability_view(
+        calculate_sustainability(
+            policy(tax_rate=0.2, account_history=account_history),
+            allowance(spending_account_ids=selected_ids),
+            transactions,
+            portfolio(),
+            time_zone=ZoneInfo("America/Los_Angeles"),
+            now=_NOW,
+            window_days=window_days,
+            source_issues=[],
+            account_labels=account_labels,
+        )
     )
 
 
@@ -136,25 +139,27 @@ def portfolio(*, ready: bool = True) -> PortfolioView:
 
 
 def test_total_consumption_includes_precommitment_mandatory_and_pending_once() -> None:
-    result = calculate_sustainability(
-        policy(tax_rate=0.2),
-        allowance(),
-        [
-            transaction(date(2026, 1, 1), "0", "TRANSFER", key="history"),
-            transaction(date(2026, 3, 1), "100", "RENT", key="rent"),
-            transaction(date(2026, 3, 2), "20", pending=True, key="pending"),
-            transaction(date(2026, 3, 3), "25", replacement="pending", key="posted"),
-            transaction(date(2026, 3, 4), "10", "UNKNOWN", key="unknown"),
-            transaction(date(2026, 3, 5), "5000", "TRANSFER", key="transfer"),
-            transaction(date(2026, 3, 6), "-5", "CONFIRMED REFUND", key="refund"),
-            transaction(date(2026, 3, 7), "-50", key="held-credit"),
-            transaction(date(2026, 4, 1), "900", key="today"),
-        ],
-        portfolio(),
-        time_zone=ZoneInfo("America/Los_Angeles"),
-        now=_NOW,
-        window_days=90,
-        source_issues=[],
+    result = sustainability_view(
+        calculate_sustainability(
+            policy(tax_rate=0.2),
+            allowance(),
+            [
+                transaction(date(2026, 1, 1), "0", "TRANSFER", key="history"),
+                transaction(date(2026, 3, 1), "100", "RENT", key="rent"),
+                transaction(date(2026, 3, 2), "20", pending=True, key="pending"),
+                transaction(date(2026, 3, 3), "25", replacement="pending", key="posted"),
+                transaction(date(2026, 3, 4), "10", "UNKNOWN", key="unknown"),
+                transaction(date(2026, 3, 5), "5000", "TRANSFER", key="transfer"),
+                transaction(date(2026, 3, 6), "-5", "CONFIRMED REFUND", key="refund"),
+                transaction(date(2026, 3, 7), "-50", key="held-credit"),
+                transaction(date(2026, 4, 1), "900", key="today"),
+            ],
+            portfolio(),
+            time_zone=ZoneInfo("America/Los_Angeles"),
+            now=_NOW,
+            window_days=90,
+            source_issues=[],
+        )
     )
     assert result.status == "ready"
     assert result.covered_days == 90
@@ -173,18 +178,20 @@ def test_total_consumption_includes_precommitment_mandatory_and_pending_once() -
 
 
 def test_partial_window_uses_actual_covered_days_and_pacific_instant() -> None:
-    result = calculate_sustainability(
-        policy(),
-        allowance(),
-        [
-            transaction(date(2026, 3, 22), "10", key="start"),
-            transaction(date(2026, 4, 1), "10", key="cross-midnight", instant=datetime(2026, 4, 1, 6, tzinfo=UTC)),
-        ],
-        portfolio(),
-        time_zone=ZoneInfo("America/Los_Angeles"),
-        now=_NOW,
-        window_days=90,
-        source_issues=[],
+    result = sustainability_view(
+        calculate_sustainability(
+            policy(),
+            allowance(),
+            [
+                transaction(date(2026, 3, 22), "10", key="start"),
+                transaction(date(2026, 4, 1), "10", key="cross-midnight", instant=datetime(2026, 4, 1, 6, tzinfo=UTC)),
+            ],
+            portfolio(),
+            time_zone=ZoneInfo("America/Los_Angeles"),
+            now=_NOW,
+            window_days=90,
+            source_issues=[],
+        )
     )
     assert result.covered_days == 10
     assert result.period_end == date(2026, 3, 31)
@@ -199,18 +206,20 @@ def test_partial_window_uses_actual_covered_days_and_pacific_instant() -> None:
 def test_history_starts_at_first_complete_window(covered_days: int) -> None:
     end = date(2026, 3, 31)
     first_day = end - timedelta(days=covered_days - 1)
-    result = calculate_sustainability(
-        policy(),
-        allowance(),
-        [
-            transaction(first_day, "0", "TRANSFER", key="history"),
-            transaction(first_day + timedelta(days=1), "3000", "RENT", key="rent"),
-        ],
-        portfolio(),
-        time_zone=ZoneInfo("America/Los_Angeles"),
-        now=_NOW,
-        window_days=30,
-        source_issues=[],
+    result = sustainability_view(
+        calculate_sustainability(
+            policy(),
+            allowance(),
+            [
+                transaction(first_day, "0", "TRANSFER", key="history"),
+                transaction(first_day + timedelta(days=1), "3000", "RENT", key="rent"),
+            ],
+            portfolio(),
+            time_zone=ZoneInfo("America/Los_Angeles"),
+            now=_NOW,
+            window_days=30,
+            source_issues=[],
+        )
     )
     assert len(result.history) == max(0, covered_days - 29)
     if result.history:
@@ -221,21 +230,23 @@ def test_history_starts_at_first_complete_window(covered_days: int) -> None:
 
 
 def test_history_window_includes_both_endpoints_and_excludes_adjacent_days() -> None:
-    result = calculate_sustainability(
-        policy(),
-        allowance(),
-        [
-            transaction(date(2026, 1, 1), "0", "TRANSFER", key="history"),
-            transaction(date(2026, 3, 1), "9000", key="before-window"),
-            transaction(date(2026, 3, 2), "10", key="first-in-window"),
-            transaction(date(2026, 3, 31), "20", key="last-in-window"),
-            transaction(date(2026, 4, 1), "9000", key="today"),
-        ],
-        portfolio(),
-        time_zone=ZoneInfo("America/Los_Angeles"),
-        now=_NOW,
-        window_days=30,
-        source_issues=[],
+    result = sustainability_view(
+        calculate_sustainability(
+            policy(),
+            allowance(),
+            [
+                transaction(date(2026, 1, 1), "0", "TRANSFER", key="history"),
+                transaction(date(2026, 3, 1), "9000", key="before-window"),
+                transaction(date(2026, 3, 2), "10", key="first-in-window"),
+                transaction(date(2026, 3, 31), "20", key="last-in-window"),
+                transaction(date(2026, 4, 1), "9000", key="today"),
+            ],
+            portfolio(),
+            time_zone=ZoneInfo("America/Los_Angeles"),
+            now=_NOW,
+            window_days=30,
+            source_issues=[],
+        )
     )
     assert result.spending_minor_units == 3000
     assert result.annualized_spending_minor_units == 36_524
@@ -244,15 +255,17 @@ def test_history_window_includes_both_endpoints_and_excludes_adjacent_days() -> 
 
 
 def test_missing_portfolio_preserves_observed_spending_without_showing_rate() -> None:
-    result = calculate_sustainability(
-        policy(),
-        allowance(),
-        [transaction(date(2026, 1, 1), "10")],
-        portfolio(ready=False),
-        time_zone=ZoneInfo("America/Los_Angeles"),
-        now=_NOW,
-        window_days=90,
-        source_issues=[],
+    result = sustainability_view(
+        calculate_sustainability(
+            policy(),
+            allowance(),
+            [transaction(date(2026, 1, 1), "10")],
+            portfolio(ready=False),
+            time_zone=ZoneInfo("America/Los_Angeles"),
+            now=_NOW,
+            window_days=90,
+            source_issues=[],
+        )
     )
     assert result.status == "unavailable"
     assert result.annualized_spending_minor_units == 4058
@@ -261,15 +274,17 @@ def test_missing_portfolio_preserves_observed_spending_without_showing_rate() ->
 
 
 def test_stale_spending_does_not_produce_a_funding_estimate() -> None:
-    result = calculate_sustainability(
-        policy(),
-        allowance(),
-        [transaction(date(2026, 1, 1), "10")],
-        portfolio(),
-        time_zone=ZoneInfo("America/Los_Angeles"),
-        now=_NOW,
-        window_days=90,
-        source_issues=["Spending source is stale."],
+    result = sustainability_view(
+        calculate_sustainability(
+            policy(),
+            allowance(),
+            [transaction(date(2026, 1, 1), "10")],
+            portfolio(),
+            time_zone=ZoneInfo("America/Los_Angeles"),
+            now=_NOW,
+            window_days=90,
+            source_issues=["Spending source is stale."],
+        )
     )
     assert result.status == "unavailable"
     assert result.annualized_spending_minor_units is None

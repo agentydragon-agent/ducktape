@@ -68,6 +68,16 @@ from finance.plaid.spend.models import (
     StatementReason,
     TransactionPeriodSummary,
 )
+from finance.plaid.spend.portfolio_models import PortfolioView, SourceValuation
+from finance.plaid.spend.reconciliation import ReportStatus
+from finance.plaid.spend.sustainability import (
+    AccountOpening,
+    DocumentedHistory,
+    SpendingAccountCoverage,
+    SustainabilityDashboard,
+    SustainabilityHistoryPoint,
+    SustainabilityView,
+)
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual import deterministic_browser_context
@@ -133,9 +143,10 @@ async def _expand_accordion(control: Locator) -> None:
     )
 
 
-def _example_sustainability(variant: str = "ready") -> dict[str, object]:
+def _example_sustainability(variant: str = "ready", *, window_days: int = 90) -> SustainabilityView:
     stale = variant == "stale"
     unavailable = variant == "unavailable"
+    is_provisional = variant == "provisional"
     tax_unmodeled = variant == "tax_unmodeled"
     low_draw = variant == "low_draw"
     portfolio_unavailable = stale or unavailable
@@ -151,20 +162,27 @@ def _example_sustainability(variant: str = "ready") -> dict[str, object]:
         tax_adjusted = int((Decimal(annualized) / (Decimal(1) - Decimal(str(effective_tax_rate)))).quantize(Decimal(1)))
         return annualized / portfolio_net, tax_adjusted / portfolio_net
 
-    history = []
+    history: list[SustainabilityHistoryPoint] = []
     history_values = (
         (570_000, 585_000, annualized_spending) if low_draw else (4_700_000, 4_850_000, annualized_spending)
     )
     for day, annualized in zip(("2026-10-12", "2026-10-13", "2026-10-14"), history_values, strict=True):
         spending_rate, tax_adjusted_rate = rates_for(annualized)
+        if is_provisional and day == "2026-10-14":
+            point_status = ReportStatus.PROVISIONAL
+        elif portfolio_unavailable:
+            point_status = ReportStatus.UNAVAILABLE
+        else:
+            point_status = ReportStatus.READY
         history.append(
-            {
-                "date": day,
-                "covered_days": 90,
-                "annualized_spending_minor_units": annualized,
-                "spending_draw_rate": spending_rate,
-                "tax_adjusted_draw_rate": tax_adjusted_rate,
-            }
+            SustainabilityHistoryPoint(
+                date=date.fromisoformat(day),
+                status=point_status,
+                covered_days=90,
+                annualized_spending_minor_units=annualized,
+                spending_draw_rate=spending_rate,
+                tax_adjusted_draw_rate=tax_adjusted_rate,
+            )
         )
 
     spending_draw_rate, tax_adjusted_draw_rate = rates_for(annualized_spending)
@@ -176,73 +194,122 @@ def _example_sustainability(variant: str = "ready") -> dict[str, object]:
     mandatory, flexible, provisional, total = (
         (92_000, 50_000, 6_000, 148_000) if low_draw else (760_000, 410_000, 50_000, 1_220_000)
     )
-    return {
-        "generated_at": "2026-10-15T12:00:00Z",
-        "status": "unavailable" if portfolio_unavailable else "ready",
-        "currency": "USD",
-        "time_zone": "UTC",
-        "window_days": 90,
-        "available_windows_days": [30, 90],
-        "period_start": "2026-07-17",
-        "period_end": "2026-10-14",
-        "covered_days": 90,
-        "mandatory_minor_units": mandatory,
-        "flexible_minor_units": flexible,
-        "provisional_minor_units": provisional,
-        "spending_minor_units": total,
-        "annualized_spending_minor_units": annualized_spending,
-        "estimated_annual_draw_minor_units": estimated_annual_draw,
-        "spending_draw_rate": spending_draw_rate,
-        "tax_adjusted_draw_rate": tax_adjusted_draw_rate,
-        "effective_tax_rate": effective_tax_rate,
-        "tax_assumption_note": (
-            None
-            if tax_unmodeled
-            else "Synthetic fixture tax assumption; actual tax treatment depends on account and income details."
-        ),
-        "tax_assumption_as_of": None if tax_unmodeled else "2026-01-01",
-        "reference_draw_rates": [0.03, 0.035, 0.04, 0.045],
-        "portfolio": {
-            "status": "unavailable" if portfolio_unavailable else "ready",
-            "net_minor_units": portfolio_net,
-            "assets_minor_units": None if portfolio_unavailable else 145_000_000,
-            "liabilities_minor_units": None if portfolio_unavailable else 15_000_000,
-            "excluded_minor_units": None if portfolio_unavailable else 5_000_000,
-            "sources": [
-                {
-                    "name": "Synthetic investment source",
-                    "status": "unavailable" if portfolio_unavailable else "ready",
-                    "amount_minor_units": None if portfolio_unavailable else 125_000_000,
-                    "as_of": "2026-08-30T12:00:00Z" if stale else "2026-10-14T12:00:00Z",
-                    "issues": ["Synthetic valuation has not refreshed recently."] if stale else [],
-                },
-                {
-                    "name": "Synthetic cash source",
-                    "status": "unavailable" if unavailable else "ready",
-                    "amount_minor_units": None if unavailable else 20_000_000,
-                    "as_of": "2026-10-14T12:00:00Z",
-                    "issues": [],
-                },
-            ],
-        },
-        "history": history,
-        "account_coverage": [],
-        "issues": ["Synthetic source has delayed updates."] if stale or unavailable else [],
-        "known_issues": [
+    if is_provisional:
+        view_status = ReportStatus.PROVISIONAL
+    elif portfolio_unavailable:
+        view_status = ReportStatus.UNAVAILABLE
+    else:
+        view_status = ReportStatus.READY
+    if is_provisional:
+        issues = ["Review the unverified reversal and confirm its classification before relying on this estimate."]
+    elif stale or unavailable:
+        issues = ["Synthetic source has delayed updates."]
+    else:
+        issues = []
+    portfolio = PortfolioView(
+        status="unavailable" if portfolio_unavailable else "ready",
+        net_minor_units=portfolio_net,
+        assets_minor_units=None if portfolio_unavailable else 145_000_000,
+        liabilities_minor_units=None if portfolio_unavailable else 15_000_000,
+        excluded_minor_units=None if portfolio_unavailable else 5_000_000,
+        sources=[
+            SourceValuation(
+                name="Synthetic investment source",
+                status="unavailable" if portfolio_unavailable else "ready",
+                amount_minor_units=None if portfolio_unavailable else 125_000_000,
+                as_of=datetime(2026, 8, 30, 12, tzinfo=UTC) if stale else datetime(2026, 10, 14, 12, tzinfo=UTC),
+                issues=["Synthetic valuation has not refreshed recently."] if stale else [],
+            ),
+            SourceValuation(
+                name="Synthetic cash source",
+                status="unavailable" if unavailable else "ready",
+                amount_minor_units=None if unavailable else 20_000_000,
+                as_of=datetime(2026, 10, 14, 12, tzinfo=UTC),
+                issues=[],
+            ),
+        ],
+    )
+    tax_assumption_note = (
+        None
+        if tax_unmodeled
+        else "Synthetic fixture tax assumption; actual tax treatment depends on account and income details."
+    )
+    return SustainabilityView(
+        generated_at=datetime(2026, 10, 15, 12, tzinfo=UTC),
+        status=view_status,
+        currency="USD",
+        time_zone="UTC",
+        window_days=window_days,
+        available_windows_days=sorted({30, 90, window_days}),
+        period_start=date(2026, 7, 17),
+        period_end=date(2026, 10, 14),
+        covered_days=90,
+        mandatory_minor_units=mandatory,
+        flexible_minor_units=flexible,
+        provisional_minor_units=provisional,
+        spending_minor_units=total,
+        annualized_spending_minor_units=annualized_spending,
+        estimated_annual_draw_minor_units=estimated_annual_draw,
+        spending_draw_rate=spending_draw_rate,
+        tax_adjusted_draw_rate=tax_adjusted_draw_rate,
+        effective_tax_rate=effective_tax_rate,
+        tax_assumption_note=tax_assumption_note,
+        tax_assumption_as_of=None if tax_unmodeled else date(2026, 1, 1),
+        reference_draw_rates=[0.03, 0.035, 0.04, 0.045],
+        portfolio=portfolio,
+        history=history,
+        account_coverage=[],
+        issues=issues,
+        known_issues=[
             "Synthetic fixture: investment values are illustrative and can lag market changes.",
             "No income outside observed spending and portfolio sources is represented.",
         ],
-    }
+    )
 
 
-def _sustainability_dashboard(*windows: dict[str, object]) -> dict[str, object]:
-    return {"default_window_days": 90, "windows": list(windows)}
+def _with_sustainability_history(
+    view: SustainabilityView, history: list[SustainabilityHistoryPoint], *, issues: list[str] | None = None
+) -> SustainabilityView:
+    return SustainabilityView(
+        generated_at=view.generated_at,
+        status=view.status,
+        currency=view.currency,
+        time_zone=view.time_zone,
+        window_days=view.window_days,
+        available_windows_days=view.available_windows_days,
+        period_start=view.period_start,
+        period_end=view.period_end,
+        covered_days=view.covered_days,
+        mandatory_minor_units=view.mandatory_minor_units,
+        flexible_minor_units=view.flexible_minor_units,
+        provisional_minor_units=view.provisional_minor_units,
+        spending_minor_units=view.spending_minor_units,
+        annualized_spending_minor_units=view.annualized_spending_minor_units,
+        estimated_annual_draw_minor_units=view.estimated_annual_draw_minor_units,
+        spending_draw_rate=view.spending_draw_rate,
+        tax_adjusted_draw_rate=view.tax_adjusted_draw_rate,
+        effective_tax_rate=view.effective_tax_rate,
+        tax_assumption_note=view.tax_assumption_note,
+        tax_assumption_as_of=view.tax_assumption_as_of,
+        reference_draw_rates=view.reference_draw_rates,
+        portfolio=view.portfolio,
+        history=history,
+        issues=view.issues if issues is None else issues,
+        known_issues=view.known_issues,
+        account_coverage=view.account_coverage,
+    )
 
 
-def _example_sustainability_window(days: int) -> dict[str, object]:
+def _sustainability_dashboard(*windows: SustainabilityView) -> SustainabilityDashboard:
+    return SustainabilityDashboard(default_window_days=90, windows=list(windows))
+
+
+def _example_sustainability_window(
+    days: int, *, history: list[SustainabilityHistoryPoint] | None = None
+) -> SustainabilityView:
     result = _example_sustainability()
     if days == 90:
-        return result
+        return result if history is None else _with_sustainability_history(result, history)
     mandatory, flexible, provisional = (200_000, 100_000, 10_000) if days == 30 else (3_000_000, 2_000_000, 300_000)
     total = mandatory + flexible + provisional
     annual = int((Decimal(total) * Decimal("365.2425") / days).quantize(Decimal(1)))
@@ -252,11 +319,31 @@ def _example_sustainability_window(days: int) -> dict[str, object]:
         if days == 30
         else ("2026-10-13", "2026-10-14")
     )
-    result.update(
+    history_points = (
+        history
+        if history is not None
+        else [
+            SustainabilityHistoryPoint(
+                date=date.fromisoformat(day),
+                status=ReportStatus.READY,
+                covered_days=days,
+                annualized_spending_minor_units=annual,
+                spending_draw_rate=annual / 125_000_000,
+                tax_adjusted_draw_rate=funding / 125_000_000,
+            )
+            for day in dates
+        ]
+    )
+    return SustainabilityView(
+        generated_at=result.generated_at,
+        status=result.status,
+        currency=result.currency,
+        time_zone=result.time_zone,
         window_days=days,
-        covered_days=days,
         available_windows_days=[30, 90, 365],
-        period_start=(date(2026, 10, 15) - timedelta(days=days)).isoformat(),
+        period_start=date(2026, 10, 15) - timedelta(days=days),
+        period_end=result.period_end,
+        covered_days=days,
         mandatory_minor_units=mandatory,
         flexible_minor_units=flexible,
         provisional_minor_units=provisional,
@@ -265,25 +352,87 @@ def _example_sustainability_window(days: int) -> dict[str, object]:
         estimated_annual_draw_minor_units=funding,
         spending_draw_rate=annual / 125_000_000,
         tax_adjusted_draw_rate=funding / 125_000_000,
-        history=[
-            {
-                "date": day,
-                "covered_days": days,
-                "annualized_spending_minor_units": annual,
-                "spending_draw_rate": annual / 125_000_000,
-                "tax_adjusted_draw_rate": funding / 125_000_000,
-            }
-            for day in dates
-        ],
+        effective_tax_rate=result.effective_tax_rate,
+        tax_assumption_note=result.tax_assumption_note,
+        tax_assumption_as_of=result.tax_assumption_as_of,
+        reference_draw_rates=result.reference_draw_rates,
+        portfolio=result.portfolio,
+        history=history_points,
+        issues=result.issues,
+        known_issues=result.known_issues,
+        account_coverage=result.account_coverage,
     )
-    return result
 
 
-def _example_sustainability_with_partial_account_history() -> dict[str, object]:
+def _example_sustainability_partial_window() -> SustainabilityView:
+    result = _example_sustainability()
+    return SustainabilityView(
+        generated_at=result.generated_at,
+        status=result.status,
+        currency=result.currency,
+        time_zone=result.time_zone,
+        window_days=result.window_days,
+        available_windows_days=result.available_windows_days,
+        period_start=date(2026, 8, 31),
+        period_end=result.period_end,
+        covered_days=45,
+        mandatory_minor_units=380_000,
+        flexible_minor_units=205_000,
+        provisional_minor_units=25_000,
+        spending_minor_units=610_000,
+        annualized_spending_minor_units=result.annualized_spending_minor_units,
+        estimated_annual_draw_minor_units=result.estimated_annual_draw_minor_units,
+        spending_draw_rate=result.spending_draw_rate,
+        tax_adjusted_draw_rate=result.tax_adjusted_draw_rate,
+        effective_tax_rate=result.effective_tax_rate,
+        tax_assumption_note=result.tax_assumption_note,
+        tax_assumption_as_of=result.tax_assumption_as_of,
+        reference_draw_rates=result.reference_draw_rates,
+        portfolio=result.portfolio,
+        history=[],
+        issues=result.issues,
+        known_issues=result.known_issues,
+        account_coverage=result.account_coverage,
+    )
+
+
+def _example_sustainability_with_partial_account_history() -> SustainabilityView:
     result = _example_sustainability()
     annual = int((Decimal(610_000) * Decimal("365.2425") / 44).quantize(Decimal(1)))
     draw = int((Decimal(annual) / Decimal("0.88")).quantize(Decimal(1)))
-    result.update(
+    account_coverage = [
+        SpendingAccountCoverage(
+            account_label="Example checking",
+            first_recorded_on=date(2026, 9, 1),
+            opening=AccountOpening(
+                earliest=date(2026, 7, 20),
+                latest=date(2026, 7, 27),
+                source="Synthetic account archive",
+                as_of=date(2026, 10, 14),
+            ),
+            coverage=None,
+            unknown_days_in_window=43,
+        ),
+        SpendingAccountCoverage(
+            account_label="Example card",
+            first_recorded_on=date(2026, 8, 15),
+            opening=None,
+            coverage=DocumentedHistory(
+                complete_from=date(2026, 8, 15), source="Synthetic statement archive", as_of=date(2026, 10, 14)
+            ),
+            unknown_days_in_window=29,
+        ),
+    ]
+    return SustainabilityView(
+        generated_at=result.generated_at,
+        status=result.status,
+        currency=result.currency,
+        time_zone=result.time_zone,
+        window_days=result.window_days,
+        available_windows_days=result.available_windows_days,
+        period_start=date(2026, 9, 1),
+        period_end=result.period_end,
+        covered_days=44,
         mandatory_minor_units=380_000,
         flexible_minor_units=205_000,
         provisional_minor_units=25_000,
@@ -292,40 +441,59 @@ def _example_sustainability_with_partial_account_history() -> dict[str, object]:
         estimated_annual_draw_minor_units=draw,
         spending_draw_rate=annual / 125_000_000,
         tax_adjusted_draw_rate=draw / 125_000_000,
+        effective_tax_rate=result.effective_tax_rate,
+        tax_assumption_note=result.tax_assumption_note,
+        tax_assumption_as_of=result.tax_assumption_as_of,
+        reference_draw_rates=result.reference_draw_rates,
+        portfolio=result.portfolio,
+        history=[],
+        issues=result.issues,
+        known_issues=result.known_issues,
+        account_coverage=account_coverage,
     )
-    result["covered_days"] = 44
-    result["period_start"] = "2026-09-01"
-    result["history"] = []
-    result["account_coverage"] = [
-        {
-            "account_label": "Example checking",
-            "first_recorded_on": "2026-09-01",
-            "opening": {
-                "earliest": "2026-07-20",
-                "latest": "2026-07-27",
-                "source": "Synthetic account archive",
-                "as_of": "2026-10-14",
-            },
-            "coverage": None,
-            "unknown_days_in_window": 43,
-        },
-        {
-            "account_label": "Example card",
-            "first_recorded_on": "2026-08-15",
-            "opening": None,
-            "coverage": {"complete_from": "2026-08-15", "source": "Synthetic statement archive", "as_of": "2026-10-14"},
-            "unknown_days_in_window": 29,
-        },
-    ]
-    return result
 
 
-def _example_sustainability_with_historical_coverage_gap() -> dict[str, object]:
+def _example_sustainability_with_historical_coverage_gap() -> SustainabilityView:
     result = _example_sustainability()
-    result.update(
-        status="unavailable",
+    history = [
+        SustainabilityHistoryPoint(
+            date=date(2026, 10, 8),
+            status=ReportStatus.READY,
+            covered_days=90,
+            annualized_spending_minor_units=4_700_000,
+            spending_draw_rate=0.0376,
+            tax_adjusted_draw_rate=0.0427272727,
+        ),
+        SustainabilityHistoryPoint(
+            date=date(2026, 10, 9),
+            status=ReportStatus.READY,
+            covered_days=90,
+            annualized_spending_minor_units=4_850_000,
+            spending_draw_rate=0.0388,
+            tax_adjusted_draw_rate=0.0440909091,
+        ),
+        *[
+            SustainabilityHistoryPoint(
+                date=date(2026, 10, day),
+                status=ReportStatus.UNAVAILABLE,
+                covered_days=89 - (day - 10),
+                annualized_spending_minor_units=None,
+                spending_draw_rate=None,
+                tax_adjusted_draw_rate=None,
+            )
+            for day in range(10, 15)
+        ],
+    ]
+    return SustainabilityView(
+        generated_at=result.generated_at,
+        status=ReportStatus.UNAVAILABLE,
+        currency=result.currency,
+        time_zone=result.time_zone,
+        window_days=result.window_days,
+        available_windows_days=result.available_windows_days,
+        period_start=date(2026, 7, 17),
+        period_end=result.period_end,
         covered_days=0,
-        period_start="2026-07-17",
         mandatory_minor_units=0,
         flexible_minor_units=0,
         provisional_minor_units=0,
@@ -334,48 +502,29 @@ def _example_sustainability_with_historical_coverage_gap() -> dict[str, object]:
         estimated_annual_draw_minor_units=None,
         spending_draw_rate=None,
         tax_adjusted_draw_rate=None,
-    )
-    result["account_coverage"] = [
-        {
-            "account_label": "Example new account",
-            "first_recorded_on": None,
-            "opening": {
-                "earliest": "2026-10-10",
-                "latest": "2026-10-14",
-                "source": "Synthetic opening archive",
-                "as_of": "2026-10-14",
-            },
-            "coverage": None,
-            "unknown_days_in_window": 5,
-        }
-    ]
-    result["history"] = [
-        {
-            "date": "2026-10-08",
-            "covered_days": 90,
-            "annualized_spending_minor_units": 4_700_000,
-            "spending_draw_rate": 0.0376,
-            "tax_adjusted_draw_rate": 0.0427272727,
-        },
-        {
-            "date": "2026-10-09",
-            "covered_days": 90,
-            "annualized_spending_minor_units": 4_850_000,
-            "spending_draw_rate": 0.0388,
-            "tax_adjusted_draw_rate": 0.0440909091,
-        },
-        *[
-            {
-                "date": f"2026-10-{day:02}",
-                "covered_days": 89 - (day - 10),
-                "annualized_spending_minor_units": None,
-                "spending_draw_rate": None,
-                "tax_adjusted_draw_rate": None,
-            }
-            for day in range(10, 15)
+        effective_tax_rate=result.effective_tax_rate,
+        tax_assumption_note=result.tax_assumption_note,
+        tax_assumption_as_of=result.tax_assumption_as_of,
+        reference_draw_rates=result.reference_draw_rates,
+        portfolio=result.portfolio,
+        history=history,
+        issues=result.issues,
+        known_issues=result.known_issues,
+        account_coverage=[
+            SpendingAccountCoverage(
+                account_label="Example new account",
+                first_recorded_on=None,
+                opening=AccountOpening(
+                    earliest=date(2026, 10, 10),
+                    latest=date(2026, 10, 14),
+                    source="Synthetic opening archive",
+                    as_of=date(2026, 10, 14),
+                ),
+                coverage=None,
+                unknown_days_in_window=5,
+            )
         ],
-    ]
-    return result
+    )
 
 
 async def _select_spend_page(page: Page, label: str) -> None:
@@ -509,7 +658,7 @@ def dashboard_url() -> Iterator[str]:
             spending_signal=PaceAlert.UNAVAILABLE if warmup else PaceAlert.NORMAL,
             last_synced_at=datetime(2026, 10, 15, 11, tzinfo=UTC),
             prior_carry_minor_units=0 if warmup else 5000,
-            note="Reversal pair example-reversal-needs-review: "
+            note="Provisional: Reversal pair example-reversal-needs-review: "
             "Original selector matched 0 retained transactions; exactly one is required.",
         )
 
@@ -997,7 +1146,7 @@ def dashboard_url() -> Iterator[str]:
         )
 
     @app.get("/api/v1/sustainability/windows")
-    def sustainability() -> dict[str, object]:
+    def sustainability() -> SustainabilityDashboard:
         return _sustainability_dashboard(*(_example_sustainability_window(days) for days in (30, 90, 365)))
 
     app.mount("/static", StaticFiles(directory=_UI_DIR))
@@ -1605,10 +1754,11 @@ async def test_sustainability_shorter_curve_survives_missing_yearly_history(
     page: Page, view: VisualPage, dashboard_url: str, width: int
 ) -> None:
     async def serve_windows(route: Route) -> None:
-        yearly = _example_sustainability()
-        yearly.update(window_days=365, history=[])
+        yearly = _with_sustainability_history(_example_sustainability(window_days=365), [])
         await route.fulfill(
-            json=_sustainability_dashboard(_example_sustainability_window(30), _example_sustainability(), yearly)
+            json=_sustainability_dashboard(
+                _example_sustainability_window(30), _example_sustainability(), yearly
+            ).model_dump(mode="json")
         )
 
     await page.route("**/api/v1/sustainability/windows", serve_windows)
@@ -1632,12 +1782,11 @@ async def test_sustainability_shared_history_tooltip_dates(
     page: Page, view: VisualPage, dashboard_url: str, width: int
 ) -> None:
     async def serve_single_endpoint(route: Route) -> None:
-        windows = [_example_sustainability_window(days) for days in (30, 90, 365)]
-        for window in windows:
-            history = window["history"]
-            assert isinstance(history, list)
-            window["history"] = history[-1:]
-        await route.fulfill(json=_sustainability_dashboard(*windows))
+        windows = [
+            _with_sustainability_history(window, window.history[-1:])
+            for window in (_example_sustainability_window(days) for days in (30, 90, 365))
+        ]
+        await route.fulfill(json=_sustainability_dashboard(*windows).model_dump(mode="json"))
 
     await page.route("**/api/v1/sustainability/windows", serve_single_endpoint)
     await page.set_viewport_size({"width": width, "height": 960})
@@ -1746,17 +1895,9 @@ async def test_sustainability_partial_window_has_no_startup_chart(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
 ) -> None:
     async def serve_partial(route: Route) -> None:
-        result = _example_sustainability()
-        result["covered_days"] = 45
-        result["period_start"] = "2026-08-31"
-        result.update(
-            mandatory_minor_units=380_000,
-            flexible_minor_units=205_000,
-            provisional_minor_units=25_000,
-            spending_minor_units=610_000,
+        await route.fulfill(
+            json=_sustainability_dashboard(_example_sustainability_partial_window()).model_dump(mode="json")
         )
-        result["history"] = []
-        await route.fulfill(json=_sustainability_dashboard(result))
 
     await page.route("**/api/v1/sustainability/windows", serve_partial)
     await page.set_viewport_size({"width": width, "height": height})
@@ -1781,7 +1922,11 @@ async def test_sustainability_account_history_coverage_render(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
 ) -> None:
     async def serve_partial_coverage(route: Route) -> None:
-        await route.fulfill(json=_sustainability_dashboard(_example_sustainability_with_partial_account_history()))
+        await route.fulfill(
+            json=_sustainability_dashboard(_example_sustainability_with_partial_account_history()).model_dump(
+                mode="json"
+            )
+        )
 
     await page.route("**/api/v1/sustainability/windows", serve_partial_coverage)
     await page.set_viewport_size({"width": width, "height": height})
@@ -1834,7 +1979,11 @@ async def test_sustainability_history_survives_current_coverage_gap(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
 ) -> None:
     async def serve_historical_gap(route: Route) -> None:
-        await route.fulfill(json=_sustainability_dashboard(_example_sustainability_with_historical_coverage_gap()))
+        await route.fulfill(
+            json=_sustainability_dashboard(_example_sustainability_with_historical_coverage_gap()).model_dump(
+                mode="json"
+            )
+        )
 
     await page.route("**/api/v1/sustainability/windows", serve_historical_gap)
     await page.set_viewport_size({"width": width, "height": height})
@@ -1862,7 +2011,7 @@ async def test_sustainability_history_survives_current_coverage_gap(
 
 async def test_sustainability_scenario_marker_supports_touch(touch_page: Page, dashboard_url: str) -> None:
     async def serve_ready(route: Route) -> None:
-        await route.fulfill(json=_sustainability_dashboard(_example_sustainability()))
+        await route.fulfill(json=_sustainability_dashboard(_example_sustainability()).model_dump(mode="json"))
 
     await touch_page.route("**/api/v1/sustainability/windows", serve_ready)
     await touch_page.goto(dashboard_url, wait_until="domcontentloaded")
@@ -1895,7 +2044,7 @@ async def test_sustainability_scenario_marker_supports_touch(touch_page: Page, d
 
 async def test_sustainability_short_gauge_fill_render(page: Page, view: VisualPage, dashboard_url: str) -> None:
     async def serve_low_draw(route: Route) -> None:
-        await route.fulfill(json=_sustainability_dashboard(_example_sustainability("low_draw")))
+        await route.fulfill(json=_sustainability_dashboard(_example_sustainability("low_draw")).model_dump(mode="json"))
 
     await page.route("**/api/v1/sustainability/windows", serve_low_draw)
     await page.goto(dashboard_url, wait_until="domcontentloaded")
@@ -1916,7 +2065,9 @@ async def test_sustainability_scenario_tooltip_explains_unmodeled_tax(
     page: Page, view: VisualPage, dashboard_url: str
 ) -> None:
     async def serve_tax_unmodeled(route: Route) -> None:
-        await route.fulfill(json=_sustainability_dashboard(_example_sustainability("tax_unmodeled")))
+        await route.fulfill(
+            json=_sustainability_dashboard(_example_sustainability("tax_unmodeled")).model_dump(mode="json")
+        )
 
     await page.route("**/api/v1/sustainability/windows", serve_tax_unmodeled)
     await page.goto(dashboard_url, wait_until="domcontentloaded")
@@ -1946,13 +2097,99 @@ async def test_sustainability_scenario_tooltip_explains_unmodeled_tax(
     view.errors.assert_none(context="Sustainability with unmodeled tax")
 
 
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
+async def test_sustainability_provisional_reversal_keeps_estimate_and_marks_history(
+    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
+) -> None:
+    async def serve_provisional(route: Route) -> None:
+        provisional = _example_sustainability("provisional")
+        provisional = _with_sustainability_history(provisional, provisional.history[-1:])
+        await route.fulfill(json=_sustainability_dashboard(provisional).model_dump(mode="json"))
+
+    await page.route("**/api/v1/sustainability/windows", serve_provisional)
+    await page.set_viewport_size({"width": width, "height": height})
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await _select_spend_page(page, "Sustainability")
+
+    await expect(page.get_by_text("Provisional", exact=True).first).to_be_visible()
+    warning = page.get_by_role("alert").filter(has_text="Ordinary accounting remains in this estimate")
+    await expect(warning).to_contain_text("while a reversal is unverified")
+    reversal_issue = page.get_by_role("alert").filter(has_text="Review the unverified reversal")
+    await expect(reversal_issue).to_be_visible()
+
+    gauge = page.get_by_role("region", name="Tax-adjusted implied draw rate")
+    await expect(gauge).to_be_visible()
+    await expect(gauge).to_contain_text("4.5%")
+    await expect(gauge).to_contain_text("$56,262")
+    composition = page.get_by_role("region", name="Spending in this window")
+    await expect(composition).to_be_visible()
+    await expect(composition.get_by_text("$12,200", exact=True)).to_be_visible()
+
+    history = page.get_by_role("region", name="Spending and funding history")
+    canvas = history.get_by_role("img", name="Annual funding including taxes by day")
+    await expect(canvas).to_be_visible()
+    bounds = await canvas.bounding_box()
+    assert bounds is not None
+    await canvas.hover(position={"x": bounds["width"] / 2, "y": bounds["height"] / 2})
+    tooltip = page.get_by_role("tooltip", name="History ending October 14, 2026")
+    await expect(tooltip).to_be_visible()
+    await expect(tooltip).to_contain_text("Provisional point: a reversal is unverified")
+
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    await view.capture(
+        f"sustainability-provisional-reversal-{width}",
+        label=f"{width}px provisional reversal estimate with retained funding and marked history",
+        full_page=True,
+        animations="disabled",
+    )
+
+    async def serve_historical_provisional(route: Route) -> None:
+        historical = _example_sustainability()
+        latest = historical.history[-1]
+        provisional_point = SustainabilityHistoryPoint(
+            date=latest.date,
+            status=ReportStatus.PROVISIONAL,
+            covered_days=latest.covered_days,
+            annualized_spending_minor_units=latest.annualized_spending_minor_units,
+            spending_draw_rate=latest.spending_draw_rate,
+            tax_adjusted_draw_rate=latest.tax_adjusted_draw_rate,
+        )
+        historical = _with_sustainability_history(
+            historical,
+            [provisional_point],
+            issues=[
+                "Historical chart: Review the unverified reversal and confirm its classification "
+                "before relying on this point."
+            ],
+        )
+        await route.fulfill(json=_sustainability_dashboard(historical).model_dump(mode="json"))
+
+    await page.unroute("**/api/v1/sustainability/windows", serve_provisional)
+    await page.route("**/api/v1/sustainability/windows", serve_historical_provisional)
+    await page.reload(wait_until="domcontentloaded")
+    await expect(page.get_by_text("Provisional", exact=True)).to_have_count(0)
+    historical_issue = page.get_by_role("alert").filter(has_text="Historical chart: Review the unverified reversal")
+    await expect(historical_issue).to_be_visible()
+    await expect(page.get_by_role("region", name="Tax-adjusted implied draw rate")).to_contain_text("$56,262")
+    history = page.get_by_role("region", name="Spending and funding history")
+    canvas = history.get_by_role("img", name="Annual funding including taxes by day")
+    await expect(canvas).to_be_visible()
+    bounds = await canvas.bounding_box()
+    assert bounds is not None
+    await canvas.hover(position={"x": bounds["width"] / 2, "y": bounds["height"] / 2})
+    tooltip = page.get_by_role("tooltip", name="History ending October 14, 2026")
+    await expect(tooltip).to_contain_text("Provisional point: a reversal is unverified")
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    view.errors.assert_none(context="Provisional sustainability estimate")
+
+
 @pytest.mark.parametrize("variant", ["stale", "unavailable"])
 @pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
 async def test_sustainability_stale_and_unavailable_render(
     page: Page, view: VisualPage, dashboard_url: str, variant: str, width: int, height: int
 ) -> None:
     async def serve_variant(route: Route) -> None:
-        await route.fulfill(json=_sustainability_dashboard(_example_sustainability(variant)))
+        await route.fulfill(json=_sustainability_dashboard(_example_sustainability(variant)).model_dump(mode="json"))
 
     await page.route("**/api/v1/sustainability/windows", serve_variant)
     await page.set_viewport_size({"width": width, "height": height})

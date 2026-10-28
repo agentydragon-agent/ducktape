@@ -40,6 +40,7 @@ from finance.plaid.spend.models import (
     SpendConfigurationView,
     load_configuration,
 )
+from finance.plaid.spend.reconciliation_views import allowance_view
 from util.bazel.runfiles import get_required_path
 
 START = datetime(2026, 1, 31, tzinfo=UTC)
@@ -100,7 +101,7 @@ def row(
 
 
 def view(rows=(), when=START):
-    return calculate(policy(), list(rows), time_zone=ZoneInfo("UTC"), now=when, last_synced_at=when)
+    return allowance_view(calculate(policy(), list(rows), time_zone=ZoneInfo("UTC"), now=when, last_synced_at=when))
 
 
 def spend(report: AllowanceView, period_id: PeriodId) -> int:
@@ -167,13 +168,15 @@ def test_purchase_day_controls_activation_and_periods_but_not_classification_dat
     )
     now = datetime(2026, 3, 8, 20, tzinfo=UTC)
     decisions: list[TransactionDecision] = []
-    report = calculate(
-        chosen,
-        [before, after],
-        time_zone=ZoneInfo("America/Los_Angeles"),
-        now=now,
-        last_synced_at=now,
-        decisions=decisions,
+    report = allowance_view(
+        calculate(
+            chosen,
+            [before, after],
+            time_zone=ZoneInfo("America/Los_Angeles"),
+            now=now,
+            last_synced_at=now,
+            decisions=decisions,
+        )
     )
     assert report.posted_minor_units == 2_000
     assert report.review_minor_units == 2_000  # rule still matches the original posting date
@@ -188,29 +191,41 @@ def test_pacific_calendar_day_and_monthly_credit_follow_local_midnight():
     transactions = [row("2026-10-05", 25), row("2026-11-04", 40), row("2026-11-05", 70)]
     before_activation = datetime(2026, 10, 5, 6, 59, tzinfo=UTC)
     with pytest.raises(ValueError, match="future"):
-        calculate(
-            chosen,
-            [],
-            time_zone=ZoneInfo("America/Los_Angeles"),
-            now=before_activation,
-            last_synced_at=before_activation,
+        allowance_view(
+            calculate(
+                chosen,
+                [],
+                time_zone=ZoneInfo("America/Los_Angeles"),
+                now=before_activation,
+                last_synced_at=before_activation,
+            )
         )
     activated = datetime(2026, 10, 5, 7, tzinfo=UTC)
-    first = calculate(
-        chosen, transactions, time_zone=ZoneInfo("America/Los_Angeles"), now=activated, last_synced_at=activated
+    first = allowance_view(
+        calculate(
+            chosen, transactions, time_zone=ZoneInfo("America/Los_Angeles"), now=activated, last_synced_at=activated
+        )
     )
     assert first.next_credit_at == datetime.fromisoformat("2026-11-05T00:00:00-08:00")
     assert first.time_zone == "America/Los_Angeles"
     before_credit = datetime(2026, 11, 5, 7, 59, tzinfo=UTC)
-    previous_day = calculate(
-        chosen, transactions, time_zone=ZoneInfo("America/Los_Angeles"), now=before_credit, last_synced_at=before_credit
+    previous_day = allowance_view(
+        calculate(
+            chosen,
+            transactions,
+            time_zone=ZoneInfo("America/Los_Angeles"),
+            now=before_credit,
+            last_synced_at=before_credit,
+        )
     )
     assert previous_day.available_minor_units == 10_000 - 2_500 - 4_000
     assert previous_day.forecast.basis_period.end == date(2026, 11, 4)
     assert spend(previous_day, PeriodId.CREDIT_CYCLE) == 6_500
     at_credit = datetime(2026, 11, 5, 8, tzinfo=UTC)
-    current_day = calculate(
-        chosen, transactions, time_zone=ZoneInfo("America/Los_Angeles"), now=at_credit, last_synced_at=at_credit
+    current_day = allowance_view(
+        calculate(
+            chosen, transactions, time_zone=ZoneInfo("America/Los_Angeles"), now=at_credit, last_synced_at=at_credit
+        )
     )
     assert current_day.available_minor_units == 20_000 - 2_500 - 4_000 - 7_000
     assert current_day.forecast.basis_period.end == date(2026, 11, 5)
@@ -326,22 +341,24 @@ def test_trailing_windows_include_exactly_seven_and_thirty_calendar_days():
 
 def test_prior_purchases_inform_pace_without_importing_debt():
     # Fixed purchases and purchases outside the lookback must not affect the pace.
-    result = calculate(
-        policy(
-            rules=[
-                category_rule(field="pfc_primary", value="RENT", kind=Kind.FIXED),
-                category_rule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE),
-            ]
-        ),
-        [
-            row("2026-01-24", 50),
-            row("2026-01-26", 14),
-            row("2026-01-30", 56),
-            row("2026-01-30", 300, pfc_primary="RENT", pfc_detailed=None),
-        ],
-        time_zone=ZoneInfo("UTC"),
-        now=START,
-        last_synced_at=START,
+    result = allowance_view(
+        calculate(
+            policy(
+                rules=[
+                    category_rule(field="pfc_primary", value="RENT", kind=Kind.FIXED),
+                    category_rule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE),
+                ]
+            ),
+            [
+                row("2026-01-24", 50),
+                row("2026-01-26", 14),
+                row("2026-01-30", 56),
+                row("2026-01-30", 300, pfc_primary="RENT", pfc_detailed=None),
+            ],
+            time_zone=ZoneInfo("UTC"),
+            now=START,
+            last_synced_at=START,
+        )
     )
     assert result.available_minor_units == 10_000
     assert result.posted_minor_units == 0
@@ -357,19 +374,23 @@ def test_monthly_observed_pace_warns_when_selected_without_weekly_forecast_or_op
     now = datetime(2026, 3, 2, tzinfo=UTC)
     selected_policy = policy(activation_at=now.date())
     transactions = [row("2026-02-10", 200)]
-    result = calculate(selected_policy, transactions, time_zone=ZoneInfo("UTC"), now=now, last_synced_at=now)
+    result = allowance_view(
+        calculate(selected_policy, transactions, time_zone=ZoneInfo("UTC"), now=now, last_synced_at=now)
+    )
     assert result.available_minor_units == 10_000
     assert pace(result, PeriodId.ROLLING_7D) is None
     assert pace(result, PeriodId.ROLLING_30D) == 20_000 // 30
     assert result.forecast.alert_state == PaceAlert.UNAVAILABLE
     assert result.spending_signal == PaceAlert.UNAVAILABLE
-    monthly = calculate(
-        selected_policy,
-        transactions,
-        time_zone=ZoneInfo("UTC"),
-        now=now,
-        last_synced_at=now,
-        estimate_period_id=PeriodId.ROLLING_30D,
+    monthly = allowance_view(
+        calculate(
+            selected_policy,
+            transactions,
+            time_zone=ZoneInfo("UTC"),
+            now=now,
+            last_synced_at=now,
+            estimate_period_id=PeriodId.ROLLING_30D,
+        )
     )
     assert monthly.forecast.basis_period.id == PeriodId.ROLLING_30D
     assert monthly.spending_signal == PaceAlert.WARNING
@@ -403,17 +424,19 @@ def test_pending_posted_transfer_and_unmatched_refund():
         ),
         row("2026-01-31", -8, transaction_id="mystery-refund", pfc_primary=None, pfc_detailed=None),
     ]
-    result = calculate(
-        policy(
-            rules=[
-                category_rule(field="pfc_detailed", value="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT", kind=Kind.EXCLUDED),
-                category_rule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE),
-            ]
-        ),
-        rows,
-        time_zone=ZoneInfo("UTC"),
-        now=START,
-        last_synced_at=START,
+    result = allowance_view(
+        calculate(
+            policy(
+                rules=[
+                    category_rule(field="pfc_detailed", value="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT", kind=Kind.EXCLUDED),
+                    category_rule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE),
+                ]
+            ),
+            rows,
+            time_zone=ZoneInfo("UTC"),
+            now=START,
+            last_synced_at=START,
+        )
     )
     assert result.posted_minor_units == 2_000
     assert result.pending_minor_units == 0
@@ -425,21 +448,25 @@ def test_pending_posted_transfer_and_unmatched_refund():
 
 
 def test_private_rule_and_uncertain_purchases():
-    result = calculate(
-        policy(rules=[name_rule(field="name", prefix="EXAMPLE", kind=Kind.FIXED)]),
-        [row("2026-01-31", 42)],
-        time_zone=ZoneInfo("UTC"),
-        now=START,
-        last_synced_at=START,
-    )
-    assert result.available_minor_units == 10_000
-    assert (
+    result = allowance_view(
         calculate(
-            policy(rules=[name_rule("name", "EXAMPLE", Kind.FLEXIBLE)]),
-            [row("2026-01-31", -5)],
+            policy(rules=[name_rule(field="name", prefix="EXAMPLE", kind=Kind.FIXED)]),
+            [row("2026-01-31", 42)],
             time_zone=ZoneInfo("UTC"),
             now=START,
             last_synced_at=START,
+        )
+    )
+    assert result.available_minor_units == 10_000
+    assert (
+        allowance_view(
+            calculate(
+                policy(rules=[name_rule("name", "EXAMPLE", Kind.FLEXIBLE)]),
+                [row("2026-01-31", -5)],
+                time_zone=ZoneInfo("UTC"),
+                now=START,
+                last_synced_at=START,
+            )
         ).available_minor_units
         == 10_000
     )
@@ -448,12 +475,14 @@ def test_private_rule_and_uncertain_purchases():
     assert uncertain.review_minor_units == 1_200
     assert uncertain.review_transaction_count == 1
     assert unmatched(uncertain, PeriodId.ROLLING_7D) == (1, 1_200)
-    prior = calculate(
-        policy(activation_at=START_DATE, rules=[name_rule("name", "RENT ONLY", Kind.FIXED)]),
-        [row("2026-01-30", 12)],
-        time_zone=ZoneInfo("UTC"),
-        now=START,
-        last_synced_at=START,
+    prior = allowance_view(
+        calculate(
+            policy(activation_at=START_DATE, rules=[name_rule("name", "RENT ONLY", Kind.FIXED)]),
+            [row("2026-01-30", 12)],
+            time_zone=ZoneInfo("UTC"),
+            now=START,
+            last_synced_at=START,
+        )
     )
     assert prior.available_minor_units == 10_000
     assert prior.review_transaction_count == 0
@@ -491,7 +520,9 @@ def test_compound_wire_rule_matches_only_named_beneficiary_and_wire_category():
     assert matching_rule(wire, [rule]) == rule
     assert matching_rule(wire.model_copy(update={"pfc_detailed": "GENERAL_SERVICES_LEGAL"}), [rule]) is None
     assert matching_rule(wire.model_copy(update={"name": "WIRE BENEFICIARY: OTHER BROKER"}), [rule]) is None
-    result = calculate(policy(rules=[rule]), [wire], time_zone=ZoneInfo("UTC"), now=START, last_synced_at=START)
+    result = allowance_view(
+        calculate(policy(rules=[rule]), [wire], time_zone=ZoneInfo("UTC"), now=START, last_synced_at=START)
+    )
     assert result.available_minor_units == 10_000
     with pytest.raises(ValidationError):
         AllOf(conditions=[NameContains(field="name", substring="XX")])
@@ -518,7 +549,9 @@ def test_review_rule_uses_shared_conditions_and_preserves_uncertainty():
         Rule.model_validate({"condition": {"sign": "positive"}, "kind": "review"})
     purchase = row("2026-01-31", 20).model_copy(update={"merchant_category_code": "5812"})
     assert matching_rule(purchase, [review]) == review
-    result = calculate(policy(rules=[review]), [purchase], time_zone=ZoneInfo("UTC"), now=START, last_synced_at=START)
+    result = allowance_view(
+        calculate(policy(rules=[review]), [purchase], time_zone=ZoneInfo("UTC"), now=START, last_synced_at=START)
+    )
     assert result.available_minor_units == 8_000
     assert result.review_minor_units == 2_000
     assert result.review_transaction_count == 1
@@ -527,8 +560,10 @@ def test_review_rule_uses_shared_conditions_and_preserves_uncertainty():
 
 def test_reviewed_negative_credit_is_not_spending_or_income():
     review = Rule(condition=AmountSign(sign="negative"), kind=Kind.REVIEW)
-    result = calculate(
-        policy(rules=[review]), [row("2026-01-31", -5)], time_zone=ZoneInfo("UTC"), now=START, last_synced_at=START
+    result = allowance_view(
+        calculate(
+            policy(rules=[review]), [row("2026-01-31", -5)], time_zone=ZoneInfo("UTC"), now=START, last_synced_at=START
+        )
     )
     assert result.available_minor_units == 10_000
     assert result.unmatched_refunds_minor_units == 500
@@ -579,44 +614,52 @@ def test_one_off_addresses_a_transaction_by_match_not_by_plaid_id():
 def test_one_off_precedes_the_patterns_it_corrects_by_position():
     purchase = row("2026-01-31", 60)
     pattern = name_rule("name", "EXAMPLE", Kind.FLEXIBLE)
-    default = calculate(
-        policy(rules=[name_rule("name", "NO OTHER MERCHANT", Kind.FIXED)]),
-        [purchase],
-        time_zone=ZoneInfo("UTC"),
-        now=START,
-        last_synced_at=START,
+    default = allowance_view(
+        calculate(
+            policy(rules=[name_rule("name", "NO OTHER MERCHANT", Kind.FIXED)]),
+            [purchase],
+            time_zone=ZoneInfo("UTC"),
+            now=START,
+            last_synced_at=START,
+        )
     )
     assert default.available_minor_units == 4_000
     assert default.review_transaction_count == 1
 
-    corrected = calculate(
-        policy(rules=[one_off("rent", Kind.FIXED), pattern]),
-        [purchase],
-        time_zone=ZoneInfo("UTC"),
-        now=START,
-        last_synced_at=START,
+    corrected = allowance_view(
+        calculate(
+            policy(rules=[one_off("rent", Kind.FIXED), pattern]),
+            [purchase],
+            time_zone=ZoneInfo("UTC"),
+            now=START,
+            last_synced_at=START,
+        )
     )
     assert corrected.available_minor_units == 10_000
     assert corrected.review_transaction_count == 0
 
-    excluded = calculate(
-        policy(rules=[one_off("transfer", Kind.EXCLUDED), name_rule("name", "EXAMPLE", Kind.FIXED)]),
-        [purchase],
-        time_zone=ZoneInfo("UTC"),
-        now=START,
-        last_synced_at=START,
+    excluded = allowance_view(
+        calculate(
+            policy(rules=[one_off("transfer", Kind.EXCLUDED), name_rule("name", "EXAMPLE", Kind.FIXED)]),
+            [purchase],
+            time_zone=ZoneInfo("UTC"),
+            now=START,
+            last_synced_at=START,
+        )
     )
     assert excluded.available_minor_units == 10_000
 
     # Position is the whole precedence story: placed last, the one-off never governs.
     decisions: list = []
-    calculate(
-        policy(rules=[pattern, one_off("rent", Kind.FIXED)]),
-        [purchase],
-        time_zone=ZoneInfo("UTC"),
-        now=START,
-        last_synced_at=START,
-        decisions=decisions,
+    allowance_view(
+        calculate(
+            policy(rules=[pattern, one_off("rent", Kind.FIXED)]),
+            [purchase],
+            time_zone=ZoneInfo("UTC"),
+            now=START,
+            last_synced_at=START,
+            decisions=decisions,
+        )
     )
     assert decisions[0].rule_number == 1
     governed = decisions[0].rule
@@ -625,13 +668,15 @@ def test_one_off_precedes_the_patterns_it_corrects_by_position():
     assert decisions[0].effective_kind == Kind.FLEXIBLE
 
     decisions = []
-    calculate(
-        policy(rules=[one_off("rent", Kind.FIXED), pattern]),
-        [purchase],
-        time_zone=ZoneInfo("UTC"),
-        now=START,
-        last_synced_at=START,
-        decisions=decisions,
+    allowance_view(
+        calculate(
+            policy(rules=[one_off("rent", Kind.FIXED), pattern]),
+            [purchase],
+            time_zone=ZoneInfo("UTC"),
+            now=START,
+            last_synced_at=START,
+            decisions=decisions,
+        )
     )
     applied = decisions[0].rule
     assert applied is not None
@@ -643,37 +688,43 @@ def test_one_off_precedes_the_patterns_it_corrects_by_position():
     assert decisions[0].effective_kind == Kind.FIXED
 
     without: list = []
-    calculate(
-        policy(rules=[pattern]),
-        [purchase],
-        time_zone=ZoneInfo("UTC"),
-        now=START,
-        last_synced_at=START,
-        decisions=without,
+    allowance_view(
+        calculate(
+            policy(rules=[pattern]),
+            [purchase],
+            time_zone=ZoneInfo("UTC"),
+            now=START,
+            last_synced_at=START,
+            decisions=without,
+        )
     )
     assert without[0].rule_number == 1
     assert without[0].effective_kind == Kind.FLEXIBLE
 
     unclassified: list = []
-    calculate(
-        policy(rules=[name_rule("name", "NO OTHER MERCHANT", Kind.FIXED)]),
-        [purchase],
-        time_zone=ZoneInfo("UTC"),
-        now=START,
-        last_synced_at=START,
-        decisions=unclassified,
+    allowance_view(
+        calculate(
+            policy(rules=[name_rule("name", "NO OTHER MERCHANT", Kind.FIXED)]),
+            [purchase],
+            time_zone=ZoneInfo("UTC"),
+            now=START,
+            last_synced_at=START,
+            decisions=unclassified,
+        )
     )
     assert unclassified[0].effective_kind is None
 
 
 def test_one_off_can_keep_a_purchase_counted_for_review():
     review = one_off("unclear-charge", Kind.REVIEW, analysis_category="merchant_review")
-    result = calculate(
-        policy(rules=[name_rule("name", "NO OTHER MERCHANT", Kind.FIXED), review]),
-        [row("2026-01-31", 20)],
-        time_zone=ZoneInfo("UTC"),
-        now=START,
-        last_synced_at=START,
+    result = allowance_view(
+        calculate(
+            policy(rules=[name_rule("name", "NO OTHER MERCHANT", Kind.FIXED), review]),
+            [row("2026-01-31", 20)],
+            time_zone=ZoneInfo("UTC"),
+            now=START,
+            last_synced_at=START,
+        )
     )
     assert result.available_minor_units == 8_000
     assert result.review_minor_units == 2_000
@@ -696,21 +747,27 @@ def test_one_off_on_a_negative_credit_avoids_the_held_refund_bucket():
     )
     credit = row("2026-01-31", -250)
     standing = name_rule("name", "NO OTHER MERCHANT", Kind.FIXED)
-    held = calculate(policy(rules=[standing]), [credit], time_zone=ZoneInfo("UTC"), now=START, last_synced_at=START)
+    held = allowance_view(
+        calculate(policy(rules=[standing]), [credit], time_zone=ZoneInfo("UTC"), now=START, last_synced_at=START)
+    )
     assert held.unmatched_refunds_minor_units == 25_000
-    paired = calculate(
-        policy(rules=[correction, standing]), [credit], time_zone=ZoneInfo("UTC"), now=START, last_synced_at=START
+    paired = allowance_view(
+        calculate(
+            policy(rules=[correction, standing]), [credit], time_zone=ZoneInfo("UTC"), now=START, last_synced_at=START
+        )
     )
     assert paired.unmatched_refunds_minor_units == 0
     assert paired.available_minor_units == 10_000
     decisions: list = []
-    calculate(
-        policy(rules=[correction, standing]),
-        [credit],
-        time_zone=ZoneInfo("UTC"),
-        now=START,
-        last_synced_at=START,
-        decisions=decisions,
+    allowance_view(
+        calculate(
+            policy(rules=[correction, standing]),
+            [credit],
+            time_zone=ZoneInfo("UTC"),
+            now=START,
+            last_synced_at=START,
+            decisions=decisions,
+        )
     )
     applied = decisions[0].rule
     assert applied is not None

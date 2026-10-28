@@ -26,6 +26,7 @@ from finance.plaid.spend.allowance import (
     round_minor_units,
 )
 from finance.plaid.spend.consumption import ConsumptionMode, prepare_consumption
+from finance.plaid.spend.reconciliation import ReportStatus
 
 _TODAY = date(2026, 4, 1)
 _ZONE = ZoneInfo("America/Los_Angeles")
@@ -101,7 +102,7 @@ def test_scope_purchase_day_supersession_and_coverage(mode: ConsumptionMode) -> 
     assert entries["Unknown"].amount_minor_units == 1_000
     assert entries["Foreign"].disposition == Disposition.OTHER_CURRENCY
     assert entries["Foreign"].amount_minor_units == 0
-    assert not result.issues
+    assert result.reconciliation.status == ReportStatus.READY
 
 
 @pytest.mark.parametrize("mode", list(ConsumptionMode))
@@ -149,7 +150,7 @@ def test_full_history_reversals_and_isolated_credits(mode: ConsumptionMode) -> N
         Disposition.HELD_REFUND if mode == ConsumptionMode.NET else Disposition.GROSS_CREDIT
     )
     assert sum(entry.amount_minor_units for entry in result.entries) == 0
-    assert not result.issues
+    assert result.reconciliation.status == ReportStatus.READY
 
 
 def test_ambiguous_reversal_reports_issue_and_keeps_purchase() -> None:
@@ -188,7 +189,7 @@ def test_ambiguous_reversal_reports_issue_and_keeps_purchase() -> None:
         mode=ConsumptionMode.GROSS_PURCHASES,
     )
     assert result.entries[0].amount_minor_units == 1_000
-    assert result.issues
+    assert result.reconciliation.status == ReportStatus.PROVISIONAL
 
 
 @pytest.mark.parametrize(
@@ -312,7 +313,7 @@ def test_statement_keeps_signed_reversal_legs_and_posting_date() -> None:
     consumption = AccountingPolicy(
         currency="USD", counted_kinds=frozenset(Kind), credits=CreditTreatment.CONFIRMED_REFUNDS
     )
-    assert not prepared.issues
+    assert prepared.reconciliation.status == ReportStatus.READY
     assert [accounting_disposition(entry, statement) for entry in prepared.entries] == [Disposition.COUNTED] * 2
     assert [entry.amount_minor_units for entry in prepared.entries] == [1000, -1000]
     assert [accounting_disposition(entry, consumption) for entry in prepared.entries] == [Disposition.REVERSED] * 2
