@@ -34,8 +34,8 @@ import pytest_bazel
 from pydantic import BaseModel, ConfigDict, Field
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
-from agentplane.app.sandbox_models import SandboxView
 from agentplane.app.testing.client import Client
+from agentplane.app.testing.models import SandboxView
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.decisions import Decision, Outcome
 from agentplane.proto import runner_pb2

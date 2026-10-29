@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"net/http"
 	"strings"
@@ -80,7 +81,7 @@ func (a *Auth) openIDClient(ctx context.Context) (*openID, error) {
 		providerCtx = oidc.ClientContext(providerCtx, a.cfg.HTTPClient)
 	}
 	settings := *a.cfg.OIDC
-	provider, err := oidc.NewProvider(providerCtx, strings.TrimRight(settings.Issuer, "/"))
+	provider, err := oidc.NewProvider(providerCtx, settings.Issuer)
 	if err != nil {
 		return nil, fmt.Errorf("discover OIDC provider: %w", err)
 	}
@@ -526,12 +527,27 @@ func reviewToken(ctx context.Context, reviews workloadauth.TokenReviews, audienc
 	if err != nil {
 		return nil, http.StatusServiceUnavailable, "token review unavailable"
 	}
-	if review == nil || !review.Status.Authenticated || review.Status.User.Username == "" || !contains(review.Status.Audiences, audience) {
-		return nil, http.StatusUnauthorized, "no session and no accepted token"
+	reason, username := "", ""
+	switch {
+	case review == nil || !review.Status.Authenticated:
+		reason = "unauthenticated"
+	case review.Status.User.Username == "":
+		reason = "missing_username"
+	default:
+		username = review.Status.User.Username
+		if !contains(review.Status.Audiences, audience) {
+			reason = "wrong_audience"
+		} else if _, ok := subjects[username]; !ok {
+			reason = "subject_not_allowed"
+		}
 	}
-	username := review.Status.User.Username
-	if _, ok := subjects[username]; !ok {
-		return nil, http.StatusForbidden, "token subject is not accepted here"
+	if reason != "" {
+		// Status.Error and the review spec can contain credentials. Log only curated identity.
+		slog.InfoContext(ctx, "TokenReview rejected caller", "reason", reason, "username", username)
+		if reason == "subject_not_allowed" {
+			return nil, http.StatusForbidden, "token subject is not accepted here"
+		}
+		return nil, http.StatusUnauthorized, "no session and no accepted token"
 	}
 	return &Caller{Kind: CallerToken, Principal: username}, 0, ""
 }

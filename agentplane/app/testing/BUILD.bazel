@@ -16,27 +16,11 @@ py_library(
 )
 
 py_library(
-    name = "dispatcher",
-    srcs = ["dispatcher.py"],
-    visibility = ["//agentplane/app:__pkg__"],
-    deps = [
-        "//agentplane/app/threads:dispatcher_client",
-        "//agentplane/grpc:calls",
-        "//agentplane/grpc:serving",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
-    ],
-)
-
-py_library(
     name = "fake_action_service",
     srcs = ["fake_action_service.py"],
     deps = [
         "//agentplane/action_service:action_service_pb2",
         "//agentplane/action_service:action_service_pb2_grpc",
-        "//agentplane/app:grpc_stream",
-        "//agentplane/grpc:calls",
         "//agentplane/grpc:serving",
         "@pypi//grpcio",
         "@pypi//protobuf",
@@ -48,15 +32,13 @@ py_library(
     srcs = ["thread_test_support.py"],
     visibility = ["//agentplane/app:__subpackages__"],
     deps = [
-        ":history",
-        "//agentplane/app:operator_sessions",
-        "//agentplane/app/threads:models",
-        "//agentplane/app/threads:store",
+        ":models",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
+        "@pypi//httpx",
         "@pypi//protobuf",
-        "@pypi//sqlalchemy",
+        "@pypi//tenacity",
     ],
 )
 
@@ -74,51 +56,27 @@ py_library(
 py_library(
     name = "replication_process",
     srcs = ["replication_process.py"],
+    data = ["//agentplane/app/go:agentplane-app"],  # keep: subprocess runtime
     deps = [
+        ":http2_proxy",
         ":model_test_data",
         ":notifications_operator",
-        ":operator_streams",
-        ":system_status",
-        "//agentplane:kubernetes_watch",
-        "//agentplane:sandbox_resource",
-        "//agentplane/app:action_policy",
-        "//agentplane/app:api",
-        "//agentplane/app:database",
-        "//agentplane/app:database_updates",
-        "//agentplane/app:egress_access",
-        "//agentplane/app:electric",
-        "//agentplane/app:identity",
-        "//agentplane/app:live",
-        "//agentplane/app:model_catalog",
-        "//agentplane/app:notifications_operator_client",
-        "//agentplane/app:operator_sessions",
-        "//agentplane/app:sandbox_access",
-        "//agentplane/app/threads:bridge",
-        "//agentplane/app/threads:dispatcher_client",
-        "//agentplane/app/threads:history_watch",
-        "//agentplane/app/threads:runner_directory",
-        "//agentplane/app/threads:store",
-        "//agentplane/app/threads:summaries",
-        "//agentplane/app/threads/events:event_log",
-        "//agentplane/app/threads/view:content",
-        "//agentplane/egress:decisions_client",
-        "//agentplane/grpc:calls",
+        "//agentplane/app:oidc",
         "//agentplane/grpc:serving",
         "//agentplane/history_service:client",
         "//agentplane/notification_service:notifications_operator_pb2_grpc",
-        "//agentplane/runner:harness",
-        "//agentplane/runner_gateway:client",
-        "//agentplane/sandboxes:inventory",
-        "//agentplane/sandboxes/testing:sandbox_namespace",
-        "//agentplane/testing:kubernetes_apiserver",
-        "//util:kubernetes",
+        "//util:net",
+        "//util/bazel:runfiles",
+        "//util/testing:asgi",
+        "//util/testing:mock_oidc",
         "//util/testing:undeclared_outputs",
-        "@pypi//asyncpg",
         "@pypi//grpcio",
         "@pypi//httpx",
-        "@pypi//kubernetes_asyncio",
+        "@pypi//playwright",
         "@pypi//protobuf",
+        "@pypi//sqlalchemy",
         "@pypi//starlette",
+        "@pypi//tenacity",
         "@pypi//uvicorn",
     ],
 )
@@ -146,7 +104,6 @@ py_library(
     deps = [
         "//agentplane/app/frontend/serving/testing:image",
         "//third_party/containers:nginx_unprivileged",
-        "//util:net",
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:container_logs",
@@ -188,9 +145,8 @@ py_library(
         ":http2_proxy",
         ":replication_process",
         ":replication_source",
+        ":thread_test_support",
         ":thread_view_marks",
-        "//agentplane/app/threads:store",
-        "//agentplane/app/threads/view:content",
         "//agentplane/history_service:client",
         "//agentplane/history_service/testing:electric_service",
         "//agentplane/history_service/testing:history",
@@ -216,14 +172,13 @@ py_library(
     srcs = ["history.py"],
     visibility = ["//agentplane/app:__subpackages__"],
     deps = [
-        "//agentplane/app:database_updates",
-        "//agentplane/app/threads:models",
-        "//agentplane/app/threads:summaries",
-        "//agentplane/app/threads/events:event_log",
+        "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
+        "//agentplane/history_service:history_service_pb2",
         "//agentplane/history_service/testing:history",
-        "//agentplane/postgres:wakeups",
-        "@pypi//sqlalchemy",
+        "//agentplane/proto:event_log_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
     ],
 )
 
@@ -235,26 +190,14 @@ py_library(
         "//agentplane/system_tests/k3s:__pkg__",
     ],
     deps = [
-        "//agentplane/app:live",
+        ":models",
         "//agentplane/app:model_catalog",
-        "//agentplane/app:presets",
-        "//agentplane/app:sandbox_models",
-        "//agentplane/app/threads:bridge",
-        "//agentplane/app/threads:store",
-        "//agentplane/app/threads:thread_view",
         "//agentplane/egress:decisions",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
-        "//agentplane/sandboxes:egress_views",
         "@pypi//httpx",
         "@pypi//protobuf",
     ],
-)
-
-py_library(
-    name = "system_status",
-    srcs = ["system_status.py"],
-    deps = ["//agentplane/app:system_status"],
 )
 
 py_test(
@@ -270,18 +213,6 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "operator_streams",
-    srcs = ["operator_streams.py"],
-    deps = [
-        "//agentplane/app:oidc",
-        "//agentplane/app:operator_sessions",
-        "@pypi//fastapi",
-        "@pypi//httpx",
-        "@pypi//starlette",
     ],
 )
 
@@ -304,11 +235,8 @@ py_library(
         "//agentplane/runner_gateway:__pkg__",
     ],
     deps = [
-        "//agentplane:crd_group",
-        "//agentplane:sandbox_resource",
+        ":dispatcher_client",
         "//agentplane:subjects",
-        "//agentplane/app:live",
-        "//agentplane/app/threads:dispatcher_client",
         "//agentplane/grpc:calls",
         "//agentplane/history_service/testing:go_service",
         "//agentplane/runner:configuration",
@@ -323,7 +251,6 @@ py_library(
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:kubernetes_apiserver",
         "//util/testing:postgres",
-        "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//tenacity",
@@ -341,5 +268,36 @@ py_test(
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "dispatcher_client",
+    srcs = ["dispatcher_client.py"],
+    deps = [
+        "//agentplane/grpc:calls",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = [
+        "//agentplane/app:__pkg__",
+        "//agentplane/system_tests:__pkg__",
+    ],
+    deps = [
+        "//agentplane:policy_sets",
+        "//agentplane:sandbox_resource",
+        "//agentplane:subjects",
+        "//agentplane/action_service:policy_view",
+        "//agentplane/app:sandbox_models",
+        "//agentplane/egress:decisions",
+        "//agentplane/egress:resources",
+        "//agentplane/runner:harness",
+        "@pypi//pydantic",
     ],
 )

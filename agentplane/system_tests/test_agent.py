@@ -10,8 +10,8 @@ import httpx
 import pytest
 import pytest_bazel
 
-from agentplane.app.live import SandboxesSnapshot, WatchHealth
 from agentplane.app.testing.client import Client
+from agentplane.app.testing.models import SandboxesSnapshot, WatchHealth
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests import agent as agent_module, conftest as fixtures

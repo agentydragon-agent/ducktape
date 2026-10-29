@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
@@ -432,7 +433,11 @@ func (r *streamingRoutes) liveDecisions(w http.ResponseWriter, request *http.Req
 		go func() {
 			for {
 				message, recvErr := stream.Recv()
-				received <- decisionResult{message: message, err: recvErr}
+				select {
+				case received <- decisionResult{message: message, err: recvErr}:
+				case <-watchCtx.Done():
+					return
+				}
 				if recvErr != nil {
 					return
 				}
@@ -531,7 +536,7 @@ func (r *streamingRoutes) sandboxThreads(ctx context.Context, sandbox *sandboxap
 			if code == codes.Unknown {
 				code = codes.Unavailable
 			}
-			return map[string]any{"kind": "unavailable", "code": code.String()}, nil
+			return map[string]any{"kind": "unavailable", "code": strings.ToUpper(code.String())}, nil
 		}
 		all = append(all, page.Threads...)
 		if page.NextPageToken == nil {

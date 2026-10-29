@@ -35,21 +35,20 @@ from uuid import UUID
 
 import httpx
 import pytest_bazel
-from fastapi import FastAPI
 from sqlalchemy import ColumnElement, delete, inspect, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.app.electric import ElectricProxy, electric_proxy, router
-from agentplane.app.testing.history import SeededEventLogStore
+from agentplane.app.testing.history import SessionHistory
+from agentplane.app.testing.replication_process import BrowserProxy, SandboxesAccess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.threads.summaries import Summaries
-from agentplane.app.threads.view.content import ContentStore
-from agentplane.changes import ChangeSignal
+from agentplane.app.testing.thread_test_support import ThreadHTTP
 from agentplane.history_service.fold.models import ThreadEntity, ThreadPayloadChunk
 from agentplane.history_service.fold.views import ThreadPayloadReference
 from agentplane.history_service.testing.electric_service import electric_service
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_pb2
+from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
+from util.testing.asgi import serve_app_in_loop
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -156,9 +155,9 @@ class _FollowedBody:
 
 @asynccontextmanager
 async def _followed_body(
-    engine: AsyncEngine, history_on: Callable[[str], AbstractAsyncContextManager[History]]
+    db_url: str, namespace: SandboxNamespace, history_on: Callable[[str], AbstractAsyncContextManager[History]]
 ) -> AsyncIterator[_FollowedBody]:
-    """`engine` is the app's database; the body lives in the history database Electric replicates."""
+    """The body lives in the History database Electric replicates."""
     async with electric_service() as service, history_on(service.database_url) as history:
         history_client = history.service.reader
         forwarded: list[httpx.Request] = []
@@ -166,9 +165,7 @@ async def _followed_body(
         async def forward(request: httpx.Request) -> None:
             forwarded.append(request)
 
-        event_logs = SeededEventLogStore(
-            engine, history=history, history_reader=history_client, summaries=Summaries(history_client)
-        )
+        event_logs = SessionHistory(history)
         source = ReplicationSource()
         thread = await event_logs.seed(SANDBOX, SESSION)
         await history.set_attached(thread, source.attached)
@@ -187,41 +184,46 @@ async def _followed_body(
             )
         reference = ThreadPayloadReference.model_validate(text_ref)
         assert reference.chunk_count == str(len(_STREAMED))
-        content = ContentStore(engine, history_reader=history_client)
+        content = SessionHistory(history)
         scope = await content.current_scope(thread)
         assert scope is not None
         async with (
             asyncio.timeout(120),
             httpx.AsyncClient(base_url=service.url, timeout=35, event_hooks={"request": [forward]}) as electric,
+            serve_app_in_loop(BrowserProxy(electric, history_client, None)) as upstream,
+            app_process(
+                db_url,
+                history_client,
+                sandboxes=SandboxesAccess(namespace.kubeconfig, namespace.name),
+                gateway=None,
+                electric_url=upstream,
+            ) as app,
+            httpx.AsyncClient(
+                base_url=app.url, cookies=app.cookies, headers={"Origin": app.url}, timeout=35
+            ) as browser,
         ):
-            app = FastAPI()
-            sync_proxy = ElectricProxy(electric, content, event_logs=event_logs, thread_changes=ChangeSignal())
-            app.dependency_overrides[electric_proxy] = lambda: sync_proxy
-            app.include_router(router)
-            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as browser:
-                proxy = _Shape(
-                    browser, f"/threads/{thread}/sync/chunks/text", {"projection_epoch": scope.projection_epoch}
-                )
-                holder = await _open(proxy)
-                [opened] = forwarded
-                held = await holder.load(reference)
-                assert [row["text"] for row in held] == [json.dumps(text) for text in _STREAMED]
-                bystander = await _open(proxy)
-                keyed_shape = _Shape(
-                    electric,
-                    "/v1/shape",
-                    {key: value for key, value in opened.url.params.items() if key not in {"offset", "replica"}},
-                )
-                yield _FollowedBody(
-                    engine=history.engine,
-                    thread=thread,
-                    reference=reference,
-                    proxy=proxy,
-                    holder=holder,
-                    held=held,
-                    bystander=bystander,
-                    keyed=await _open(keyed_shape),
-                )
+            await ThreadHTTP(browser).wait(thread)
+            proxy = _Shape(browser, f"/threads/{thread}/sync/chunks/text", {"projection_epoch": scope.projection_epoch})
+            holder = await _open(proxy)
+            [opened] = forwarded
+            held = await holder.load(reference)
+            assert [row["text"] for row in held] == [json.dumps(text) for text in _STREAMED]
+            bystander = await _open(proxy)
+            keyed_shape = _Shape(
+                electric,
+                "/v1/shape",
+                {key: value for key, value in opened.url.params.items() if key not in {"offset", "replica"}},
+            )
+            yield _FollowedBody(
+                engine=history.engine,
+                thread=thread,
+                reference=reference,
+                proxy=proxy,
+                holder=holder,
+                held=held,
+                bystander=bystander,
+                keyed=await _open(keyed_shape),
+            )
 
 
 def _operations(batches: list[list[Message]]) -> list[list[tuple[str, int]]]:
@@ -235,11 +237,11 @@ def _key(row: Row) -> Row:
 
 
 async def test_compacting_in_place_reaches_every_reader_of_the_field_as_one_batch(
-    engine: AsyncEngine, history_on: Callable[[str], AbstractAsyncContextManager[History]]
+    db_url: str, namespace: SandboxNamespace, history_on: Callable[[str], AbstractAsyncContextManager[History]]
 ) -> None:
     """Chunk 0 rewritten to the whole text and the other chunks deleted: every row the compacted body
     keeps is one a holder of the uncompacted body already has."""
-    async with _followed_body(engine, history_on) as body:
+    async with _followed_body(db_url, namespace, history_on) as body:
         async with async_sessionmaker(body.engine)() as session, session.begin():
             await session.execute(
                 update(ThreadPayloadChunk).where(*body.chunks, ThreadPayloadChunk.chunk_index == 0).values(text=_TEXT)
@@ -272,12 +274,12 @@ async def test_compacting_in_place_reaches_every_reader_of_the_field_as_one_batc
 
 
 async def test_compacting_by_reinsertion_reaches_every_reader_of_the_field_as_one_batch(
-    engine: AsyncEngine, history_on: Callable[[str], AbstractAsyncContextManager[History]]
+    db_url: str, namespace: SandboxNamespace, history_on: Callable[[str], AbstractAsyncContextManager[History]]
 ) -> None:
     """Every chunk deleted and the compacted row inserted at chunk 0's key. Electric passes both halves
     on, so a holder keeps its text on screen only by applying the batch whole: applied change by
     change, chunk 0's delete withdraws it."""
-    async with _followed_body(engine, history_on) as body:
+    async with _followed_body(db_url, namespace, history_on) as body:
         async with async_sessionmaker(body.engine)() as session, session.begin():
             await session.execute(delete(ThreadPayloadChunk).where(*body.chunks))
             session.add(

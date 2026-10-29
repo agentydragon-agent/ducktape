@@ -70,6 +70,9 @@ func (h *Hub) observeConnectionEvent(event pq.ListenerEventType) {
 		h.connected.Store(true)
 	case pq.ListenerEventDisconnected, pq.ListenerEventConnectionAttemptFailed:
 		h.connected.Store(false)
+		// Readers must show that their view may be stale during the reconnect gap,
+		// rather than waiting for lib/pq's post-reconnect notification.
+		h.wakeAll()
 	}
 }
 

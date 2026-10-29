@@ -9,8 +9,7 @@ holds what is still open.
 ## Open
 
 - **History reads.** History has no facade; the app still mirrors `ReadEntityEvidenceResponse`,
-  `ReadNativeFramesResponse` and the observation pages in Pydantic (`app/threads/view/content.py`,
-  `app/threads/events/debug.py`). `HISTORY_READS_FACADE` replaces them. A browser watch could use the implemented
+  `ReadNativeFramesResponse` and the observation pages in Go structs (`app/go/historydata/historydata.go`). `HISTORY_READS_FACADE` replaces them. A browser watch could use the implemented
   [`FollowSession`](../history_service/README.md#read-and-follow-one-session); the browser currently stays on Electric.
 - **Thread checks on History reads.** `thread_observations` answers 404 for a Session no Thread links;
   a proxied read answers for any Session the History Service holds. All operators are equal here, so

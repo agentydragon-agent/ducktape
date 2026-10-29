@@ -17,9 +17,8 @@ from kubernetes_asyncio import client as k8s_client
 from agentplane import sandbox_resource
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.resources import CREDENTIALS_PLURAL
-from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
+from agentplane.policy_sets import FLUX_KUSTOMIZATION_LABEL, POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.sandbox_resource import OperatingMode
-from agentplane.sandboxes.egress_views import FLUX_KUSTOMIZATION_LABEL
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from util.kubernetes import CustomObjectsClient

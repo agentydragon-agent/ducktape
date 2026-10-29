@@ -25,8 +25,8 @@ import pytest
 from opentelemetry import trace
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
-from agentplane.app.sandbox_models import NewSandbox, SandboxView, sandbox_is_ready
 from agentplane.app.testing.client import Client
+from agentplane.app.testing.models import NewSandbox, SandboxView, sandbox_is_ready
 from agentplane.crd_group import GROUP
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness

@@ -235,8 +235,32 @@ func relayResponse(w http.ResponseWriter, response *http.Response, allowedHeader
 	if response.Body == nil {
 		return nil
 	}
+	contentType := response.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "text/event-stream") || strings.HasPrefix(contentType, "application/x-ndjson") {
+		controller := http.NewResponseController(w)
+		if err := controller.Flush(); err != nil {
+			return err
+		}
+		_, err := io.Copy(flushingStreamWriter{writer: w, controller: controller}, response.Body)
+		return err
+	}
 	_, err := io.Copy(w, response.Body)
 	return err
+}
+
+// Flush each upstream read before waiting for another: small live updates must not sit in
+// net/http's output buffer until a later event arrives. Synchronous writes retain backpressure.
+type flushingStreamWriter struct {
+	writer     io.Writer
+	controller *http.ResponseController
+}
+
+func (w flushingStreamWriter) Write(data []byte) (int, error) {
+	n, err := w.writer.Write(data)
+	if err != nil {
+		return n, err
+	}
+	return n, w.controller.Flush()
 }
 
 // GeneratedFacadeRouteAllowed keeps operator proxy calls within a versioned, read/write facade.

@@ -4,6 +4,7 @@ import asyncio
 import base64
 import hashlib
 import ipaddress
+import socket
 import ssl
 from collections.abc import AsyncIterator
 from contextlib import ExitStack, asynccontextmanager
@@ -21,7 +22,6 @@ from jinja2 import Template
 from agentplane.app.frontend.serving.testing.image import IMAGE as STATIC_IMAGE
 from third_party.containers import nginx_unprivileged
 from util.bazel.runfiles import get_required_path
-from util.net import pick_free_port
 from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 
@@ -33,6 +33,12 @@ from util.testing.container_logs import LoggedContainer
 class BrowserCertificate:
     directory: Path
     spki: str
+    port: int
+    port_reservation: socket.socket
+
+    @property
+    def url(self) -> str:
+        return f"https://127.0.0.1:{self.port}"
 
 
 def browser_certificate(directory: Path) -> BrowserCertificate:
@@ -57,7 +63,14 @@ def browser_certificate(directory: Path) -> BrowserCertificate:
     public_key = key.public_key().public_bytes(
         serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
     )
-    return BrowserCertificate(directory, base64.b64encode(hashlib.sha256(public_key).digest()).decode())
+    reservation = socket.socket()
+    reservation.bind(("127.0.0.1", 0))
+    return BrowserCertificate(
+        directory,
+        base64.b64encode(hashlib.sha256(public_key).digest()).decode(),
+        reservation.getsockname()[1],
+        reservation,
+    )
 
 
 @dataclass(frozen=True)
@@ -101,7 +114,7 @@ async def http2_proxy(upstream: str, certificate: BrowserCertificate) -> AsyncIt
         await _wait_for_frontend(static_upstream)
         # A separate nginx serves the actual built frontend. The TLS ingress supplies the
         # browser's single origin while API traffic still reaches the real app process.
-        port = pick_free_port()
+        port = certificate.port
         template = get_required_path("_main/agentplane/app/testing/http2_proxy.conf.j2").read_text()
         (certificate.directory / "nginx.conf").write_text(
             Template(template).render(port=port, upstream=upstream, static_upstream=static_upstream) + "\n"
@@ -114,11 +127,12 @@ async def http2_proxy(upstream: str, certificate: BrowserCertificate) -> AsyncIt
         )
         url = f"https://127.0.0.1:{port}"
         context = ssl.create_default_context(cafile=str(certificate.directory / "certificate.pem"))
+        certificate.port_reservation.close()
         with container:
             async with asyncio.timeout(30), httpx.AsyncClient(verify=context, http2=True, timeout=2) as client:
                 while True:
                     try:
-                        response = await client.get(f"{url}/models")
+                        response = await client.get(f"{url}/readyz")
                     # A slow first answer is not a failed start: the 30 s budget decides that.
                     except httpx.ConnectError, httpx.TimeoutException:
                         await asyncio.sleep(0.1)

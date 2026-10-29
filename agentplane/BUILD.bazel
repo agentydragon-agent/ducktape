@@ -36,17 +36,6 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 py_library(
-    name = "changes",
-    srcs = ["changes.py"],
-)
-
-py_library(
-    name = "sse",
-    srcs = ["sse.py"],
-    deps = ["@pypi//fastapi"],
-)
-
-py_library(
     name = "tracing",
     srcs = ["tracing.py"],
     deps = [
@@ -58,11 +47,6 @@ py_library(
         "@pypi//opentelemetry_instrumentation_httpx",
         "@pypi//opentelemetry_sdk",
     ],
-)
-
-py_library(
-    name = "kubernetes_watch",
-    srcs = ["kubernetes_watch.py"],
 )
 
 py_library(

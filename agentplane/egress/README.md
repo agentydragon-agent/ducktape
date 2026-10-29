@@ -56,8 +56,8 @@ Also here:
 - `sidecar_config.py` and `platform_routes.py`: Python settings and route models cdk8s renders each
   Sandbox template's sidecar settings ConfigMap from. The process entry point and both forwarding
   paths live in Go; `platform_routes.py` does not serve traffic.
-- `decisions_client.py` and `decisions.py`: the integration app's authenticated gRPC decisions
-  stream client and browser projection, served by `EgressAdmin.WatchDecisions` on the admin listener.
+- `../app/go/streamapi.go`: the integration app's authenticated `EgressAdmin.WatchDecisions` client
+  and browser stream projection. `decisions.py` remains the Python value model used by system tests.
 - `testing/`: the throwaway CAs and process launchers `test_proxy.py` runs the built binaries with.
   It drives the real binaries against envtest API servers (<../testing/kubernetes_apiserver.py>) and
   a PostgreSQL container; the package tests beside the code cover the decision itself.

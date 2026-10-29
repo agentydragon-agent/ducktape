@@ -16,8 +16,8 @@ from kubernetes_asyncio import client as k8s_client
 from agentplane import sandbox_resource
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
-from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.sandboxes.launch import SandboxIdentity
+from agentplane.sandboxes.reader import SandboxReader
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.tls import runner_identity_uri
@@ -38,7 +38,7 @@ class SandboxCluster:
     namespace: str
     # The Sandbox's, its Pod's and its ServiceAccount's.
     name: str
-    inventory: SandboxInventory
+    reader: SandboxReader
     # The UIDs the API server gave the Sandbox and its Pod.
     uid: str
     pod_uid: str
@@ -169,7 +169,7 @@ async def sandbox_cluster(server: KubernetesApiServer, *, name: str = SANDBOX) -
         server=server,
         namespace=namespace,
         name=name,
-        inventory=SandboxInventory(namespace=namespace, custom_objects=custom, core_v1=core),
+        reader=SandboxReader(namespace=namespace, custom_objects=custom, core_v1=core),
         uid=uid,
         pod_uid=pod.metadata.uid,
     )

@@ -27,10 +27,10 @@ from playwright.async_api import (
     TimeoutError as PlaywrightTimeoutError,
     expect,
 )
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 from agentplane.app.testing import thread_view_marks
-from agentplane.app.testing.history import SeededEventLogStore
+from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.http2_proxy import BrowserCertificate, http2_proxy
 from agentplane.app.testing.replication_process import GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
@@ -44,8 +44,7 @@ from agentplane.app.testing.thread_browser import (
     message_composer,
     scripted_runner,
 )
-from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.testing.thread_test_support import ThreadHTTP
 from agentplane.history_service.channels import Channel
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.models import (
@@ -60,7 +59,6 @@ from agentplane.history_service.fold.models import (
 from agentplane.history_service.fold.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
 from agentplane.history_service.testing.electric_service import ElectricService
 from agentplane.history_service.testing.history import History
-from agentplane.postgres.wakeups import notify
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
@@ -130,8 +128,8 @@ async def sandbox(api_server: KubernetesApiServer) -> AsyncIterator[SandboxClust
 async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     page: Page,
     db_url: str,
-    store: ThreadStore,
-    event_logs: SeededEventLogStore,
+    store: ThreadHTTP,
+    event_logs: SessionHistory,
     history: History,
     thread_source: ReplicationSource,
     electric: ElectricService,
@@ -149,10 +147,12 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
             sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
             gateway=None,
             browser_login=True,
+            certificate=certificate,
             electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
+        await app.login(page)
         url = f"{ingress.url}/#/threads/{thread_id}"
         await page.goto(url)
         await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value("Test archived thread")
@@ -189,7 +189,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
 
 
 async def _seed_navigation_threads(
-    event_logs: SeededEventLogStore, history: History, store: ThreadStore
+    event_logs: SessionHistory, history: History, store: ThreadHTTP
 ) -> tuple[list[UUID], list[ReplicationSource]]:
     """Two threads of 130 messages, "Thread N message M", named "Test navigation thread N".
 
@@ -230,8 +230,8 @@ async def _seed_navigation_threads(
 async def test_switching_threads_starts_at_each_threads_tail(
     page: Page,
     db_url: str,
-    store: ThreadStore,
-    event_logs: SeededEventLogStore,
+    store: ThreadHTTP,
+    event_logs: SessionHistory,
     history: History,
     electric: ElectricService,
     certificate: BrowserCertificate,
@@ -245,10 +245,12 @@ async def test_switching_threads_starts_at_each_threads_tail(
             sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
             gateway=None,
             browser_login=True,
+            certificate=certificate,
             electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
+        await app.login(page)
         await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
         await page.get_by_text("Thread 0 message 129", exact=True).wait_for(state="visible")
         await page.get_by_role("region", name="Thread history", exact=True).hover()
@@ -275,8 +277,8 @@ async def test_switching_threads_starts_at_each_threads_tail(
 async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
     page: Page,
     db_url: str,
-    store: ThreadStore,
-    event_logs: SeededEventLogStore,
+    store: ThreadHTTP,
+    event_logs: SessionHistory,
     history: History,
     electric: ElectricService,
     certificate: BrowserCertificate,
@@ -292,10 +294,12 @@ async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
             sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
             gateway=None,
             browser_login=True,
+            certificate=certificate,
             electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
+        await app.login(page)
         await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
         await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible(timeout=30_000)
         for number in (1, 0):
@@ -335,8 +339,8 @@ def _bodies_read(requests: list[Request]) -> int:
 async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_was_away(
     page: Page,
     db_url: str,
-    store: ThreadStore,
-    event_logs: SeededEventLogStore,
+    store: ThreadHTTP,
+    event_logs: SessionHistory,
     history: History,
     electric: ElectricService,
     certificate: BrowserCertificate,
@@ -350,10 +354,12 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
             sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
             gateway=None,
             browser_login=True,
+            certificate=certificate,
             electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
+        await app.login(page)
         requests: list[Request] = []
         chunks_read = asyncio.Event()
 
@@ -539,9 +545,9 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
     page: Page,
     certificate: BrowserCertificate,
     db_url: str,
-    store: ThreadStore,
-    event_logs: SeededEventLogStore,
-    content: ContentStore,
+    store: ThreadHTTP,
+    event_logs: SessionHistory,
+    content: SessionHistory,
     history: History,
     history_client: HistoryServiceClient,
     electric: ElectricService,
@@ -612,11 +618,13 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
             sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
             gateway=gateway_access,
             browser_login=True,
+            certificate=certificate,
             electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
         asyncio.timeout(60),
     ):
+        await app.login(page)
         opened = await source.opened.get()
         opened.replay.set()
         await page.goto(f"{ingress.url}/#/threads/{thread}")
@@ -880,6 +888,12 @@ async def test_sidebar_receives_rename_and_archive_from_another_app_replica(thre
     await thread_browser.store.rename(thread.id, "Test rename from another replica")
     await expect(sidebar.get_by_text("Test rename from another replica", exact=True)).to_be_visible()
     await expect(sidebar.get_by_text("Browser thread", exact=True)).to_have_count(0)
+    thread_browser.source.attached.active_turn_id = ""
+    thread_browser.source.append(
+        event_pb2.Event(
+            turn_completed=event_pb2.TurnCompleted(turn_id="test-browser-turn", status=event_pb2.TURN_STATUS_COMPLETED)
+        )
+    )
     await thread_browser.store.archive(thread.id)
     # The thread is open, so the sidebar keeps its row, now offering to unarchive it, though the archived
     # switch is off.
@@ -1860,7 +1874,7 @@ async def test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it(
 
 
 async def expect_archived_events(
-    event_logs: SeededEventLogStore, thread_id: UUID, expected: list[event_log_pb2.EventEntry]
+    event_logs: SessionHistory, thread_id: UUID, expected: list[event_log_pb2.EventEntry]
 ) -> list[event_log_pb2.EventEntry]:
     async with asyncio.timeout(15):
         while True:
@@ -2669,7 +2683,7 @@ async def test_unknown_projection_failure_keeps_verified_history_and_stops_brows
             }
         ).model_dump(mode="json")
         feed.end = {"message": "batch-wide projection invariant failed"}
-        await notify(session, Channel.SUMMARIES)
+        await session.execute(select(func.pg_notify(Channel.SUMMARIES, "")))
 
     failure = page.get_by_role("alert")
     await expect(failure).to_contain_text("Projection failed: batch-wide projection invariant failed.")

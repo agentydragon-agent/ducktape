@@ -28,45 +28,8 @@ py_library(
 )
 
 py_library(
-    name = "egress_views",
-    srcs = ["egress_views.py"],
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        ":errors",
-        "//agentplane:crd_group",
-        "//agentplane:policy_sets",
-        "//agentplane:sandbox_resource",
-        "//agentplane:subjects",
-        "//agentplane/egress:resources",
-        "//util:kubernetes",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "errors",
     srcs = ["errors.py"],
-)
-
-py_library(
-    name = "inventory",
-    srcs = ["inventory.py"],
-    deps = [
-        ":console",
-        ":errors",
-        ":kubernetes_views",
-        ":reader",
-        "//agentplane:crd_group",
-        "//agentplane:policy_sets",
-        "//agentplane:sandbox_resource",
-        "//agentplane:subjects",
-        "//agentplane/proto:sandboxes_pb2",
-        "@pypi//durationpy",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
-        "@pypi//pydantic",
-        "@pypi//tenacity",
-    ],
 )
 
 py_library(
@@ -124,32 +87,7 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    deps = [
-        ":egress_views",
-        ":inventory",
-        "//agentplane/sandboxes/testing:sandbox_namespace",
-        "//agentplane/testing:kubernetes_apiserver",
-        "//agentplane/testing:kubernetes_apiserver_fixtures",
-        "@pypi//pytest",
-    ],
-)
-
-py_test(
-    name = "test_egress_views",
-    srcs = ["test_egress_views.py"],
-    deps = [
-        ":conftest",
-        ":egress_views",
-        "//:conftest",
-        "//agentplane:policy_sets",
-        "//agentplane:subjects",
-        "//agentplane/egress:resources",
-        "//agentplane/sandboxes/testing:sandbox_namespace",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//types_protobuf",
-    ],
+    deps = ["//agentplane/testing:kubernetes_apiserver_fixtures"],
 )
 
 py_test(
@@ -164,26 +102,6 @@ py_test(
         "//agentplane/proto:sandboxes_pb2",
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:kubernetes_apiserver",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_inventory_mutations",
-    srcs = ["test_inventory_mutations.py"],
-    deps = [
-        ":conftest",
-        ":errors",
-        ":inventory",
-        ":kubernetes_views",
-        "//:conftest",
-        "//agentplane:sandbox_resource",
-        "//agentplane:subjects",
-        "//agentplane/proto:sandboxes_pb2",
-        "//agentplane/sandboxes/testing:sandbox_namespace",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//pytest",

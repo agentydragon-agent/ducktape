@@ -1,169 +1,138 @@
-"""The notification streams behind the real session middleware, over a scripted Notification Service.
-
-The browser's side is driven straight through the ASGI app, because httpx's own ASGI transport would
-buffer a body that never ends; logins and logouts go through httpx.
-"""
+"""Notification watches through the real Go server and signed operator login."""
 
 import asyncio
 import json
-from typing import Any
-from uuid import UUID
+import signal
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from pathlib import Path
+from uuid import uuid4
 
 import grpc
+import httpx
 import pytest
 import pytest_bazel
-from fastapi import FastAPI
 from google.protobuf.empty_pb2 import Empty
-from google.protobuf.timestamp_pb2 import Timestamp
 
-from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.api import app_services, create_app
-from agentplane.app.egress_access import EgressAccess
-from agentplane.app.electric import ElectricProxy
-from agentplane.app.live import LiveIndex
-from agentplane.app.notifications_operator_client import NotificationsOperatorClient
-from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.sandbox_access import SandboxAccess
-from agentplane.app.testing.history import SeededEventLogStore
-from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.notifications_operator import FakeNotificationsOperator
-from agentplane.app.testing.operator_streams import OIDC, EventSource, login, logout, with_test_login
-from agentplane.app.testing.system_status import answering_system_status
-from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.view.content import ContentStore
-from agentplane.egress.decisions_client import DecisionsClient
-from agentplane.notification_service import notifications_operator_pb2 as pb
-from agentplane.postgres.wakeups import WakeupListener
-from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
+from agentplane.app.testing.replication_process import AppProcess
+from agentplane.grpc.serving import serving
+from agentplane.notification_service import notifications_operator_pb2, notifications_operator_pb2_grpc
+from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 
-SANDBOX = "test-notified-sandbox"
-THREADS = [UUID("00000000-0000-4000-8000-0000000000c1"), UUID("00000000-0000-4000-8000-0000000000c2")]
-OBSERVED = Timestamp()
-OBSERVED.FromJsonString("2026-09-21T12:00:00Z")
+# gazelle:include_dep @pypi//protobuf
+
+
+@dataclass
+class Peer:
+    service: FakeNotificationsOperator
+    target: str
+    token: Path
 
 
 @pytest.fixture
-def app(
-    inventory: SandboxAccess,
-    bridge: RunnerBridge,
-    store: ThreadStore,
-    egress: EgressAccess,
-    decisions: DecisionsClient,
-    live_index: LiveIndex,
-    action_policy: ActionPolicyInventory,
-    event_logs: SeededEventLogStore,
-    content: ContentStore,
-    electric_proxy: ElectricProxy,
-    notifications: NotificationsOperatorClient,
-    operator_sessions: OperatorSessionStore,
-    database_updates: WakeupListener,
-) -> FastAPI:
-    return with_test_login(
-        create_app(
-            inventory,
-            bridge,
-            store,
-            TEST_MODELS,
-            egress,
-            decisions,
-            live_index,
-            action_policy,
-            OIDC,
-            event_logs=event_logs,
-            content=content,
-            database_updates=database_updates,
-            operator_sessions=operator_sessions,
-            electric=electric_proxy,
-            notifications=notifications,
-            system_status=answering_system_status(),
+async def peer(tmp_path: Path) -> AsyncIterator[Peer]:
+    service = FakeNotificationsOperator()
+    server = grpc.aio.server()
+    notifications_operator_pb2_grpc.add_NotificationsOperatorServicer_to_server(service, server)
+    token = tmp_path / "notifications-token"
+    token.write_text("test-notifications-token")
+    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
+        yield Peer(service, f"http://127.0.0.1:{port}", token)
+
+
+@pytest.fixture
+def app_config(peer: Peer) -> dict[str, object]:
+    return {"notifications_url": peer.target, "notifications_token_file": str(peer.token)}
+
+
+async def test_sandbox_watch_is_pinned_to_the_current_uid_and_renews_its_token(
+    http: httpx.AsyncClient, sandbox: SandboxCluster, peer: Peer
+) -> None:
+    for token in ("test-notifications-token", "rotated-notifications-token"):
+        peer.token.write_text(token)
+        peer.service.sandbox_script.put_nowait(
+            notifications_operator_pb2.WatchSandboxNotificationsResponse(
+                snapshot=notifications_operator_pb2.SandboxNotificationStatus()
+            )
         )
+        peer.service.sandbox_script.put_nowait(
+            notifications_operator_pb2.WatchSandboxNotificationsResponse(reconnect_required=Empty())
+        )
+        response = await http.get(f"/sandboxes/{sandbox.name}/notifications/stream")
+        assert response.status_code == 200, response.text
+        assert response.text.splitlines()[0] == "event: snapshot"
+        assert json.loads(response.text.splitlines()[1].removeprefix("data: ")) == {"inboxes": []}
+    assert (
+        peer.service.sandbox_requests
+        == [
+            notifications_operator_pb2.WatchSandboxNotificationsRequest(
+                namespace=sandbox.namespace, name=sandbox.name, uid=sandbox.uid
+            )
+        ]
+        * 2
     )
+    assert peer.service.tokens == ["Bearer test-notifications-token", "Bearer rotated-notifications-token"]
 
 
-def snapshot(frame: bytes) -> dict[str, Any]:
-    event, data = frame.decode().removesuffix("\n\n").split("\n")
-    assert event == "event: snapshot"
-    parsed: dict[str, Any] = json.loads(data.removeprefix("data: "))
-    return parsed
-
-
-async def test_a_sandbox_stream_follows_the_current_incarnation(
-    app: FastAPI,
-    notifications_operator: FakeNotificationsOperator,
-    namespace: SandboxNamespace,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    raw, _ = await namespace.runner(SANDBOX)
-    notifications_operator.sandbox_script.put_nowait(
-        pb.WatchSandboxNotificationsResponse(snapshot=pb.SandboxNotificationStatus(observed_at=OBSERVED))
-    )
-    notifications_operator.sandbox_script.put_nowait(pb.WatchSandboxNotificationsResponse(reconnect_required=Empty()))
-    cookie = await login(app)
-
-    browser = EventSource(app, cookie, f"/sandboxes/{SANDBOX}/notifications/stream")
-
-    assert snapshot(await browser.next_chunk()) == {"observedAt": "2026-09-21T12:00:00Z", "inboxes": []}
-    # Planned renewal ends the response cleanly, and the browser opens the stream again.
-    messages = await browser.ended()
-    assert messages[0]["status"] == 200
-    assert "interrupted" not in caplog.text
-    assert notifications_operator.sandbox_requests == [
-        pb.WatchSandboxNotificationsRequest(namespace=namespace.name, name=SANDBOX, uid=raw["metadata"]["uid"])
-    ]
-
-
-async def test_a_thread_stream_follows_the_threads_sessions(
-    app: FastAPI, notifications_operator: FakeNotificationsOperator
-) -> None:
-    notifications_operator.session_script.put_nowait(
-        pb.WatchSessionNoticesResponse(
-            snapshot=pb.SessionNoticeStates(
-                observed_at=OBSERVED,
-                inboxes=[pb.InboxNoticeState(inbox_id="inbox-a", session_id=str(THREADS[1]), unacknowledged=3)],
+async def test_thread_watch_filters_session_ids_and_relays_protojson(http: httpx.AsyncClient, peer: Peer) -> None:
+    ids = [str(uuid4()), str(uuid4())]
+    peer.service.session_script.put_nowait(
+        notifications_operator_pb2.WatchSessionNoticesResponse(
+            snapshot=notifications_operator_pb2.SessionNoticeStates(
+                inboxes=[
+                    notifications_operator_pb2.InboxNoticeState(inbox_id="one", session_id=ids[1], unacknowledged=3)
+                ]
             )
         )
     )
-    notifications_operator.session_script.put_nowait(pb.WatchSessionNoticesResponse(reconnect_required=Empty()))
-    cookie = await login(app)
-    query = "&".join(f"thread_id={thread}" for thread in THREADS).encode()
-
-    browser = EventSource(app, cookie, "/threads/notices/stream", query)
-
-    (state,) = snapshot(await browser.next_chunk())["inboxes"]
-    assert state["unacknowledged"] == 3
-    await browser.ended()
-    assert [list(request.session_ids) for request in notifications_operator.session_requests] == [
-        [str(thread) for thread in THREADS]
-    ]
-
-
-@pytest.mark.parametrize("ending", ["failure", "disconnect", "drain", "logout"])
-async def test_a_stream_ends_and_hangs_up_on_the_service(
-    app: FastAPI, notifications_operator: FakeNotificationsOperator, ending: str, caplog: pytest.LogCaptureFixture
-) -> None:
-    notifications_operator.session_script.put_nowait(
-        pb.WatchSessionNoticesResponse(snapshot=pb.SessionNoticeStates(observed_at=OBSERVED))
+    peer.service.session_script.put_nowait(
+        notifications_operator_pb2.WatchSessionNoticesResponse(reconnect_required=Empty())
     )
-    if ending == "failure":
-        notifications_operator.session_script.put_nowait(grpc.StatusCode.UNAVAILABLE)
-    cookie = await login(app)
-    browser = EventSource(app, cookie, "/threads/notices/stream", f"thread_id={THREADS[0]}".encode())
-    snapshot(await browser.next_chunk())
+    response = await http.get("/threads/notices/stream", params=[("thread_id", value) for value in ids])
+    assert response.status_code == 200, response.text
+    data = json.loads(next(line[6:] for line in response.text.splitlines() if line.startswith("data: ")))
+    assert data["inboxes"][0]["sessionId"] == ids[1]
+    assert data["inboxes"][0]["unacknowledged"] == 3
+    assert [list(request.session_ids) for request in peer.service.session_requests] == [ids]
 
-    if ending == "disconnect":
-        browser.disconnect()
-    elif ending == "drain":
-        app_services(app).drain.begin()
-    elif ending == "logout":
-        await logout(app, cookie)
-    messages = await browser.ended()
 
-    assert messages[0]["status"] == 200
-    assert ("Notification stream interrupted" in caplog.text) == (ending == "failure")
-    if ending != "failure":
-        async with asyncio.timeout(10):
-            await notifications_operator.hung_up.wait()
+@pytest.mark.parametrize("ending", ["failure", "eof", "disconnect", "sigterm", "logout"])
+async def test_notification_stream_closes_and_cancels_upstream(
+    app: AppProcess, http: httpx.AsyncClient, peer: Peer, ending: str
+) -> None:
+    peer.service.session_script.put_nowait(
+        notifications_operator_pb2.WatchSessionNoticesResponse(
+            snapshot=notifications_operator_pb2.SessionNoticeStates()
+        )
+    )
+    async with http.stream("GET", "/threads/notices/stream", params={"thread_id": str(uuid4())}) as response:
+        assert response.status_code == 200
+        lines = response.aiter_lines()
+        assert await anext(lines) == "event: snapshot"
+        assert json.loads((await anext(lines)).removeprefix("data: ")) == {"inboxes": []}
+        assert await anext(lines) == ""
+        if ending == "failure":
+            peer.service.session_script.put_nowait(grpc.StatusCode.UNAVAILABLE)
+        elif ending == "eof":
+            peer.service.session_script.put_nowait(None)
+        elif ending == "sigterm":
+            app.process.send_signal(signal.SIGTERM)
+        elif ending == "logout":
+            assert (await http.post("/auth/logout")).status_code == 303
+        if ending != "disconnect":
+            async with asyncio.timeout(5):
+                assert [line async for line in lines] == []
+    if ending in {"disconnect", "sigterm", "logout"}:
+        async with asyncio.timeout(5):
+            await peer.service.hung_up.wait()
+    assert ("Notification stream interrupted" in app.stderr.read_text()) == (ending == "failure")
+
+
+async def test_notification_watch_requires_browser_login(app: AppProcess, agent_auth: dict[str, str]) -> None:
+    async with httpx.AsyncClient(base_url=app.url, headers=agent_auth) as workload:
+        response = await workload.get("/threads/notices/stream", params={"thread_id": str(uuid4())})
+    assert response.status_code == 403
 
 
 if __name__ == "__main__":

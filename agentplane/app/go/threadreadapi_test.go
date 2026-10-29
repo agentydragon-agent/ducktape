@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/google/uuid"
@@ -485,6 +486,9 @@ func TestThreadSandboxReadinessRequiresRunningReadyPod(t *testing.T) {
 	if !threadSandboxReady(&sandboxespb.Sandbox{OperatingMode: stringPointer("Running"), Status: status}) {
 		t.Fatal("running Sandbox with Ready=True was rejected")
 	}
+	if threadSandboxReady(&sandboxespb.Sandbox{Status: status}) {
+		t.Fatal("Ready condition without a reported mode was accepted")
+	}
 	if threadSandboxReady(&sandboxespb.Sandbox{OperatingMode: stringPointer("Suspended"), Status: status}) {
 		t.Fatal("suspended Sandbox was accepted")
 	}
@@ -515,5 +519,52 @@ func TestEnsureThreadArchivableRejectsBusyRunnerButAllowsIdleRunner(t *testing.T
 	sandbox.OperatingMode = stringPointer("Suspended")
 	if err := ensureThreadArchivable(context.Background(), thread, historydata.FoldSummary{Sandbox: "sandbox"}, inventory, runner); !errors.Is(err, errThreadRunnerUnready) {
 		t.Fatalf("unready Sandbox archive check = %v, want errThreadRunnerUnready", err)
+	}
+}
+
+func TestThreadViewReadsHistoryIdentityActivityAndAttachedSpecification(t *testing.T) {
+	id := uuid.New()
+	name := "operator name"
+	at := time.Date(2026, 10, 29, 1, 2, 3, 0, time.UTC)
+	row := threads.Thread{ID: id, Name: &name, Archived: true, CreatedAt: at.Add(-time.Hour)}
+	for _, turn := range []eventpb.TurnStatus{
+		eventpb.TurnStatus_TURN_STATUS_COMPLETED,
+		eventpb.TurnStatus_TURN_STATUS_FAILED,
+		eventpb.TurnStatus_TURN_STATUS_INTERRUPTED,
+	} {
+		t.Run(turn.String(), func(t *testing.T) {
+			status := int32(turn)
+			view, err := makeThreadView(row, historydata.FoldSummary{
+				Present: true, Sandbox: "history-owned", FoldedThrough: 7, CommittedCursor: 9,
+				LastEventAt: &at, LastModelActivityAt: &at, IdleSince: &at, LastTurnStatus: &status,
+				Feed: &historydata.FeedSnapshot{
+					Status: historypb.FeedStatus_FEED_STATUS_ENDED,
+					Attached: &runnerpb.Attached{
+						HarnessState: runnerpb.HarnessState_HARNESS_STATE_STOPPED,
+						Spec:         &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CODEX, Model: "model", Cwd: "/workspace", ReasoningEffort: "high"},
+					},
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if view.ID != id || view.Sandbox != "history-owned" || view.Name != &name || !view.Archived || view.CreatedAt != row.CreatedAt ||
+				view.LastCursor != 7 || view.LastEventAt != &at || view.LastModelActivityAt != &at || view.IdleSince != &at ||
+				view.LastTurnStatus == nil || *view.LastTurnStatus != turn.String() || view.FeedStatus == nil || *view.FeedStatus != "ended" ||
+				view.Harness == nil || *view.Harness != "HARNESS_CODEX" || view.Model == nil || *view.Model != "model" ||
+				view.CWD == nil || *view.CWD != "/workspace" || view.ReasoningEffort == nil || *view.ReasoningEffort != "high" {
+				t.Fatalf("Thread view lost History or operator fields: %+v", view)
+			}
+		})
+	}
+	view, err := makeThreadView(row, historydata.FoldSummary{Present: true, Sandbox: "unfolded"})
+	if err != nil || view.LastCursor != 0 || view.FeedStatus != nil || view.Harness != nil || view.Model != nil || view.CWD != nil || view.LastTurnStatus != nil {
+		t.Fatalf("unfolded Thread view = %+v, %v", view, err)
+	}
+	if _, err := makeThreadView(row, historydata.FoldSummary{Present: true}); err == nil {
+		t.Fatal("committed History without Sandbox identity was accepted")
+	}
+	if _, err := getThreadView(t.Context(), &threadReadStoreFake{rows: []threads.Thread{row}}, &threadReadHistoryFake{}, id); err == nil {
+		t.Fatal("pending History identity was exposed")
 	}
 }

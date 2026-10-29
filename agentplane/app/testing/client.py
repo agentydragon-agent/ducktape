@@ -1,9 +1,8 @@
-"""A Python client for the integration app's HTTP surface, beside the runner's own client.
+"""A client for the Go integration app's HTTP surface, beside the runner's own client.
 
-The app's request and response models are what it speaks: `NewSandbox` and
-`NewSession` go out, `SandboxView`, `BindingView` and `Decision` come back, and a session's events
-arrive as shared `EventEntry` messages rather than as dictionaries to pick apart. A caller
-dispatches on `entry.event.WhichOneof("observation")`, the same way the app and the runner do.
+Its Pydantic models describe the HTTP contracts used by this client and system tests. A session's
+events arrive as shared `EventEntry` messages rather than dictionaries to pick apart; callers
+dispatch on `entry.event.WhichOneof("observation")`.
 """
 
 from __future__ import annotations
@@ -21,17 +20,23 @@ from uuid import UUID
 import httpx
 from google.protobuf.json_format import ParseDict, ParseError
 
-from agentplane.app.live import DecisionsSnapshot, DecisionsUnavailable, SandboxesSnapshot
 from agentplane.app.model_catalog import ModelCatalog
-from agentplane.app.presets import SandboxPresetView
-from agentplane.app.sandbox_models import NewSandbox, RunnerStatusView, SandboxView
-from agentplane.app.threads.bridge import NewSession
-from agentplane.app.threads.store import ThreadPage
-from agentplane.app.threads.thread_view import ThreadView
+from agentplane.app.testing.models import (
+    BindingView,
+    DecisionsSnapshot,
+    DecisionsUnavailable,
+    NewSandbox,
+    NewSession,
+    RunnerStatusView,
+    SandboxesSnapshot,
+    SandboxPresetView,
+    SandboxView,
+    ThreadPage,
+    ThreadView,
+)
 from agentplane.egress.decisions import Decision
 from agentplane.proto import event_log_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
-from agentplane.sandboxes.egress_views import BindingView
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 

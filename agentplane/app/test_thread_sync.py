@@ -9,12 +9,10 @@ from uuid import UUID
 
 import httpx
 import pytest_bazel
-from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.app.testing.history import SeededEventLogStore
+from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.replication_process import SandboxesAccess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.threads.summaries import Summaries
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.electric_service import ElectricService, electric_service
 from agentplane.history_service.testing.history import History
@@ -25,14 +23,11 @@ from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 
 
 async def test_materialized_revisions_replicate_with_restricted_role(
-    db_url: str,
-    engine: AsyncEngine,
-    history_on: Callable[[str], AbstractAsyncContextManager[History]],
-    namespace: SandboxNamespace,
+    db_url: str, history_on: Callable[[str], AbstractAsyncContextManager[History]], namespace: SandboxNamespace
 ) -> None:
     async with electric_service() as service, history_on(service.database_url) as history:
         reader = history.service.reader
-        event_logs = SeededEventLogStore(engine, history=history, history_reader=reader, summaries=Summaries(reader))
+        event_logs = SessionHistory(history)
         source = ReplicationSource()
         source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
         source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")))
@@ -179,8 +174,12 @@ async def _cross_replica_sync(
         asyncio.timeout(60),
         app_process(db_url, history=reader, sandboxes=sandboxes, gateway=None, electric_url=service.url) as first,
         app_process(db_url, history=reader, sandboxes=sandboxes, gateway=None, electric_url=service.url) as second,
-        httpx.AsyncClient(base_url=first.url, timeout=35) as client_one,
-        httpx.AsyncClient(base_url=second.url, timeout=35) as client_two,
+        httpx.AsyncClient(
+            base_url=first.url, cookies=first.cookies, headers={"Origin": first.url}, timeout=35
+        ) as client_one,
+        httpx.AsyncClient(
+            base_url=second.url, cookies=second.cookies, headers={"Origin": second.url}, timeout=35
+        ) as client_two,
     ):
         path = f"/threads/{thread}/sync"
         scope = await client_one.get(f"{path}/scope")

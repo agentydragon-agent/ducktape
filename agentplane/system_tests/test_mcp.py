@@ -28,10 +28,8 @@ from tenacity import AsyncRetrying, Retrying, retry_if_exception_type, stop_afte
 
 from agentplane.action_service import action_service_pb2, operator_action_service_pb2
 from agentplane.action_service.policies.resources import ACTION_RULE_TYPE, ACTIONS_READY_CONDITION
-from agentplane.app.action_policy import ActionPolicyView
-from agentplane.app.api import CallerGrantView
-from agentplane.app.sandbox_models import SandboxView
 from agentplane.app.testing.client import Client
+from agentplane.app.testing.models import ActionPolicyView, CallerGrantView, SandboxView
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.proto import runner_pb2

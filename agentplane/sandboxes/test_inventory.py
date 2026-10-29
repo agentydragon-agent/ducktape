@@ -1,4 +1,4 @@
-"""The inventory reads Sandboxes and their Pods without an app or app database."""
+"""SandboxReader reads Sandboxes and their Pods without an app or app database."""
 
 from collections.abc import AsyncIterator
 
@@ -40,7 +40,7 @@ async def stored(cluster: SandboxCluster) -> set[tuple[str, str, str]]:
 
 async def test_read_sandbox_without_mutation(cluster: SandboxCluster) -> None:
     before = await stored(cluster)
-    view = await cluster.inventory.get(SANDBOX)
+    view = await cluster.reader.get(SANDBOX)
     assert view.uid == cluster.uid
     assert view.service_account.namespace == cluster.namespace
     assert view.service_account.name == SANDBOX
@@ -53,19 +53,18 @@ async def test_read_sandbox_without_mutation(cluster: SandboxCluster) -> None:
 
 
 async def test_sandbox_is_read_without_its_pod(cluster: SandboxCluster) -> None:
-    view = await cluster.inventory.get_without_pod(SANDBOX)
+    view = await cluster.reader.get_without_pod(SANDBOX)
     assert view.uid == cluster.uid
     assert view.service_account.name == SANDBOX
     assert not view.HasField("pod")
     with pytest.raises(SandboxNotFoundError):
-        await cluster.inventory.get_without_pod("test-missing")
+        await cluster.reader.get_without_pod("test-missing")
 
 
 async def test_sandbox_is_read_with_its_bootstrap(cluster: SandboxCluster) -> None:
     await cluster.patch_sandbox({"spec": {"bootstrap": "printf boot"}})
-    view = await cluster.inventory.get(SANDBOX)
+    view = await cluster.reader.get(SANDBOX)
     assert view.binding == SandboxBinding(bootstrap="printf boot")
-    assert [sandbox.name for sandbox in await cluster.inventory.list_sandboxes()] == [SANDBOX]
 
 
 async def test_sandbox_inventory_projects_idle_suspend_blockers(cluster: SandboxCluster) -> None:
@@ -77,7 +76,7 @@ async def test_sandbox_inventory_projects_idle_suspend_blockers(cluster: Sandbox
         }
     )
 
-    view = await cluster.inventory.get(SANDBOX)
+    view = await cluster.reader.get(SANDBOX)
 
     assert [
         (blocker.reason, blocker.session_id if blocker.HasField("session_id") else None)
@@ -92,7 +91,7 @@ async def test_suspended_sandbox_is_not_resumed(cluster: SandboxCluster) -> None
         SANDBOX, cluster.namespace, body=k8s_client.V1DeleteOptions(grace_period_seconds=0)
     )
     before = await stored(cluster)
-    view = await cluster.inventory.get(SANDBOX)
+    view = await cluster.reader.get(SANDBOX)
     assert view.operating_mode == OperatingMode.SUSPENDED
     assert view.uid == cluster.uid
     assert await stored(cluster) == before
@@ -101,7 +100,7 @@ async def test_suspended_sandbox_is_not_resumed(cluster: SandboxCluster) -> None
 async def test_missing_sandbox_is_not_created(cluster: SandboxCluster) -> None:
     before = await stored(cluster)
     with pytest.raises(SandboxNotFoundError):
-        await cluster.inventory.get("test-missing")
+        await cluster.reader.get("test-missing")
     assert await stored(cluster) == before
 
 
@@ -158,12 +157,12 @@ async def test_phase_follows_what_the_controller_records(
         await cluster.custom_objects.delete_namespaced_custom_object(
             GROUP, VERSION, cluster.namespace, SANDBOXES_PLURAL, SANDBOX, body=k8s_client.V1DeleteOptions()
         )
-    assert (await cluster.inventory.get(SANDBOX)).phase == phase
+    assert (await cluster.reader.get(SANDBOX)).phase == phase
 
 
 async def test_initial_sandbox_without_controller_status_is_unknown(cluster: SandboxCluster) -> None:
     await cluster.patch_sandbox_status({"status": {"operatingMode": None, "incarnation": None}})
-    view = await cluster.inventory.get(SANDBOX)
+    view = await cluster.reader.get(SANDBOX)
 
     assert not view.HasField("operating_mode")
     assert view.phase == SandboxPhase.SANDBOX_PHASE_UNSPECIFIED

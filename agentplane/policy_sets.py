@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 POLICY_SETS_PLURAL = "policysets"
 POLICY_BINDINGS_PLURAL = "policybindings"
+# Flux stamps this label on objects it owns and will reapply after runtime deletion.
+FLUX_KUSTOMIZATION_LABEL = "kustomize.toolkit.fluxcd.io/name"
 # A metav1.Condition message is at most 32768 characters.
 _REASON_LIMIT = 32768
 
