@@ -15,7 +15,7 @@ import {
   UNANSWERED,
 } from "./network";
 import type { SandboxView, ThreadView } from "../schema";
-import type { ActionPolicyView } from "../actions/client";
+import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
 import type { BindingView, Decision, PolicySetView } from "../sandboxes/client";
 import type { DecisionsSnapshot, SandboxSnapshot, SandboxesSnapshot } from "../sandboxes/live";
 import type { WatchHealth } from "../live";
@@ -50,7 +50,6 @@ import type { Connection } from "../connections/models";
 
 import type { DispatchReceipt } from "../threads/client";
 import { ACTION_RENDERERS } from "../actions/rendering/index";
-import type { ActionGroupView, ActionRequestView } from "../actions/client";
 import type { McpLinkageView } from "../mcp_linkage_client";
 import type {
   GitHubSubject,
