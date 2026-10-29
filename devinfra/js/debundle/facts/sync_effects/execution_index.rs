@@ -36,7 +36,10 @@ use crate::facts::statement_facts::{
     CallbackFactoryCallArgumentWitness, CallbackFactoryWriteWitness, StatementFacts,
 };
 use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin};
-use crate::facts::{LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableShapes};
+use crate::facts::{
+    LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableShapes,
+    StableArraySpreadShapes,
+};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
@@ -1790,6 +1793,130 @@ enum NativeSlotOverlap {
     Known(SourceUnitOrdinal),
     Opaque,
     Absent,
+}
+
+/// The Array-spread operation input supplies this one narrow native-iterator
+/// premise: an iterator from a fresh array uses the native iterator protocol.
+/// It can identify a write to that iterator's `next` slot, but does not prove
+/// Object or Symbol identity.
+#[derive(Clone, Copy)]
+struct ArraySpreadNativeIteratorPremise;
+
+fn array_spread_protocol_slot_overlap<'a>(
+    witnesses: impl Iterator<Item = &'a NativeMutationWitness>,
+    slot: &NativeWriteSlot,
+    source_mutated: &IntrinsicRoots,
+    global_array_binding_mutated: bool,
+    premise_authorized_next_writes: &BTreeSet<ArrayIteratorNextWriteId>,
+    _premise: ArraySpreadNativeIteratorPremise,
+) -> NativeSlotOverlap {
+    let (expected_dependencies, independently_required, premise_allowed) =
+        match (&slot.receiver, &slot.key) {
+            (
+                NativeReceiverPath::Prototype(IntrinsicRoot::Array),
+                NativePropertyKey::SymbolIterator,
+            ) => (
+                IntrinsicRoots::from([IntrinsicRoot::Symbol]),
+                IntrinsicRoots::from([IntrinsicRoot::Symbol]),
+                IntrinsicRoots::new(),
+            ),
+            (NativeReceiverPath::ArrayIteratorPrototype, NativePropertyKey::String(property))
+                if property == "next" =>
+            {
+                (
+                    IntrinsicRoots::from([
+                        IntrinsicRoot::Object,
+                        IntrinsicRoot::Array,
+                        IntrinsicRoot::Symbol,
+                    ]),
+                    IntrinsicRoots::from([IntrinsicRoot::Object, IntrinsicRoot::Symbol]),
+                    // The selected Array-spread premise supplies only the Array
+                    // iterator receiver identity; Object.getPrototypeOf and the
+                    // Symbol.iterator key still require independent source proof.
+                    IntrinsicRoots::from([IntrinsicRoot::Array]),
+                )
+            }
+            _ => return NativeSlotOverlap::Absent,
+        };
+    let mut opaque = false;
+    for witness in witnesses {
+        if witness.unreachable_branch.is_some() || !witness.target_slots.contains(slot) {
+            continue;
+        }
+        let is_array_iterator_next = matches!(
+            (&slot.receiver, &slot.key),
+            (
+                NativeReceiverPath::ArrayIteratorPrototype,
+                NativePropertyKey::String(property)
+            ) if property == "next"
+        );
+        if is_array_iterator_next
+            && !premise_authorized_next_writes.contains(&array_iterator_next_write_id(witness))
+        {
+            // The premise discharges only the receiver part of this merged
+            // dependency set. A conditional key dependency on Array remains
+            // unresolved unless this exact write was independently eligible
+            // for the premise-relative closure.
+            opaque = true;
+            continue;
+        }
+        // The expected sets distinguish the canonical receiver dependency
+        // from any uncertainty in a computed property key or alternative
+        // receiver path. Do not discharge arbitrary roots from the premise.
+        if witness.target_slots.len() != 1
+            || witness.key_dependencies != expected_dependencies
+            || !witness.value_input_refs.is_empty()
+            || (matches!(
+                (&slot.receiver, &slot.key),
+                (
+                    NativeReceiverPath::Prototype(IntrinsicRoot::Array),
+                    NativePropertyKey::SymbolIterator
+                )
+            ) && global_array_binding_mutated)
+            || source_mutated.contains(&IntrinsicRoot::GlobalObject)
+            || !independently_required.is_disjoint(source_mutated)
+            || !witness
+                .key_dependencies
+                .intersection(source_mutated)
+                .all(|dependency| premise_allowed.contains(dependency))
+        {
+            opaque = true;
+            continue;
+        }
+        return NativeSlotOverlap::Known(witness.statement_ordinal);
+    }
+    if opaque {
+        NativeSlotOverlap::Opaque
+    } else {
+        NativeSlotOverlap::Absent
+    }
+}
+
+type ArrayIteratorNextWriteId = (String, SourceUnitOrdinal, u32, u32);
+
+fn array_iterator_next_write_id(witness: &NativeMutationWitness) -> ArrayIteratorNextWriteId {
+    (
+        witness.chunk_id.clone(),
+        witness.statement_ordinal,
+        witness.span.lo.0,
+        witness.span.hi.0,
+    )
+}
+
+fn exact_array_iterator_next_candidate(witness: &NativeMutationWitness) -> bool {
+    witness.unreachable_branch.is_none()
+        && witness.value_input_refs.is_empty()
+        && witness.target_slots.len() == 1
+        && witness.target_slots.contains(&NativeWriteSlot {
+            receiver: NativeReceiverPath::ArrayIteratorPrototype,
+            key: NativePropertyKey::String("next".to_owned()),
+        })
+        && witness.key_dependencies
+            == IntrinsicRoots::from([
+                IntrinsicRoot::Object,
+                IntrinsicRoot::Array,
+                IntrinsicRoot::Symbol,
+            ])
 }
 
 fn source_slot_overlap<'a>(
@@ -3741,7 +3868,7 @@ fn intrinsic_write_target(
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct NativeWriteCensus {
     unconditional: IntrinsicRoots,
     prototype_mutations: Arc<Vec<NativePrototypeMutation>>,
@@ -3750,6 +3877,39 @@ pub(crate) struct NativeWriteCensus {
     conditional: Vec<ConditionalIntrinsicWrite>,
 }
 
+/// A premise-relative view used only to decide whether a selected Array-spread
+/// input is contradicted by a source-known iterator protocol write. Its root
+/// closure never feeds ordinary native-integrity inference.
+pub(crate) struct ArraySpreadProtocolIntegrity {
+    mutated: IntrinsicRoots,
+    global_array_binding_mutated: bool,
+    premise_authorized_next_writes: BTreeSet<ArrayIteratorNextWriteId>,
+}
+
+impl NativeWriteCensus {
+    fn for_array_spread_protocol_query(&self) -> (Self, BTreeSet<ArrayIteratorNextWriteId>) {
+        let mut census = self.clone();
+        let mut premise_authorized_next_writes = BTreeSet::new();
+        for write in &mut census.conditional {
+            if !write.dependencies.is_empty()
+                || !exact_array_iterator_next_candidate(&write.witness)
+            {
+                continue;
+            }
+            // The typed Array-spread premise identifies only the iterator
+            // receiver. Keep the original fallback for a failed independent
+            // Object/Symbol proof, and retain the Array effect so other
+            // conditional writes still see this mutation in the fixed point.
+            write.refined = IntrinsicRoots::from([IntrinsicRoot::Array]);
+            write.dependencies =
+                IntrinsicRoots::from([IntrinsicRoot::Object, IntrinsicRoot::Symbol]);
+            premise_authorized_next_writes.insert(array_iterator_next_write_id(&write.witness));
+        }
+        (census, premise_authorized_next_writes)
+    }
+}
+
+#[derive(Clone)]
 struct ConditionalIntrinsicWrite {
     witness: NativeMutationWitness,
     refined: IntrinsicRoots,
@@ -3906,11 +4066,50 @@ fn resolve_native_integrity_roots(censuses: &[&NativeWriteCensus]) -> IntrinsicR
         .expect("unconditional native roots seed the shared closure fact")
 }
 
+fn source_global_array_binding_write(censuses: &[&NativeWriteCensus]) -> bool {
+    let slot = NativeWriteSlot {
+        receiver: NativeReceiverPath::GlobalObject,
+        key: NativePropertyKey::String("Array".to_owned()),
+    };
+    censuses.iter().any(|census| {
+        census
+            .witnesses
+            .iter()
+            .chain(census.conditional.iter().map(|write| &write.witness))
+            .any(|witness| {
+                witness.unreachable_branch.is_none() && witness.target_slots.contains(&slot)
+            })
+    })
+}
+
+pub(crate) fn resolve_array_spread_protocol_integrity<'a>(
+    censuses: impl IntoIterator<Item = &'a NativeWriteCensus>,
+) -> ArraySpreadProtocolIntegrity {
+    let source_censuses: Vec<_> = censuses.into_iter().collect();
+    let global_array_binding_mutated = source_global_array_binding_write(&source_censuses);
+    let mut premise_authorized_next_writes = BTreeSet::new();
+    let query_censuses: Vec<_> = source_censuses
+        .iter()
+        .map(|census| {
+            let (query, authorized) = census.for_array_spread_protocol_query();
+            premise_authorized_next_writes.extend(authorized);
+            query
+        })
+        .collect();
+    let query_refs: Vec<_> = query_censuses.iter().collect();
+    ArraySpreadProtocolIntegrity {
+        mutated: resolve_native_integrity_roots(&query_refs),
+        global_array_binding_mutated,
+        premise_authorized_next_writes,
+    }
+}
+
 #[cfg(test)]
 mod native_integrity_closure_tests {
     use super::{
-        ConditionalIntrinsicWrite, IntrinsicRoots, NativeSlotOverlap, NativeWriteCensus,
-        resolve_native_integrity, source_slot_overlap,
+        ArraySpreadNativeIteratorPremise, ConditionalIntrinsicWrite, IntrinsicRoots,
+        NativeSlotOverlap, NativeWriteCensus, array_spread_protocol_slot_overlap,
+        resolve_array_spread_protocol_integrity, resolve_native_integrity, source_slot_overlap,
     };
     use crate::analysis_inputs::{
         CallbackFactoryEvidence, CallbackObjectArguments, NativeIntrinsic,
@@ -3966,6 +4165,26 @@ mod native_integrity_closure_tests {
             fallback,
             dependencies,
         }
+    }
+
+    fn array_iterator_next_candidate(ordinal: usize) -> ConditionalIntrinsicWrite {
+        let mut candidate = conditional_write(
+            ordinal,
+            IntrinsicRoots::new(),
+            IntrinsicRoots::new(),
+            IntrinsicRoots::from([NativeIntrinsic::GlobalObject]),
+            false,
+        );
+        candidate.witness.target_slots.insert(NativeWriteSlot {
+            receiver: NativeReceiverPath::ArrayIteratorPrototype,
+            key: NativePropertyKey::String("next".to_owned()),
+        });
+        candidate.witness.key_dependencies = IntrinsicRoots::from([
+            NativeIntrinsic::Object,
+            NativeIntrinsic::Array,
+            NativeIntrinsic::Symbol,
+        ]);
+        candidate
     }
 
     #[test]
@@ -4033,6 +4252,334 @@ mod native_integrity_closure_tests {
         assert_eq!(
             source_slot_overlap(std::iter::once(&witness), &wildcard),
             NativeSlotOverlap::Opaque
+        );
+    }
+
+    #[test]
+    fn array_spread_slot_query_uses_only_independent_symbol_and_object_guards() {
+        let premise = ArraySpreadNativeIteratorPremise;
+        let query = |witness: &NativeMutationWitness,
+                     slot: &NativeWriteSlot,
+                     source_mutated: &IntrinsicRoots,
+                     global_array_binding_mutated: bool,
+                     authorize_next: bool| {
+            let authorized = if authorize_next {
+                BTreeSet::from([super::array_iterator_next_write_id(witness)])
+            } else {
+                BTreeSet::new()
+            };
+            array_spread_protocol_slot_overlap(
+                std::iter::once(witness),
+                slot,
+                source_mutated,
+                global_array_binding_mutated,
+                &authorized,
+                premise,
+            )
+        };
+        let array_iterator_slot = NativeWriteSlot {
+            receiver: NativeReceiverPath::Prototype(NativeIntrinsic::Array),
+            key: NativePropertyKey::SymbolIterator,
+        };
+        let mut array_iterator_write = conditional_write(
+            1,
+            IntrinsicRoots::new(),
+            IntrinsicRoots::new(),
+            IntrinsicRoots::new(),
+            false,
+        )
+        .witness;
+        array_iterator_write
+            .target_slots
+            .insert(array_iterator_slot.clone());
+        array_iterator_write
+            .key_dependencies
+            .insert(NativeIntrinsic::Symbol);
+        assert_eq!(
+            query(
+                &array_iterator_write,
+                &array_iterator_slot,
+                &IntrinsicRoots::new(),
+                false,
+                false,
+            ),
+            NativeSlotOverlap::Known(SourceUnitOrdinal(1))
+        );
+        for mutated in [
+            IntrinsicRoots::from([NativeIntrinsic::Symbol]),
+            IntrinsicRoots::from([NativeIntrinsic::GlobalObject]),
+        ] {
+            assert_eq!(
+                query(
+                    &array_iterator_write,
+                    &array_iterator_slot,
+                    &mutated,
+                    false,
+                    false,
+                ),
+                NativeSlotOverlap::Opaque
+            );
+        }
+        assert_eq!(
+            query(
+                &array_iterator_write,
+                &array_iterator_slot,
+                &IntrinsicRoots::new(),
+                true,
+                false,
+            ),
+            NativeSlotOverlap::Opaque,
+            "replacing global Array means Array.prototype no longer identifies the literal-array iterator"
+        );
+
+        let iterator_next_slot = NativeWriteSlot {
+            receiver: NativeReceiverPath::ArrayIteratorPrototype,
+            key: NativePropertyKey::String("next".to_owned()),
+        };
+        let mut iterator_next_write = conditional_write(
+            2,
+            IntrinsicRoots::new(),
+            IntrinsicRoots::new(),
+            IntrinsicRoots::new(),
+            false,
+        )
+        .witness;
+        iterator_next_write
+            .target_slots
+            .insert(iterator_next_slot.clone());
+        iterator_next_write.key_dependencies = IntrinsicRoots::from([
+            NativeIntrinsic::Object,
+            NativeIntrinsic::Array,
+            NativeIntrinsic::Symbol,
+        ]);
+        assert_eq!(
+            query(
+                &iterator_next_write,
+                &iterator_next_slot,
+                &IntrinsicRoots::new(),
+                false,
+                true,
+            ),
+            NativeSlotOverlap::Known(SourceUnitOrdinal(2))
+        );
+        // Array may be invalidated by this very next write; the typed
+        // Array-spread premise supplies just this receiver identity. Object
+        // and Symbol remain independent and a global-object mutation defeats
+        // both slot queries.
+        assert_eq!(
+            query(
+                &iterator_next_write,
+                &iterator_next_slot,
+                &IntrinsicRoots::from([NativeIntrinsic::Array]),
+                false,
+                true,
+            ),
+            NativeSlotOverlap::Known(SourceUnitOrdinal(2))
+        );
+        for mutated in [
+            IntrinsicRoots::from([NativeIntrinsic::Object]),
+            IntrinsicRoots::from([NativeIntrinsic::Symbol]),
+            IntrinsicRoots::from([NativeIntrinsic::GlobalObject]),
+        ] {
+            assert_eq!(
+                query(
+                    &iterator_next_write,
+                    &iterator_next_slot,
+                    &mutated,
+                    false,
+                    true,
+                ),
+                NativeSlotOverlap::Opaque
+            );
+        }
+        assert_eq!(
+            query(
+                &iterator_next_write,
+                &iterator_next_slot,
+                &IntrinsicRoots::new(),
+                false,
+                false,
+            ),
+            NativeSlotOverlap::Opaque,
+            "the typed premise cannot discharge a candidate not admitted by the query closure"
+        );
+        iterator_next_write
+            .key_dependencies
+            .insert(NativeIntrinsic::Math);
+        assert_eq!(
+            query(
+                &iterator_next_write,
+                &iterator_next_slot,
+                &IntrinsicRoots::new(),
+                false,
+                true,
+            ),
+            NativeSlotOverlap::Opaque
+        );
+    }
+
+    #[test]
+    fn array_spread_protocol_view_keeps_candidate_effect_and_fallback_dependencies() {
+        let candidate = array_iterator_next_candidate(1);
+        let census = NativeWriteCensus {
+            conditional: vec![candidate],
+            ..NativeWriteCensus::default()
+        };
+        let protocol = resolve_array_spread_protocol_integrity([&census]);
+        assert_eq!(
+            protocol.mutated,
+            IntrinsicRoots::from([NativeIntrinsic::Array])
+        );
+        assert!(
+            !protocol.global_array_binding_mutated,
+            "an iterator-prototype write is not a global Array binding write"
+        );
+
+        for independent_mutation in [
+            NativeIntrinsic::Object,
+            NativeIntrinsic::Symbol,
+            NativeIntrinsic::GlobalObject,
+        ] {
+            let mut contradicted = census.clone();
+            contradicted.unconditional.insert(independent_mutation);
+            let protocol = resolve_array_spread_protocol_integrity([&contradicted]);
+            assert!(
+                protocol.mutated.contains(&NativeIntrinsic::GlobalObject),
+                "candidate fallback must remain active when {independent_mutation:?} is mutated"
+            );
+        }
+
+        let mut array_dependent = conditional_write(
+            2,
+            IntrinsicRoots::from([NativeIntrinsic::Array]),
+            IntrinsicRoots::from([NativeIntrinsic::Promise]),
+            IntrinsicRoots::from([NativeIntrinsic::GlobalObject]),
+            false,
+        );
+        array_dependent
+            .witness
+            .target_slots
+            .insert(NativeWriteSlot {
+                receiver: NativeReceiverPath::Prototype(NativeIntrinsic::Array),
+                key: NativePropertyKey::String("values".to_owned()),
+            });
+        let with_dependent = NativeWriteCensus {
+            conditional: vec![array_iterator_next_candidate(1), array_dependent],
+            ..NativeWriteCensus::default()
+        };
+        let protocol = resolve_array_spread_protocol_integrity([&with_dependent]);
+        assert!(protocol.mutated.contains(&NativeIntrinsic::Array));
+        assert!(
+            protocol.mutated.contains(&NativeIntrinsic::GlobalObject),
+            "the candidate's Array effect must still invalidate dependent writes"
+        );
+
+        let mut input_dependent = array_iterator_next_candidate(3);
+        input_dependent
+            .witness
+            .value_input_refs
+            .insert(crate::analysis_inputs::ValueInputRef {
+                defining_chunk: "test".to_owned(),
+                input_index: 0,
+            });
+        let input_census = NativeWriteCensus {
+            conditional: vec![input_dependent],
+            ..NativeWriteCensus::default()
+        };
+        let protocol = resolve_array_spread_protocol_integrity([&input_census]);
+        assert!(
+            !protocol.mutated.contains(&NativeIntrinsic::Array),
+            "author-conditioned candidate identity must not inherit the premise"
+        );
+
+        let mut computed_key_candidate = array_iterator_next_candidate(4);
+        computed_key_candidate
+            .dependencies
+            .insert(NativeIntrinsic::Array);
+        let original_refined = computed_key_candidate.refined.clone();
+        let original_fallback = computed_key_candidate.fallback.clone();
+        let computed_key_census = NativeWriteCensus {
+            conditional: vec![computed_key_candidate],
+            ..NativeWriteCensus::default()
+        };
+        let (query_census, authorized) = computed_key_census.for_array_spread_protocol_query();
+        assert_eq!(
+            query_census.conditional[0].dependencies,
+            IntrinsicRoots::from([NativeIntrinsic::Array]),
+            "the premise cannot remove an independently computed-key dependency"
+        );
+        assert_eq!(query_census.conditional[0].refined, original_refined);
+        assert_eq!(query_census.conditional[0].fallback, original_fallback);
+        let next_slot = NativeWriteSlot {
+            receiver: NativeReceiverPath::ArrayIteratorPrototype,
+            key: NativePropertyKey::String("next".to_owned()),
+        };
+        assert_eq!(
+            array_spread_protocol_slot_overlap(
+                std::iter::once(&computed_key_census.conditional[0].witness),
+                &next_slot,
+                &IntrinsicRoots::new(),
+                false,
+                &authorized,
+                ArraySpreadNativeIteratorPremise,
+            ),
+            NativeSlotOverlap::Opaque,
+            "merged key and receiver dependencies cannot authorize this computed key"
+        );
+
+        let mut global_array_write = conditional_write(
+            5,
+            IntrinsicRoots::new(),
+            IntrinsicRoots::new(),
+            IntrinsicRoots::new(),
+            false,
+        );
+        global_array_write
+            .witness
+            .target_slots
+            .insert(NativeWriteSlot {
+                receiver: NativeReceiverPath::GlobalObject,
+                key: NativePropertyKey::String("Array".to_owned()),
+            });
+        let mut array_prototype_write = conditional_write(
+            6,
+            IntrinsicRoots::new(),
+            IntrinsicRoots::new(),
+            IntrinsicRoots::new(),
+            false,
+        );
+        array_prototype_write
+            .witness
+            .target_slots
+            .insert(NativeWriteSlot {
+                receiver: NativeReceiverPath::Prototype(NativeIntrinsic::Array),
+                key: NativePropertyKey::SymbolIterator,
+            });
+        array_prototype_write
+            .witness
+            .key_dependencies
+            .insert(NativeIntrinsic::Symbol);
+        let global_replacement_census = NativeWriteCensus {
+            conditional: vec![global_array_write, array_prototype_write],
+            ..NativeWriteCensus::default()
+        };
+        let protocol = resolve_array_spread_protocol_integrity([&global_replacement_census]);
+        assert!(protocol.global_array_binding_mutated);
+        let array_iterator_slot = NativeWriteSlot {
+            receiver: NativeReceiverPath::Prototype(NativeIntrinsic::Array),
+            key: NativePropertyKey::SymbolIterator,
+        };
+        assert_eq!(
+            array_spread_protocol_slot_overlap(
+                std::iter::once(&global_replacement_census.conditional[1].witness),
+                &array_iterator_slot,
+                &protocol.mutated,
+                protocol.global_array_binding_mutated,
+                &protocol.premise_authorized_next_writes,
+                ArraySpreadNativeIteratorPremise,
+            ),
+            NativeSlotOverlap::Opaque,
+            "Array.prototype writes do not identify literal-array iterators after global Array replacement"
         );
     }
 
@@ -4958,6 +5505,13 @@ impl Default for ExecutionIndex {
     }
 }
 
+struct SemanticShapeInputs<'a> {
+    classes: LocalClassConstructionShapes,
+    sets: SetIterableShapes,
+    array_spreads: &'a StableArraySpreadShapes,
+    callables: CallableInferenceInputs,
+}
+
 impl ExecutionIndex {
     fn declared_bindings(&self) -> BTreeSet<Id> {
         self.property_key_declarations
@@ -4994,11 +5548,15 @@ impl ExecutionIndex {
         &self,
         flow: &ChunkValueFlow,
         shadowed: &BTreeSet<&'static str>,
-        classes: LocalClassConstructionShapes,
-        sets: SetIterableShapes,
-        callables: CallableInferenceInputs,
+        shapes: SemanticShapeInputs<'_>,
         source_facts: Option<&SemanticFacts>,
     ) -> Arc<SemanticFacts> {
+        let SemanticShapeInputs {
+            classes,
+            sets,
+            array_spreads,
+            callables,
+        } = shapes;
         let mut collection_bindings = BTreeMap::new();
         let constructors = classes
             .classes
@@ -5117,6 +5675,24 @@ impl ExecutionIndex {
             SemanticRules {
                 classes,
                 sets,
+                array_spreads: array_spreads.by_initializer.keys().copied().collect(),
+                array_spread_inputs: self
+                    .resolved_native_operation_inputs
+                    .iter()
+                    .filter_map(|input| {
+                        (input.evidence.operation
+                            == NativeInputKind::Operation(
+                                spec::NativeOperationKind::ArraySpreadFromPrimitiveArrays,
+                            )
+                            && array_spreads
+                                .by_initializer
+                                .contains_key(&input.initializer_span.lo.0))
+                        .then_some((
+                            input.initializer_span.lo.0,
+                            input.evidence.reference.clone(),
+                        ))
+                    })
+                    .collect(),
                 collection_bindings,
                 author_empty_set_fields,
                 binding_context: NativeBindingContext {
@@ -5428,6 +6004,7 @@ impl ExecutionIndex {
         &mut self,
         selected: &[SelectedNativeOperationInput],
         resolved: &[ResolvedNativeOperationInput],
+        array_spreads: &StableArraySpreadShapes,
     ) {
         if selected.is_empty() && resolved.is_empty() {
             return;
@@ -5452,6 +6029,14 @@ impl ExecutionIndex {
 
         for input in selected {
             let request = &input.evidence.spec_location;
+            if input.evidence.operation
+                == NativeInputKind::Operation(
+                    spec::NativeOperationKind::ArraySpreadFromPrimitiveArrays,
+                )
+            {
+                self.validate_selected_array_spread_input(input, array_spreads);
+                continue;
+            }
             if input.evidence.operation
                 == NativeInputKind::Operation(spec::NativeOperationKind::ObjectOwnDataFunctionRead)
             {
@@ -5791,6 +6376,14 @@ impl ExecutionIndex {
 
         for input in resolved {
             let request = &input.evidence.spec_location;
+            if input.evidence.operation
+                == NativeInputKind::Operation(
+                    spec::NativeOperationKind::ArraySpreadFromPrimitiveArrays,
+                )
+            {
+                self.validate_resolved_array_spread_input(input, array_spreads);
+                continue;
+            }
             if input.evidence.operation
                 == NativeInputKind::Operation(spec::NativeOperationKind::ObjectOwnDataFunctionRead)
             {
@@ -6335,6 +6928,134 @@ impl ExecutionIndex {
         }
         Some((binding.clone(), self.class_spans[&key], call.clone()))
     }
+    fn known_array_iterator_protocol_mutation_with(
+        &self,
+        integrity: &ArraySpreadProtocolIntegrity,
+    ) -> Option<SourceUnitOrdinal> {
+        [
+            NativeWriteSlot {
+                receiver: NativeReceiverPath::Prototype(IntrinsicRoot::Array),
+                key: NativePropertyKey::SymbolIterator,
+            },
+            NativeWriteSlot {
+                receiver: NativeReceiverPath::ArrayIteratorPrototype,
+                key: NativePropertyKey::String("next".to_owned()),
+            },
+        ]
+        .iter()
+        .find_map(|slot| {
+            match array_spread_protocol_slot_overlap(
+                self.native_write_census.witnesses.iter().chain(
+                    self.native_write_census
+                        .conditional
+                        .iter()
+                        .map(|write| &write.witness),
+                ),
+                slot,
+                &integrity.mutated,
+                integrity.global_array_binding_mutated,
+                &integrity.premise_authorized_next_writes,
+                ArraySpreadNativeIteratorPremise,
+            ) {
+                NativeSlotOverlap::Known(owner) => Some(owner),
+                NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
+            }
+        })
+    }
+
+    fn validate_selected_array_spread_input(
+        &mut self,
+        input: &SelectedNativeOperationInput,
+        shapes: &StableArraySpreadShapes,
+    ) {
+        let request = &input.evidence.spec_location;
+        let candidates: Vec<_> = self
+            .binding_declaration_writes
+            .iter()
+            .filter(|(binding, writes)| {
+                binding.0.as_ref() == input.selected_binding
+                    && writes.len() == 1
+                    && writes[0].direct_top_level
+                    && writes[0].simple_identifier
+                    && span_contains(input.selected_statement_span, writes[0].binding_span)
+                    && writes[0]
+                        .initializer_span
+                        .is_some_and(|span| shapes.by_initializer.contains_key(&span.lo.0))
+            })
+            .collect();
+        let [(binding, writes)] = candidates.as_slice() else {
+            self.native_operation_input_errors.push(format!(
+                "{request} must select exactly one direct const initializer with an inert same-declaration primitive-array spread"
+            ));
+            return;
+        };
+        let declaration = &writes[0];
+        let initializer_span = declaration
+            .initializer_span
+            .expect("candidate has initializer");
+        let binding = (*binding).clone();
+        let Some(shape) = shapes.by_initializer.get(&initializer_span.lo.0) else {
+            unreachable!("candidate has source shape")
+        };
+        if shape.consumer != declaration.owner
+            || !self.array_elements.contains_key(&initializer_span.lo.0)
+        {
+            self.native_operation_input_errors.push(format!(
+                "{request} no longer resolves to the source-checked array initializer"
+            ));
+            return;
+        }
+        let mut evidence = input.evidence.clone();
+        evidence.selected_binding = input.selected_binding.clone();
+        self.native_operation_input_evidence
+            .insert(CallSite::from(initializer_span), evidence.clone());
+        self.resolved_native_operation_inputs
+            .push(ResolvedNativeOperationInput {
+                evidence,
+                binding,
+                selected_statement_span: input.selected_statement_span,
+                declaration_span: declaration.binding_span,
+                initializer_span,
+                call_span: initializer_span,
+                initializer_ordinal: declaration.owner,
+                spread_source: None,
+                spread_source_span: None,
+                spread_token_span: None,
+            });
+    }
+
+    fn validate_resolved_array_spread_input(
+        &mut self,
+        input: &ResolvedNativeOperationInput,
+        shapes: &StableArraySpreadShapes,
+    ) {
+        let request = &input.evidence.spec_location;
+        let same_source = self
+            .binding_declaration_writes
+            .get(&input.binding)
+            .is_some_and(|writes| {
+                matches!(writes.as_slice(), [declaration]
+                if declaration.direct_top_level
+                    && declaration.simple_identifier
+                    && declaration.owner == input.initializer_ordinal
+                    && declaration.binding_span == input.declaration_span
+                    && declaration.initializer_span == Some(input.initializer_span)
+                    && input.call_span == input.initializer_span
+                    && shapes.by_initializer.get(&input.initializer_span.lo.0)
+                        .is_some_and(|shape| shape.consumer == declaration.owner))
+            });
+        if !same_source {
+            self.native_operation_input_errors.push(format!(
+                "{request} no longer identifies the exact source-checked array spread"
+            ));
+            return;
+        }
+        self.native_operation_input_evidence.insert(
+            CallSite::from(input.initializer_span),
+            input.evidence.clone(),
+        );
+        self.resolved_native_operation_inputs.push(input.clone());
+    }
 
     fn known_set_protocol_mutation(&self) -> Option<SourceUnitOrdinal> {
         [
@@ -6457,6 +7178,7 @@ impl ExecutionIndex {
         flow: Option<&ChunkValueFlow>,
         plain_array_bindings: &BTreeSet<String>,
         construction_proof: &LocalClassConstructionShapes,
+        array_spreads: &StableArraySpreadShapes,
     ) -> Self {
         let host_operations =
             hints
@@ -7806,12 +8528,13 @@ impl ExecutionIndex {
                 )
             })
             .collect();
-        // Native-operation inputs only annotate exact sites; they do not
-        // refine the native census. Validate against its completed source-only
-        // slot evidence so the premise cannot conceal its own contradiction.
+        // Native-operation inputs annotate exact source sites without
+        // refining the native census. Array-protocol contradictions are
+        // checked later against the completed all-source census.
         index.validate_native_operation_inputs(
             &hints.selected_native_operation_inputs,
             &hints.assumptions.native_operation_inputs,
+            array_spreads,
         );
         index
     }
@@ -10783,6 +11506,14 @@ impl PreparedCallableCapabilities {
         .map(str::to_owned)
     }
 
+    pub(crate) fn known_array_iterator_protocol_mutation_owner_in(
+        &self,
+        integrity: &ArraySpreadProtocolIntegrity,
+    ) -> Option<SourceUnitOrdinal> {
+        self.index
+            .known_array_iterator_protocol_mutation_with(integrity)
+    }
+
     pub(crate) fn locate_value_inputs(
         &mut self,
         source: Option<&(String, js_ast::SourceLineIndex)>,
@@ -10940,6 +11671,7 @@ impl PreparedCallableCapabilities {
 
 pub(crate) fn prepare_callable_capabilities(
     body: &[TopLevelItemView<'_>],
+    array_spreads: StableArraySpreadShapes,
     exported_locals: BTreeSet<String>,
     selected_value_inputs: Vec<SelectedBindingValueInput>,
     selected_native_operation_inputs: Vec<SelectedNativeOperationInput>,
@@ -10956,6 +11688,7 @@ pub(crate) fn prepare_callable_capabilities(
             flow.as_ref(),
             &BTreeSet::new(),
             &LocalClassConstructionShapes::default(),
+            &array_spreads,
         ),
         exported_locals,
         flow,
@@ -11003,9 +11736,12 @@ pub(crate) fn infer_callable_capabilities(
         index.semantic_facts = Some(index.prepare_semantic_facts(
             &flow,
             &shadowed,
-            LocalClassConstructionShapes::default(),
-            SetIterableShapes::default(),
-            callables,
+            SemanticShapeInputs {
+                classes: LocalClassConstructionShapes::default(),
+                sets: SetIterableShapes::default(),
+                array_spreads: &StableArraySpreadShapes::default(),
+                callables,
+            },
             None,
         ));
         result.stable_providers = index
