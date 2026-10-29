@@ -87,6 +87,7 @@ py_test(
         "//agentplane/app/testing:replication_process",
         "//agentplane/history_service:client",
         "@pypi//httpx",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pyjwt",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
