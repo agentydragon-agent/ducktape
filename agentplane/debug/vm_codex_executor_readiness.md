@@ -1,6 +1,6 @@
 # VM Codex executor readiness
 
-The Go app retirement PR's [CI run 40835085459](https://github.com/agentydragon/ducktape/actions/runs/40835085459)
+[CI run 40835085459](https://github.com/agentydragon/ducktape/actions/runs/40835085459)
 at `01f147b890` failed `test_vm_mtls_certificate_authenticates_a_session[codex]`.
 The other 1,669 tests passed. [BuildBuddy invocation](https://app.buildbuddy.io/invocation/2e1af4b4-2dbe-5b6f-b70d-ccd76e4e76b7)
 retains the test log, native History and guest console under `test.outputs/vm-artifacts/`.
@@ -38,4 +38,5 @@ fencing. The generic deadline path preserves the last completed probe error.
 The test driver reports terminal startup reasons and owns its collector through
 a task group. These changes retain evidence and expose failure promptly; they
 do not change executor deadlines, restart policy or admission behavior. The
-original failed VM target has not been manually rerun.
+earlier readiness failure's cause remains unknown; a later successful VM run does
+not establish it.

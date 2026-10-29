@@ -8,11 +8,11 @@ intra-Sandbox hardening reminder retained here at Rai's request.
 
 ## Current state and scheduling
 
-**Operator scheduling, 2026-10-27 PDT:** runner lifecycle implementation, the Go app port and the
-central Codex spike are assigned to other agents. Do not dispatch duplicate work on those tracks.
+**Operator scheduling, 2026-10-27 PDT:** runner lifecycle implementation and the central Codex
+spike are assigned to other agents. Do not dispatch duplicate work on those tracks.
 
 Audit metadata consumers (`sandbox`, `harness`, `model`, `cwd`, summary/activity fields) before
-deleting useful UI projections. Squash Alembic only once the app schema settles.
+deleting useful UI projections.
 
 States: **in flight** means reported work is underway; **in review** means an unmerged PR;
 **paused** means no worker is assigned; **decision** needs a reviewed outcome;
@@ -24,10 +24,9 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 ### Current tracks and what they leave behind
 
-One group per track that has work open (2026-10-24), holding its open nodes; the nodes after a group are the
-cleanups due once that track finishes, each in [section 15](#15-cleanups-after-the-current-tracks) unless it names
-another. Agent messaging and the test-tier split have finished; what they left is `NOTIFICATION_SERVICE_SPLIT`
-(section 2) and the section 15 candidates. `REFACTOR_COHERENCE_AUDIT` sweeps what remains after all of them.
+Each group holds a track's open nodes; cleanup candidates are in
+[section 15](#15-cleanups-after-the-current-tracks) unless a node names another section.
+`REFACTOR_COHERENCE_AUDIT` sweeps what remains after the current tracks and their cleanups.
 
 ```mermaid
 flowchart LR
@@ -38,33 +37,16 @@ flowchart LR
         DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: merge plan awaiting review]
         DISPATCHER_QUEUE_OPTIONAL[Unscheduled: run without the queue]
     end
-    subgraph APP_GO_TRACK[App Go port]
-        APP_GO_PORT_CATCHUP[In review: rebase Go app PR #12223 and pass CI]
-        APP_GO_CUTOVER[In flight: stacked Go publication and Python retirement]
+    subgraph APP_FOLLOW_UPS[Integration app follow-ups]
+        APP_DISPATCHER_HTTP_SETTING_CLEANUP[In flight: remove legacy Dispatcher URL setting]
+        APP_DISPATCHER_TS_TYPES[In flight: generate Dispatcher TypeScript types]
     end
-    APP_GO_TRACK -. leaves .-> APP_PYTHON_RETIRE[In flight: delete the Python app runtime, section 14]
-    APP_GO_TRACK -. leaves .-> APP_DISPATCHER_TS_TYPES[Unscheduled: generate Dispatcher TypeScript types, section 14]
     FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
     RUNNER_LAYERING_VM[Paused: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
     ACTION_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit, section 9]
     DISPATCH_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
-    APP_GO_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
+    APP_FOLLOW_UPS -. after .-> REFACTOR_COHERENCE_AUDIT
 ```
-
-## 1. Session schema and identity follow-up
-
-```mermaid
-flowchart TD
-    APP_ALEMBIC_SQUASH[Deferred: baseline final app schema]
-```
-
-### `APP_ALEMBIC_SQUASH` — consolidate the final app schema
-
-**Deferred by the operator; not dispatchable until selected.** Baseline only the settled schema,
-verify fresh and migrated databases and their deployed stamps before pruning old revisions.
-Retain the data-preserving rollback procedure. No Action Service or other database squash implied.
-Moot once [`APP_GOOSE_MIGRATIONS`](#app_goose_migrations--goose-owns-the-app-schema) lands: its Goose baseline is the
-consolidated schema. Delete this node then.
 
 ## 2. Service-owned command admission and later notification presentation
 
@@ -1889,74 +1871,38 @@ Do not delete retained runner stores, native conversations or History. Confirm e
 routing to the private store, suspended-queue retry and restart on the deployed images before retiring
 old paths.
 
-## 14. App Go port
+## 14. Integration app follow-ups
 
-[#12223](https://github.com/agentydragon/ducktape/pull/12223) supersedes [#11821](https://github.com/agentydragon/ducktape/pull/11821). It builds the Go integration app and exercises its image in k3s while keeping Python image publication. The operator requested one stacked cutover/retirement PR on 2026-10-29 ([#12832](https://github.com/agentydragon/ducktape/pull/12832)): switch publication to Go, retarget integration tests and the test client, transfer the migration executable to Goose, and delete the Python runtime together. These implementation steps can proceed together under that request; the parent must land before the cutover layer. No manifest shape or database ownership moves between services.
+The [app README](../app/README.md) documents the deployed Go API and Goose migrator, the remaining
+Python settings and test support, and the Alembic rollback bridge. This section tracks the remaining
+Dispatcher setting and TypeScript cleanup.
 
 ```mermaid
 flowchart LR
-    APP_DISPATCHER_HTTP_SETTING_CLEANUP[Blocked: remove legacy Dispatcher URL setting after rollout]
-    APP_GO_PORT_CATCHUP[In review: rebase Go app PR #12223 and pass CI] --> APP_GO_CUTOVER[In flight: stacked Go publication and Python retirement]
-    APP_GO_PORT_CATCHUP --> APP_GO_TEST_RETARGET[In flight: app integration tests drive Go]
-    APP_GO_PORT_CATCHUP --> APP_SYSTEM_TEST_CLIENT[In flight: test-only client DTOs]
-    APP_DISPATCHER_TS_TYPES[Unscheduled: generate Dispatcher TypeScript types]
-    APP_GO_CUTOVER --> APP_GOOSE_MIGRATIONS[In flight: Go migration executable]
-    APP_GO_CUTOVER --> APP_PYTHON_RETIRE[In flight: delete the Python app runtime]
-    APP_GO_TEST_RETARGET --> APP_PYTHON_RETIRE
-    APP_SYSTEM_TEST_CLIENT --> APP_PYTHON_RETIRE
-    APP_GOOSE_MIGRATIONS --> APP_PYTHON_RETIRE
+    APP_DISPATCHER_HTTP_SETTING_CLEANUP[In flight: remove legacy Dispatcher URL setting]
+    APP_DISPATCHER_TS_TYPES[In flight: generate Dispatcher TypeScript types]
 ```
 
 ### `APP_DISPATCHER_HTTP_SETTING_CLEANUP` — remove the retired Dispatcher URL setting
 
-**Blocked on confirming the native-gRPC app image rollout.** The app no longer reads
-`session_dispatcher_http_url`, but `cluster/cdk8s/agentplane/app.py` still supplies it and the config
-parsers accept it. Remove the argument from the manifest first, then remove parser fields after
-that configuration rolls out. Keep this cleanup independent of the Go publication switch.
+**In flight (assigned by Codex, 2026-10-29).** The Go app is deployed on staging. The app configuration still
+supplies `session_dispatcher_http_url`, and its settings parsers accept it. Remove the value from
+the manifest, then remove parser fields after that configuration rolls out.
 
-Exit: neither the manifest nor the app settings schema contains `session_dispatcher_http_url`, and the
-tombstone is removed.
-
-### `APP_GO_PORT_CATCHUP` — rebase the Go app port and pass CI
-
-**In review: #12223 (Rai via Codex).** Its earlier audit against devel found the frontend configuration, removed title generation, UUID route matching, changed frontend call sites and logging style that needed catch-up; those fixes are now on the current PR. The native-gRPC transport prerequisite #12227 is merged. Rebase #12223 onto current devel, reconcile any resulting contract changes and run bazel-ci. Publication switches only in the stacked cutover layer.
-
-Exit: bazel-ci is green on the rebased head, including the k3s system tests that deploy `//agentplane/app:image` (the Go server) and exercise it through `app/testing/client.py`.
-
-### `APP_GO_CUTOVER` — the Go app serves staging
-
-**In progress, stacked on `APP_GO_PORT_CATCHUP` (Codex; operator request 2026-10-29).** The stacked layer switches the `agentplane-app` publication target to `//agentplane/app:image`; the unchanged Deployment then rolls to Go. It also publishes the Go migrator and removes the Python runtime. The actual rendered staging ConfigMap is covered by `//agentplane/app/go:staging_config_test`, including strict decoding of central-sampler model/harness settings.
-
-Exit: covering k3s tests and bazel-ci pass on the cutover head. Rollback is a revert of that layer, restoring Python image publication and its migrator; the Goose baseline preserves populated tables and the Alembic head stamp. After Flux applies it, check the app Pod is Ready and a signed-in browser loads the Sandbox list and a Thread.
-
-### `APP_GO_TEST_RETARGET` — app integration tests drive the Go server
-
-**In progress in the operator-requested cutover layer (Codex; 2026-10-29).** The common fixture launches the real Go executable and migrator. Retarget browser, Electric, bridge, live, native facade, notification and operator-federation suites through public HTTP and generated RPCs. Move fold-only recording tests to History. Preserve denial, revocation, cross-replica, reconnect, recovery and lifecycle coverage; replace Python runtime unit tests with named Go equivalents rather than retaining dead implementations. Exit: no app test imports the Python serving runtime, and the retargeted suites pass under Bazel.
+Exit: neither the manifest nor app settings schema contains `session_dispatcher_http_url`.
 
 ### `APP_DISPATCHER_TS_TYPES` — generate Dispatcher TypeScript types and remove duplicated message shapes
 
-**Unscheduled follow-up; requested by the operator, 2026-10-28 PDT. Not a prerequisite for merging #12223.**
-Generate TypeScript messages from `runner_gateway/dispatcher/session_dispatcher.proto` and use their
-ProtoJSON codecs for `Dispatch` and `InterruptTurnResponse`. Replace the handwritten `DispatchReceipt`
-and `InterruptResult` shapes and their repeated parsing/serialization in `app/frontend/threads/client.ts`
-and `local_commands.ts`. Keep the app-owned submission union and admission checks; preserve locally
-retained, unconfirmed commands and lost-response recovery rather than discarding them during the change.
+**In flight (assigned by Codex, 2026-10-29).** Generate TypeScript messages from
+`runner_gateway/dispatcher/session_dispatcher.proto` and use their ProtoJSON codecs for `Dispatch` and
+`InterruptTurnResponse`. Replace the handwritten `DispatchReceipt` and `InterruptResult` shapes and
+their repeated parsing/serialization in `app/frontend/threads/client.ts` and `local_commands.ts`. Keep
+the app-owned submission union and admission checks; preserve locally retained, unconfirmed commands
+and lost-response recovery.
 
 Exit: the frontend consumes generated Dispatcher messages instead of duplicated wire shapes, and
 focused Bazel tests cover submission receipts, local persistence, reconnects and immutable-command
 recovery. No browser transport or backend protocol change is required.
-
-### `APP_SYSTEM_TEST_CLIENT` — system tests stop importing the Python app's API models
-
-**In progress in the cutover layer (Codex; 2026-10-29).** `app/testing/client.py` and k3s callers use test-only DTOs in `app/testing/models.py`, checked against the Go `/openapi.json`, rather than Python serving models. Keep the cdk8s settings schema (`settings.py`, `presets.py`, `model_catalog.py`, `action_federation_settings.py`, `oidc.py`, configuration-only `sandbox_models.py`).
-
-### `APP_GOOSE_MIGRATIONS` — Goose owns the app schema
-
-**In progress in the cutover layer (Codex; operator request 2026-10-29).** Publish `go/migrate:app-migrate` under the existing `agentplane-app-migrate` image name. Delete Python Alembic source/runtime and migrate integration-test databases through Goose. The baseline adopts a database at Alembic 0037 without dropping data, refuses unknown or partial schemas, and writes the same Alembic stamp on fresh databases. Exit: fresh/populated/concurrent migration tests pass and the init-container image runs the Go executable. Retain `alembic_version_app` while a deployable Python rollback remains.
-
-### `APP_PYTHON_RETIRE` — delete the Python app runtime
-
-**In progress in the cutover layer with `APP_GO_TEST_RETARGET`, `APP_SYSTEM_TEST_CLIENT` and `APP_GOOSE_MIGRATIONS` (Codex; operator request 2026-10-29).** Delete Python serving modules, Alembic source and tests of removed internals after mapping meaningful contracts to Go or real HTTP tests. Keep cdk8s configuration and live test support. Check shared Python modules for remaining production/test callers before removing them; History clients and fixture-owned runner helpers may remain. Remove these completed implementation nodes once the cutover layer lands; deployment acceptance follows `APP_GO_CUTOVER`. A later separate Goose migration can drop the retained Alembic marker once rollback no longer needs it.
 
 ## 15. Cleanups after the current tracks
 
