@@ -1296,6 +1296,64 @@ the producer and consumer statements to retain that interval in the emitted
 module. Other effects and reads retain ordinary analysis, and the input grants
 no family-wide Array integrity. The external A11 obligation still applies.
 
+## Commuting statements
+
+`chunk_analysis_options.<chunk>.commuting_statements` certifies that two source
+units of that chunk are order-independent during synchronous initialization:
+neither observes the other's effect, so emission may schedule them in either
+order.
+
+```yaml
+chunk_analysis_options:
+  static/app:
+    commuting_statements:
+      - a:
+          source_match:
+            match: "decorate([], Widget.prototype, 'state', 2);"
+        b:
+          resolved_member: { module: app/settings, name: settings }
+        note: "The decorator installs an own property the settings initializer never reads."
+```
+
+Each endpoint (`a`, `b`) is exactly one selector in the `native_operation_inputs`
+grammar: `source_match` or
+`resolved_member: { module: <logical module path>, name: <public member name> }`.
+A `source_match` without `bindings` selects one anonymous (non-declaring)
+top-level statement; with one binding it selects that binding's declaration,
+which inside a comma declaration is the one declarator the binding belongs to.
+`resolved_member` reuses the member's canonical selector result in the same
+chunk. Every endpoint resolves through the shared selector engine and must
+identify exactly one post-split source unit of the option's chunk. An endpoint
+that does not resolve, resolves to several source units, or names a member of
+another chunk is a spec error that fails `spec validate` and `run` with a
+diagnostic naming the entry and endpoint (`commuting_statements[<i>].a`). A
+pair whose endpoints are one source unit, and a pair repeating another entry's
+unordered source-unit set, are errors. An entry carries no parser-input
+digest: the two structural selectors pin the statements. When a selector no
+longer resolves on a new snapshot, validation fails like any member's; the
+premise is never silently kept.
+
+The premise removes only `sequenced` (side-effect ordering) constraining edges
+between the two selected source units. It never removes `eager_use` edges: an
+at-init read is a dataflow dependence whose reordering changes behavior, and
+the remedy there remains co-location. An entry is accepted only when at least
+one endpoint's effect on the edge is opaque to the analysis (an unknown call, an
+escaped receiver); when the engine has derived that the two effects definitely
+conflict, the entry is rejected as contradicting a source fact. An entry whose
+endpoints resolve but which removes no edge is reported as unused and fails
+validation. This is explicit author input, not an inferred fact: A1–A11 and
+every other contract still apply, and it grants no purity, no-reentry or
+receiver guarantee.
+
+Current state: the schema, endpoint resolution, exactly-one and duplicate
+checks, and `AnalysisAssumptions.commuting_statements` land first; the gate
+does not yet consume a pair, and the known-conflict and unused-entry checks
+are not yet enforced.
+
+<!-- CLEANUP(added 2026-10-29): delete the "Current state" paragraph once the
+realizability gate consumes `AnalysisAssumptions.commuting_statements` and
+enforces the known-conflict and unused-entry checks. -->
+
 ## Ordinary own-property inspection
 
 A guarded `Object.getOwnPropertyNames` or `Object.getOwnPropertyDescriptors`
@@ -2168,6 +2226,61 @@ proof that the operation executes on every runtime path. Historical graphs may
 omit `synchronous_execution`. The loss list is diagnostic evidence, not an
 exhaustive proof trace; `complete` remains authoritative even when the list is
 empty.
+
+## Realizability cut explanations
+
+Every blocking SCC in `cycles.json` carries a `cut`: the constraining edges
+whose removal (co-locating each binding pair) makes the SCC realizable. Each
+cut edge names both endpoints (`from`, `to`, `from_binding`, `binding`), its
+`kind`, and, for a `sequenced` edge, the source side's impure initializer in
+`sequenced_source_unit`. The edge's `explanation` states why the gate treats it
+as constraining, keyed by `explanation.kind`:
+
+- `at_init_read` (an `eager_use` edge): `position.kind` is `direct` when the
+  statement reads `binding` in its own eager position, `promoted_at_init` when
+  the read was lifted from the first-order body of `callee_source_unit`
+  (`callee_binding` when that unit declares one), a chunk function the
+  statement calls at init, or `unresolved_at_init_call` when the read is in the
+  conservative read closure of an at-init call the promotion cannot resolve.
+- `sequenced`: `cause.rule` is the emission rule that produced the edge, with
+  the endpoint classification it compared; `target_source_unit` is the target
+  side's impure initializer in the same shape as `sequenced_source_unit`,
+  omitted when the target is classified pure (an array allocation or a pure
+  content reader). Rules: `strict_chain` (adjacent impure statements under the
+  strict S-chain), `shared_var_access` (`binding`: consecutive at-init accesses
+  of a binding declared at several `var` sites), `binding_timeline` (`binding`,
+  `order` ∈ `writer_after_writer`, `reader_after_writer`,
+  `writer_after_reader`: the at-init writer/observer timeline),
+  `uninitialized_observation` (`binding`: a synchronous callee observed the
+  binding before its declaration), and `cell_order` (`from`, `to`,
+  `conflicts`). A `cell_order` endpoint is `summarized`, `opaque_barrier`
+  (not dataflow-summarizable; `causes` ⊆ {`member_write_or_alias`,
+  `dynamic_cell_writes`, `global_object_alias_escape`,
+  `opaque_at_init_call`}), `heap_allocation`, or `heap_frontier` with its
+  `causes` ⊆ {`array_content_effects`, `non_summarizable_impure`,
+  `incomplete_synchronous_execution`, `unresolved_callee`,
+  `callee_heap_effects`}. Each conflict is `read_after_write`,
+  `write_after_write`, `write_after_read`, `use_after_allocation` or
+  `frontier_after_cell` with the `cell` (`binding`, `global_prop`,
+  `array_contents` or `set_contents`), or `after_barrier` / `barrier_after_prior`
+  for the opaque-barrier dependence.
+
+Impure-initializer evidence (`sequenced_source_unit`, `target_source_unit`)
+also carries `synchronous_execution_complete` when synchronous analysis ran;
+`false` marks a statement whose sequencing edges are the conservative flood
+of an incomplete execution rather than a known ordering fact. A `sequenced`
+edge whose endpoint is classified pure (an allocation, a pure content reader)
+has no evidence for that side but keeps its `explanation`.
+
+The explanation is retained when the dependency graph is built
+(`dependency_graph.json` `edges[].sequenced_cause` for `sequenced` edges; the
+edge `role` for at-init reads), never recomputed at report time. Where several
+rules would emit the same source-unit pair, the first emitted cause is kept.
+`explanation` is absent for the other edge kinds, whose `kind` and `binding`
+already state the constraint, and for `sequenced` edges of graphs written
+before the cause was retained. The bail summary and `gate describe`/`gate cut`
+text views render the same data under each binding-pair row. The explanation
+changes no gate verdict.
 
 ## Vendor split-brain evidence
 
