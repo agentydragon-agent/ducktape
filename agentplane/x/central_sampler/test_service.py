@@ -111,17 +111,6 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
             first = await stub.SubmitInput(request, metadata=METADATA, timeout=10)
             assert await stub.SubmitInput(request, metadata=METADATA, timeout=10) == first
             async with await endpoint.next() as exchange:
-                # Hold the provider while another command is durably admitted.
-                queued = await stub.SubmitInput(
-                    runner_service_pb2.SubmitInputRequest(
-                        session_id="079bd706-77b3-4b71-8c7e-605a7e19324c",
-                        command_id="queued",
-                        text="Continue after the first turn.",
-                    ),
-                    metadata=METADATA,
-                    timeout=10,
-                )
-                assert queued.admission.cursor > first.admission.cursor
                 await exchange.send(
                     *response_stream(
                         [
@@ -167,14 +156,41 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
                     pytest.fail("script did not yield a JS cell")
             async with await endpoint.next() as exchange:
                 assert "received:hello" in json.dumps(exchange.request.body)
+                # Input admitted while the provider is held steers the running turn.
+                queued = await stub.SubmitInput(
+                    runner_service_pb2.SubmitInputRequest(
+                        session_id="079bd706-77b3-4b71-8c7e-605a7e19324c",
+                        command_id="queued",
+                        text="Also mention the steering input.",
+                    ),
+                    metadata=METADATA,
+                    timeout=10,
+                )
+                assert queued.admission.cursor > first.admission.cursor
+                await exchange.send(*response_stream([Message("first answer")], model="test-model").events)
+            async with await endpoint.next() as exchange:
+                # Pending input keeps a turn whose model already answered; it follows that answer once.
+                body_input = exchange.request.body["input"]
+                steering = [
+                    index
+                    for index, item in enumerate(body_input)
+                    if item.get("content") == "Also mention the steering input."
+                ]
+                assert len(steering) == 1
+                answer = next(
+                    index
+                    for index, item in enumerate(body_input)
+                    if item.get("role") == "assistant" and "first answer" in json.dumps(item.get("content"))
+                )
+                assert answer < steering[0]
                 await exchange.send(*response_stream([Message("first complete")], model="test-model").events)
             assert (await completed(stub, "first")).status == event_pb2.TURN_STATUS_COMPLETED
-            async with await endpoint.next() as exchange:
-                assert any(
-                    item.get("content") == "Continue after the first turn." for item in exchange.request.body["input"]
-                )
-                await exchange.send(*response_stream([Message("second complete")], model="test-model").events)
-            await completed(stub, "queued")
+            steered = await stub.GetCommand(
+                sampler_pb2.GetCommandRequest(session_id="079bd706-77b3-4b71-8c7e-605a7e19324c", command_id="queued"),
+                metadata=METADATA,
+                timeout=10,
+            )
+            assert steered.outcome == sampler_pb2.COMMAND_OUTCOME_APPLIED
             await stub.Compact(
                 sampler_pb2.CompactRequest(session_id="079bd706-77b3-4b71-8c7e-605a7e19324c", command_id="compact"),
                 metadata=METADATA,
@@ -683,9 +699,10 @@ async def test_interrupt_discards_queued_notify_output(
                 timeout=10,
             )
             async with await endpoint.next() as exchange:
+                # The cell notifies only once the test releases it, after the next step is held.
                 source = (
                     '// @exec: {"yield_time_ms": 10}\n'
-                    "await new Promise((resolve) => setTimeout(resolve, 100));\n"
+                    'await tools.exec_command({cmd: "while [ ! -e release ]; do sleep 0.05; done", yield_time_ms: 30000});\n'
                     'notify("discarded");\n'
                     "await new Promise(() => {});"
                 )
@@ -694,6 +711,7 @@ async def test_interrupt_discards_queued_notify_output(
                 )
             async with await endpoint.next() as exchange:
                 # Holding this sampling step keeps the notification queued until the interrupt.
+                (tmp_path / "release").touch()
                 async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.01), reraise=True):
                     with attempt:
                         assert await store.queued_notifications(request.session_id) == ["discarded"]
@@ -774,6 +792,66 @@ async def test_view_image_reads_executor_file_and_prepares_cell_image(
             assert not [
                 intent for intent in await Store(engine).intents() if file_base64 in f"{intent.request}{intent.result}"
             ]
+
+
+async def test_input_yields_a_running_cell_and_joins_the_turn(
+    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+) -> None:
+    async with Endpoint() as endpoint:
+        config = settings(
+            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+        )
+        request = open_request(tmp_path)
+        async with service(config) as stub:
+            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            await stub.SubmitInput(
+                runner_service_pb2.SubmitInputRequest(
+                    session_id=request.session_id, command_id="steered", text="Run a long cell."
+                ),
+                metadata=METADATA,
+                timeout=10,
+            )
+            async with await endpoint.next() as exchange:
+                # The cell never settles and would hold its observation for its whole yield time.
+                source = '// @exec: {"yield_time_ms": 300000}\nawait new Promise(() => {});'
+                await exchange.send(
+                    *response_stream([CustomToolCall("long", "exec", source)], model="test-model").events
+                )
+            await stub.SubmitInput(
+                runner_service_pb2.SubmitInputRequest(
+                    session_id=request.session_id, command_id="steer", text="Read this instead."
+                ),
+                metadata=METADATA,
+                timeout=10,
+            )
+            async with await endpoint.next() as exchange:
+                body_input = exchange.request.body["input"]
+                (call_id, parts) = tool_outputs(exchange.request.body)[-1]
+                assert call_id == "long"
+                match = re.search(r"cell ID ([A-Za-z0-9_:-]+)", parts[0])
+                assert match is not None
+                steering = [
+                    index for index, item in enumerate(body_input) if item.get("content") == "Read this instead."
+                ]
+                assert len(steering) == 1
+                exec_output = next(
+                    index for index, item in enumerate(body_input) if item.get("call_id") == "long" and "output" in item
+                )
+                assert exec_output < steering[0]
+                await exchange.send(
+                    *response_stream(
+                        [FunctionCall("stop", "wait", {"cell_id": match[1], "terminate": True})], model="test-model"
+                    ).events
+                )
+            async with await endpoint.next() as exchange:
+                await exchange.send(*response_stream([Message("steered")], model="test-model").events)
+            assert (await completed(stub, "steered", request.session_id)).status == event_pb2.TURN_STATUS_COMPLETED
+            steer = await stub.GetCommand(
+                sampler_pb2.GetCommandRequest(session_id=request.session_id, command_id="steer"),
+                metadata=METADATA,
+                timeout=10,
+            )
+            assert steer.outcome == sampler_pb2.COMMAND_OUTCOME_APPLIED
 
 
 if __name__ == "__main__":
