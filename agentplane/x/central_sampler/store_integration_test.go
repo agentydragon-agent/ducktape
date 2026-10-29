@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
@@ -708,5 +709,114 @@ func TestSessionEventAppendNotifiesTransactionally(t *testing.T) {
 	var count int
 	if err := store.DB().QueryRowContext(t.Context(), `SELECT count(*) FROM sampler_event WHERE session_id=$1 AND sequence=$2`, session.ID, entries[0].GetCursor()).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("event and cursor disagree: count=%d err=%v", count, err)
+	}
+}
+
+func TestFailedActiveInputFoldsAsConfirmedInputAndFailedTurn(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		failure        *KnownFailureError
+		wantActive     samplerpb.CommandOutcome
+		wantQueued     samplerpb.CommandOutcome
+		wantQueueError bool
+	}{
+		{
+			name:       "known failure",
+			failure:    &KnownFailureError{Message: "provider rejected request"},
+			wantActive: samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED,
+			wantQueued: samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED,
+		},
+		{
+			name:           "unknown loss",
+			wantActive:     samplerpb.CommandOutcome_COMMAND_OUTCOME_UNKNOWN,
+			wantQueued:     samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED,
+			wantQueueError: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := newTestStore(t)
+			session := openSessionForStore(t, store, "")
+			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, commandID := range []string{"active-input", "queued-input"} {
+				_, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
+					CommandId: commandID,
+					Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: commandID}},
+				}, "fixture-account")
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			active, err := store.NextCommand(t.Context(), owner, session.ID)
+			if err != nil || active == nil || active.ID != "active-input" {
+				t.Fatalf("active command=%v err=%v", active, err)
+			}
+			if err := store.FailExecution(t.Context(), owner, session.ID, &active.ID, test.failure); err != nil {
+				t.Fatal(err)
+			}
+
+			for commandID, want := range map[string]samplerpb.CommandOutcome{
+				"active-input": test.wantActive,
+				"queued-input": test.wantQueued,
+			} {
+				response, err := store.GetCommand(t.Context(), session.ID, commandID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if response.GetOutcome() != want {
+					t.Fatalf("GetCommand(%q) outcome=%v, want %v", commandID, response.GetOutcome(), want)
+				}
+			}
+
+			entries, err := store.Events(t.Context(), session.ID, 0, 32)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) == 0 {
+				t.Fatal("store persisted no session events")
+			}
+			batch := threadfold.EventBatch{
+				SourceID:    entries[0].GetOrigin().GetSourceId(),
+				AfterCursor: 0,
+				Entries:     entries,
+			}
+			state, err := threadfold.Initial(batch.SourceID, "fixture-projection")
+			if err != nil {
+				t.Fatal(err)
+			}
+			prior := threadfold.PriorEntities{Commands: make(map[string]*threadfold.CommandSummary)}
+			for _, commandID := range threadfold.Touched(batch).CommandIDs {
+				prior.Commands[commandID] = nil
+			}
+			folded, err := threadfold.Advance(state, batch, prior)
+			if err != nil {
+				t.Fatalf("fold persisted sampler events: %v", err)
+			}
+			outcomes := make(map[string]threadfold.CommandOutcome, len(folded.CommandUpserts))
+			for _, command := range folded.CommandUpserts {
+				outcomes[command.CommandID] = command.Outcome
+			}
+			if outcomes["active-input"] != threadfold.OutcomeEffected {
+				t.Fatalf("confirmed input history outcome=%q, want %q", outcomes["active-input"], threadfold.OutcomeEffected)
+			}
+			if test.wantQueueError && outcomes["queued-input"] != threadfold.OutcomeFailed {
+				t.Fatalf("queued input history outcome=%q, want %q", outcomes["queued-input"], threadfold.OutcomeFailed)
+			}
+			if !test.wantQueueError && outcomes["queued-input"] != threadfold.OutcomePending {
+				t.Fatalf("queued input history outcome=%q, want %q", outcomes["queued-input"], threadfold.OutcomePending)
+			}
+			var failedTurn bool
+			for _, lifecycle := range folded.LifecycleUpserts {
+				turn := lifecycle.Event.GetTurnCompleted()
+				if turn != nil && turn.GetTurnId() == "active-input" && turn.GetStatus() == eventpb.TurnStatus_TURN_STATUS_FAILED {
+					failedTurn = true
+				}
+			}
+			if !failedTurn {
+				t.Fatal("History fold did not retain the failed active turn")
+			}
+		})
 	}
 }
