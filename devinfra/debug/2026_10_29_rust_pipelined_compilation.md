@@ -1,4 +1,4 @@
-# rules_rust pipelined compilation: measured, not adopted
+# rules_rust pipelined compilation: measured, adopted on a marginal gain
 
 The 2026-10-29 ci-reports latency snapshot ranked
 `--@rules_rust//rust/settings:pipelined_compilation=True` as a candidate for the
@@ -18,13 +18,15 @@ Matched measurement on devel `0b0dd641`, two cold `bb remote` runners
 | Actions                             | 2,671                                                                                          | 3,056                                                                                           |
 
 The first-party chain shrinks 6%, less than the per-crate host variance between
-the two runs (`analysis` 50 s vs 28 s, `selector_runtime` 12 s vs 23 s). These
-crates' cost is front-end work that `.rmeta` emission does not skip. PR CI has
-the third-party closure cached, so the realistic saving is ≈10–20 s per debundle
-PR against +14% actions; not adopted. Earlier attempts on a recycled runner
+the two runs (`analysis` 50 s vs 28 s, `selector_runtime` 12 s vs 23 s); these
+crates' cost is front-end work that `.rmeta` emission does not skip, so the
+critical-path gain comes mostly from the third-party closure. PR CI has that
+closure cached, so the expected saving is ≈10–20 s per debundle PR for +14%
+actions. Adopted anyway: every measured direction was favourable and the full
+debundle closure built with it on. Earlier attempts on a recycled runner
 ([188d18e3](https://app.buildbuddy.io/invocation/188d18e3-a07a-4785-935d-b70ac19ad15b),
 477 s critical path) are unmatched because Skyframe on the recycled runner kept
 the baseline's outputs valid regardless of `--nouse_action_cache`.
 
-Re-measure only if the chain's crates change shape (for example a codegen-heavy
-leaf) or rules_rust changes how metadata-only compiles are scheduled.
+Revisit if debundle PR feedback does not move in the next ci-reports window, or
+if a proc-macro or build-script crate misbehaves under metadata-only compiles.
