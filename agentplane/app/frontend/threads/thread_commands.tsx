@@ -7,6 +7,7 @@ import { EvidencePanel, EvidenceToggle, revealEvidenceOnTap } from "./thread_evi
 import { type CommandIssue } from "./command_delivery";
 import type { LocalCommands, LocalCommand } from "./local_commands";
 import { decimalBigInt, useThreadSync, type ThreadEntity } from "./thread_sync";
+import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 
 function subject(operation: string): CommandSubject {
   if (operation === "submit_input" || operation === "submitInput") return "input";
@@ -24,20 +25,20 @@ function progressStage(
   if (outcome === "effected" || outcome === "failed" || outcome === "noop") return outcome;
   if (admitted) return "admitted";
   switch (receipt?.state) {
-    case "DELIVERY_STATE_QUEUED_IN_DISPATCHER":
+    case DeliveryState.QUEUED_IN_DISPATCHER:
       return "queued";
-    case "DELIVERY_STATE_DELIVERING_TO_RUNNER":
+    case DeliveryState.DELIVERING_TO_RUNNER:
       return "delivering";
-    case "DELIVERY_STATE_RUNNER_ADMITTED":
-    case "DELIVERY_STATE_HARNESS_CONFIRMED":
+    case DeliveryState.RUNNER_ADMITTED:
+    case DeliveryState.HARNESS_CONFIRMED:
       return "admitted";
-    case "DELIVERY_STATE_NO_OP":
+    case DeliveryState.NO_OP:
       return "noop";
-    case "DELIVERY_STATE_FAILED":
+    case DeliveryState.FAILED:
       return "dispatch_failed";
-    case "DELIVERY_STATE_CANCELLED_IN_DISPATCHER":
+    case DeliveryState.CANCELLED_IN_DISPATCHER:
       return "cancelled";
-    case "DELIVERY_STATE_UNKNOWN":
+    case DeliveryState.UNKNOWN:
       return "unknown";
   }
   return issue?.kind ?? "local";
@@ -155,7 +156,7 @@ export function PendingInputMessages({
         const issue = row ? undefined : errors.get(id);
         const dispatchState = value.dispatch?.state;
         const dispatchAdmitted =
-          dispatchState === "DELIVERY_STATE_RUNNER_ADMITTED" || dispatchState === "DELIVERY_STATE_HARNESS_CONFIRMED";
+          dispatchState === DeliveryState.RUNNER_ADMITTED || dispatchState === DeliveryState.HARNESS_CONFIRMED;
         const admitted = row !== undefined || value.admission !== null || dispatchAdmitted;
         const stage = progressStage(outcome, admitted, value.dispatch, issue);
         const failed =
@@ -249,9 +250,7 @@ function LocalControlRows({
           const settled =
             Boolean(value.interruptResult) ||
             (value.dispatch !== null &&
-              !["DELIVERY_STATE_QUEUED_IN_DISPATCHER", "DELIVERY_STATE_DELIVERING_TO_RUNNER"].includes(
-                value.dispatch.state
-              ));
+              ![DeliveryState.QUEUED_IN_DISPATCHER, DeliveryState.DELIVERING_TO_RUNNER].includes(value.dispatch.state));
           const issue = errors.get(value.command.commandId);
           return (
             <ControlCommandFrame key={value.command.commandId} id={value.command.commandId}>

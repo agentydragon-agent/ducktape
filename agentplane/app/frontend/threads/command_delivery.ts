@@ -10,6 +10,7 @@ import {
 } from "./client";
 import { displayableError } from "../client";
 import { watchDispatches } from "./dispatch_watch";
+import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot, type PendingCommand } from "./local_commands";
 import { type ThreadEntity } from "./thread_sync";
 
@@ -134,8 +135,8 @@ export function useThreadCommands(threadId: string, entities: ThreadEntity[]): T
   const watchedIds = local.commands
     .filter(
       (value) =>
-        value.dispatch?.state === "DELIVERY_STATE_QUEUED_IN_DISPATCHER" ||
-        value.dispatch?.state === "DELIVERY_STATE_DELIVERING_TO_RUNNER"
+        value.dispatch?.state === DeliveryState.QUEUED_IN_DISPATCHER ||
+        value.dispatch?.state === DeliveryState.DELIVERING_TO_RUNNER
     )
     .map((value) => value.command.commandId);
   // Command IDs are UUIDs, so a comma joins them without ambiguity; the effect reopens the watch

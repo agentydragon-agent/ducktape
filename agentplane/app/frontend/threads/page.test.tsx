@@ -17,7 +17,7 @@ import type * as ModelCatalogModule from "../model_catalog";
 import type * as SandboxClientModule from "../sandboxes/client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
 import { api } from "../client";
-import { submitInput, changeModel, changeReasoningEffort, interruptTurn, getThread } from "./client";
+import { dispatchFromJson, submitInput, changeModel, changeReasoningEffort, interruptTurn, getThread } from "./client";
 import { models } from "../model_catalog";
 import { resumeSandbox } from "../sandboxes/client";
 import { historyRows, rowKey } from "./history_rows";
@@ -1268,14 +1268,14 @@ it.each([
   new LocalCommands(THREAD.id).remember(queued);
   vi.mocked(submitInput).mockResolvedValue({
     kind: "dispatch",
-    dispatch: {
+    dispatch: dispatchFromJson({
       commandId: queued.commandId,
       sessionId: THREAD.id,
       state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
       reason,
       updatedAt: "2026-10-14T12:00:00Z",
       admission: null,
-    },
+    }),
   });
   const container = await render();
   const row = pendingRow(container, queued.commandId);
@@ -1292,14 +1292,14 @@ it("shows the cause when a send-triggered Sandbox wake misses its deadline", asy
   const failed = message("wake-deadline");
   new LocalCommands(THREAD.id).remember(failed);
   const reason = "wake_deadline_expired: Ready=False/Unschedulable: 0/2 nodes are available: PVC is not bound";
-  const dispatch = {
+  const dispatch = dispatchFromJson({
     commandId: failed.commandId,
     sessionId: THREAD.id,
     state: "DELIVERY_STATE_FAILED",
     reason,
     updatedAt: "2026-10-14T12:00:00Z",
     admission: null,
-  } as const;
+  });
   vi.mocked(submitInput).mockResolvedValue({ kind: "dispatch", dispatch });
 
   const container = await render();
@@ -1313,7 +1313,7 @@ it("shows the cause when a send-triggered Sandbox wake misses its deadline", asy
 });
 
 function dispatchReceipt(commandId: string, state: string, reason: string, updatedAt: string) {
-  return { commandId, sessionId: THREAD.id, state, reason, updatedAt, admission: null } as const;
+  return dispatchFromJson({ commandId, sessionId: THREAD.id, state, reason, updatedAt, admission: null });
 }
 
 // A Dispatch as the watch carries it: proto-JSON leaves out what is unset, such as a reason or admission.

@@ -2,7 +2,12 @@ import { create, equals, fromJson, toJson, type JsonValue } from "@bufbuild/prot
 
 import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
-import type { DispatchReceipt, InterruptResult } from "./client";
+import {
+  DispatchSchema,
+  InterruptTurnResponseSchema,
+  type Dispatch,
+  type InterruptTurnResponse,
+} from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 
 /** A typed operation retained for lost-response recovery; Command protobuf belongs to the journal. */
 type PlainOperation =
@@ -28,9 +33,9 @@ export interface LocalCommand {
   /** HTTP admission evidence can be ahead of the consumed Event prefix. It never advances it. */
   admission: EventEntry | null;
   /** Dispatcher state is durable queue evidence, not proof of a harness effect. */
-  dispatch: DispatchReceipt | null;
+  dispatch: Dispatch | null;
   /** Interrupt is an immediate RPC result, not a durable Dispatcher queue row. */
-  interruptResult?: InterruptResult | null;
+  interruptResult?: InterruptTurnResponse | null;
 }
 
 export interface LocalCommandSnapshot {
@@ -56,39 +61,21 @@ function decode(text: string): LocalCommand {
   if (!command.commandId || !command.operation.case) throw new Error("Invalid locally retained Command");
   const admission = value.admission === null ? null : fromJson(EventEntrySchema, value.admission as JsonValue);
   if (admission) checkAdmission(command, admission);
-  let dispatch: DispatchReceipt | null = null;
+  let dispatch: Dispatch | null = null;
   if (value.dispatch !== undefined && value.dispatch !== null) {
     if (typeof value.dispatch !== "object" || Array.isArray(value.dispatch)) {
       throw new Error("Invalid locally retained Dispatcher state");
     }
-    const row = value.dispatch as Record<string, unknown>;
-    if (
-      row.commandId !== command.commandId ||
-      typeof row.sessionId !== "string" ||
-      typeof row.state !== "string" ||
-      (row.reason !== undefined && typeof row.reason !== "string") ||
-      (row.updatedAt !== undefined && typeof row.updatedAt !== "string")
-    ) {
+    dispatch = fromJson(DispatchSchema, value.dispatch as JsonValue);
+    if (dispatch.commandId !== command.commandId || !dispatch.sessionId) {
       throw new Error("Invalid locally retained Dispatcher state");
     }
-    const dispatchAdmission =
-      row.admission === undefined || row.admission === null
-        ? null
-        : fromJson(EventEntrySchema, row.admission as JsonValue);
-    if (dispatchAdmission) checkAdmission(command, dispatchAdmission);
-    dispatch = {
-      commandId: row.commandId,
-      sessionId: row.sessionId,
-      state: row.state,
-      reason: row.reason as string | undefined,
-      updatedAt: row.updatedAt as string | undefined,
-      admission: dispatchAdmission,
-    };
+    if (dispatch.admission) checkAdmission(command, dispatch.admission);
   }
   if (value.attempted !== undefined && typeof value.attempted !== "boolean") {
     throw new Error("Invalid locally retained delivery state");
   }
-  let interruptResult: InterruptResult | null = null;
+  let interruptResult: InterruptTurnResponse | null = null;
   if (value.interruptResult !== undefined && value.interruptResult !== null) {
     if (
       command.operation.case !== "interruptTurn" ||
@@ -97,16 +84,8 @@ function decode(text: string): LocalCommand {
     ) {
       throw new Error("Invalid locally retained interrupt result");
     }
-    const row = value.interruptResult as Record<string, unknown>;
-    if (typeof row.state !== "string" || (row.reason !== undefined && typeof row.reason !== "string")) {
-      throw new Error("Invalid locally retained interrupt state");
-    }
-    const resultAdmission =
-      row.admission === undefined || row.admission === null
-        ? null
-        : fromJson(EventEntrySchema, row.admission as JsonValue);
-    if (resultAdmission) checkAdmission(command, resultAdmission);
-    interruptResult = { state: row.state, reason: row.reason as string | undefined, admission: resultAdmission };
+    interruptResult = fromJson(InterruptTurnResponseSchema, value.interruptResult as JsonValue);
+    if (interruptResult.admission) checkAdmission(command, interruptResult.admission);
   }
   return {
     submittedAt: value.submittedAt,
@@ -124,23 +103,8 @@ function encode(value: LocalCommand): string {
     attempted: value.attempted,
     command: value.command,
     admission: value.admission ? toJson(EventEntrySchema, value.admission) : null,
-    dispatch: value.dispatch
-      ? {
-          commandId: value.dispatch.commandId,
-          sessionId: value.dispatch.sessionId,
-          state: value.dispatch.state,
-          reason: value.dispatch.reason,
-          updatedAt: value.dispatch.updatedAt,
-          admission: value.dispatch.admission ? toJson(EventEntrySchema, value.dispatch.admission) : null,
-        }
-      : null,
-    interruptResult: value.interruptResult
-      ? {
-          state: value.interruptResult.state,
-          reason: value.interruptResult.reason,
-          admission: value.interruptResult.admission ? toJson(EventEntrySchema, value.interruptResult.admission) : null,
-        }
-      : null,
+    dispatch: value.dispatch ? toJson(DispatchSchema, value.dispatch) : null,
+    interruptResult: value.interruptResult ? toJson(InterruptTurnResponseSchema, value.interruptResult) : null,
   });
 }
 
@@ -270,7 +234,7 @@ export class LocalCommands {
     this.reload();
   }
 
-  acknowledgeDispatch(command: PendingCommand, dispatch: DispatchReceipt): void {
+  acknowledgeDispatch(command: PendingCommand, dispatch: Dispatch): void {
     if (dispatch.commandId !== command.commandId) throw new Error("Dispatcher receipt has a different command id");
     if (dispatch.admission) {
       checkAdmission(command, dispatch.admission);
@@ -281,10 +245,15 @@ export class LocalCommands {
     if (stored === null) return;
     const existing = decode(stored);
     if (!sameCommand(existing.command, command)) throw new Error("Local command payload changed");
-    if (existing.dispatch?.updatedAt && dispatch.updatedAt) {
-      const previousUpdate = Date.parse(existing.dispatch.updatedAt);
-      const nextUpdate = Date.parse(dispatch.updatedAt);
-      if (Number.isFinite(previousUpdate) && Number.isFinite(nextUpdate) && nextUpdate < previousUpdate) return;
+    const previousUpdate = existing.dispatch?.updatedAt;
+    const nextUpdate = dispatch.updatedAt;
+    if (
+      previousUpdate &&
+      nextUpdate &&
+      (nextUpdate.seconds < previousUpdate.seconds ||
+        (nextUpdate.seconds === previousUpdate.seconds && nextUpdate.nanos < previousUpdate.nanos))
+    ) {
+      return;
     }
     const admission = dispatch.admission ?? existing.admission;
     try {
@@ -303,7 +272,7 @@ export class LocalCommands {
     this.reload();
   }
 
-  acknowledgeInterrupt(command: PendingCommand, result: InterruptResult): void {
+  acknowledgeInterrupt(command: PendingCommand, result: InterruptTurnResponse): void {
     if (command.operation.case !== "interruptTurn") throw new Error("Interrupt result belongs to another operation");
     if (result.admission) {
       checkAdmission(command, result.admission);
@@ -317,9 +286,9 @@ export class LocalCommands {
       existing.interruptResult &&
       (existing.interruptResult.state !== result.state ||
         existing.interruptResult.reason !== result.reason ||
-        (existing.interruptResult.admission === null) !== (result.admission === null) ||
-        (existing.interruptResult.admission !== null &&
-          result.admission !== null &&
+        (existing.interruptResult.admission === undefined) !== (result.admission === undefined) ||
+        (existing.interruptResult.admission !== undefined &&
+          result.admission !== undefined &&
           !equals(EventEntrySchema, existing.interruptResult.admission, result.admission)))
     ) {
       throw new Error("Conflicting interrupt result evidence");
@@ -341,7 +310,7 @@ export class LocalCommands {
     this.reload();
   }
 
-  updateDispatch(commandId: string, dispatch: DispatchReceipt): void {
+  updateDispatch(commandId: string, dispatch: Dispatch): void {
     const stored = localStorage.getItem(this.key(commandId));
     if (stored === null) return;
     this.acknowledgeDispatch(decode(stored).command, dispatch);

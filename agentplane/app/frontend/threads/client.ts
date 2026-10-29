@@ -9,6 +9,12 @@ import type {
 } from "../schema";
 import { api, displayableError, fetchWithLogin, ok } from "../client";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
+import {
+  DispatchSchema,
+  InterruptTurnResponseSchema,
+  type Dispatch,
+  type InterruptTurnResponse,
+} from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 
 type ThreadView = ThreadViewSchema;
 export type ThreadScope = { projection_epoch: string; through_cursor: string };
@@ -136,27 +142,12 @@ export async function threadNativeFrames(
 /** An explicit 4xx command rejection: unlike a lost reply, this is not an admission receipt. */
 export class CommandSubmissionRefused extends Error {}
 
-export interface DispatchReceipt {
-  commandId: string;
-  sessionId: string;
-  state: string;
-  reason?: string;
-  updatedAt?: string;
-  admission: EventEntry | null;
-}
-
-export interface InterruptResult {
-  state: string;
-  reason?: string;
-  admission: EventEntry | null;
-}
-
 export type CommandSubmission =
   | { kind: "archived_admission"; admission: EventEntry }
-  | { kind: "dispatch"; dispatch: DispatchReceipt }
-  | { kind: "interrupt_result"; result: InterruptResult };
+  | { kind: "dispatch"; dispatch: Dispatch }
+  | { kind: "interrupt_result"; result: InterruptTurnResponse };
 
-export function dispatchReceipt(value: unknown): DispatchReceipt {
+export function dispatchFromJson(value: unknown): Dispatch {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error("Session Dispatcher returned an invalid Dispatch");
   }
@@ -164,39 +155,18 @@ export function dispatchReceipt(value: unknown): DispatchReceipt {
   if (typeof row.commandId !== "string" || typeof row.sessionId !== "string" || typeof row.state !== "string") {
     throw new Error("Session Dispatcher returned a Dispatch without its command, Session or state");
   }
-  if (row.reason !== undefined && typeof row.reason !== "string") {
-    throw new Error("Session Dispatcher returned an invalid Dispatch reason");
-  }
-  if (row.updatedAt !== undefined && typeof row.updatedAt !== "string") {
-    throw new Error("Session Dispatcher returned an invalid Dispatch update time");
-  }
-  const admission = row.admission === undefined ? null : fromJson(EventEntrySchema, row.admission as JsonValue);
-  return {
-    commandId: row.commandId,
-    sessionId: row.sessionId,
-    state: row.state,
-    reason: row.reason as string | undefined,
-    updatedAt: row.updatedAt as string | undefined,
-    admission,
-  };
+  return fromJson(DispatchSchema, value as JsonValue);
 }
 
-function interruptResult(value: unknown): InterruptResult {
+function interruptTurnResponse(value: unknown): InterruptTurnResponse {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error("Session Dispatcher returned an invalid interrupt result");
   }
   const row = value as Record<string, unknown>;
-  if (typeof row.state !== "string" || (row.reason !== undefined && typeof row.reason !== "string")) {
-    throw new Error("Session Dispatcher returned an invalid interrupt state or reason");
+  if (typeof row.state !== "string") {
+    throw new Error("Session Dispatcher returned an invalid interrupt state");
   }
-  return {
-    state: row.state,
-    reason: row.reason as string | undefined,
-    admission:
-      row.admission === undefined || row.admission === null
-        ? null
-        : fromJson(EventEntrySchema, row.admission as JsonValue),
-  };
+  return fromJson(InterruptTurnResponseSchema, value as JsonValue);
 }
 
 /** The runner's exact durable CommandAdmitted receipt; the app archive may still be catching up.
@@ -224,8 +194,9 @@ async function commandSubmission(
   }
   try {
     const value = data as Record<string, unknown>;
-    if (value.kind === "dispatch") return { kind: "dispatch", dispatch: dispatchReceipt(value.dispatch) };
-    if (value.kind === "interrupt_result") return { kind: "interrupt_result", result: interruptResult(value.result) };
+    if (value.kind === "dispatch") return { kind: "dispatch", dispatch: dispatchFromJson(value.dispatch) };
+    if (value.kind === "interrupt_result")
+      return { kind: "interrupt_result", result: interruptTurnResponse(value.result) };
     if (value.kind === "archived_admission")
       return { kind: "archived_admission", admission: fromJson(EventEntrySchema, value.admission as JsonValue) };
     throw new Error("App returned an unrecognized command submission kind");
