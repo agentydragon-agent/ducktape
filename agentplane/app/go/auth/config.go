@@ -20,8 +20,6 @@ import (
 const (
 	secureCookieName   = "__Host-agentplane_session"
 	insecureCookieName = "agentplane_session"
-	oidcClientName     = "authentik"
-	loginStatePrefix   = "_state_" + oidcClientName + "_"
 	pendingLoginTTL    = 10 * time.Minute
 )
 

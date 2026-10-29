@@ -62,7 +62,7 @@ func TestOIDCDiscoveryIsDeferredUntilLogin(t *testing.T) {
 		t.Fatalf("OIDC discovery requests during construction = %d, want 0", got)
 	}
 
-	session := &RequestSession{Payload: make(map[string]any)}
+	session := &RequestSession{pendingLogins: make(map[string]loginAttempt)}
 	r := httptest.NewRequest(http.MethodGet, "/auth/login", nil)
 	r = r.WithContext(context.WithValue(r.Context(), sessionContextKey{}, session))
 	w := httptest.NewRecorder()
@@ -75,27 +75,27 @@ func TestOIDCDiscoveryIsDeferredUntilLogin(t *testing.T) {
 	}
 }
 
-func TestAuthlibSessionStateCompatibility(t *testing.T) {
-	fixture := map[string]any{
-		"data": map[string]any{
-			"redirect_uri":  "https://agentplane.test/auth/callback",
-			"url":           "https://issuer.test/authorize?state=state",
-			"nonce":         "nonce-value",
-			"code_verifier": "verifier-value",
-		},
-		"exp": float64(time.Now().Add(time.Minute).Unix()),
-	}
-	encoded, err := json.Marshal(fixture)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var decoded map[string]any
-	if err := json.Unmarshal(encoded, &decoded); err != nil {
-		t.Fatal(err)
-	}
-	state, expiry, err := parseState(decoded)
-	if err != nil || state.Nonce != "nonce-value" || state.CodeVerifier != "verifier-value" || !expiry.After(time.Now()) {
-		t.Fatalf("parseState = (%+v, %v, %v)", state, expiry, err)
+func TestCallbackRejectsInvalidLoginAttempt(t *testing.T) {
+	valid := loginAttempt{Nonce: "nonce", CodeVerifier: "verifier", ExpiresAt: time.Now().UTC().Add(time.Minute)}
+	for _, tc := range []struct {
+		name     string
+		attempts map[string]loginAttempt
+	}{
+		{name: "unknown state", attempts: map[string]loginAttempt{"different-state": valid}},
+		{name: "expired", attempts: map[string]loginAttempt{"state": {Nonce: "nonce", CodeVerifier: "verifier", ExpiresAt: time.Now().UTC().Add(-time.Second)}}},
+		{name: "missing nonce", attempts: map[string]loginAttempt{"state": {CodeVerifier: "verifier", ExpiresAt: valid.ExpiresAt}}},
+		{name: "missing verifier", attempts: map[string]loginAttempt{"state": {Nonce: "nonce", ExpiresAt: valid.ExpiresAt}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			session := &RequestSession{pendingLogins: tc.attempts}
+			r := httptest.NewRequest(http.MethodGet, "/auth/callback?state=state&code=code", nil)
+			r = r.WithContext(context.WithValue(r.Context(), sessionContextKey{}, session))
+			w := httptest.NewRecorder()
+			new(Auth).callback(w, r)
+			if w.Code != http.StatusUnauthorized {
+				t.Fatalf("callback status = %d, want 401", w.Code)
+			}
+		})
 	}
 }
 
@@ -190,12 +190,12 @@ func TestOperatorCallerRequiresSameOriginForUnsafeMethods(t *testing.T) {
 	}
 }
 
-func TestPayloadMergePreservesConcurrentKeys(t *testing.T) {
-	before := map[string]any{"a": "old-a", "b": "old-b"}
-	concurrent := map[string]any{"a": "new-a", "b": "old-b", "other": "other"}
-	after := map[string]any{"a": "old-a", "b": "new-b"}
-	merged := mergePayload(concurrent, before, after)
-	if merged["a"] != "new-a" || merged["b"] != "new-b" || merged["other"] != "other" {
+func TestLoginAttemptMergePreservesConcurrentKeys(t *testing.T) {
+	before := map[string]loginAttempt{"a": {Nonce: "old-a"}, "b": {Nonce: "old-b"}}
+	concurrent := map[string]loginAttempt{"a": {Nonce: "new-a"}, "b": {Nonce: "old-b"}, "other": {Nonce: "other"}}
+	after := map[string]loginAttempt{"a": {Nonce: "old-a"}, "b": {Nonce: "new-b"}}
+	merged := mergeLoginAttempts(concurrent, before, after)
+	if merged["a"].Nonce != "new-a" || merged["b"].Nonce != "new-b" || merged["other"].Nonce != "other" {
 		t.Fatalf("merge result = %#v", merged)
 	}
 }

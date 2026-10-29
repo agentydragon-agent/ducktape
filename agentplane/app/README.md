@@ -338,6 +338,8 @@ and both are cryptographic:
   `iss`, stable `sub`, and display `preferred_username` in PostgreSQL behind an opaque signed `__Host-` cookie. Unsafe methods additionally have to be
   same-origin, which is the CSRF defence `SameSite=lax` leaves open. The deployed app requires these
   settings; an app the tests build without them has no login at all.
+  The Go app uses its own cookie encoding and typed pending-login records; neither needs Authlib
+  session compatibility. Switching between the Python and Go images requires signing in again.
 - **A Kubernetes token.** `Authorization: Bearer <token>` goes to TokenReview, which returns the
   username the API server vouches for. The token has to carry the app's audience
   (`--token-audience`, `agentplane`), so a token minted for anything else cannot be replayed here,

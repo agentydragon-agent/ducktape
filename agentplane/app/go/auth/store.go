@@ -34,7 +34,7 @@ type browserRow struct {
 	id                string
 	expiresAt         time.Time
 	absoluteExpiresAt time.Time
-	payload           map[string]any
+	pendingLogins     map[string]loginAttempt
 	login             *OperatorSession
 }
 
@@ -133,11 +133,11 @@ func scanBrowserRow(scanner interface{ Scan(...any) error }) (*browserRow, error
 		&issuer, &subject, &username, &accessToken, &tokenExpiry, &refreshToken); err != nil {
 		return nil, err
 	}
-	if err := json.Unmarshal([]byte(payload), &row.payload); err != nil {
+	if err := json.Unmarshal([]byte(payload), &row.pendingLogins); err != nil {
 		return nil, fmt.Errorf("decode browser session payload: %w", err)
 	}
-	if row.payload == nil {
-		row.payload = map[string]any{}
+	if row.pendingLogins == nil {
+		row.pendingLogins = map[string]loginAttempt{}
 	}
 	if issuer.Valid {
 		row.login = &OperatorSession{Issuer: issuer.String, Subject: subject.String, Username: username.String}
@@ -151,7 +151,7 @@ func scanBrowserRow(scanner interface{ Scan(...any) error }) (*browserRow, error
 	return &row, nil
 }
 
-func (s *sessionStore) create(ctx context.Context, payload map[string]any, absolute time.Time) (string, error) {
+func (s *sessionStore) create(ctx context.Context, payload map[string]loginAttempt, absolute time.Time) (string, error) {
 	handle, err := newHandle()
 	if err != nil {
 		return "", err
@@ -173,7 +173,7 @@ func (s *sessionStore) create(ctx context.Context, payload map[string]any, absol
 	return handle, nil
 }
 
-func (s *sessionStore) logIn(ctx context.Context, pendingID string, payload map[string]any, login OperatorSession, absolute time.Time) (string, bool, error) {
+func (s *sessionStore) logIn(ctx context.Context, pendingID string, payload map[string]loginAttempt, login OperatorSession, absolute time.Time) (string, bool, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return "", false, err
@@ -233,7 +233,7 @@ func (s *sessionStore) logIn(ctx context.Context, pendingID string, payload map[
 	return handle, true, nil
 }
 
-func (s *sessionStore) save(ctx context.Context, id string, before, after map[string]any) (bool, error) {
+func (s *sessionStore) save(ctx context.Context, id string, before, after map[string]loginAttempt) (bool, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -259,7 +259,7 @@ func (s *sessionStore) save(ctx context.Context, id string, before, after map[st
 		}
 		return false, nil
 	}
-	merged := mergePayload(row.payload, before, after)
+	merged := mergeLoginAttempts(row.pendingLogins, before, after)
 	if row.login == nil && len(merged) == 0 {
 		if err := deleteAndNotify(ctx, tx, id); err != nil {
 			return false, err
@@ -282,8 +282,8 @@ func (s *sessionStore) save(ctx context.Context, id string, before, after map[st
 	return true, nil
 }
 
-func mergePayload(current, before, after map[string]any) map[string]any {
-	merged := make(map[string]any, len(current)+len(after))
+func mergeLoginAttempts(current, before, after map[string]loginAttempt) map[string]loginAttempt {
+	merged := make(map[string]loginAttempt, len(current)+len(after))
 	for key, value := range current {
 		_, inBefore := before[key]
 		_, inAfter := after[key]
@@ -294,17 +294,11 @@ func mergePayload(current, before, after map[string]any) map[string]any {
 	}
 	for key, value := range after {
 		old, existed := before[key]
-		if !existed || !jsonEqual(old, value) {
+		if !existed || old != value {
 			merged[key] = value
 		}
 	}
 	return merged
-}
-
-func jsonEqual(a, b any) bool {
-	left, errA := json.Marshal(a)
-	right, errB := json.Marshal(b)
-	return errA == nil && errB == nil && string(left) == string(right)
 }
 
 func (s *sessionStore) end(ctx context.Context, id string) error {

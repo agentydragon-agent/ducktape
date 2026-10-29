@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -197,23 +197,23 @@ type (
 )
 
 type RequestSession struct {
-	Payload map[string]any
-	Login   *OperatorSession
-	Row     *SessionRow
-	replace *OperatorSession
-	logout  bool
+	pendingLogins map[string]loginAttempt
+	Login         *OperatorSession
+	Row           *SessionRow
+	replace       *OperatorSession
+	logout        bool
 }
 
 // LogIn replaces this pending login's session with a fresh, logged-in row.
 func (s *RequestSession) LogIn(login OperatorSession) {
-	s.Payload = map[string]any{}
+	s.pendingLogins = map[string]loginAttempt{}
 	s.replace = &login
 	s.logout = false
 }
 
 // End clears the browser session at response commit.
 func (s *RequestSession) End() {
-	s.Payload = map[string]any{}
+	s.pendingLogins = map[string]loginAttempt{}
 	s.replace = nil
 	s.logout = true
 }
@@ -274,8 +274,8 @@ func (w *sessionResponseWriter) Flush() {
 	}
 }
 
-func (a *Auth) loadSession(r *http.Request) (*RequestSession, *http.Cookie, *browserRow, map[string]any, error) {
-	initial := map[string]any{}
+func (a *Auth) loadSession(r *http.Request) (*RequestSession, *http.Cookie, *browserRow, map[string]loginAttempt, error) {
+	initial := map[string]loginAttempt{}
 	var cookie *http.Cookie
 	var row *browserRow
 	var rowKey string
@@ -290,9 +290,9 @@ func (a *Auth) loadSession(r *http.Request) (*RequestSession, *http.Cookie, *bro
 		}
 	}
 	if row != nil {
-		initial = clonePayload(row.payload)
+		initial = maps.Clone(row.pendingLogins)
 	}
-	session := &RequestSession{Payload: clonePayload(initial)}
+	session := &RequestSession{pendingLogins: maps.Clone(initial)}
 	if row != nil {
 		session.Login = row.login
 		session.Row = &SessionRow{store: a.store, id: rowKey}
@@ -300,7 +300,7 @@ func (a *Auth) loadSession(r *http.Request) (*RequestSession, *http.Cookie, *bro
 	return session, cookie, row, initial, nil
 }
 
-func (a *Auth) commitSession(r *http.Request, w http.ResponseWriter, session *RequestSession, cookie *http.Cookie, row *browserRow, initial map[string]any) error {
+func (a *Auth) commitSession(r *http.Request, w http.ResponseWriter, session *RequestSession, cookie *http.Cookie, row *browserRow, initial map[string]loginAttempt) error {
 	if session.logout {
 		if row != nil {
 			if err := a.store.end(r.Context(), row.id); err != nil {
@@ -314,7 +314,7 @@ func (a *Auth) commitSession(r *http.Request, w http.ResponseWriter, session *Re
 		if row != nil {
 			pending = row.id
 		}
-		handle, inserted, err := a.store.logIn(r.Context(), pending, session.Payload, *session.replace, absolute)
+		handle, inserted, err := a.store.logIn(r.Context(), pending, session.pendingLogins, *session.replace, absolute)
 		if err != nil {
 			return err
 		}
@@ -325,7 +325,7 @@ func (a *Auth) commitSession(r *http.Request, w http.ResponseWriter, session *Re
 		if err := a.rememberCookie(w, handle, absolute); err != nil {
 			return err
 		}
-	} else if !payloadEqual(initial, session.Payload) {
+	} else if !maps.Equal(initial, session.pendingLogins) {
 		if row == nil {
 			pendingTTL := pendingLoginTTL
 			maxAge := time.Duration(a.cfg.OIDC.SessionMaxSeconds) * time.Second
@@ -333,7 +333,7 @@ func (a *Auth) commitSession(r *http.Request, w http.ResponseWriter, session *Re
 				pendingTTL = maxAge
 			}
 			absolute := time.Now().UTC().Add(pendingTTL)
-			handle, err := a.store.create(r.Context(), session.Payload, absolute)
+			handle, err := a.store.create(r.Context(), session.pendingLogins, absolute)
 			if err != nil {
 				return err
 			}
@@ -341,7 +341,7 @@ func (a *Auth) commitSession(r *http.Request, w http.ResponseWriter, session *Re
 				return err
 			}
 		} else {
-			saved, err := a.store.save(r.Context(), row.id, initial, session.Payload)
+			saved, err := a.store.save(r.Context(), row.id, initial, session.pendingLogins)
 			if err != nil {
 				return err
 			}
@@ -399,11 +399,9 @@ func (a *Auth) login(w http.ResponseWriter, r *http.Request) {
 	verifier := oauth2.GenerateVerifier()
 	challenge := oauth2.S256ChallengeFromVerifier(verifier)
 	url := provider.oauth.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("code_challenge", challenge), oauth2.SetAuthURLParam("code_challenge_method", "S256"), oauth2.SetAuthURLParam("nonce", nonce))
-	stateData := map[string]any{
-		"data": map[string]any{"redirect_uri": a.cfg.OIDC.RedirectURI(), "url": url, "nonce": nonce, "code_verifier": verifier},
-		"exp":  float64(time.Now().Add(pendingLoginTTL).Unix()),
+	session.pendingLogins[state] = loginAttempt{
+		Nonce: nonce, CodeVerifier: verifier, ExpiresAt: time.Now().UTC().Add(pendingLoginTTL),
 	}
-	session.Payload[loginStatePrefix+state] = stateData
 	http.Redirect(w, r, url, http.StatusFound)
 }
 
@@ -418,14 +416,8 @@ func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "OIDC state is missing")
 		return
 	}
-	key := loginStatePrefix + state
-	stateValue, exists := session.Payload[key]
-	if !exists {
-		writeError(w, http.StatusUnauthorized, "OIDC state is invalid or expired")
-		return
-	}
-	data, expiry, err := parseState(stateValue)
-	if err != nil || !expiry.After(time.Now()) {
+	data, exists := session.pendingLogins[state]
+	if !exists || data.Nonce == "" || data.CodeVerifier == "" || !data.ExpiresAt.After(time.Now()) {
 		writeError(w, http.StatusUnauthorized, "OIDC state is invalid or expired")
 		return
 	}
@@ -439,7 +431,7 @@ func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "identity provider unavailable")
 		return
 	}
-	delete(session.Payload, key)
+	delete(session.pendingLogins, state)
 	ctx := r.Context()
 	if a.cfg.HTTPClient != nil {
 		ctx = oidc.ClientContext(ctx, a.cfg.HTTPClient)
@@ -544,41 +536,11 @@ func reviewToken(ctx context.Context, reviews workloadauth.TokenReviews, audienc
 	return &Caller{Kind: CallerToken, Principal: username}, 0, ""
 }
 
-type parsedState struct{ Nonce, CodeVerifier string }
-
-func parseUnixSeconds(value any) (time.Time, bool) {
-	switch typed := value.(type) {
-	case float64:
-		return time.Unix(int64(typed), int64((typed-float64(int64(typed)))*1e9)), true
-	case json.Number:
-		seconds, err := strconv.ParseFloat(typed.String(), 64)
-		if err == nil {
-			return time.Unix(int64(seconds), int64((seconds-float64(int64(seconds)))*1e9)), true
-		}
-	case int64:
-		return time.Unix(typed, 0), true
-	case int:
-		return time.Unix(int64(typed), 0), true
-	}
-	return time.Time{}, false
-}
-
-func parseState(value any) (parsedState, time.Time, error) {
-	object, ok := value.(map[string]any)
-	if !ok {
-		return parsedState{}, time.Time{}, errors.New("state is not an object")
-	}
-	data, ok := object["data"].(map[string]any)
-	if !ok {
-		return parsedState{}, time.Time{}, errors.New("state data is missing")
-	}
-	nonce, _ := data["nonce"].(string)
-	verifier, _ := data["code_verifier"].(string)
-	expiry, ok := parseUnixSeconds(object["exp"])
-	if !ok || nonce == "" || verifier == "" {
-		return parsedState{}, time.Time{}, errors.New("state data is incomplete")
-	}
-	return parsedState{Nonce: nonce, CodeVerifier: verifier}, expiry, nil
+// loginAttempt is the app's server-side state for one authorization-code flow.
+type loginAttempt struct {
+	Nonce        string    `json:"nonce"`
+	CodeVerifier string    `json:"code_verifier"`
+	ExpiresAt    time.Time `json:"expires_at"`
 }
 
 func audienceIsExact(raw json.RawMessage, clientID string) bool {
@@ -598,19 +560,6 @@ func randomURLToken(size int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(value), nil
 }
 
-func clonePayload(payload map[string]any) map[string]any {
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return map[string]any{}
-	}
-	var cloned map[string]any
-	if json.Unmarshal(data, &cloned) != nil || cloned == nil {
-		return map[string]any{}
-	}
-	return cloned
-}
-
-func payloadEqual(a, b map[string]any) bool { return jsonEqual(a, b) }
 func safeMethod(method string) bool {
 	return method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions
 }

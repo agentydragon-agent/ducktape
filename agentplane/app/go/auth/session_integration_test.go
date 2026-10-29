@@ -62,7 +62,7 @@ func TestSessionPersistenceMergeLogoutAndNotifications(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer unsubscribe()
-	handle, err := store.create(t.Context(), map[string]any{"state": "pending"}, time.Now().UTC().Add(time.Minute))
+	handle, err := store.create(t.Context(), map[string]loginAttempt{"state": {Nonce: "pending"}}, time.Now().UTC().Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,10 +84,10 @@ func TestSessionPersistenceMergeLogoutAndNotifications(t *testing.T) {
 	}
 }
 
-func TestSessionPayloadMergeDoesNotResurrectLogout(t *testing.T) {
+func TestLoginAttemptMergeDoesNotResurrectLogout(t *testing.T) {
 	store := integrationStore(t)
 	absolute := time.Now().UTC().Add(time.Minute)
-	handle, err := store.create(t.Context(), map[string]any{"first": "0", "second": "0"}, absolute)
+	handle, err := store.create(t.Context(), map[string]loginAttempt{"first": {Nonce: "0"}, "second": {Nonce: "0"}}, absolute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,20 +100,20 @@ func TestSessionPayloadMergeDoesNotResurrectLogout(t *testing.T) {
 	if err != nil || second == nil {
 		t.Fatalf("second read = (%+v, %v)", second, err)
 	}
-	if saved, err := store.save(t.Context(), id, first.payload, map[string]any{"first": "1", "second": "0"}); err != nil || !saved {
+	if saved, err := store.save(t.Context(), id, first.pendingLogins, map[string]loginAttempt{"first": {Nonce: "1"}, "second": {Nonce: "0"}}); err != nil || !saved {
 		t.Fatalf("first save = (%v, %v)", saved, err)
 	}
-	if saved, err := store.save(t.Context(), id, second.payload, map[string]any{"first": "0", "second": "1"}); err != nil || !saved {
+	if saved, err := store.save(t.Context(), id, second.pendingLogins, map[string]loginAttempt{"first": {Nonce: "0"}, "second": {Nonce: "1"}}); err != nil || !saved {
 		t.Fatalf("second save = (%v, %v)", saved, err)
 	}
 	latest, err := store.read(t.Context(), id)
-	if err != nil || latest.payload["first"] != "1" || latest.payload["second"] != "1" {
+	if err != nil || latest.pendingLogins["first"].Nonce != "1" || latest.pendingLogins["second"].Nonce != "1" {
 		t.Fatalf("merged read = (%+v, %v)", latest, err)
 	}
 	if err := store.end(t.Context(), id); err != nil {
 		t.Fatal(err)
 	}
-	if saved, err := store.save(t.Context(), id, latest.payload, map[string]any{"first": "resurrected"}); err != nil || saved {
+	if saved, err := store.save(t.Context(), id, latest.pendingLogins, map[string]loginAttempt{"first": {Nonce: "resurrected"}}); err != nil || saved {
 		t.Fatalf("save after logout = (%v, %v), want false", saved, err)
 	}
 }
@@ -126,12 +126,17 @@ func TestLoginReplacementPersistsTypedIdentityAndWakesListeners(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer unsubscribe()
-	pending, err := store.create(t.Context(), map[string]any{"_state_authentik_test": map[string]any{"nonce": "n"}}, time.Now().UTC().Add(time.Minute))
+	attempt := loginAttempt{Nonce: "n", CodeVerifier: "verifier", ExpiresAt: time.Now().UTC().Add(time.Minute)}
+	pending, err := store.create(t.Context(), map[string]loginAttempt{"test-state": attempt}, time.Now().UTC().Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
+	persisted, err := store.read(t.Context(), rowID(pending))
+	if err != nil || persisted == nil || persisted.pendingLogins["test-state"] != attempt {
+		t.Fatalf("pending login round trip = (%+v, %v)", persisted, err)
+	}
 	login := OperatorSession{Issuer: "https://issuer.test", Subject: "sub-1", Username: "operator-1", Tokens: &LoginTokens{AccessToken: "access", ExpiresAt: time.Now().Add(time.Minute), RefreshToken: "refresh"}}
-	handle, inserted, err := store.logIn(t.Context(), rowID(pending), map[string]any{}, login, time.Now().UTC().Add(time.Minute))
+	handle, inserted, err := store.logIn(t.Context(), rowID(pending), map[string]loginAttempt{}, login, time.Now().UTC().Add(time.Minute))
 	if err != nil || !inserted {
 		t.Fatalf("login replacement = (%q, %v, %v)", handle, inserted, err)
 	}
@@ -153,7 +158,7 @@ func TestExpiredRowIsDeletedAndNotified(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer unsubscribe()
-	handle, err := store.create(t.Context(), map[string]any{"state": "pending"}, time.Now().UTC().Add(-time.Second))
+	handle, err := store.create(t.Context(), map[string]loginAttempt{"state": {Nonce: "pending"}}, time.Now().UTC().Add(-time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +176,7 @@ func TestExpiredRowIsDeletedAndNotified(t *testing.T) {
 func TestLockedLoginSerializesRefreshTokenRotation(t *testing.T) {
 	store := integrationStore(t)
 	login := OperatorSession{Issuer: "https://issuer.test", Subject: "subject", Username: "operator", Tokens: &LoginTokens{AccessToken: "access-0", ExpiresAt: time.Now().Add(time.Minute), RefreshToken: "refresh-0"}}
-	handle, inserted, err := store.logIn(t.Context(), "", map[string]any{}, login, time.Now().UTC().Add(time.Minute))
+	handle, inserted, err := store.logIn(t.Context(), "", map[string]loginAttempt{}, login, time.Now().UTC().Add(time.Minute))
 	if err != nil || !inserted {
 		t.Fatalf("login insert = (%q, %v, %v)", handle, inserted, err)
 	}
