@@ -1,12 +1,18 @@
 // @vitest-environment happy-dom
 
-import { create, equals } from "@bufbuild/protobuf";
+import { create, equals, fromJson } from "@bufbuild/protobuf";
+import { TimestampSchema } from "@bufbuild/protobuf/wkt";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
-import type { DispatchReceipt } from "./client";
 import { LocalCommands, MAX_RETAINED_COMMANDS } from "./local_commands";
+import {
+  DeliveryState,
+  DispatchSchema,
+  InterruptTurnResponseSchema,
+  type Dispatch,
+} from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 
 const COMMAND = create(CommandSchema, {
   commandId: "input-1",
@@ -23,17 +29,17 @@ function admission(cursor = 9n, command: Command = COMMAND): EventEntry {
 
 function dispatch(
   command: Command,
-  state: string,
+  state: DeliveryState,
   updatedAt: string,
   event: EventEntry | null = null
-): DispatchReceipt {
-  return {
+): Dispatch {
+  return create(DispatchSchema, {
     commandId: command.commandId,
     sessionId: "thread",
     state,
-    updatedAt,
-    admission: event,
-  };
+    updatedAt: fromJson(TimestampSchema, updatedAt),
+    ...(event ? { admission: event } : {}),
+  });
 }
 
 beforeEach(() => localStorage.clear());
@@ -78,19 +84,19 @@ it("retains an immediate interrupt result without recording a durable Dispatch",
   });
   const store = new LocalCommands("thread");
   store.remember(interrupted);
-  store.acknowledgeInterrupt(interrupted, {
-    state: "DELIVERY_STATE_NO_OP",
-    reason: "turn already ended",
-    admission: null,
-  });
+  store.acknowledgeInterrupt(
+    interrupted,
+    fromJson(InterruptTurnResponseSchema, {
+      state: "DELIVERY_STATE_NO_OP",
+      reason: "turn already ended",
+    })
+  );
 
   const retained = new LocalCommands("thread").getSnapshot().commands[0];
   expect(retained.dispatch).toBeNull();
-  expect(retained.interruptResult).toEqual({
-    state: "DELIVERY_STATE_NO_OP",
-    reason: "turn already ended",
-    admission: null,
-  });
+  expect(retained.interruptResult?.state).toBe(DeliveryState.NO_OP);
+  expect(retained.interruptResult?.reason).toBe("turn already ended");
+  expect(retained.interruptResult?.admission).toBeUndefined();
   expect(store.markAttempted(interrupted.commandId)).toBe(false);
 });
 
@@ -270,20 +276,20 @@ it("persists Dispatcher queue state and accepts a newer retry transition without
   const store = new LocalCommands("thread");
   store.remember(COMMAND);
   store.markAttempted(COMMAND.commandId);
-  store.acknowledgeDispatch(COMMAND, dispatch(COMMAND, "DELIVERY_STATE_DELIVERING_TO_RUNNER", "2026-10-14T12:00:02Z"));
+  store.acknowledgeDispatch(COMMAND, dispatch(COMMAND, DeliveryState.DELIVERING_TO_RUNNER, "2026-10-14T12:00:02Z"));
   const restored = new LocalCommands("thread");
-  expect(restored.getSnapshot().commands[0].dispatch?.state).toBe("DELIVERY_STATE_DELIVERING_TO_RUNNER");
+  expect(restored.getSnapshot().commands[0].dispatch?.state).toBe(DeliveryState.DELIVERING_TO_RUNNER);
 
   restored.updateDispatch(
     COMMAND.commandId,
-    dispatch(COMMAND, "DELIVERY_STATE_QUEUED_IN_DISPATCHER", "2026-10-14T12:00:03Z")
+    dispatch(COMMAND, DeliveryState.QUEUED_IN_DISPATCHER, "2026-10-14T12:00:03Z")
   );
-  expect(restored.getSnapshot().commands[0].dispatch?.state).toBe("DELIVERY_STATE_QUEUED_IN_DISPATCHER");
+  expect(restored.getSnapshot().commands[0].dispatch?.state).toBe(DeliveryState.QUEUED_IN_DISPATCHER);
   restored.updateDispatch(
     COMMAND.commandId,
-    dispatch(COMMAND, "DELIVERY_STATE_DELIVERING_TO_RUNNER", "2026-10-14T12:00:01Z")
+    dispatch(COMMAND, DeliveryState.DELIVERING_TO_RUNNER, "2026-10-14T12:00:01Z")
   );
-  expect(restored.getSnapshot().commands[0].dispatch?.state).toBe("DELIVERY_STATE_QUEUED_IN_DISPATCHER");
+  expect(restored.getSnapshot().commands[0].dispatch?.state).toBe(DeliveryState.QUEUED_IN_DISPATCHER);
 });
 
 it("checks admission included in a Dispatcher receipt and transfers the input to History replay", () => {
@@ -292,7 +298,7 @@ it("checks admission included in a Dispatcher receipt and transfers the input to
   const admitted = admission();
   store.acknowledgeDispatch(
     COMMAND,
-    dispatch(COMMAND, "DELIVERY_STATE_RUNNER_ADMITTED", "2026-10-14T12:00:02Z", admitted)
+    dispatch(COMMAND, DeliveryState.RUNNER_ADMITTED, "2026-10-14T12:00:02Z", admitted)
   );
   expect(new LocalCommands("thread").getSnapshot().commands[0].admission).toEqual(admitted);
   store.observePrefix([admitted]);
@@ -300,4 +306,73 @@ it("checks admission included in a Dispatcher receipt and transfers the input to
   expect(store.getSnapshot().inputEchoes).toEqual([
     { commandId: COMMAND.commandId, text: "  exact text\nsecond line  " },
   ]);
+});
+
+it("roundtrips an UNKNOWN Dispatcher state through local ProtoJSON persistence", () => {
+  const store = new LocalCommands("thread");
+  store.remember(COMMAND);
+  store.acknowledgeDispatch(COMMAND, dispatch(COMMAND, DeliveryState.UNKNOWN, "2026-10-14T12:00:02Z"));
+
+  const restored = new LocalCommands("thread").getSnapshot().commands;
+  expect(restored).toHaveLength(1);
+  expect(restored[0].command.commandId).toBe(COMMAND.commandId);
+  expect(restored[0].dispatch?.state).toBe(DeliveryState.UNKNOWN);
+});
+
+it("reads Dispatch and interrupt evidence saved in the previous local format", () => {
+  const input = {
+    commandId: "legacy-input",
+    operation: { case: "submitInput", value: { text: "keep the exact legacy input" } },
+  };
+  const interrupt = {
+    commandId: "legacy-interrupt",
+    operation: { case: "interruptTurn", value: { turnId: "turn-legacy" } },
+  };
+  localStorage.setItem(
+    `agentplane.pending:${encodeURIComponent("thread")}:${input.commandId}`,
+    JSON.stringify({
+      submittedAt: 1,
+      attempted: true,
+      command: input,
+      admission: null,
+      dispatch: {
+        commandId: input.commandId,
+        sessionId: "thread",
+        state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+        reason: "sandbox_resuming",
+        updatedAt: "2026-10-14T12:00:02Z",
+        admission: null,
+      },
+      interruptResult: null,
+    })
+  );
+  localStorage.setItem(
+    `agentplane.pending:${encodeURIComponent("thread")}:${interrupt.commandId}`,
+    JSON.stringify({
+      submittedAt: 2,
+      attempted: true,
+      command: interrupt,
+      admission: null,
+      dispatch: null,
+      interruptResult: {
+        state: "DELIVERY_STATE_NO_OP",
+        reason: "turn already ended",
+        admission: null,
+      },
+    })
+  );
+
+  const restored = new LocalCommands("thread").getSnapshot();
+  expect(restored.error).toBeNull();
+  expect(restored.commands).toHaveLength(2);
+  const savedInput = restored.commands.find((value) => value.command.commandId === input.commandId);
+  expect(savedInput?.command).toEqual(input);
+  expect(savedInput?.dispatch?.state).toBe(DeliveryState.QUEUED_IN_DISPATCHER);
+  expect(savedInput?.dispatch?.updatedAt?.seconds).toBe(BigInt(Date.parse("2026-10-14T12:00:02Z") / 1000));
+  expect(savedInput?.dispatch?.admission).toBeUndefined();
+
+  const savedInterrupt = restored.commands.find((value) => value.command.commandId === interrupt.commandId);
+  expect(savedInterrupt?.command).toEqual(interrupt);
+  expect(savedInterrupt?.interruptResult?.state).toBe(DeliveryState.NO_OP);
+  expect(savedInterrupt?.interruptResult?.admission).toBeUndefined();
 });

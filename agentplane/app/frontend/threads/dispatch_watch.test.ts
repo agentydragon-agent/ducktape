@@ -3,7 +3,9 @@ import { create } from "@bufbuild/protobuf";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { CommandSchema, type Command } from "../../../proto/command_pb";
+import { DeliveryState, type Dispatch } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 import { stubWatchFetch } from "../testing/watch";
+import { dispatchFromJson } from "./client";
 import { watchDispatches } from "./dispatch_watch";
 import { LocalCommands } from "./local_commands";
 
@@ -30,16 +32,18 @@ function queued(store: LocalCommands, commandId: string): Command {
     operation: { case: "submitInput", value: { text: commandId } },
   });
   store.remember(command);
-  store.acknowledgeDispatch(command, {
-    commandId,
-    sessionId: SESSION,
-    state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
-    admission: null,
-  });
+  store.acknowledgeDispatch(
+    command,
+    dispatchFromJson({
+      commandId,
+      sessionId: SESSION,
+      state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+    })
+  );
   return command;
 }
 
-function stateOf(store: LocalCommands, commandId: string): string | undefined {
+function stateOf(store: LocalCommands, commandId: string): Dispatch["state"] | undefined {
   return store.getSnapshot().commands.find((value) => value.command.commandId === commandId)?.dispatch?.state;
 }
 
@@ -66,7 +70,7 @@ it("asks for the Session's named commands and applies the rows it is sent", asyn
   expect(watch.url.pathname).toBe("/upstream/dispatcher/v1/dispatches:watch");
   expect(watch.url.searchParams.get("filter.sessionId")).toBe(SESSION);
   expect(watch.url.searchParams.getAll("filter.commandIds")).toEqual(["a", "b"]);
-  expect(stateOf(store, "a")).toBe("DELIVERY_STATE_RUNNER_ADMITTED");
+  expect(stateOf(store, "a")).toBe(DeliveryState.RUNNER_ADMITTED);
 });
 
 it("calls a command it holds no row for unknown once the watch has caught up, as after Sandbox deletion", async () => {
@@ -78,12 +82,12 @@ it("calls a command it holds no row for unknown once the watch has caught up, as
   const [watch] = fetchMock.served;
   watch.send(dispatchFrame("kept", "DELIVERY_STATE_QUEUED_IN_DISPATCHER"));
   await settle();
-  expect(stateOf(store, "deleted")).toBe("DELIVERY_STATE_QUEUED_IN_DISPATCHER");
+  expect(stateOf(store, "deleted")).toBe(DeliveryState.QUEUED_IN_DISPATCHER);
   watch.send({ caughtUp: {} });
   await settle();
 
-  expect(stateOf(store, "deleted")).toBe("DELIVERY_STATE_UNKNOWN");
-  expect(stateOf(store, "kept")).toBe("DELIVERY_STATE_QUEUED_IN_DISPATCHER");
+  expect(stateOf(store, "deleted")).toBe(DeliveryState.UNKNOWN);
+  expect(stateOf(store, "kept")).toBe(DeliveryState.QUEUED_IN_DISPATCHER);
 });
 
 it("judges what is missing by the rows of the current connection, not an earlier one", async () => {
@@ -99,7 +103,7 @@ it("judges what is missing by the rows of the current connection, not an earlier
   fetchMock.served[1].send({ caughtUp: {} });
   await settle();
 
-  expect(stateOf(store, "a")).toBe("DELIVERY_STATE_UNKNOWN");
+  expect(stateOf(store, "a")).toBe(DeliveryState.UNKNOWN);
 });
 
 it("keeps applying frames after one it cannot read", async () => {
@@ -112,5 +116,5 @@ it("keeps applying frames after one it cannot read", async () => {
   fetchMock.served[0].send(dispatchFrame("a", "DELIVERY_STATE_FAILED"));
   await settle();
 
-  expect(stateOf(store, "a")).toBe("DELIVERY_STATE_FAILED");
+  expect(stateOf(store, "a")).toBe(DeliveryState.FAILED);
 });

@@ -134,6 +134,7 @@ ts_library(
         ":local_commands",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:watch_stream",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],
 )
 
@@ -147,6 +148,7 @@ agentplane_vitest_test(
         "//:node_modules/vitest",
         "//agentplane/app/frontend/testing:watch",
         "//agentplane/proto:command_pb",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],
 )
 
@@ -160,6 +162,7 @@ ts_library(
         "//agentplane/app/frontend:client",
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],
 )
 
@@ -174,6 +177,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:client",
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],
 )
 
@@ -498,6 +502,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],
 )
 
@@ -524,6 +529,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],
 )
 
@@ -890,6 +896,7 @@ ts_library(
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:schema",
         "//agentplane/proto:event_log_pb",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],
 )
 
@@ -900,6 +907,7 @@ agentplane_vitest_test(
         ":client",
         "//:node_modules/vitest",
         "//agentplane/app/frontend:client",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],
 )
 

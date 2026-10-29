@@ -48,7 +48,7 @@ import {
 import { sampleConnection } from "../connections/testing/fixture";
 import type { Connection } from "../connections/models";
 
-import type { DispatchReceipt } from "../threads/client";
+import { dispatchFromJson } from "../threads/client";
 import { ACTION_RENDERERS } from "../actions/rendering/index";
 import type { McpLinkageView } from "../mcp_linkage_client";
 import type {
@@ -2344,14 +2344,14 @@ function rememberDispatch(threadId = RUNNING_THREAD): void {
   });
   const local = new LocalCommands(threadId);
   local.remember(command);
-  const dispatch: DispatchReceipt = {
+  const dispatch = dispatchFromJson({
     commandId: command.commandId,
     sessionId: threadId,
     state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
     reason: "sandbox_resuming",
     updatedAt: ago(1_000),
     admission: null,
-  };
+  });
   local.acknowledgeDispatch(command, dispatch);
 }
 
@@ -2371,14 +2371,17 @@ function rememberShortRefusedWake(): void {
   queuedReasons.set(command.commandId, reason);
   const local = new LocalCommands(RUNNING_THREAD);
   local.remember(command);
-  local.acknowledgeDispatch(command, {
-    commandId: command.commandId,
-    sessionId: RUNNING_THREAD,
-    state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
-    reason,
-    updatedAt: ago(1_000),
-    admission: null,
-  });
+  local.acknowledgeDispatch(
+    command,
+    dispatchFromJson({
+      commandId: command.commandId,
+      sessionId: RUNNING_THREAD,
+      state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+      reason,
+      updatedAt: ago(1_000),
+      admission: null,
+    })
+  );
 }
 
 function rememberFailedDispatch(): void {
@@ -2391,14 +2394,14 @@ function rememberFailedDispatch(): void {
   });
   const local = new LocalCommands(RUNNING_THREAD);
   local.remember(command);
-  const dispatch: DispatchReceipt = {
+  const dispatch = dispatchFromJson({
     commandId: command.commandId,
     sessionId: RUNNING_THREAD,
     state: "DELIVERY_STATE_FAILED",
     reason: "wake_deadline_expired: Ready=False/Unschedulable: 0/2 nodes are available: PVC is not bound",
     updatedAt: ago(1_000),
     admission: null,
-  };
+  });
   local.acknowledgeDispatch(command, dispatch);
 }
 

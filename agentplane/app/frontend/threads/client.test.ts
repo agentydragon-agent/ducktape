@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { api } from "../client";
 import { interruptTurn, submitInput, CommandSubmissionRefused, threadObservations } from "./client";
+import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -67,17 +68,17 @@ it("accepts a durable queued Dispatch separately from a runner admission receipt
   };
   api.use(middleware);
   try {
-    await expect(submitInput("thread", input.commandId, input.text)).resolves.toEqual({
-      kind: "dispatch",
-      dispatch: {
-        commandId: input.commandId,
-        sessionId: "thread",
-        state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
-        reason: "sandbox_resuming",
-        updatedAt: "2026-10-14T12:00:00Z",
-        admission: null,
-      },
+    const result = await submitInput("thread", input.commandId, input.text);
+    expect(result.kind).toBe("dispatch");
+    if (result.kind !== "dispatch") throw new Error("Expected Dispatcher receipt");
+    expect(result.dispatch).toMatchObject({
+      commandId: input.commandId,
+      sessionId: "thread",
+      state: DeliveryState.QUEUED_IN_DISPATCHER,
+      reason: "sandbox_resuming",
+      updatedAt: { seconds: BigInt(Date.parse("2026-10-14T12:00:00Z") / 1000), nanos: 0 },
     });
+    expect(result.dispatch.admission).toBeUndefined();
   } finally {
     api.eject(middleware);
   }
@@ -96,10 +97,13 @@ it("keeps a transient interrupt result distinct from a durable Dispatch", async 
   };
   api.use(middleware);
   try {
-    await expect(interruptTurn("thread", "interrupt-id", "turn-id")).resolves.toEqual({
+    const result = await interruptTurn("thread", "interrupt-id", "turn-id");
+    expect(result).toMatchObject({
       kind: "interrupt_result",
-      result: { state: "DELIVERY_STATE_NO_OP", reason: "turn already ended", admission: null },
+      result: { state: DeliveryState.NO_OP, reason: "turn already ended" },
     });
+    if (result.kind !== "interrupt_result") throw new Error("Expected immediate interrupt result");
+    expect(result.result.admission).toBeUndefined();
     expect(paths).toEqual(["/threads/thread/interrupt-turn"]);
   } finally {
     api.eject(middleware);
