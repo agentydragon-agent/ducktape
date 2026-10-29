@@ -6,45 +6,37 @@ import (
 	"sync"
 
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
-	"github.com/agentydragon/ducktape/agentplane/runner/control"
 	"github.com/agentydragon/ducktape/agentplane/runner/ingress"
-	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
 	"github.com/agentydragon/ducktape/agentplane/runner/stream"
+	"google.golang.org/grpc"
 )
 
-func (r *Runner) Run(ctx context.Context, controlEndpoint, ingressEndpoint Endpoint) error {
+func (r *Runner) Run(ctx context.Context, ingressEndpoint Endpoint) error {
 	if err := r.Startup(r.ctx); err != nil {
 		return errors.Join(err, r.Close(context.WithoutCancel(ctx)))
 	}
-	controlClient, err := control.New(control.Dependencies{
-		BootID:           r.bootID,
-		OpenExecutor:     r.openExecutorConnection,
-		Server:           r,
-		AdoptIncarnation: r.adoptIncarnation,
-		Facts:            r.facts,
-		Changes:          r.changesSince,
-		StopRetry: func(err error) bool {
-			var storage *journal.StorageError
-			return errors.As(err, &storage)
-		},
-	})
+	serverCtx, cancelServer := context.WithCancel(context.WithoutCancel(ctx))
+	ingressCtx, cancelIngress := context.WithCancel(context.WithoutCancel(ctx))
+	var streams sync.WaitGroup
+	listener, server, err := r.forwardServer()
 	if err != nil {
+		cancelServer()
+		cancelIngress()
 		return errors.Join(err, r.Close(context.WithoutCancel(ctx)))
 	}
-	streamCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	var streams sync.WaitGroup
-	streams.Add(2)
+	streams.Add(1)
 	go func() {
 		defer streams.Done()
-		if err := controlClient.Run(streamCtx, control.Endpoint{Target: controlEndpoint.Target, Bearer: controlEndpoint.Bearer}); err != nil {
+		if err := server.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) && serverCtx.Err() == nil {
 			r.fail(err)
 		}
 	}()
+	streams.Add(1)
 	go func() {
 		defer streams.Done()
-		if err := r.ingressLoop(streamCtx, ingressEndpoint); err != nil {
+		if err := r.ingressLoop(ingressCtx, ingressEndpoint); err != nil {
 			r.fail(err)
 		}
 	}()
@@ -54,7 +46,10 @@ func (r *Runner) Run(ctx context.Context, controlEndpoint, ingressEndpoint Endpo
 	case failure = <-r.fatal:
 	}
 	closeErr := r.Close(context.WithoutCancel(ctx))
-	cancel()
+	cancelServer()
+	cancelIngress()
+	server.Stop()
+	_ = listener.Close()
 	streams.Wait()
 	return errors.Join(failure, closeErr)
 }

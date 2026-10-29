@@ -495,7 +495,7 @@ Sandboxes, typed resource budgets, isolated Codex tools and the raw-block worksp
 [component evidence](../docs/vm_sandboxes.md#fresh-vm-trial-readiness) records their acceptance.
 The remaining nodes do not gate the operator-authorized fresh VM trial. This is an unranked candidate
 lane, not authorization for local Bazel in current containers. The
-[runner control stream](../docs/runner_control.md) settles the dial-out contract VM control networking
+[runner control](../docs/runner_control.md) defines the private gRPC contract VM control networking
 builds on; changing connection direction does not move command durability or remove the runner
 journal.
 
@@ -1408,8 +1408,8 @@ flowchart TD
 **Decision, then rename; unscheduled, low priority (operator, 2026-10-17 UTC: "for later").** The operator
 finds "runner" a poor name for the process that supervises a Sandbox's Sessions and harnesses.
 Candidates: "sandbox manager", "environment manager" (Claude Code web's term) and "supervisor". Choose the
-name first; the rename follows as its own change. It would reach the `Runner` and `RunnerControl` protos
-and services (`runner.proto`, `runner_control.proto`, `runner_service.proto`, `runner_ingress.proto`), token audiences, the
+name first; the rename follows as its own change. It would reach the `Runner` and runner-state protos
+and services (`runner.proto`, `runner_state.proto`, `runner_service.proto`, `runner_ingress.proto`), token audiences, the
 Gateway's runner proxy and control tunnel, images and the `agentplane/runner` package, Leases and
 Services named for it, and docs. Audiences and wire names are a coordinated wire change, not a find and
 replace.
@@ -1510,7 +1510,7 @@ PRs of their own; this node leaves with the last of them.
 
 The runner dials out to two endpoints its Sandbox names: an ingress it pushes its journal's Events to (the History
 Service when history is kept) and the Runner Gateway control endpoint. Contract:
-[runner control stream § Event ingress](../docs/runner_control.md#event-ingress).
+[runner control § Event ingress](../docs/runner_control.md#event-ingress).
 
 ```mermaid
 flowchart TD
@@ -1547,12 +1547,12 @@ which other consumers may move to it. Automatic titles remain deferred under
 
 ## 12. The Runner Gateway serves the runner's own service
 
-The Gateway serves `Connect` and proxies the runner's
+The Gateway observes state and proxies the runner's
 `Runner` service with per-method authorization; commands use Dispatcher and typed Runner RPCs.
 
 ```mermaid
 flowchart TD
-    RUNNER_CONTROL_TRANSPORT_DESIGN[Decision, unscheduled: runner listens versus reverse tunnel]
+    RUNNER_CONTROL_TRANSPORT_DESIGN[In progress: native runner gRPC with mTLS]
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization]
     DISPATCHER_OWNERSHIP_IN_POSTGRES[Unscheduled: Dispatcher Sandbox ownership without the Kubernetes Lease]
 ```
@@ -1562,27 +1562,20 @@ describe the current proxy. Live `Runner.ListSessions` remains part of the app a
 service caller contract. The separate destination-authority decision
 `DELIVERY_DESTINATION_AUTHORITY_DESIGN` (section 13) remains open.
 
-### `RUNNER_CONTROL_TRANSPORT_DESIGN` — consider making the runner a gRPC server again
+### `RUNNER_CONTROL_TRANSPORT_DESIGN` — native runner gRPC with mTLS
 
-**Decision, unscheduled; operator, 2026-10-27 PDT: consider the alternative, no transport change selected.**
-Compare the current runner-initiated [reverse control stream](../docs/runner_control.md) with ordinary
-Gateway-to-runner gRPC on a private listener reachable only by authorized Gateway workloads. Evaluate
-Pod and KubeVirt guest reachability, ingress restrictions, mutual workload authentication and credential
-rotation, Sandbox/Pod incarnation checks, replica routing, connection loss, cancellation, and migration
-cost against the custom tunnel and connection-owner machinery that could be removed. Establish whether
-remote or NAT-bound runners are a real requirement. The initial recommendation is direct gRPC for a
-cluster-routable fleet, retaining outbound control if otherwise unreachable runners are required.
+**Selected; implementation in progress, operator, 2026-10-28 PDT.** The Gateway dials each runner's
+native gRPC server using mTLS. Remove the custom reverse tunnel and transport selection. cert-manager
+issues leaf certificates and trust-manager distributes roots. Public Gateway caller authorization,
+runner journals and History push retain their contracts.
 
-Keep runner journal admission/execution ownership and History Event push independent of transport.
-Both choices must preserve command-ID deduplication when an admission reply is lost; reconnecting is
-not proof that a command failed or permission to repeat an uncertain native effect. Review consequences
-for [holder-owned Dispatcher delivery](dispatcher_gateway_merge.md) rather than assuming a connection
-holder still owns delivery with direct dialing.
+The Gateway retains per-Sandbox observation ownership and the control route; direct dialing does
+not choose Dispatcher queue ownership. The [transport contract](../docs/runner_control.md)
+defines credential/incarnation binding and epochs.
 
-**Exit:** a reviewed comparison, recommendation and operator decision on retaining the tunnel or
-returning to a runner listener, with focused security/reconnect proof requirements and a cutover/rollback
-outline if changing transport. This evaluation has no prerequisites and does not gate existing work;
-implementation waits for that decision.
+Exit: runtime and integration coverage, stale credential and epoch rejection, lost-reply admission
+reconciliation, bounded executor relay, generated Pod/VM deployment wiring, and a reviewable
+coordinated cutover/rollback procedure that preserves runner state.
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 

@@ -7,7 +7,7 @@ import (
 
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	executor_gatewaypb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
-	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
+	"github.com/agentydragon/ducktape/agentplane/runner_transport"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	"k8s.io/client-go/kubernetes"
@@ -17,9 +17,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// Config contains the per-process Gateway role wiring. Callers and runner workloads use separate
-// TokenReview resolvers and audiences.
+// Config contains the per-process Gateway role wiring. Public callers use TokenReview;
+// runner connections use explicitly configured transport security and incarnation-fenced metadata.
 type Config struct {
+	RunnerSecurity           runner_transport.Security
 	Namespace                string
 	CallerAccounts           []auth.Account
 	SandboxControllerAccount *auth.Account
@@ -27,7 +28,7 @@ type Config struct {
 	HolderIP                 string
 	ProxyPort                int32
 	ControlTiming            ControlTiming
-	// ExecutorCallers enables the opt-in raw executor WebSocket tunnel independently from the
+	// ExecutorCallers enables the opt-in raw executor WebSocket stream independently from the
 	// Runner proxy's caller allowlist. An empty set leaves the public RPC unregistered.
 	ExecutorCallers []auth.Account
 }
@@ -69,30 +70,31 @@ func validateControlTiming(timing ControlTiming) error {
 	return nil
 }
 
-// Gateway serves the per-Sandbox Runner proxy and accepts runner-initiated connections on the
-// separately registered control listener.
+// Gateway serves the per-Sandbox Runner proxy and dials each Runner's authenticated gRPC server.
 type Gateway struct {
 	config          Config
 	callerAuth      *auth.Resolver
-	runnerAuth      *auth.Resolver
 	callers         map[auth.Account]struct{}
 	executorCallers map[auth.Account]struct{}
 	sandboxes       *sandboxResolver
 	connections     *connections
 	records         *connectionRecords
 	controller      *auth.Account
+	objects         client.Reader
 }
 
 func New(
 	config Config,
 	callerAuth *auth.Resolver,
-	runnerAuth *auth.Resolver,
 	objects client.Reader,
 	core coreclient.CoreV1Interface,
 	coordination coordinationclient.CoordinationV1Interface,
 	discovery discoveryclient.DiscoveryV1Interface,
 ) (*Gateway, error) {
-	if config.Namespace == "" || len(config.CallerAccounts) == 0 || callerAuth == nil || runnerAuth == nil {
+	if err := config.RunnerSecurity.Validate(); err != nil {
+		return nil, fmt.Errorf("runner security: %w", err)
+	}
+	if config.Namespace == "" || len(config.CallerAccounts) == 0 || callerAuth == nil {
 		return nil, fmt.Errorf("Gateway namespace, caller policy and token resolvers are required")
 	}
 	if config.HolderName == "" || config.HolderIP == "" || config.ProxyPort < 1 {
@@ -135,14 +137,13 @@ func New(
 		controller = &copy
 	}
 	return &Gateway{
-		config: config, callerAuth: callerAuth, runnerAuth: runnerAuth, callers: callers, executorCallers: executorCallers,
+		config: config, callerAuth: callerAuth, callers: callers, executorCallers: executorCallers, objects: objects,
 		sandboxes: sandboxes, connections: newConnections(), records: records,
 		controller: controller,
 	}, nil
 }
 
-// RegisterProxy installs the per-Sandbox Runner proxy. RunnerControl.Connect is deliberately
-// registered on a separate listener.
+// RegisterProxy installs the per-Sandbox Runner proxy.
 func (g *Gateway) RegisterProxy(server *grpc.Server) {
 	runnerservicepb.RegisterRunnerServer(server, &runnerProxy{gateway: g})
 }
@@ -154,12 +155,6 @@ func (g *Gateway) RegisterExecutorGateway(server *grpc.Server) {
 		return
 	}
 	executor_gatewaypb.RegisterExecutorGatewayServer(server, &executorGatewayServer{gateway: g})
-}
-
-// RegisterRunnerControl serves the runner-initiated bidirectional connection, authenticated
-// with the Runner audience independently of the other services on this gRPC server.
-func (g *Gateway) RegisterRunnerControl(server *grpc.Server) {
-	runnercontrolpb.RegisterRunnerControlServer(server, &runnerControlServer{gateway: g})
 }
 
 // WatchConnectionLeases must sync before the public gRPC services start accepting requests.

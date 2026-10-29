@@ -1,4 +1,4 @@
-"""The Gateway keeps stable Service addresses for one authenticated gRPC listener."""
+"""The Gateway keeps one public Service and uses mTLS client connections to runner Pods."""
 
 from pathlib import PurePosixPath
 from typing import Any, cast
@@ -12,9 +12,11 @@ from agentplane.runner_gateway.settings import Settings
 from cluster.cdk8s.agentplane import (
     actions,
     app,
+    chart as agentplane_chart,
     notifications,
     runner_gateway,
     runner_gateway_workload,
+    runner_sandbox,
     sandbox_controller,
     session_dispatcher,
     staging,
@@ -43,6 +45,26 @@ def _gateway_objects() -> list[dict[str, Any]]:
     return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
 
 
+def test_environment_provisions_cert_manager_runner_issuer_and_gateway_identity(
+    staging_manifests: list[dict[str, Any]],
+) -> None:
+    issuer_ca = _resource(staging_manifests, "Certificate", agentplane_chart.RUNNER_CA_SECRET)
+    assert issuer_ca["spec"]["isCA"] is True
+    assert issuer_ca["spec"]["issuerRef"]["kind"] == "ClusterIssuer"
+    assert issuer_ca["spec"]["privateKey"]["rotationPolicy"] == "Always"
+
+    issuer = _resource(staging_manifests, "Issuer", runner_gateway.RUNNER_CERTIFICATE_ISSUER)
+    assert issuer["spec"]["ca"]["secretName"] == agentplane_chart.RUNNER_CA_SECRET
+
+    gateway_certificate = _resource(staging_manifests, "Certificate", agentplane_chart.RUNNER_GATEWAY_CERTIFICATE)
+    spec = gateway_certificate["spec"]
+    assert spec["secretName"] == runner_gateway.GATEWAY_TLS_SECRET
+    assert spec["issuerRef"] == {"kind": "Issuer", "name": runner_gateway.RUNNER_CERTIFICATE_ISSUER}
+    assert spec["uris"] == ["spiffe://agentplane/runner-gateway"]
+    assert set(spec["usages"]) == {"digital signature", "client auth"}
+    assert spec["privateKey"]["rotationPolicy"] == "Always"
+
+
 def test_gateway_preserves_services_and_fences_listener_ingress() -> None:
     docs = _gateway_objects()
     root = Chart(Cdk8sTesting.app(), "root-services", disable_resource_name_hashes=True)
@@ -61,6 +83,14 @@ def test_gateway_preserves_services_and_fences_listener_ingress() -> None:
     assert settings["http_listen_address"] == f"0.0.0.0:{http.pod_port}"
     assert settings["dispatcher_audience"] == session_dispatcher.TOKEN_AUDIENCE
     assert settings["gateway_audience"] == runner_gateway.TOKEN_AUDIENCE
+    assert settings["runner_security"] == {
+        "mode": "mtls",
+        "tls": {
+            "cert_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.crt",
+            "key_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.key",
+            "ca_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/ca.crt",
+        },
+    }
     assert set(settings["dispatcher_callers"]) == {
         f"{staging.ENV.namespace}/{app.NAME}",
         f"{staging.ENV.namespace}/{notifications.NAME}",
@@ -75,8 +105,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress() -> None:
         "DATABASE_URL": {"secretKeyRef": {"name": "postgres-session-dispatcher", "key": "uri"}}
     }
     assert _resource(root_docs, "Service", runner_gateway.NAME)["spec"]["ports"] == [
-        {"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080},
-        {"name": "runner-control", "port": 8082, "protocol": "TCP", "targetPort": 8080},
+        {"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080}
     ]
     assert _resource(root_docs, "Service", session_dispatcher.NAME)["spec"]["ports"] == [
         {"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080},
@@ -98,9 +127,24 @@ def test_gateway_preserves_services_and_fences_listener_ingress() -> None:
     assert (notifications.NAME, str(http.pod_port)) in ingress
     assert (runner_gateway.NAME, "8080") in ingress
     assert (sandbox_controller.NAME, "8080") in ingress
-    assert (sandbox_controller.NAME, "8080") in ingress
+    runner_label = runner_sandbox.pods(staging.ENV.namespace).selector["app.kubernetes.io/name"]
+    assert (runner_label, "8090") not in ingress
+    runner_egress = {
+        (endpoint["matchLabels"].get("app.kubernetes.io/name"), str(port["port"]))
+        for rule in policy["egress"]
+        for endpoint in rule.get("toEndpoints", [])
+        for port in rule.get("toPorts", [{}])[0].get("ports", [])
+    }
+    assert (runner_label, str(runner_sandbox.RUNNER_SERVICE_PORT)) in runner_egress
     role = _resource(docs, "Role", runner_gateway.NAME.removeprefix("agentplane-"))
-    assert {rule["resources"][0] for rule in role["rules"]} == {"pods", "sandboxes", "leases", "endpointslices"}
+    assert {resource for rule in role["rules"] for resource in rule["resources"]} >= {
+        "pods",
+        "sandboxes",
+        "leases",
+        "endpointslices",
+        "virtualmachines",
+        "virtualmachineinstances",
+    }
     assert "patch" in one(rule for rule in role["rules"] if rule["resources"] == ["sandboxes"])["verbs"]
 
 
@@ -112,36 +156,58 @@ def test_the_settings_file_the_gateway_reads_is_mounted_beside_its_token() -> No
     mounted = {mount["mountPath"]: mount["name"] for mount in container["volumeMounts"]}
     volumes = {volume["name"]: volume for volume in pod["volumes"]}
     settings_map = _resource(docs, "ConfigMap", f"{runner_gateway.NAME}-settings")
+    tls_volume = volumes[mounted[runner_gateway.GATEWAY_TLS_MOUNT_PATH]]["projected"]
+    assert tls_volume["defaultMode"] == 0o440
+    secret_source = one(source["secret"] for source in tls_volume["sources"] if "secret" in source)
+    assert secret_source["name"] == runner_gateway.GATEWAY_TLS_SECRET
+    assert {item["path"] for item in secret_source["items"]} == {"tls.crt", "tls.key"}
+    trust_source = one(source["configMap"] for source in tls_volume["sources"] if "configMap" in source)
+    assert trust_source["name"] == "cluster-internal-ca-bundle"
+    assert trust_source["items"] == [{"key": "ca-certificates.crt", "path": "ca.crt"}]
     assert volumes[mounted[str(path.parent)]]["configMap"]["name"] == settings_map["metadata"]["name"]
     assert path.name in settings_map["data"]
     assert "projected" in volumes[mounted["/var/run/secrets/agentplane-runner-gateway"]]
 
 
-def test_runner_platform_route_fences_name_the_gateway_listener_port(staging_manifests: list[dict[str, Any]]) -> None:
-    """Cilium matches after the Service's translation, so each fence must name the Pods' own port."""
-    container = one(
-        _resource(staging_manifests, "Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]["containers"]
-    )
-    listening = {port["containerPort"] for port in container["ports"] if port["name"] == "grpc"}
-
-    def ports(rules: list[dict[str, Any]], peers: str) -> set[int]:
-        return {
-            int(port["port"])
-            for rule in rules
-            if any(
-                peer["matchLabels"].get("app.kubernetes.io/name") == runner_gateway.NAME for peer in rule.get(peers, [])
-            )
-            for target in rule["toPorts"]
-            for port in target["ports"]
-        }
-
-    control = _resource(staging_manifests, "CiliumNetworkPolicy", "platform-route-control")["spec"]
-    clients = _resource(staging_manifests, "CiliumNetworkPolicy", "platform-route-clients")["spec"]
-    admitted = {
-        int(port["port"]) for rule in control["ingress"] for target in rule["toPorts"] for port in target["ports"]
+def test_runner_mtls_is_direct_and_outside_platform_routes(staging_manifests: list[dict[str, Any]]) -> None:
+    routes = _resource(staging_manifests, "CiliumNetworkPolicy", "platform-route-clients")["spec"]
+    routed_services = {
+        endpoint["matchLabels"].get("app.kubernetes.io/name")
+        for rule in routes["egress"]
+        for endpoint in rule.get("toEndpoints", [])
     }
-    assert admitted == listening
-    assert ports(clients["egress"], "toEndpoints") == listening
+    assert runner_gateway.NAME not in routed_services
+
+    gateway = _resource(staging_manifests, "CiliumNetworkPolicy", "runner-gateway")["spec"]
+    assert all(
+        port["port"] != "8090"
+        for rule in gateway["ingress"]
+        for target in rule.get("toPorts", [])
+        for port in target["ports"]
+    )
+    runner_label = runner_sandbox.pods(staging.ENV.namespace).selector["app.kubernetes.io/name"]
+    assert any(
+        endpoint["matchLabels"].get("app.kubernetes.io/name") == runner_label
+        and any(
+            port["port"] == str(runner_sandbox.RUNNER_SERVICE_PORT)
+            for target in rule.get("toPorts", [])
+            for port in target["ports"]
+        )
+        for rule in gateway["egress"]
+        for endpoint in rule.get("toEndpoints", [])
+    )
+    runner_listener = _resource(staging_manifests, "CiliumNetworkPolicy", "runner-listener")["spec"]
+    gateway_label = runner_gateway.service(staging.ENV.namespace).pods.selector["app.kubernetes.io/name"]
+    assert any(
+        endpoint["matchLabels"].get("app.kubernetes.io/name") == gateway_label
+        and any(
+            port["port"] == str(runner_sandbox.RUNNER_SERVICE_PORT)
+            for target in rule.get("toPorts", [])
+            for port in target["ports"]
+        )
+        for rule in runner_listener["ingress"]
+        for endpoint in rule.get("fromEndpoints", [])
+    )
 
 
 if __name__ == "__main__":

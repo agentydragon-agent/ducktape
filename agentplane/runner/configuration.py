@@ -7,6 +7,8 @@ from urllib.parse import urlsplit
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from agentplane.runner_transport.configuration import Security
+
 CONFIG_DIRECTORY = "/run/agentplane/config"
 CONFIG_FILE = f"{CONFIG_DIRECTORY}/runner.json"
 LAUNCH_FILE = "/run/agentplane/sandbox/launch.json"
@@ -20,6 +22,38 @@ class Endpoint(BaseModel):
 
     target: str = Field(min_length=1, description="Service host:port.")
     bearer: str = Field(min_length=1, description="Bearer presented to the platform route.")
+
+
+def _valid_host_port(value: str, field: str) -> str:
+    try:
+        parsed = urlsplit(f"//{value}")
+        port = parsed.port
+    except ValueError as error:
+        raise ValueError(f"{field} must be host:port") from error
+    if (
+        not parsed.hostname
+        or port is None
+        or not 1 <= port <= 65535
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(f"{field} must be host:port")
+    return value
+
+
+class RunnerControl(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    listen_address: str = Field(min_length=1, description="Runner gRPC listener host:port.")
+    security: Security
+
+    @field_validator("listen_address")
+    @classmethod
+    def valid_listen_address(cls, value: str) -> str:
+        return _valid_host_port(value, "control.listen_address")
 
 
 class ResourceLimits(BaseModel):
@@ -217,7 +251,7 @@ class Configuration(BaseModel):
     state_dir: str
     workspace_root: str | None = None
     initialization_cwd: str
-    control: Endpoint
+    control: RunnerControl
     ingress: Endpoint
     platform_instructions: str = Field(min_length=1)
     runner_environment: EnvironmentVariables = Field(default_factory=EnvironmentVariables)

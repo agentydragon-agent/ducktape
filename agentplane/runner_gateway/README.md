@@ -1,15 +1,31 @@
 # Runner Gateway
 
-The Runner Gateway combines durable Session Dispatcher admission and delivery with the
-runners' outbound [RunnerControl stream](../docs/runner_control.md) and the identity-fenced
-Runner proxy. One gRPC listener on `:8080` serves Dispatcher, the Runner proxy and runner `Connect`,
-with separate authentication and authorization for each service. The app and Notification service use
-Python gRPC clients against those contracts. The Sandbox Controller owns `Sandbox.status`.
+The Runner Gateway combines durable Session Dispatcher admission and delivery with a
+Sandbox-fenced Runner proxy. The Gateway dials each Runner's native gRPC server on private port
+`9090`. Its public `listen_address` serves Dispatcher, Runner proxy and optional
+ExecutorGateway with the existing
+caller authorization. The Sandbox Controller owns `Sandbox.status`.
+
+Cluster and k3s Gateways and Runners use certificates from cert-manager and roots distributed by
+trust-manager. Required `runner_security.mode: mtls` uses a `tls` block naming the Gateway's client
+`cert_file`, `key_file` and `ca_file`. The Gateway identity
+is `spiffe://agentplane/runner-gateway`; runner identities bind the Sandbox UID and its current
+controller-assigned credential ID. Mutual TLS plus Sandbox, incarnation, Runner boot and Lease
+epoch metadata fences every direct Runner RPC.
+
+Local tests may explicitly select `runner_security: {mode: insecure}`, with the Runner's
+`control.security` set to the same value. This disables transport encryption and peer authentication;
+it preserves workload ownership validation, fencing and public Gateway caller authorization. The
+mode has no default; insecure rejects a `tls` block and invalid mTLS never falls back. The Sandbox
+Controller still provisions certificates, so cluster and k3s stacks retain real certificate controllers.
 
 The Dispatcher role retains its PostgreSQL queue, command IDs, per-Sandbox delivery Leases
 and database ownership generations. The connection role keeps separate connection Leases and
 EndpointSlices; delivery on one replica routes to the replica holding the runner connection.
 There is no separate Gateway database or Session registry and no History Service client.
+After losing a Runner observation, the owning Gateway retries after one second without waiting for
+the next Sandbox discovery scan. Each attempt claims a fresh Lease epoch and validates the current
+workload and Runner boot before serving calls. A foreign Lease holder waits for discovery instead.
 [Queue semantics](dispatcher/README.md) remain distinct from History's retained
 conversation and from Runner admission.
 
@@ -49,8 +65,8 @@ The migration image is `//agentplane/runner_gateway/migrations:image`. Each new 
 runs it as an init container before the Gateway starts. Goose's PostgreSQL session lock
 serializes migrations when replicas start together. Restarting only the main container does
 not rerun the init container; another Pod creation is required to apply migrations after a
-database replacement. Integration tests exercise real PostgreSQL and queue-to-runner tunnels
-on RBE.
+database replacement. Integration tests exercise real PostgreSQL and queue-to-Runner delivery over
+the direct mTLS connection on RBE.
 The cross-language Notification acceptance runs a real Kubernetes API server and etcd through
 `envtest`, installs the Agentplane CRDs and issues Pod-bound ServiceAccount tokens. Narrow
 consumer tests continue using lightweight gRPC peers.
@@ -82,8 +98,9 @@ continue through ProxyRunner. Central controls bypass executor readiness/wake ch
 The existing Sandbox UID/incarnation binding is fixed; v1 requires the bound Sandbox object.
 
 The separate, default-empty `executor_callers` policy enables `ExecutorGateway.Connect` for trusted
-samplers. It relays pinned Codex exec-server frames over the existing outbound Runner connection
-to a configured loopback executor, with UID/incarnation fencing and bounded flow control. It does
+samplers. It relays pinned Codex exec-server frames over the Runner's authenticated
+`RunnerExec.Connect` stream to a configured loopback executor, with UID/incarnation fencing and
+bounded flow control. It does
 not interpret or replay tools. Active executor relays participate in Runner activity and quiesce.
 The Dispatcher is absent from this tool path. See the
 [central sampler contract](../x/central_sampler/SPEC.md).

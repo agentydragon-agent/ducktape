@@ -12,7 +12,7 @@ from uuid import uuid4
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.runner import runner_service_pb2_grpc
-from agentplane.runner.configuration import Endpoint
+from agentplane.runner.configuration import Endpoint, RunnerControl
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.gateway import Gateway
@@ -28,12 +28,14 @@ class RunningRunner:
         *,
         history: HistoryServiceClient,
         ingress_endpoint: Endpoint,
-        control_endpoint: Endpoint | None = None,
+        control_endpoint: RunnerControl | None = None,
+        observe_control: bool = True,
     ) -> None:
         self.config = config
         self.gateway = gateway
         self.history = history
         self.control_endpoint = control_endpoint or gateway.endpoint
+        self.observe_control = observe_control
         self.ingress_endpoint = ingress_endpoint
         self.process: asyncio.subprocess.Process
         self.log_path = undeclared_outputs_dir() / f"go-runner-{uuid4().hex}.log"
@@ -50,7 +52,8 @@ class RunningRunner:
         await self.stop()
 
     async def start(self) -> None:
-        connections = self.gateway.control.connections
+        if self.observe_control:
+            await self.gateway.control.disconnect()
         environment = dict(self.config.harness_environment)
         environment.update(
             {key: os.environ[key] for key in ("RUNFILES_DIR", "RUNFILES_MANIFEST_FILE") if key in os.environ}
@@ -70,9 +73,11 @@ class RunningRunner:
                 stderr=log,
                 start_new_session=True,
             )
-        if self.control_endpoint != self.gateway.endpoint:
-            return  # The real Gateway's fixture owns its authenticated readiness probe.
-        connected = asyncio.create_task(self.gateway.control.wait_ready(connections + 1))
+        if not self.observe_control:
+            return
+        connected = asyncio.create_task(
+            self.gateway.control.connect(self.control_endpoint, self.config.launch.sandbox.uid)
+        )
         exited = asyncio.create_task(self.process.wait())
         try:
             done, _ = await asyncio.wait((connected, exited), return_when=asyncio.FIRST_COMPLETED)
@@ -100,9 +105,11 @@ class RunningRunner:
             raise TimeoutError(f"Go runner did not stop; see {self.log_path}") from None
         if self.process.returncode:
             raise RuntimeError(f"Go runner exited with {self.process.returncode}; see {self.log_path}")
+        if self.observe_control:
+            await self.gateway.control.disconnect()
 
     async def restart(
-        self, *, control_endpoint: Endpoint | None = None, ingress_endpoint: Endpoint | None = None
+        self, *, control_endpoint: RunnerControl | None = None, ingress_endpoint: Endpoint | None = None
     ) -> None:
         await self.stop()
         if control_endpoint is not None:
@@ -112,6 +119,8 @@ class RunningRunner:
         await self.start()
 
     async def control(self) -> runner_service_pb2_grpc.RunnerAsyncStub:
+        if not self.observe_control:
+            raise RuntimeError("Runner control calls are owned by the external Gateway in this test")
         return await self.gateway.control.runner()
 
     async def history_entries(self, session_id: str, after: int = 0) -> list[event_log_pb2.EventEntry]:

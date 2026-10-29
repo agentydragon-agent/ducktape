@@ -1,5 +1,6 @@
 """The direct cdk8s fixture keeps the Go listeners and their authentication wired."""
 
+import json
 import os
 from pathlib import PurePosixPath
 from typing import Any
@@ -19,6 +20,7 @@ from agentplane.system_tests.k3s import fixture_chart, fixture_database, rendere
 from agentplane.system_tests.k3s.block_storage import STORAGE_CLASS
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
+from cluster.cdk8s.agentplane import runner_gateway
 from util.bazel.runfiles import get_required_path
 from util.settings_contract import env_name
 
@@ -60,8 +62,6 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
             "HTTPRoute",
             "ExternalSecret",
             "Password",
-            "Bundle",
-            "Certificate",
             "ServiceMonitor",
             "PrometheusRule",
             "ResourceQuota",
@@ -69,6 +69,21 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         }
         for doc in docs
     )
+    assert {doc["metadata"]["name"] for doc in docs if doc["kind"] == "Certificate"} == {
+        "test-runner-root",
+        "agentplane-runner-ca",
+        "agentplane-runner-gateway",
+    }
+    assert _resource(docs, "Issuer", "agentplane-runner-ca")["spec"]["ca"]["secretName"] == "agentplane-runner-ca"
+    gateway_certificate = _resource(docs, "Certificate", "agentplane-runner-gateway")
+    assert gateway_certificate["spec"]["uris"] == ["spiffe://agentplane/runner-gateway"]
+    assert set(gateway_certificate["spec"]["usages"]) == {"digital signature", "client auth"}
+    trust_bundle = _resource(docs, "Bundle", "cluster-internal-ca-bundle")
+    root = _resource(docs, "Certificate", "test-runner-root")
+    assert trust_bundle["spec"]["sources"] == [{"secret": {"name": root["spec"]["secretName"], "key": "ca.crt"}}]
+    assert trust_bundle["spec"]["target"]["namespaceSelector"]["matchLabels"] == {
+        "kubernetes.io/metadata.name": fixture.namespace
+    }
     assert not any(
         doc["kind"] == "Deployment" and doc["metadata"]["name"] == fixture_chart.SESSION_DISPATCHER for doc in docs
     )
@@ -169,6 +184,14 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     gateway_config = yaml.safe_load(
         _resource(docs, "ConfigMap", f"{fixture_chart.RUNNER_GATEWAY}-settings")["data"]["settings.yaml"]
     )
+    assert gateway_config["runner_security"] == {
+        "mode": "mtls",
+        "tls": {
+            "cert_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.crt",
+            "key_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.key",
+            "ca_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/ca.crt",
+        },
+    }
     assert f"{NAMESPACE}/app" in gateway_config["wake_callers"]
     assert not pod.get("imagePullSecrets")
 
@@ -358,6 +381,24 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
     assert workspace["layout"] == {"type": "BlockFilesystem", "filesystem": "ext4"}
     assert workspace["claim"]["storageClassName"] == STORAGE_CLASS
     assert workspace["claim"]["volumeMode"] == "Block"
+
+    vm_template = _resource(fixture.objects, "SandboxTemplate", "runner-vm")["spec"]
+    vm_spec = vm_template["vm"]["template"]["spec"]
+    interface = next(item for item in vm_spec["domain"]["devices"]["interfaces"] if item["name"] == "default")
+    assert {"port": 9090} in interface["ports"]
+    config_map = _resource(fixture.objects, "ConfigMap", "runner-vm-config")
+    config = json.loads(config_map["data"]["runner.json"])
+    assert config["control"] == {
+        "listen_address": "0.0.0.0:9090",
+        "security": {
+            "mode": "mtls",
+            "tls": {
+                "cert_file": "/run/agentplane/runner-tls/tls.crt",
+                "key_file": "/run/agentplane/runner-tls/tls.key",
+                "ca_file": "/run/agentplane/runner-trust/ca-certificates.crt",
+            },
+        },
+    }
 
 
 if __name__ == "__main__":

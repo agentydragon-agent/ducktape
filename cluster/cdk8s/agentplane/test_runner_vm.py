@@ -143,5 +143,25 @@ def test_vm_storage_class_requires_vm_sandboxes() -> None:
         replace(staging.ENV, vm_sandboxes=False, vm_storage_class="example-storage")
 
 
+def test_vm_template_renders_mtls_server_listener() -> None:
+    rendered = _runner_vm_manifests(console_autologin=False)
+    runner = rendered["runner"]
+    template = rendered["sandbox_template"]["spec"]
+
+    assert runner["control"] == {
+        "listen_address": "0.0.0.0:9090",
+        "security": {
+            "mode": "mtls",
+            "tls": {
+                "cert_file": "/run/agentplane/runner-tls/tls.crt",
+                "key_file": "/run/agentplane/runner-tls/tls.key",
+                "ca_file": "/run/agentplane/runner-trust/ca-certificates.crt",
+            },
+        },
+    }
+    interface = template["vm"]["template"]["spec"]["domain"]["devices"]["interfaces"][0]
+    assert {"port": 9090} in interface["ports"]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

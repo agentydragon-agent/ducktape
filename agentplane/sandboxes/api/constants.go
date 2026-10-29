@@ -25,6 +25,9 @@ const (
 	ControlServiceSuffix   = "-control"
 	ControlServicePortName = "grpc"
 	ControlServicePort     = 8080
+	// RunnerServicePort is the runner's mTLS listener port in a Pod or KubeVirt guest.
+	RunnerServicePort     = 9090
+	RunnerCredentialLabel = "agentplane.allegedly.works/runner-credential"
 )
 
 // ControlServiceTargetTemplate is the default target used by both the controller and dispatcher.

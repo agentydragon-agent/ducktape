@@ -10,10 +10,11 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from agentplane.runner.configuration import Configuration, EnvironmentVariables, PodEnvironment
+from agentplane.runner.configuration import Configuration, Endpoint, EnvironmentVariables, PodEnvironment
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.gateway import Gateway
 from agentplane.runner.testing.process_fixtures import wait_for_exit
+from agentplane.runner_transport.configuration import Insecure
 from third_party.containers import debian_slim
 from util.bazel.runfiles import get_required_path
 from util.oci import load_oci_image
@@ -100,12 +101,14 @@ async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, 
     fixture = get_required_path(
         "_main/agentplane/runner/supervision/runner_pid1_fixture_/runner_pid1_fixture"
     ).resolve()
+    host_control = gateway.endpoint
+    assert isinstance(host_control.security, Insecure)
     config = Configuration(
         version=2,
         state_dir="/proof/state",
         initialization_cwd="/proof/state",
-        control=gateway.endpoint,
-        ingress=gateway.endpoint,
+        control=host_control,
+        ingress=Endpoint(target="127.0.0.1:8081", bearer="unused-ingress-token"),
         platform_instructions="PID1 proof",
         harness_environment=EnvironmentVariables(values={"PATH": "/bin:/usr/bin"}),
         environment=PodEnvironment(supervision="pid1"),
@@ -128,7 +131,6 @@ async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, 
         .with_env("OTEL_SDK_DISABLED", "true")
         .with_command("/runner --config /proof/runner.json --launch-file /proof/launch.json")
     )
-    connections = gateway.control.connections
     with container:
         wrapped = container.get_wrapped_container()
         if abrupt:
@@ -136,8 +138,8 @@ async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, 
             descendants = await asyncio.to_thread(_descendant_pids, container, "pid1")
             assert len(descendants) == 2
         else:
-            await asyncio.wait_for(gateway.control.wait_connected(connections + 1), timeout=20)
             descendants = []
+        await gateway.control.connect(host_control, "pid1-proof-uid")
         with (tmp_path / "state" / ".agentplane-runner-owner").open("rb") as probe:
             with pytest.raises(BlockingIOError):
                 fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)

@@ -21,6 +21,7 @@ from agentplane.runner.testing.gateway import serve_gateway
 from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner_gateway.executor_client import connect
 from agentplane.runner_gateway.testing.gateway_process import run_gateway
+from agentplane.runner_transport.configuration import MTLS
 from agentplane.sandboxes.testing.kubernetes import sandbox_cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.electric_role import ensure_electric_role
@@ -45,7 +46,6 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
     sampler = ServiceAccountRef(namespace="test-central", name="sampler")
     gateway_account = ServiceAccountRef(namespace="test-central", name="gateway")
     gateway_audience = "test-central-gateway"
-    runner_audience = "test-central-runner"
     gateway_token = tmp_path / "gateway-token"
     gateway_token.write_text(await api_server.workload_token(gateway_account, [gateway_audience]))
     sampler_token = tmp_path / "sampler-token"
@@ -72,7 +72,6 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 executor_callers=(sampler,),
                 dispatcher_audience="test-central-dispatcher",
                 gateway_audience=gateway_audience,
-                runner_audience=runner_audience,
                 runner_proxy_token_file=gateway_token,
             ) as gateway,
             go_history_service(
@@ -93,16 +92,23 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 codex_executor_socket=codex_exec_server_container.socket,
             )
             config = replace(config, launch=replace(config.launch, sandbox=sandbox.identity))
-            control = configuration.Endpoint(target=gateway.target, bearer=await sandbox.pod_token(runner_audience))
-            runner_ingress = configuration.Endpoint(
+            control = configuration.RunnerControl(
+                listen_address="127.0.0.1:9090",
+                security=MTLS(
+                    mode="mtls",
+                    tls=gateway.issue_runner_tls(sandbox.runner_identity_uri, tmp_path / "runner-transport"),
+                ),
+            )
+            ingress = configuration.Endpoint(
                 target=history.ingress_target, bearer=await history.writer_token(sandbox.owner)
             )
             async with RunningRunner(
                 config,
                 runner_gateway,
                 history=history.reader,
-                ingress_endpoint=runner_ingress,
+                ingress_endpoint=ingress,
                 control_endpoint=control,
+                observe_control=False,
             ) as running_runner:
                 await gateway.wait_for_runner(gateway.gateway_client(gateway_token), sandbox.destination)
                 values = settings(

@@ -18,6 +18,7 @@ from agentplane.runner.configuration import (
     EnvironmentVariables,
     Harness,
     PodEnvironment,
+    RunnerControl,
 )
 from agentplane.runner.testing.config import NativeLaunch, RunnerTestConfig, SandboxLaunch
 from agentplane.sandboxes.launch import SandboxIdentity
@@ -89,7 +90,7 @@ def runner_command(
     endpoint: str,
     *,
     state_dir: Path,
-    gateway: Endpoint,
+    control: RunnerControl,
     ingress: Endpoint,
     test_debug_checkpoint: tuple[str, str] | None = None,
     bootstrap: str | None = None,
@@ -120,7 +121,7 @@ def runner_command(
         environment=PodEnvironment(supervision="subprocess"),
         state_dir=str(state_dir),
         initialization_cwd=str(state_dir),
-        control=gateway,
+        control=control,
         ingress=ingress,
         platform_instructions=PLATFORM_INSTRUCTIONS,
         harness_environment=EnvironmentVariables(inherit=inherited, values=values),
@@ -145,7 +146,7 @@ def runner_command(
     ]
 
 
-def command(config: RunnerTestConfig, *, control: Endpoint, ingress: Endpoint) -> list[str]:
+def command(config: RunnerTestConfig, *, control: RunnerControl, ingress: Endpoint) -> list[str]:
     """Serialize test launch values into the production executable's CLI."""
     config.state_dir.parent.mkdir(parents=True, exist_ok=True)
     launch_file = config.state_dir.parent / f"{config.state_dir.name}-launch.json"

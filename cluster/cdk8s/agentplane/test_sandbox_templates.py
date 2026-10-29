@@ -206,6 +206,29 @@ def test_environment_cannot_configure_resources_for_a_disabled_executor() -> Non
         _runner_pod(isolated_executor=False, runner_resources=resources, executor_resources=resources)
 
 
+def test_runner_template_renders_mtls_server_listener() -> None:
+    chart = Chart(Cdk8sTesting.app(), "runner-template-test")
+    RunnerTemplate(chart, "runner-template", staging.ENV, name="test-runner", image="example.invalid/runner")
+    docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
+    template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")
+    pod = template["spec"]["pod"]["spec"]
+    runner = one(container for container in pod["containers"] if container["name"] == "runner")
+    config = _runner_configuration(docs, pod)
+
+    assert runner["ports"] == [{"name": "runner-control", "containerPort": 9090}]
+    assert config["control"] == {
+        "listen_address": "0.0.0.0:9090",
+        "security": {
+            "mode": "mtls",
+            "tls": {
+                "cert_file": "/run/agentplane/runner-tls/tls.crt",
+                "key_file": "/run/agentplane/runner-tls/tls.key",
+                "ca_file": "/run/agentplane/runner-tls/ca.crt",
+            },
+        },
+    }
+
+
 def test_pod_template_projects_the_buildbuddy_key_to_runner_and_executor(
     staging_manifests: list[dict[str, Any]],
 ) -> None:

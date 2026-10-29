@@ -191,6 +191,7 @@ go_library(
         "//agentplane/runner_gateway/dispatcher",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/runner_gateway/gateway",
+        "//agentplane/runner_transport",
         "//agentplane/sandboxes/api",
         "//agentplane/workload_auth/go/auth",
         "//util/netlistener",
@@ -205,6 +206,7 @@ go_library(
         "@io_k8s_sigs_controller_runtime//pkg/cache",
         "@io_k8s_sigs_controller_runtime//pkg/client",
         "@io_k8s_sigs_controller_runtime//pkg/log",
+        "@io_kubevirt_api//core/v1:core",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//health",
         "@org_golang_google_grpc//health/grpc_health_v1",
@@ -237,6 +239,7 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
+        "//agentplane/runner_transport:configuration",
         "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
@@ -272,39 +275,15 @@ go_proto_library(
     deps = ["//agentplane/proto:sandboxes_go_proto"],
 )
 
-proto_library(
-    name = "runner_control_proto",
-    srcs = ["runner_control.proto"],
+py_test(
+    name = "test_settings",
+    srcs = ["test_settings.py"],
     deps = [
-        ":executor_gateway_proto",
-        "//agentplane/proto:grpc_tunnel_proto",
-        "//agentplane/proto:sandboxes_proto",
-        "@protobuf//:timestamp_proto",
-    ],
-)
-
-py_proto_library_with_mypy_stubs(
-    name = "runner_control_pb2",
-    deps = [":runner_control_proto"],
-)
-
-py_grpc_service_library(
-    name = "runner_control_pb2_grpc",
-    proto = ":runner_control_proto",
-    py_proto = ":runner_control_pb2",
-)
-
-go_proto_library(
-    name = "runner_control_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb",
-    proto = ":runner_control_proto",
-    deps = [
-        ":executor_gateway_go_proto",
-        "//agentplane/proto:grpc_tunnel_go_proto",
-        "//agentplane/proto:sandboxes_go_proto",
+        ":conftest",
+        ":settings",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

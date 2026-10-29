@@ -4,6 +4,7 @@ package runner
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
+	runnertransport "github.com/agentydragon/ducktape/agentplane/runner_transport"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 )
@@ -58,7 +60,14 @@ type Endpoint struct {
 	Bearer string `json:"bearer"`
 }
 
+// RunnerControlConfiguration exposes the Runner as a Gateway-dialed gRPC server.
+type RunnerControlConfiguration struct {
+	ListenAddress string                   `json:"listen_address"`
+	Security      runnertransport.Security `json:"security"`
+}
+
 type Config struct {
+	Control                          RunnerControlConfiguration
 	StateDir                         string
 	SessionReconcileConcurrency      int
 	Launch                           SandboxLaunch
@@ -70,6 +79,27 @@ type Config struct {
 	WorkspaceRoot, InitializationCwd string
 	DebugCheckpoint                  *session.DebugCheckpointConfig
 	HTTPClient                       *http.Client
+}
+
+func validateControlIdentity(config Config) error {
+	if err := config.Control.Security.Validate(); err != nil {
+		return fmt.Errorf("Runner control security: %w", err)
+	}
+	if config.Control.Security.Mode == runnertransport.Insecure {
+		return nil
+	}
+	identity, err := config.Control.Security.TLS.LocalIdentity(x509.ExtKeyUsageServerAuth)
+	if err != nil {
+		return fmt.Errorf("Runner control certificate: %w", err)
+	}
+	namespace, sandboxUID, _, err := runnertransport.ParseRunnerURI(identity)
+	if err != nil {
+		return fmt.Errorf("Runner control certificate: %w", err)
+	}
+	if namespace != config.Launch.Sandbox.Namespace || sandboxUID != config.Launch.Sandbox.UID {
+		return errors.New("Runner control certificate does not name the configured Sandbox namespace and UID")
+	}
+	return nil
 }
 
 func (c *Config) resolveSessionReconcileConcurrency() error {

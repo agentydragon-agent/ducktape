@@ -21,6 +21,7 @@ import (
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
+	runnertransport "github.com/agentydragon/ducktape/agentplane/runner_transport"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -28,11 +29,18 @@ import (
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
-	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+func closeRunnerForTest(t *testing.T, r *Runner) error {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return r.Close(ctx)
+}
 
 func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
 	var lookups atomic.Int32
@@ -94,7 +102,7 @@ func TestOpenSessionRetryUsesPersistedSetupAfterSealPublicationFailure(t *testin
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := r.Close(context.Background()); err != nil {
+		if err := closeRunnerForTest(t, r); err != nil {
 			t.Errorf("close test runner: %v", err)
 		}
 	})
@@ -212,7 +220,7 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 	if err != nil || !found || input.Setup != runnerpb.SetupState_SETUP_STATE_INTERRUPTED || !input.SetupRequested {
 		t.Fatalf("recovered setup input = %+v, found=%t, err=%v; want retained but interrupted", input, found, err)
 	}
-	if err := r.Close(context.Background()); err != nil {
+	if err := closeRunnerForTest(t, r); err != nil {
 		t.Fatalf("close recovered Runner: %v", err)
 	}
 	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
@@ -754,7 +762,7 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 		return err == nil && settled
 	}, "reconstructed bootstrap outcome")
 	facts, err = restarted.facts()
-	if err != nil || facts.Bootstrap != controlpb.RunnerFacts_BOOTSTRAP_SUCCEEDED {
+	if err != nil || facts.Bootstrap != runnerstatepb.RunnerFacts_BOOTSTRAP_SUCCEEDED {
 		t.Fatalf("restarted bootstrap state = %v, %v", facts, err)
 	}
 }
@@ -784,10 +792,17 @@ func assertStillClosing(t *testing.T, closed <-chan error, stage string) {
 	}
 }
 
+func insecureControl() RunnerControlConfiguration {
+	return RunnerControlConfiguration{
+		ListenAddress: "127.0.0.1:0", Security: runnertransport.Security{Mode: runnertransport.Insecure},
+	}
+}
+
 func lifecycleConfig(t *testing.T, endpoint, workspace string, bootstrap *string, binary string) Config {
 	t.Helper()
 	return Config{
 		StateDir:      filepath.Join(t.TempDir(), "state"),
+		Control:       insecureControl(),
 		Launch:        SandboxLaunch{Sandbox: SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}, Bootstrap: bootstrap},
 		WorkspaceRoot: workspace, InitializationCwd: workspace,
 		Claude:     &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test-token"},
@@ -857,6 +872,7 @@ func TestScriptRunPreservesEnvironmentStreamsAndExitStatus(t *testing.T) {
 	t.Setenv("SCRIPT_RUNNER_CONFIG", "ambient")
 	r, err := New(Config{
 		StateDir:           t.TempDir(),
+		Control:            insecureControl(),
 		HarnessEnvironment: map[string]string{"SCRIPT_RUNNER_CONFIG": "configured"},
 	})
 	if err != nil {

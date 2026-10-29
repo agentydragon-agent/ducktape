@@ -35,8 +35,10 @@ from agentplane.runner.configuration import (
     Endpoint,
     Harness,
     PodEnvironment,
+    RunnerControl,
 )
 from agentplane.runner.platform_instructions import render_platform_instructions
+from agentplane.runner_transport.configuration import MTLS, TLS
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import (
     actions,
@@ -45,6 +47,7 @@ from cluster.cdk8s.agentplane import (
     llm_ingress,
     notifications,
     platform_routes,
+    runner_gateway,
     runner_vm,
     sandbox_pod,
     telemetry,
@@ -64,6 +67,8 @@ _POD_LABEL_NAME = "agentplane-runner"
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _STORAGE_CLASS = "piraeus-hdd-local"
 _LABELS = {"app.kubernetes.io/name": _POD_LABEL_NAME}
+RUNNER_SERVICE_PORT = 9090
+_RUNNER_TLS_PATH = "/run/agentplane/runner-tls"
 # Shared by the Runner configuration, its container volumeMount, and the
 # SandboxTemplate's state volume -- all three must name the same volume.
 _STATE_VOLUME_NAME = "state"
@@ -211,7 +216,6 @@ class RunnerSandbox(Construct):
         sidecar_resources: k8s.ResourceRequirements | None = None,
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
-        control_service: ServiceRef | None = None,
         session_reconcile_concurrency: int | None = None,
         disable_otel_sdk: bool = False,
     ) -> None:
@@ -236,7 +240,6 @@ class RunnerSandbox(Construct):
             sidecar_resources=sidecar_resources,
             image_pull_secret_name=image_pull_secret_name,
             trust_mounts=trust_mounts,
-            control_service=control_service,
             egress_api_service=egress_api_service,
             session_reconcile_concurrency=session_reconcile_concurrency,
             disable_otel_sdk=disable_otel_sdk,
@@ -285,6 +288,13 @@ class RunnerSandbox(Construct):
             egress=[cilium.dns_egress(), egress.proxy(namespace).egress()],
         )
         platform_routes.PlatformRouteFences(self, "platform-routes", namespace=namespace, clients=pods(namespace))
+        NetworkPolicy(
+            self,
+            "runner-listener",
+            metadata=ApiObjectMetadata(name=f"{NAME.removeprefix('agentplane-')}-listener", namespace=namespace),
+            endpoint_selector=pods(namespace).selector,
+            ingress=[runner_gateway.service(namespace).pods.admit(RUNNER_SERVICE_PORT)],
+        )
 
 
 class RunnerTemplate(Construct):
@@ -309,7 +319,6 @@ class RunnerTemplate(Construct):
         sidecar_resources: k8s.ResourceRequirements | None = None,
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
-        control_service: ServiceRef | None = None,
         egress_api_service: ServiceRef | None = None,
         session_reconcile_concurrency: int | None = None,
         disable_otel_sdk: bool = False,
@@ -327,7 +336,6 @@ class RunnerTemplate(Construct):
         self.sidecar_resources = sidecar_resources
         self.image_pull_secret_name = image_pull_secret_name
         self.trust_mounts = trust_mounts if trust_mounts is not None else sandbox_pod.proxy_trust_mounts()
-        self.control_service = control_service
         self.session_reconcile_concurrency = session_reconcile_concurrency
         self.disable_otel_sdk = disable_otel_sdk
         self.agent_cli_env = agent_cli_environment(service_urls(env, egress_api_service=egress_api_service))
@@ -407,7 +415,6 @@ class RunnerTemplate(Construct):
                 ]
             )
         )
-        control = platform_routes.control(self.env.namespace, service=self.control_service)
         ingress = platform_routes.ingress(self.env.namespace)
         llm_url = llm_ingress.proxied_url(self.env.namespace)
         config = Configuration(
@@ -415,7 +422,17 @@ class RunnerTemplate(Construct):
             session_reconcile_concurrency=self.session_reconcile_concurrency,
             state_dir=_STATE_DIR,
             initialization_cwd=_STATE_DIR,
-            control=Endpoint(target=control.local_target, bearer=platform_routes.ROUTE_BEARER),
+            control=RunnerControl(
+                listen_address=f"0.0.0.0:{RUNNER_SERVICE_PORT}",
+                security=MTLS(
+                    mode="mtls",
+                    tls=TLS(
+                        cert_file=f"{_RUNNER_TLS_PATH}/tls.crt",
+                        key_file=f"{_RUNNER_TLS_PATH}/tls.key",
+                        ca_file=f"{_RUNNER_TLS_PATH}/ca.crt",
+                    ),
+                ),
+            ),
             ingress=Endpoint(target=ingress.local_target, bearer=platform_routes.ROUTE_BEARER),
             platform_instructions=platform_instructions(self.env, egress_api_service=self.egress_api_service),
             harness_environment=configuration.EnvironmentVariables(
@@ -474,6 +491,7 @@ class RunnerTemplate(Construct):
                 requests={"cpu": k8s.Quantity.from_string("500m"), "memory": k8s.Quantity.from_string("1Gi")},
                 limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("4Gi")},
             ),
+            ports=[k8s.ContainerPort(name="runner-control", container_port=RUNNER_SERVICE_PORT)],
             volume_mounts=[
                 *self._execution_mounts(),
                 k8s.VolumeMount(name=_CONFIG_VOLUME, mount_path=CONFIG_FILE, sub_path="runner.json", read_only=True),
@@ -494,9 +512,7 @@ class RunnerTemplate(Construct):
             self,
             self.env,
             name=name,
-            platform_routes=platform_routes.sidecar_routes(
-                self.env.namespace, control_service=self.control_service, listen_host=bind_host
-            ),
+            platform_routes=platform_routes.sidecar_routes(self.env.namespace, listen_host=bind_host),
             listen_address=(f"{bind_host}:{sandbox_pod.SIDECAR_LISTEN_PORT}" if listen_host is not None else None),
         )
 

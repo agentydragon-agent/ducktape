@@ -40,11 +40,14 @@ from agentplane.runner.configuration import (
     Configuration,
     Endpoint,
     Harness,
+    RunnerControl,
     VMEnvironment,
     VMExecutor,
 )
+from agentplane.runner_transport.configuration import MTLS, TLS
 from cluster.cdk8s.agentplane import launcher_relay, llm_ingress, platform_routes, sandbox_pod, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.cert_manager.cluster_ca import BUNDLE_KEY as RUNNER_TRUST_BUNDLE_KEY
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_template
 
@@ -54,9 +57,12 @@ RUNNER_DISK_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unse
 _CONFIG_MAP_NAME = "runner-vm-config"
 _RUNNER_ENV_FILE = "runner.env"
 _WORKSPACE = "workspace"
-# The guest listens on nothing; a listed port keeps masquerade from forwarding every other port,
-# kubelet's probe of the relay's readiness port among them, to the guest.
+# A listed port keeps masquerade from forwarding every other port, including kubelet's probe of
+# the relay's readiness port, while exposing the Runner mTLS listener.
 _UNUSED_GUEST_PORT = 22
+_RUNNER_PORT = 9090
+_RUNNER_TLS_PATH = "/run/agentplane/runner-tls"
+_RUNNER_TRUST_PATH = "/run/agentplane/runner-trust"
 
 
 def _guest_address(port: int) -> str:
@@ -103,9 +109,16 @@ class RunnerVmTemplate(Construct):
             state_dir="/state",
             workspace_root="/state/workspaces",
             initialization_cwd="/state/workspaces",
-            control=Endpoint(
-                target=_guest_address(platform_routes.control(namespace).listen_port),
-                bearer=platform_routes.ROUTE_BEARER,
+            control=RunnerControl(
+                listen_address=f"0.0.0.0:{_RUNNER_PORT}",
+                security=MTLS(
+                    mode="mtls",
+                    tls=TLS(
+                        cert_file=f"{_RUNNER_TLS_PATH}/tls.crt",
+                        key_file=f"{_RUNNER_TLS_PATH}/tls.key",
+                        ca_file=f"{_RUNNER_TRUST_PATH}/{RUNNER_TRUST_BUNDLE_KEY}",
+                    ),
+                ),
             ),
             ingress=Endpoint(
                 target=_guest_address(platform_routes.ingress(namespace).listen_port),
@@ -170,7 +183,10 @@ class RunnerVmTemplate(Construct):
                     )
                 }
             ),
-            ports=[VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(port=_UNUSED_GUEST_PORT)],
+            ports=[
+                VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(port=_UNUSED_GUEST_PORT),
+                VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(port=_RUNNER_PORT),
+            ],
             disks={
                 "agentplane-config": VirtualMachineSpecTemplateSpecVolumes(
                     name="config", config_map=VirtualMachineSpecTemplateSpecVolumesConfigMap(name=_CONFIG_MAP_NAME)

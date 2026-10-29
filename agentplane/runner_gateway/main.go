@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -19,6 +20,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/gateway"
+	"github.com/agentydragon/ducktape/agentplane/runner_transport"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/agentydragon/ducktape/util/netlistener"
@@ -31,6 +33,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	kubevirtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -132,6 +135,18 @@ func listenAndServe(ctx context.Context, c config) error {
 
 // serve uses supplied listeners; a nil HTTP listener disables the facade.
 func serve(ctx context.Context, c config, listener, httpListener net.Listener) error {
+	if err := c.RunnerSecurity.Validate(); err != nil {
+		return err
+	}
+	if c.RunnerSecurity.Mode == runner_transport.MutualTLS {
+		identity, err := c.RunnerSecurity.TLS.LocalIdentity(x509.ExtKeyUsageClientAuth)
+		if err != nil {
+			return err
+		}
+		if identity != runner_transport.GatewayURI {
+			return errors.New("Gateway runner certificate has the wrong identity")
+		}
+	}
 	config, err := kubernetesConfig(c)
 	if err != nil {
 		return err
@@ -142,6 +157,9 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	}
 	scheme := runtime.NewScheme()
 	if err := sandboxapi.AddToScheme(scheme); err != nil {
+		return err
+	}
+	if err := kubevirtv1.AddToScheme(scheme); err != nil {
 		return err
 	}
 	objects, err := client.New(config, client.Options{Scheme: scheme})
@@ -175,21 +193,18 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	if err != nil {
 		return err
 	}
-	runnerAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.RunnerAudience, []string{c.Namespace})
-	if err != nil {
-		return err
-	}
 	g, err := gateway.New(gateway.Config{
-		Namespace: c.Namespace, CallerAccounts: c.GatewayCallers, ExecutorCallers: c.ExecutorCallers,
+		RunnerSecurity: c.RunnerSecurity,
+		Namespace:      c.Namespace, CallerAccounts: c.GatewayCallers, ExecutorCallers: c.ExecutorCallers,
 		SandboxControllerAccount: c.ControllerAccount,
 		HolderName:               c.PodName, HolderIP: c.PodIP, ProxyPort: int32(c.ProxyPort),
-	}, gatewayAuth, runnerAuth, objects, kube.CoreV1(), kube.CoordinationV1(), kube.DiscoveryV1())
+	}, gatewayAuth, objects, kube.CoreV1(), kube.CoordinationV1(), kube.DiscoveryV1())
 	if err != nil {
 		return err
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	failed := make(chan error, 6)
+	failed := make(chan error, 8)
 	go func() {
 		reportUnexpected(ctx, failed, "Sandbox cache", inventory.Start(ctx))
 	}()
@@ -237,14 +252,16 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 		}),
 	)
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
+	defer server.Stop()
 	g.RegisterProxy(server)
-	g.RegisterRunnerControl(server)
 	if len(c.ExecutorCallers) > 0 {
 		g.RegisterExecutorGateway(server)
 	}
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
 	go func() { reportUnexpected(ctx, failed, "gRPC listener", server.Serve(listener)) }()
+	go func() { reportUnexpected(ctx, failed, "Runner observer supervisor", g.RunRunnerObservers(ctx)) }()
+
 	var facadeServer *http.Server
 	if httpListener != nil {
 		if facadeServer, err = serveFacade(ctx, httpListener, listener, failed); err != nil {

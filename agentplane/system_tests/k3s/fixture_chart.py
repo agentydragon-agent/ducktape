@@ -36,9 +36,18 @@ from cdk8s_plus_34 import (
     MemoryResources,
     k8s,
 )
+from cert_manager_clusterissuer_crds.io.cert_manager import ClusterIssuerSpecCa, ClusterIssuerSpecSelfSigned
+from cert_manager_crds.io.cert_manager import CertificateSpecIssuerRef, CertificateSpecUsages
 from constructs import Construct
 from more_itertools import one
 from pydantic import AnyHttpUrl
+from trust_manager_crds.io.cert_manager.trust import (
+    BundleSpecSources,
+    BundleSpecSourcesSecret,
+    BundleSpecTarget,
+    BundleSpecTargetConfigMap,
+    BundleSpecTargetNamespaceSelector,
+)
 
 from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
@@ -70,7 +79,13 @@ from cluster.cdk8s.agentplane import (
     sandbox_pod,
     session_dispatcher,
 )
-from cluster.cdk8s.agentplane.chart import Namespace
+from cluster.cdk8s.agentplane.chart import (
+    RUNNER_CERTIFICATE_ISSUER,
+    RUNNER_TRUST_BUNDLE,
+    RUNNER_TRUST_BUNDLE_KEY,
+    Namespace,
+    add_runner_certificates,
+)
 from cluster.cdk8s.agentplane.egress_credentials import EgressCredentials
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
@@ -85,6 +100,9 @@ from cluster.cdk8s.agentplane.environment import (
 from cluster.cdk8s.model_selections import HarnessRoutes, model_configs
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
+from cluster.cdk8s.providers.cert_manager.bundle import Bundle
+from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
+from cluster.cdk8s.providers.cert_manager.cluster_issuer import ClusterIssuer
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Port, ServiceRef
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API, OLLAMA_QWEN_IQ4XS_128K
@@ -270,6 +288,48 @@ def environment(*, vm_sandboxes: bool, models: Models, app_origin: str = APP_ORI
     )
 
 
+def _add_runner_root(chart: Chart) -> None:
+    bootstrap = ClusterIssuer(
+        chart,
+        "runner-root-bootstrap",
+        metadata=ApiObjectMetadata(name="test-runner-root-bootstrap"),
+        self_signed=ClusterIssuerSpecSelfSigned(),
+    )
+    root_secret = "test-runner-root"
+    Certificate(
+        chart,
+        "runner-root",
+        metadata=ApiObjectMetadata(name="test-runner-root", namespace="cert-manager"),
+        secret_name=root_secret,
+        common_name="test-k3s-runner-root",
+        is_ca=True,
+        duration="87600h",
+        renew_before="8760h",
+        private_key=CertificatePrivateKey.ecdsa_p256(),
+        usages=[CertificateSpecUsages.CERT_SIGN, CertificateSpecUsages.CRL_SIGN],
+        issuer_ref=CertificateSpecIssuerRef(name=bootstrap.name, kind="ClusterIssuer"),
+    )
+    ClusterIssuer(
+        chart,
+        "runner-internal-issuer",
+        # add_runner_certificates uses the production issuer reference.
+        metadata=ApiObjectMetadata(name="cluster-internal-ca"),
+        ca=ClusterIssuerSpecCa(secret_name=root_secret),
+    )
+    Bundle(
+        chart,
+        "runner-trust",
+        metadata=ApiObjectMetadata(name=RUNNER_TRUST_BUNDLE),
+        sources=[BundleSpecSources(secret=BundleSpecSourcesSecret(name=root_secret, key="ca.crt"))],
+        target=BundleSpecTarget(
+            config_map=BundleSpecTargetConfigMap(key=RUNNER_TRUST_BUNDLE_KEY),
+            namespace_selector=BundleSpecTargetNamespaceSelector(
+                match_labels={"kubernetes.io/metadata.name": NAMESPACE}
+            ),
+        ),
+    )
+
+
 def objects(
     *, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models, vm_sandboxes: bool
 ) -> list[dict[str, Any]]:
@@ -300,6 +360,8 @@ def build_chart(
     app = Testing.app()
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     Namespace(chart, "namespace", env)
+    _add_runner_root(chart)
+    add_runner_certificates(chart, env)
     fixture_database.add_database(chart, env)
     app_database_url = (
         SecretRef(namespace=NAMESPACE, name="postgres-app").key("async-uri").env_value(chart, "app-database-url")
@@ -366,8 +428,7 @@ def build_chart(
     }
     orchestration_caller = actions.orchestration_callers(env)
     gateway_callers = app_caller | notifications_caller
-    control = runner_gateway_workload.runner_control_service(NAMESPACE, port=Port(name="grpc", number=8080))
-    runner_gateway_workload.add_stable_services(chart, env, control=control)
+    runner_gateway_workload.add_stable_services(chart, env)
     runner_gateway_workload.RunnerGateway(
         chart,
         "runner-gateway",
@@ -380,7 +441,6 @@ def build_chart(
             ServiceAccountRef(namespace=NAMESPACE, name=sandbox_controller.NAME),
             sandbox_controller.pods(NAMESPACE),
         ),
-        control=control,
         migration=ContainerProps(
             name="migrate",
             image=QUEUE_MIGRATOR_IMAGE,
@@ -396,7 +456,7 @@ def build_chart(
         container_env=database_env,
         memory_limit=None,
     )
-    control_target = f"{control.fqdn}:{control.port.number}"
+    control_target = runner_gateway.control_target(NAMESPACE)
     history_service.HistoryService(
         chart,
         "history-service",
@@ -419,7 +479,7 @@ def build_chart(
         database_url=app_database_url,
         placement=None,
         registry_secret_name=None,
-        runner_control_target=f"{{sandbox}}-control.{{namespace}}.svc:{control.port.number}",
+        runner_control_target=control_target,
         memory_limit=None,
         migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
         migrate_memory_limit=None,
@@ -452,7 +512,6 @@ def build_chart(
         sidecar_resources=sandbox_sidecar_resources,
         image_pull_secret_name=None,
         trust_mounts=sandbox_pod.egress_proxy_mounts(),
-        control_service=control,
         # The hermetic k3s fixture has no Alloy collector behind the telemetry sidecar route.
         disable_otel_sdk=True,
     )
@@ -463,6 +522,7 @@ def build_chart(
         gateway=runner_gateway.service(NAMESPACE),
         gateway_audience=runner_gateway.TOKEN_AUDIENCE,
         gateway_control_target=control_target,
+        runner_certificate_issuer=RUNNER_CERTIFICATE_ISSUER,
         placement=None,
         registry_secret_name=None,
         memory_limit=None,

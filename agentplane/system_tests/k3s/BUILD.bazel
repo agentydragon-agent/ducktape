@@ -1,3 +1,7 @@
+# gazelle:resolve py cert_manager_crds //cluster/cdk8s/providers/cert_manager:certificate
+# gazelle:resolve py cert_manager_clusterissuer_crds //cluster/cdk8s/providers/cert_manager:clusterissuer
+# gazelle:resolve py trust_manager_crds //cluster/cdk8s/providers/cert_manager:bundle
+
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_EXEC_PROPERTIES", "K3S_TAGS", "K3S_VM_IMAGES")
@@ -186,6 +190,7 @@ py_test(
         "//agentplane/mcp_edge:settings",
         "//agentplane/runner_gateway:settings",
         "//agentplane/system_tests:conftest",
+        "//cluster/cdk8s/agentplane:runner_gateway",
         "//util:settings_contract",
         "//util/bazel:runfiles",
         "@pypi//bcrypt",
@@ -227,11 +232,13 @@ py_library(
     data = [
         "//agentplane/crds",
         K3S_BINARY,
+        "//agentplane/system_tests/k3s/pki:all_image_layouts",
     ] + [":" + name + "_layout" for name in _IMAGES],
     visibility = ["//agentplane/system_tests:__pkg__"],
     deps = [
         ":block_storage",
         ":bootstrap",
+        ":certificates",
         ":guest_logs",
         ":iptables_rule",
         ":rendered_fixture",
@@ -249,6 +256,7 @@ py_library(
     name = "fixture_chart",
     testonly = True,
     srcs = ["fixture_chart.py"],
+    visibility = ["//agentplane/system_tests:__pkg__"],
     deps = [
         ":block_storage",
         ":dex",
@@ -293,6 +301,12 @@ py_library(
         "//cluster/cdk8s/agentplane:session_dispatcher",
         "//cluster/cdk8s/providers/agentplane:egress_credential",
         "//cluster/cdk8s/providers/agentplane:policy_set",
+        "//cluster/cdk8s/providers/cert_manager:bundle",
+        "//cluster/cdk8s/providers/cert_manager:cert_manager_bundle",
+        "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
+        "//cluster/cdk8s/providers/cert_manager:certificate",
+        "//cluster/cdk8s/providers/cert_manager:cluster_issuer",
+        "//cluster/cdk8s/providers/cert_manager:clusterissuer",
         "//model_catalog:catalog",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -576,4 +590,16 @@ py_library(
     name = "iptables_rule",
     testonly = True,
     srcs = ["iptables_rule.py"],
+)
+
+py_library(
+    name = "certificates",
+    testonly = True,
+    srcs = ["certificates.py"],
+    deps = [
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pyyaml",
+        "@pypi//tenacity",
+    ],
 )

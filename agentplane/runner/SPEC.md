@@ -13,10 +13,15 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 Every Pod and VM starts `agentplane-runner --config PATH --launch-file PATH`. The executable name
 has no effect on configuration. Both flags are required; the shared version-2 JSON configuration
 rejects unknown fields, unsupported versions and contradictory policy before state ownership.
-Templates own paths, endpoints, providers, explicit environment allowlists, platform instructions,
-isolation settings, and the configurable Session reconciliation worker count (default 16). That
-worker count does not cap Session admission. The separate controller-owned launch file contains
-only Sandbox identity and optional bootstrap source.
+Runner serves control at `control.listen_address` with an explicit `control.security.mode`.
+`mtls` requires `security.tls`; its server certificate URI must name the Sandbox namespace and UID
+in the separate controller-owned launch file. `insecure` is plaintext without peer authentication
+and rejects TLS configuration. Missing/unknown modes and bad mTLS credentials never fall back.
+Cluster and k3s templates select mTLS; standalone behavior tests may explicitly select insecure. Templates own
+paths, endpoints, providers, explicit
+environment allowlists, platform instructions, isolation settings, and the configurable Session
+reconciliation worker count (default 16). That worker count does not cap Session admission. The
+launch file contains only Sandbox identity and optional bootstrap source.
 
 The Pod exec-server companion serves HTTP `GET /healthz` in its existing process for Kubernetes
 liveness and readiness checks. Health checks inspect its Unix control socket within one second and
@@ -164,18 +169,29 @@ budget remains authoritative across all of its native services.
   attempt without blocking the Runner control stream. A refused launch or terminal fencing failure
   rejects readiness; it never enables local execution.
 
-## Runner control stream
+## Runner control
 
-- The runner dials the Runner Gateway's [runner control stream](../docs/runner_control.md) at
-  `control.target` and keeps one `Connect` stream for as long as it runs, reconnecting on a fresh
-  connection after any loss, and serves the `Runner` service to the gateway through it. It accepts
-  no network connections. After `Welcome`, it keeps the stream live with empty heartbeats while it
-  adopts that incarnation UID. Until adoption succeeds, it publishes no Runner facts and answers
-  tunneled calls with `UNAVAILABLE` without invoking Runner methods; afterward it publishes current
-  facts and relays calls normally.
-- Runner control writes are serialized and bounded. A write that exceeds its bound cancels that
-  `Connect` stream so blocked writes and relayed calls can join before reconnect; reconnect never
-  replays calls from the lost stream.
+- Runner listens on `control.listen_address` and the Gateway dials its `Runner` and `RunnerExec`
+  services with matching explicit security settings. Cluster and k3s deployments use mTLS. The Runner certificate URI binds the Sandbox namespace, Sandbox UID and credential ID;
+  the Gateway presents `spiffe://agentplane/runner-gateway`. Runner control has no bearer credential.
+  Explicit insecure mode skips certificate authentication while retaining all Sandbox, incarnation,
+  boot-ID, observer ownership and epoch checks. Fencing metadata supplies no proof of peer identity.
+  History ingress remains a separate outbound bearer-authenticated connection.
+- The control listener exposes the standard gRPC health API and reports local startup as `SERVING`
+  before state observation begins. The Gateway's `WatchState` request supplies the Sandbox UID, current Pod
+  or virt-launcher incarnation UID, and Lease connection epoch. Runner adopts that incarnation
+  before publishing its first facts snapshot, then sends changed facts and a ten-second heartbeat.
+  Internal notifications with unchanged facts do not publish extra snapshots. The Gateway retries
+  a lost observation independently of Sandbox discovery and claims a fresh connection epoch before
+  accepting the replacement Runner boot.
+  Cancelling or superseding the watch changes observer readiness but does not cancel already
+  admitted durable work.
+- Every unary call and direct executor stream is fenced with the Sandbox UID, incarnation
+  UID, Runner boot ID and connection epoch. A stale epoch cannot authorize a call or clear a newer
+  observer's readiness. Calls with stale boot or observer metadata fail before admission with
+  `UNAVAILABLE`, allowing queued commands to retry through the current observer without marking
+  the whole workload incarnation as refusing work. `RunnerExec.Connect` carries one executor relay per stream and applies the
+  per-Runner stream and message limits. Closing one stream leaves other executor relays running.
 - `OpenSession` answers with the session's `Attached` snapshot: the spec, setup and harness states,
   `last_cursor`, and the active turn id as of that position. `GetStatus` returns one snapshot with a
   runner boot UUID, each harness process (its per-spawn UUID and the Sessions it hosts), session
@@ -211,13 +227,11 @@ budget remains authoritative across all of its native services.
   command delivered before it is answered; a call after it that starts or resumes work is refused
   at once (see Teardown quiesce), and `ListSessions` waits for it. A lost connection drops
   the answers of calls in flight, never an operation halfway through.
-- The bearer it sends is a placeholder the egress proxy substitutes; the runner never holds the
-  control token.
 
 ## Event ingress
 
 - The runner pushes every session's journal to the
-  [ingress](../docs/runner_control.md#event-ingress) at `--ingress-target`, one `Push` call per session until the ingress
+  [ingress](../docs/runner_control.md#event-ingress) at `ingress.target`, one `Push` call per session until the ingress
   acknowledges the session's seal: at startup, when a session is created, and after a call is lost.
   Each call announces the session's `Attached` snapshot and sends the journal's entries after the
   ingress's first acknowledgement, replayed and then live, at most 1024 beyond the latest
@@ -228,12 +242,14 @@ budget remains authoritative across all of its native services.
   Runner; remote stream loss retries with the control stream's backoff. A call the ingress refuses as
   another writer's, or whose first acknowledgement is beyond the journal, retries at the maximum.
   These remote failures do not hold up another session, a command or a lifecycle request: the journal is the buffer.
-- The bearer it sends is a placeholder the egress proxy substitutes for the ingress's own audience.
+- The ingress bearer is a placeholder the egress proxy substitutes for the ingress's own audience;
+  it is independent of Runner control and never authenticates to the Gateway.
 
 ## Teardown quiesce
 
 - `Quiesce` is for Sandbox teardown only. The runner first records, durably, that the Sandbox is in
-  lameduck in this incarnation, naming the incarnation UID its latest `Welcome` carried; from then on,
+  lameduck in this incarnation, naming the incarnation UID from its latest authenticated
+  `WatchState`; from then on,
   including after a restart in the same incarnation, it is in lameduck: `OpenSession` and every
   delivered command except an interrupt are refused with `ABORTED`, which a sender reads as "retry
   after the Sandbox resumes". An admitted command whose dispatch marker was not committed is

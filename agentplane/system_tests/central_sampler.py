@@ -152,6 +152,7 @@ async def _configure_services(core: k8s.CoreV1Api, target: str) -> None:
     settings["ingress"]["sampler_accounts"] = [{"namespace": namespace(), "name": SERVICE}]
     history.data["config.yaml"] = yaml.safe_dump(settings)
     await core.replace_namespaced_config_map(history.metadata.name, namespace(), history)
+    await kubectl("rollout", "restart", "deployment/runner-gateway")
     await kubectl("rollout", "restart", "deployment/history-service")
     await asyncio.gather(
         kubectl("rollout", "status", "deployment/runner-gateway", "--timeout=180s"),
@@ -196,25 +197,41 @@ async def _diagnostics() -> None:
         )
 
 
-async def _sampler_diagnostics(core: k8s.CoreV1Api) -> None:
-    output = undeclared_outputs_dir()
+async def capture_sampler_diagnostics() -> Path:
+    """Retain this sampler Pod's logs before another scenario replaces the Pod."""
     state = await kubectl("get", f"pod/{SERVICE}", "-o", "json")
-    (output / "central-sampler-pod.json").write_text(state)
-    for container in ("initialize", "sampler"):
-        try:
-            log = await core.read_namespaced_pod_log(SERVICE, namespace(), container=container)
-        except ApiException as error:
-            log = f"Container logs unavailable: {error}"
-        (output / f"central-sampler-{container}.log").write_text(log)
+    uid = str(json.loads(state)["metadata"]["uid"])
+    output = undeclared_outputs_dir() / "central-sampler-pods" / uid
+    output.mkdir(parents=True, exist_ok=True)
+    (output / "pod.json").write_text(state)
+    async with api_client() as connection:
+        core = k8s.CoreV1Api(connection)
+        for container in ("initialize", "sampler"):
+            try:
+                log = await core.read_namespaced_pod_log(SERVICE, namespace(), container=container)
+            except ApiException as error:
+                log = f"Container logs unavailable: {error}"
+            (output / f"{container}.log").write_text(log)
     # The test owns this k3s node; preserve the Pod's EmptyDir before deletion removes it.
-    uid = json.loads(state)["metadata"]["uid"]
     logs = Path(f"/var/lib/kubelet/pods/{uid}/volumes/kubernetes.io~empty-dir/logs")
     if await asyncio.to_thread(logs.exists):
-        await asyncio.to_thread(shutil.copytree, logs, output / "central-sampler", dirs_exist_ok=True)
+        await asyncio.to_thread(shutil.copytree, logs, output / "sessions", dirs_exist_ok=True)
+    return output
 
 
 async def _delete_sampler() -> None:
-    await kubectl("delete", f"pod/{SERVICE}", "--wait=true", "--timeout=60s")
+    await kubectl(
+        "delete",
+        f"pod/{SERVICE}",
+        f"service/{SERVICE}",
+        f"configmap/{SERVICE}",
+        f"serviceaccount/{SERVICE}",
+        f"clusterrole/{SERVICE}",
+        f"clusterrolebinding/{SERVICE}",
+        "--ignore-not-found",
+        "--wait=true",
+        "--timeout=60s",
+    )
 
 
 async def _create_sampler(connection: k8s.ApiClient, config: Settings) -> None:
@@ -322,9 +339,10 @@ async def central_stack(directory: Path, model_origin: str, *, template: str) ->
         caller_token = await _bound_token(core, "app", app, "session-dispatcher")
         reader_token = directory / "history-reader-token"
         reader_token.write_text(await _bound_token(core, "app", app, HISTORY_READER_AUDIENCE))
+        database_name = "central_sampler_test_" + uuid4().hex
         for statement in (
-            "CREATE ROLE central_sampler_test LOGIN PASSWORD 'test-central-database-password'",
-            "CREATE DATABASE central_sampler_test OWNER central_sampler_test",
+            f"CREATE ROLE {database_name} LOGIN PASSWORD 'test-central-database-password'",
+            f"CREATE DATABASE {database_name} OWNER {database_name}",
         ):
             await kubectl(
                 "exec",
@@ -363,6 +381,7 @@ async def central_stack(directory: Path, model_origin: str, *, template: str) ->
         ready = json.loads(await kubectl("get", "sandbox", sandbox, "-o", "json"))
         incarnation = ready["status"]["incarnation"]["uid"]
         history_target = await _address(core, "history-service", 8081)
+        stack.push_async_callback(_delete_sampler)
         service = await core.create_namespaced_service(
             namespace(),
             k8s.V1Service(
@@ -385,7 +404,7 @@ async def central_stack(directory: Path, model_origin: str, *, template: str) ->
         # The per-Sandbox Service selects the replica holding this Sandbox's Runner stream.
         control_target = await _control_address(connection, sandbox, uid)
         config = Settings(
-            database_url=f"postgresql://central_sampler_test:test-central-database-password@{database}/central_sampler_test?sslmode=disable",
+            database_url=f"postgresql://{database_name}:test-central-database-password@{database}/{database_name}?sslmode=disable",
             listen="0.0.0.0:8080",
             service_name=SERVICE,
             providers={
@@ -412,8 +431,7 @@ async def central_stack(directory: Path, model_origin: str, *, template: str) ->
             lease_seconds=60,
         )
         await _create_sampler(connection, config)
-        stack.push_async_callback(_delete_sampler)
-        stack.push_async_callback(_sampler_diagnostics, core)
+        stack.push_async_callback(capture_sampler_diagnostics)
         await kubectl("wait", f"pod/{SERVICE}", "--for=condition=Ready", "--timeout=60s")
         sampler_token = await _bound_token(core, "runner-gateway", gateway_pod, SERVICE)
         sampler_channel = await stack.enter_async_context(dial(target))

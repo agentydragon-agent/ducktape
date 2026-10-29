@@ -30,7 +30,6 @@ from agentplane.app.testing.replication_source import (
     ReplicationSource,
     add_replication_source,
 )
-from agentplane.app.testing.runner_gateway import RUNNER_AUDIENCE
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
@@ -44,7 +43,7 @@ from agentplane.history_service.testing.history import History
 from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
-from agentplane.runner_gateway.testing.runner_connection import runner_connection
+from agentplane.runner_gateway.testing.runner_server import runner_server
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import deterministic_browser_context, disable_animations_script
@@ -160,10 +159,13 @@ async def scripted_runner(
     sandbox: SandboxCluster,
     gateway_service: GatewayProcess,
     sandbox_control: SandboxControlClient,
+    tmp_path: Path,
 ) -> AsyncIterator[None]:
     """`source`'s scripted runner, connected to the Runner Gateway as `sandbox`'s runner."""
-    async with runner_connection(
-        gateway_service.target, await sandbox.pod_token(RUNNER_AUDIENCE), partial(add_replication_source, source)
+    async with runner_server(
+        "127.0.0.1:9090",
+        gateway_service.issue_runner_tls(sandbox.runner_identity_uri, tmp_path / "runner-transport"),
+        partial(add_replication_source, source),
     ):
         await gateway_service.wait_for_runner(sandbox_control, sandbox.destination)
         yield
@@ -212,12 +214,13 @@ async def thread_browser(
     gateway_service: GatewayProcess,
     sandbox_control: SandboxControlClient,
     gateway_access: GatewayAccess,
+    tmp_path: Path,
 ) -> AsyncIterator[ThreadBrowser]:
     source = thread_source
     thread_id = await event_logs.seed(SANDBOX, SESSION)
     await store.rename(thread_id, "Browser thread")
     async with (
-        scripted_runner(source, sandbox, gateway_service, sandbox_control),
+        scripted_runner(source, sandbox, gateway_service, sandbox_control, tmp_path),
         source.ingesting(history),
         app_process(
             db_url,

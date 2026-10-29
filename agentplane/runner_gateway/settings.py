@@ -12,6 +12,7 @@ from typing import Annotated, ClassVar
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints
 from pydantic_settings import SettingsConfigDict
 
+from agentplane.runner_transport.configuration import Security
 from util.yaml_file_settings import YamlFileSettings
 
 type ServiceAccountName = Annotated[str, StringConstraints(pattern=r"^[^/]+/[^/]+$")]
@@ -41,9 +42,7 @@ class Settings(YamlFileSettings):
     runner_token_file: Path = Field(description="Projected Gateway-audience token for cross-replica Runner calls.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     listen_address: str = Field(
-        default=":8080",
-        min_length=1,
-        description="gRPC listen address for the Dispatcher, Runner proxy and Runner Connect.",
+        default=":8080", min_length=1, description="gRPC listen address for authenticated platform callers."
     )
     http_listen_address: str | None = Field(
         default=None,
@@ -60,7 +59,7 @@ class Settings(YamlFileSettings):
     )
     dispatcher_audience: str = Field(min_length=1, description="Dispatcher caller TokenReview audience.")
     gateway_audience: str = Field(min_length=1, description="Gateway caller TokenReview audience.")
-    runner_audience: str = Field(min_length=1, description="Runner Connect TokenReview audience.")
+    runner_security: Security
     dispatcher_callers: Set[ServiceAccountName] = Field(
         min_length=1, description="ServiceAccounts admitted as Dispatcher callers, as namespace/name."
     )
@@ -85,5 +84,5 @@ class Settings(YamlFileSettings):
         default_factory=dict, description="Enabled named central services; empty disables central Session admission."
     )
     executor_callers: Set[ServiceAccountName] = Field(
-        default_factory=frozenset, description="ServiceAccounts allowed to open fixed exec-server tunnels."
+        default_factory=frozenset, description="ServiceAccounts allowed to open fixed exec-server streams."
     )

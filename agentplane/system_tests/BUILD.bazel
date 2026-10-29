@@ -15,6 +15,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 # gazelle:exclude test_suspend_resume.py
 # gazelle:exclude test_thread_stream.py
 # gazelle:exclude test_runner_systemd.py
+# gazelle:exclude test_runner_credentials.py
 # gazelle:exclude test_vm_sandbox.py
 # gazelle:exclude test_vm_workspace_ownership.py
 
@@ -47,6 +48,7 @@ py_library(
         ":native_artifacts",
         ":ollama_warmup",
         ":scripted_upstream",
+        "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
         "//agentplane/app:sandbox_models",
         "//agentplane/app/testing:client",
@@ -54,6 +56,7 @@ py_library(
         "//agentplane/runner:harness",
         "//util:net",
         "//util/testing:otel_tracing",
+        "//util/testing:undeclared_outputs",
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -263,6 +266,34 @@ system_test(
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
         "//agentplane/testing:scripted_model",
         "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
+
+# Exercise real cert-manager issuance and reissuance, runner mTLS sessions on Pods and VMs, and
+# verify a replacement Pod resumes its native context and retains Thread history.
+system_test(
+    name = "test_runner_credentials",
+    srcs = ["test_runner_credentials.py"],
+    k3s = "scripted",
+    vm_sandboxes = "ci",
+    deps = [
+        ":agent",
+        ":cluster",
+        ":conftest",
+        ":scripted_upstream",
+        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
+        "//agentplane:sandbox_resource",
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/testing:scripted_model",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

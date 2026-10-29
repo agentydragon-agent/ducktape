@@ -54,7 +54,7 @@ func newConnectionRecords(
 	return &connectionRecords{coordination: coordination, discovery: discovery, namespace: namespace, holder: holder}, nil
 }
 
-func (r *connectionRecords) accept(ctx context.Context, sandbox sandboxreader.Identity, podUID, bootID string) (uint64, error) {
+func (r *connectionRecords) claim(ctx context.Context, sandbox sandboxreader.Identity, podUID string) (uint64, error) {
 	leaseName := sandbox.Name + sandboxlease.RunnerLeaseSuffix
 	var epoch uint64
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -68,6 +68,11 @@ func (r *connectionRecords) accept(ctx context.Context, sandbox sandboxreader.Id
 		if current != nil {
 			if !ownsSandbox(current.OwnerReferences, sandbox) || !current.DeletionTimestamp.IsZero() {
 				return fmt.Errorf("refusing to adopt Lease %s: foreign or being deleted", leaseName)
+			}
+			if current.Spec.HolderIdentity != nil && *current.Spec.HolderIdentity != r.holder.name &&
+				current.Spec.RenewTime != nil && current.Spec.LeaseDurationSeconds != nil &&
+				time.Now().Before(current.Spec.RenewTime.Add(time.Duration(*current.Spec.LeaseDurationSeconds)*time.Second)) {
+				return errRunnerOwned
 			}
 			if current.Spec.LeaseTransitions != nil {
 				if *current.Spec.LeaseTransitions == math.MaxInt32 {
@@ -83,7 +88,7 @@ func (r *connectionRecords) accept(ctx context.Context, sandbox sandboxreader.Id
 			ObjectMeta: metav1.ObjectMeta{
 				Name: leaseName, Namespace: r.namespace,
 				Labels:          map[string]string{sandboxlease.ConnectionLabel: "true"},
-				Annotations:     map[string]string{sandboxlease.PodUIDAnnotation: podUID, sandboxlease.RunnerBootIDAnnotation: bootID},
+				Annotations:     map[string]string{sandboxlease.PodUIDAnnotation: podUID},
 				OwnerReferences: []metav1.OwnerReference{sandboxOwnerReference(sandbox)},
 			},
 			Spec: coordinationv1.LeaseSpec{
@@ -112,6 +117,25 @@ func (r *connectionRecords) accept(ctx context.Context, sandbox sandboxreader.Id
 		return 0, fmt.Errorf("point Sandbox control Service at connection holder: %w", err)
 	}
 	return epoch, nil
+}
+
+func (r *connectionRecords) recordBootID(ctx context.Context, sandbox sandboxreader.Identity, epoch uint64, bootID string) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		lease, err := r.coordination.Leases(r.namespace).Get(ctx, sandbox.Name+sandboxlease.RunnerLeaseSuffix, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		if !ownsSandbox(lease.OwnerReferences, sandbox) || lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity != r.holder.name ||
+			lease.Spec.LeaseTransitions == nil || uint64(*lease.Spec.LeaseTransitions) != epoch {
+			return errSupersededConnection
+		}
+		if lease.Annotations == nil {
+			lease.Annotations = make(map[string]string)
+		}
+		lease.Annotations[sandboxlease.RunnerBootIDAnnotation] = bootID
+		_, err = r.coordination.Leases(r.namespace).Update(ctx, lease, metav1.UpdateOptions{})
+		return err
+	})
 }
 
 func (r *connectionRecords) renew(

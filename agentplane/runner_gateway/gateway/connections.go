@@ -1,11 +1,9 @@
 package gateway
 
 import (
-	"context"
 	"sync"
 
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
-	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -16,25 +14,16 @@ const connectionHeldByAnotherReplica = "another replica holds this Sandbox's run
 var errSupersededConnection = status.Error(codes.Aborted, "superseded by a newer connection")
 
 type runnerConnection struct {
-	identity sandboxreader.Identity
-	podUID   string
-	epoch    uint64
-	bootID   string
-	tunnel   *tunnel
-	executor *executorTunnel
-	runner   runnerservicepb.RunnerClient
-	ended    chan struct{}
-	endMu    sync.Mutex
-	endErr   error
-}
-
-func newRunnerConnection(identity sandboxreader.Identity, podUID, bootID string, epoch uint64, send, sendExecutorData sendServiceFrame) *runnerConnection {
-	tunnel := newTunnel(send)
-	return &runnerConnection{
-		identity: identity, podUID: podUID, epoch: epoch, bootID: bootID,
-		tunnel: tunnel, executor: newExecutorTunnel(epoch, send, sendExecutorData),
-		runner: runnerservicepb.NewRunnerClient(&tunnelClientConn{tunnel: tunnel}), ended: make(chan struct{}),
-	}
+	identity    sandboxreader.Identity
+	podUID      string
+	epoch       uint64
+	bootID      string
+	runner      runnerservicepb.RunnerClient
+	direct      *fencedRunnerConn
+	closeDirect func()
+	ended       chan struct{}
+	endMu       sync.Mutex
+	endErr      error
 }
 
 func (c *runnerConnection) end(err error) {
@@ -48,20 +37,9 @@ func (c *runnerConnection) end(err error) {
 		close(c.ended)
 	}
 	c.endMu.Unlock()
-	c.tunnel.close(err)
-	c.executor.close(err)
-}
-
-func (c *runnerConnection) routeExecutor(frame *executorpb.ExecutorFrame) error {
-	return c.executor.receive(frame)
-}
-
-func (c *runnerConnection) sendExecutorMessage(ctx context.Context, channelID string, message *executorpb.ExecutorMessage) error {
-	return c.executor.sendMessage(ctx, channelID, message)
-}
-
-func (c *runnerConnection) closeExecutor(channelID string, closeFrame *executorpb.ExecutorClose) error {
-	return c.executor.sendClose(channelID, closeFrame)
+	if c.closeDirect != nil {
+		c.closeDirect()
+	}
 }
 
 func (c *runnerConnection) error() error {
@@ -70,7 +48,7 @@ func (c *runnerConnection) error() error {
 	if c.endErr != nil {
 		return c.endErr
 	}
-	return status.Error(codes.Unavailable, "runner control stream ended")
+	return status.Error(codes.Unavailable, "runner observation ended")
 }
 
 // connections is the local replica's stream table and watch-derived view of Lease epochs.
@@ -118,7 +96,7 @@ func (c *connections) holder(sandboxUID string) (*runnerConnection, error) {
 		if err := connection.error(); err != nil {
 			return nil, err
 		}
-		return nil, status.Error(codes.Unavailable, "runner control stream ended")
+		return nil, status.Error(codes.Unavailable, "runner observation ended")
 	default:
 		return connection, nil
 	}

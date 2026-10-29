@@ -13,7 +13,17 @@ def _configuration() -> dict[str, object]:
         "environment": {"kind": "pod", "supervision": "subprocess"},
         "state_dir": "/test/state",
         "initialization_cwd": "/test/workspaces",
-        "control": {"target": "gateway.test:7100", "bearer": "control-placeholder"},
+        "control": {
+            "listen_address": "127.0.0.1:8090",
+            "security": {
+                "mode": "mtls",
+                "tls": {
+                    "cert_file": "/run/test/tls.crt",
+                    "key_file": "/run/test/tls.key",
+                    "ca_file": "/run/test/ca.crt",
+                },
+            },
+        },
         "ingress": {"target": "history.test:8081", "bearer": "ingress-placeholder"},
         "platform_instructions": "Test guidance.",
         "harness_environment": {"inherit": ["PATH"], "values": {"HOME": "/test/home"}},
@@ -37,6 +47,27 @@ def test_runner_configuration_accepts_explicit_session_reconcile_concurrency() -
     assert decoded.session_reconcile_concurrency == 2048
 
 
+def test_runner_control_listener_round_trips() -> None:
+    config = Configuration.model_validate(_configuration())
+    decoded = Configuration.model_validate_json(config.model_dump_json(exclude_none=True))
+    assert decoded == config
+    assert decoded.control.listen_address == "127.0.0.1:8090"
+
+
+def test_runner_control_accepts_explicit_insecure_mode_without_tls_files() -> None:
+    values = _configuration()
+    values["control"] = {"listen_address": "127.0.0.1:8090", "security": {"mode": "insecure"}}
+
+    config = Configuration.model_validate(values)
+    decoded = Configuration.model_validate_json(config.model_dump_json(exclude_none=True))
+
+    assert decoded == config
+    assert decoded.control.model_dump(mode="json") == {
+        "listen_address": "127.0.0.1:8090",
+        "security": {"mode": "insecure"},
+    }
+
+
 @pytest.mark.parametrize(
     "updates",
     [
@@ -48,6 +79,60 @@ def test_runner_configuration_accepts_explicit_session_reconcile_concurrency() -
         {"harness_environment": {"inherit": ["NAME=value"]}},
         {"harness_environment": {"values": {"": "value"}}},
         {"codex": {"binary": "/test/codex"}},
+        {"control": {"target": "gateway.test:7100", "bearer": "legacy-token"}},
+        {
+            "control": {
+                "listen_address": "127.0.0.1:8090",
+                "tls": {
+                    "cert_file": "/run/test/tls.crt",
+                    "key_file": "/run/test/tls.key",
+                    "ca_file": "/run/test/ca.crt",
+                },
+            }
+        },
+        {
+            "control": {
+                "listen_address": "host:notaport",
+                "security": {
+                    "mode": "mtls",
+                    "tls": {
+                        "cert_file": "/run/test/tls.crt",
+                        "key_file": "/run/test/tls.key",
+                        "ca_file": "/run/test/ca.crt",
+                    },
+                },
+            }
+        },
+        {
+            "control": {
+                "listen_address": "0.0.0.0:8090",
+                "target": "gateway.test:7100",
+                "security": {
+                    "mode": "mtls",
+                    "tls": {
+                        "cert_file": "/run/test/tls.crt",
+                        "key_file": "/run/test/tls.key",
+                        "ca_file": "/run/test/ca.crt",
+                    },
+                },
+            }
+        },
+        {
+            "control": {
+                "listen_address": "0.0.0.0:8090",
+                "security": {
+                    "mode": "mtls",
+                    "tls": {
+                        "cert_file": "relative.crt",
+                        "key_file": "/run/test/tls.key",
+                        "ca_file": "/run/test/ca.crt",
+                    },
+                },
+            }
+        },
+        {"control": {"listen_address": "127.0.0.1:8090", "security": {"mode": "mtls"}}},
+        {"control": {"listen_address": "127.0.0.1:8090", "security": {"mode": "insecure", "tls": {}}}},
+        {"control": {"listen_address": "127.0.0.1:8090", "security": {"tls": {}}}},
         {"environment": {"kind": "unknown"}},
         {"environment": {"kind": "pod"}},
         {"environment": {"kind": "pod", "supervision": "unknown"}},
