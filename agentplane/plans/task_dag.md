@@ -37,15 +37,10 @@ flowchart LR
         DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: merge plan awaiting review]
         DISPATCHER_QUEUE_OPTIONAL[Unscheduled: run without the queue]
     end
-    subgraph APP_FOLLOW_UPS[Integration app follow-ups]
-        APP_DISPATCHER_HTTP_SETTING_CLEANUP[In flight: remove legacy Dispatcher URL setting]
-        APP_DISPATCHER_TS_TYPES[In flight: generate Dispatcher TypeScript types]
-    end
     FAKE_CLIENTS_TO_ENVTEST[Candidate: remaining fake API clients to envtest]
     RUNNER_LAYERING_VM[Paused: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
     ACTION_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit, section 9]
     DISPATCH_TRACK -. after .-> REFACTOR_COHERENCE_AUDIT
-    APP_FOLLOW_UPS -. after .-> REFACTOR_COHERENCE_AUDIT
 ```
 
 ## 2. Service-owned command admission and later notification presentation
@@ -1870,39 +1865,6 @@ wheels and every caller before removing old per-Session-process assumptions and 
 Do not delete retained runner stores, native conversations or History. Confirm exact UID/Session
 routing to the private store, suspended-queue retry and restart on the deployed images before retiring
 old paths.
-
-## 14. Integration app follow-ups
-
-The [app README](../app/README.md) documents the deployed Go API and Goose migrator, the remaining
-Python settings and test support, and the Alembic rollback bridge. This section tracks the remaining
-Dispatcher setting and TypeScript cleanup.
-
-```mermaid
-flowchart LR
-    APP_DISPATCHER_HTTP_SETTING_CLEANUP[In flight: remove legacy Dispatcher URL setting]
-    APP_DISPATCHER_TS_TYPES[In flight: generate Dispatcher TypeScript types]
-```
-
-### `APP_DISPATCHER_HTTP_SETTING_CLEANUP` — remove the retired Dispatcher URL setting
-
-**In flight (assigned by Codex, 2026-10-29).** The Go app is deployed on staging. The app configuration still
-supplies `session_dispatcher_http_url`, and its settings parsers accept it. Remove the value from
-the manifest, then remove parser fields after that configuration rolls out.
-
-Exit: neither the manifest nor app settings schema contains `session_dispatcher_http_url`.
-
-### `APP_DISPATCHER_TS_TYPES` — generate Dispatcher TypeScript types and remove duplicated message shapes
-
-**In flight (assigned by Codex, 2026-10-29).** Generate TypeScript messages from
-`runner_gateway/dispatcher/session_dispatcher.proto` and use their ProtoJSON codecs for `Dispatch` and
-`InterruptTurnResponse`. Replace the handwritten `DispatchReceipt` and `InterruptResult` shapes and
-their repeated parsing/serialization in `app/frontend/threads/client.ts` and `local_commands.ts`. Keep
-the app-owned submission union and admission checks; preserve locally retained, unconfirmed commands
-and lost-response recovery.
-
-Exit: the frontend consumes generated Dispatcher messages instead of duplicated wire shapes, and
-focused Bazel tests cover submission receipts, local persistence, reconnects and immutable-command
-recovery. No browser transport or backend protocol change is required.
 
 ## 15. Cleanups after the current tracks
 
