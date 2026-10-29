@@ -4,16 +4,15 @@ import { type JSX, useEffect, useEffectEvent, useMemo, useState } from "react";
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 
 import type { ModelCatalog, SessionDefaultsView } from "../schema";
-import type { Harness } from "../model_catalog";
+import { harnessOptions, modelsForHarness, type Harness } from "../model_catalog";
 import { api, displayableError } from "../client";
-import { harnessOptions, modelsForHarness } from "../model_catalog";
 import { Disclosure, DisclosureBody } from "../disclosure";
 import { SessionSpecSchema, type SessionSpec } from "../../../proto/runner_pb";
 
 type LoadedPresetDefaults = { preset: string | null; defaults: Partial<SessionDefaultsView> | null };
 
 function isHarness(value: string): value is Harness {
-  return value === "HARNESS_CLAUDE" || value === "HARNESS_CODEX";
+  return value === "HARNESS_CLAUDE" || value === "HARNESS_CODEX" || value === "HARNESS_CENTRAL_SAMPLER";
 }
 
 /**

@@ -155,6 +155,7 @@ beforeEach(() => {
   }) as never);
   vi.mocked(getThread).mockResolvedValue(THREAD);
   vi.mocked(models).mockResolvedValue({
+    central_sampler: null,
     models: [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }],
     harnesses: { HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] },
   });
