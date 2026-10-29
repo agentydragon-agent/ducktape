@@ -85,24 +85,23 @@ The date is when it was added, never a deadline. The gate is a date, version, tr
 
 One library per job. An unlisted job reuses what other Go services import before adding a library, and adds its row.
 
-| Job        | Use                                                                                                                  |
-| ---------- | -------------------------------------------------------------------------------------------------------------------- |
+| Job        | Use                                                                                                                                                            |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Logging    | `log/slog` JSON on stderr; controller-runtime via `ctrl.SetLogger(logr.FromSlogHandler(...))`. Agentplane runner uses `zap` directly because COSI requires it. |
-| Settings   | `spf13/viper` layered; `yaml.v3` with `KnownFields(true)` for file-only settings with literal keys.                 |
-| HTTP       | Stdlib `net/http`; no router.                                                                                        |
-| OpenAPI    | `danielgtaylor/huma/v2` with the `humago` adapter over `net/http.ServeMux` for typed app routes.                     |
-| Tests      | Stdlib `testing`.                                                                                                    |
-| PostgreSQL | `lib/pq`, `goose` migrations.                                                                                       |
-| UUIDs      | `google/uuid`.                                                                                                       |
-| YAML       | `gopkg.in/yaml.v3`.                                                                                                  |
-| Retry      | `sethvargo/go-retry`; callers own error classification and progress resets.                                          |
-| Cgroups    | `containerd/cgroups/v3/cgroup2`.                                                                                     |
-| D-Bus      | `coreos/go-systemd/v22/dbus` for systemd; `godbus/dbus/v5` for generic D-Bus.                                       |
-| GitHub     | `google/go-github` (REST) with `bradleyfalzon/ghinstallation` (App JWTs, installation tokens).                      |
-| Schemas    | `invopop/jsonschema` for Go type reflection; `santhosh-tekuri/jsonschema/v6` for validation, with an explicit loader (the default reads local files). |
-| TTL cache  | `apimachinery/pkg/util/cache.Expiring`; `x/sync/singleflight` shares a lookup between callers.                     |
-| Sets       | `apimachinery/pkg/util/sets`.                                                                                        |
-| Casefold   | `x/text/cases.Fold`.                                                                                                |
+| Settings   | `spf13/viper` layered; `yaml.v3` with `KnownFields(true)` for file-only settings with literal keys.                                                            |
+| HTTP       | Stdlib `net/http`; no router.                                                                                                                                  |
+| OpenAPI    | `danielgtaylor/huma/v2` with the `humago` adapter over `net/http.ServeMux` for typed app routes.                                                               |
+| Tests      | Stdlib `testing`.                                                                                                                                              |
+| PostgreSQL | `lib/pq`, `goose` migrations.                                                                                                                                  |
+| UUIDs      | `google/uuid`.                                                                                                                                                 |
+| YAML       | `gopkg.in/yaml.v3`.                                                                                                                                            |
+| Retry      | `sethvargo/go-retry`; callers own error classification and progress resets.                                                                                    |
+| D-Bus      | `coreos/go-systemd/v22/dbus` for systemd; `godbus/dbus/v5` for generic D-Bus.                                                                                  |
+| GitHub     | `google/go-github` (REST) with `bradleyfalzon/ghinstallation` (App JWTs, installation tokens).                                                                 |
+| Schemas    | `invopop/jsonschema` for Go type reflection; `santhosh-tekuri/jsonschema/v6` for validation, with an explicit loader (the default reads local files).          |
+| TTL cache  | `apimachinery/pkg/util/cache.Expiring`; `x/sync/singleflight` shares a lookup between callers.                                                                 |
+| Sets       | `apimachinery/pkg/util/sets`.                                                                                                                                  |
+| Casefold   | `x/text/cases.Fold`.                                                                                                                                           |
 
 ## Build System (Bazel)
 
