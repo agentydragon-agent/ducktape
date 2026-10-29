@@ -13,10 +13,13 @@ import pytest_bazel
 from agentplane.app.testing.client import Client
 from agentplane.app.testing.models import SandboxesSnapshot, WatchHealth
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests import agent as agent_module, conftest as fixtures
 from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, Agent
 from agentplane.system_tests.conftest import SandboxNotReadyError, suspend_and_delete
+from agentplane.system_tests.test_runner_credentials import _turn
+from agentplane.testing.scripted_model import ScriptedModel
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -167,6 +170,148 @@ async def test_run_deadline_closes_a_stream_kept_open_without_terminal_events(mo
         await Agent(client, thread_id=uuid4(), cursor=0).run("test prompt")
     assert closed
     client.submit_input.assert_awaited_once()
+
+
+@pytest.mark.parametrize("failure_kind", ["command_failed", "harness_launch_failed"])
+async def test_run_reports_terminal_runner_failure_and_closes_the_stream(failure_kind: str) -> None:
+    client = create_autospec(Client, instance=True)
+    diagnostic = "test startup failed\n\x1b[31mtest detail"
+    closed = False
+
+    async def events() -> AsyncIterator[event_log_pb2.EventEntry]:
+        nonlocal closed
+        command_id = client.submit_input.call_args.args[1]
+        command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text="test prompt"))
+        try:
+            yield event_log_pb2.EventEntry(
+                cursor=1, event=event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command))
+            )
+            failure = (
+                event_pb2.Event(command_failed=event_pb2.CommandFailed(command_id=command_id, reason=diagnostic))
+                if failure_kind == "command_failed"
+                else event_pb2.Event(harness_launch_failed=event_pb2.HarnessLaunchFailed(reason=diagnostic))
+            )
+            yield event_log_pb2.EventEntry(cursor=2, event=failure)
+            await asyncio.Event().wait()
+        finally:
+            closed = True
+
+    client.events.return_value = events()
+    with pytest.raises(AssertionError) as caught:
+        await Agent(client, thread_id=uuid4(), cursor=0).run("test prompt")
+
+    assert repr(diagnostic) in str(caught.value)
+    assert "\x1b" not in str(caught.value)
+    assert closed
+
+
+async def test_run_ignores_retained_failures_until_its_command_is_admitted() -> None:
+    client = create_autospec(Client, instance=True)
+
+    async def events() -> AsyncIterator[event_log_pb2.EventEntry]:
+        command_id = client.submit_input.call_args.args[1]
+        command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text="test prompt"))
+        for entry in (
+            event_log_pb2.EventEntry(
+                cursor=1,
+                event=event_pb2.Event(
+                    command_failed=event_pb2.CommandFailed(command_id="retained-command", reason="old failure")
+                ),
+            ),
+            event_log_pb2.EventEntry(
+                cursor=2,
+                event=event_pb2.Event(harness_launch_failed=event_pb2.HarnessLaunchFailed(reason="old launch failure")),
+            ),
+            event_log_pb2.EventEntry(
+                cursor=3, event=event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command))
+            ),
+            event_log_pb2.EventEntry(
+                cursor=4,
+                event=event_pb2.Event(
+                    turn_completed=event_pb2.TurnCompleted(turn_id="test-turn", status=event_pb2.TURN_STATUS_COMPLETED)
+                ),
+            ),
+        ):
+            yield entry
+        pytest.fail("Agent.run read past the terminal event")
+
+    client.events.return_value = events()
+    turn = await Agent(client, thread_id=uuid4(), cursor=0).run("test prompt")
+
+    assert turn.status == event_pb2.TURN_STATUS_COMPLETED
+    assert client.events.call_args.kwargs["awaiting_command_id"] == client.submit_input.call_args.args[1]
+
+
+async def test_next_turn_reports_a_new_command_failure_without_an_awaited_id() -> None:
+    client = create_autospec(Client, instance=True)
+    diagnostic = "test notification command failed"
+    closed = False
+
+    async def events() -> AsyncIterator[event_log_pb2.EventEntry]:
+        nonlocal closed
+        try:
+            yield event_log_pb2.EventEntry(
+                cursor=1,
+                event=event_pb2.Event(
+                    command_failed=event_pb2.CommandFailed(command_id="incoming-command", reason=diagnostic)
+                ),
+            )
+            await asyncio.Event().wait()
+        finally:
+            closed = True
+
+    client.events.return_value = events()
+    with pytest.raises(AssertionError) as caught:
+        await Agent(client, thread_id=uuid4(), cursor=0).next_turn()
+
+    assert repr(diagnostic) in str(caught.value)
+    assert closed
+
+
+async def test_credentials_turn_cancels_model_wait_when_collection_fails() -> None:
+    client = create_autospec(Client, instance=True)
+    command_id = "test-command"
+    diagnostic = "test runner launch failed"
+    client.submit_input.return_value = session_dispatcher_pb2.Dispatch(
+        command_id=command_id, operation=session_dispatcher_pb2.OPERATION_SUBMIT_INPUT
+    )
+    request_started = asyncio.Event()
+    request_cancelled = asyncio.Event()
+    stream_closed = False
+
+    async def blocked_request() -> None:
+        request_started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            request_cancelled.set()
+
+    model = create_autospec(ScriptedModel, instance=True)
+    model.request.side_effect = blocked_request
+
+    async def events() -> AsyncIterator[event_log_pb2.EventEntry]:
+        nonlocal stream_closed
+        try:
+            await request_started.wait()
+            yield event_log_pb2.EventEntry(
+                cursor=1,
+                event=event_pb2.Event(command_failed=event_pb2.CommandFailed(command_id=command_id, reason=diagnostic)),
+            )
+            await asyncio.Event().wait()
+        finally:
+            stream_closed = True
+
+    client.events.return_value = events()
+    agent = Agent(client, thread_id=uuid4(), cursor=0)
+    async with asyncio.timeout(1):
+        with pytest.raises(ExceptionGroup) as caught:
+            await _turn(client, agent, command_id=command_id, prompt="test prompt", model=model)
+
+    assert request_cancelled.is_set()
+    model.reply.assert_not_awaited()
+    assert stream_closed
+    assert isinstance(caught.value.exceptions[0], AssertionError)
+    assert diagnostic in str(caught.value.exceptions[0])
 
 
 async def test_run_returns_successful_turn_outputs() -> None:
