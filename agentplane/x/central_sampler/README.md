@@ -1,10 +1,13 @@
 # Central sampler
 
 An independent, opt-in runner type backed by its own PostgreSQL database. The sampler owns the
-Responses API loop and runs the real pinned **Codex 0.162.1** JavaScript host beside it. Shell,
-stdin, patch and filesystem operations go through Gateway to a Sandbox's loopback exec-server.
-Existing wrapped Codex and Claude retain their current paths. Nothing here deploys the service,
-changes existing Sessions, or migrates native harness state.
+Responses API loop and lazily starts one shared pinned **Codex 0.162.1** JavaScript host for many
+logical Sessions. `store()` / `load()` values persist across cells and idle turns in that host's
+memory. Each code-mode cell runs in a fresh V8 isolate with no JavaScript globals shared between
+cells, and provider continuation remains in the sampler. Shell, stdin, patch and filesystem
+operations go through Gateway to a Sandbox's loopback exec-server. Existing wrapped Codex and Claude
+retain their current paths. The optional Agentplane cdk8s construct deploys the service when an
+environment configures it; existing native Sessions are not migrated.
 
 The service, sampling loop, persistence and exporter are implemented in Go. The JavaScript host is
 the pinned upstream Codex binary. Python is used only by the acceptance fixtures.
@@ -27,25 +30,38 @@ initialization retains Session identities, conversation state, evidence and outb
 `//agentplane/x/central_sampler/cmd:service_image` packages the service and pinned code-mode host.
 The [k3s acceptance scenarios](../../system_tests/README.md#central-sampler) run that image in its
 own Pod, initialize its DB with an init container, and use projected service-account tokens for
-Gateway and History. They keep fixture mode's omission of delegated per-host cgroup limits.
+Gateway and History. The service and its shared JavaScript host use the Pod container's aggregate
+CPU and memory limits.
 
 Server-owned configuration names the service, provider routes (endpoint, credential placeholder,
 model and reasoning-effort allowlists), TokenReview audience and allowed caller accounts,
-code-mode host binary, executor-side Codex path, logs, concurrency/deadlines and limits. Gateway
-mode requires `gateway_target` and a rotating projected `gateway_token_file`. Configure
+code-mode host binary, executor-side Codex path, logs, concurrency/deadlines and limits. Providers
+use exactly one of `credential` or `credential_file`; the service reads the file before each
+request so projected service-account tokens can rotate. `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL`
+overrides `database_url` in the JSON settings, so database credentials can stay in a Secret-backed
+environment variable. Gateway mode requires `gateway_target` and a rotating projected
+`gateway_token_file`. Configure
 `gateway_target` as `{sandbox}-control.{namespace}.svc:8080` for the per-Sandbox control Service:
-it selects the Gateway replica holding that Runner's outbound stream. A load-balanced Gateway
+it selects the Gateway replica holding that Runner's observation Lease. A load-balanced Gateway
 Service is unsuitable when there are multiple replicas. Fixed targets support single-process
 fixtures. Templates accept DNS-label executor names and only these two placeholders. A fixed
 `direct_executor_url` supports standalone fixtures without Gateway; choose exactly one transport.
 Optional `history_target` and `history_token_file` enable retained History export.
 
-The production entrypoint requires a delegated cgroup v2 `host_cgroup_root`. It creates a fresh
-child per host, sets memory/swap, PID and CPU limits, and enters it before exec. Keep the sampler
-and database outside those host cgroups and the executor's resource/storage domain. The fixture
-can omit the cgroup root to run without delegated kernel controllers; it exercises host-exit and
-RSS supervision, not the deployed kernel boundary. A delegated hierarchy remains a deployment
-requirement, not permission to run an unbounded production host.
+`max_live_sessions` bounds concurrent active Session drivers; it does not cap the number of stored
+idle Sessions. The host starts lazily when code-mode work first needs it and multiplexes Sessions,
+while executor delegates and process-handle namespaces remain per Session. Interrupting a Session
+does not stop the shared host.
+
+Host failure interrupts pending work for every attached Session; later code-mode work may start a
+fresh host, but in-flight provider or executor effects are never replayed automatically. Configure CPU
+and memory limits on the sampler container. Those limits cover the Go service and shared host, so
+container exhaustion can interrupt every active Session. PostgreSQL retains durable conversation
+and effect records, but host-memory `store()` / `load()` values and live JavaScript cells are lost
+when the shared host exits.
+
+TODO: Evaluate a stronger kernel-enforced isolation boundary for cells or Sessions if aggregate
+container limits stop meeting the production resource contract.
 
 ## Agentplane opt in
 
@@ -76,5 +92,5 @@ Provider compaction uses Codex's remote-v2 beta protocol; choose a supporting en
 See the [v1 validation evidence](../../debug/central_sampler_v1.md) for results and fixture diagnosis.
 
 Rollback: remove the app offerings and named central route, then disable the sampler's inbound
-allowlists. Preserve the sampler DB and History records. Reverting this code does not convert a
-central Session into a native harness Session. No deployment or database deletion is part of this PR.
+allowlists. Preserve the sampler DB and History records. Reverting sampler code does not convert a
+central Session into a native harness Session.

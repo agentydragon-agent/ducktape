@@ -12,7 +12,7 @@ import pytest_bazel
 
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service import history_service_pb2
-from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, Reasoning, response_stream
+from agentplane.native.codex.testing import responses_sse
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.system_tests.central_sampler import (
@@ -25,9 +25,10 @@ from agentplane.system_tests.central_sampler import (
 )
 from agentplane.system_tests.cluster import kubectl
 from agentplane.system_tests.conftest import POD_TEMPLATE, VM_TEMPLATE, VM_WORKING_DIRECTORY
-from agentplane.system_tests.k3s.stack import node_ip
+from agentplane.system_tests.scripted_upstream import ScriptedUpstream
+from agentplane.testing.codex_model import CodexModel
+from agentplane.testing.scripted_model import Reasoning, ShellCall, Text
 from agentplane.x.central_sampler import sampler_pb2
-from agentplane.x.central_sampler.testing import Endpoint
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
@@ -109,7 +110,13 @@ async def _wait_for_setup(deployed: CentralStack, session_id: str) -> None:
     """Wait for setup's retained terminal event before starting the short-timeout provider read."""
     async with asyncio.timeout(60), aclosing(deployed.history.watch_session_summaries()) as changes:
         async for _ in changes:
-            retained = await deployed.history.read_session_events(session_id, limit=1000)
+            try:
+                retained = await deployed.history.read_session_events(session_id, limit=1000)
+            except ServiceError as error:
+                if error.code != grpc.StatusCode.NOT_FOUND:
+                    raise
+                # Dispatcher admission can precede this Session's first History export.
+                continue
             for entry in retained.entries:
                 if entry.event.HasField("setup_interrupted"):
                     raise AssertionError(f"sampler setup was interrupted for Session {session_id}")
@@ -122,27 +129,129 @@ async def _wait_for_setup(deployed: CentralStack, session_id: str) -> None:
         raise TimeoutError("History watch ended before sampler setup finished")
 
 
-async def _central_sampler_scenario(tmp_path: Path, *, template: str, cwd: str) -> None:
+async def _wait_for_execution_progress(deployed: CentralStack, session_id: str, kind: str, phase: str) -> None:
+    events = deployed.sampler.FollowEvents(
+        sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True),
+        metadata=deployed.sampler_metadata,
+        timeout=60,
+    )
+    try:
+        async for frame in events:
+            event = frame.entry.event
+            if event.HasField("execution_progress"):
+                progress = event.execution_progress
+                if progress.kind == kind and progress.phase == phase:
+                    return
+        raise TimeoutError(f"History ended before Session {session_id} {kind} reached {phase!r}")
+    finally:
+        events.cancel()
+
+
+async def _sampler_code_mode_host_pid(deployed: CentralStack) -> tuple[Path, str]:
+    """Read the shared host PID through the sampler Pod's existing diagnostic EmptyDir."""
+    pod = json.loads(await kubectl("get", "pod", deployed.sampler_pod_name, "-o", "json"))
+    pod_uid = pod["metadata"]["uid"]
+    pid_file = Path(f"/var/lib/kubelet/pods/{pod_uid}/volumes/kubernetes.io~empty-dir/logs/code-mode-host.pid")
+    pid = await asyncio.to_thread(pid_file.read_text)
+    pid = pid.strip()
+    assert pid.isdecimal(), f"invalid code-mode host PID {pid!r}"
+    return pid_file, pid
+
+
+async def _read_code_mode_host_pid(pid_file: Path) -> str:
+    return (await asyncio.to_thread(pid_file.read_text)).strip()
+
+
+async def _wait_for_turn_status(
+    deployed: CentralStack, session_id: str, turn_id: str, status: event_pb2.TurnStatus
+) -> None:
+    events = deployed.sampler.FollowEvents(
+        sampler_pb2.FollowEventsRequest(session_id=session_id, follow=True),
+        metadata=deployed.sampler_metadata,
+        timeout=60,
+    )
+    try:
+        async for frame in events:
+            event = frame.entry.event
+            if event.HasField("turn_completed") and event.turn_completed.turn_id == turn_id:
+                assert event.turn_completed.status == status, event.turn_completed
+                return
+        raise TimeoutError(f"History ended before turn {turn_id} completed")
+    finally:
+        events.cancel()
+
+
+async def _central_sampler_scenario(tmp_path: Path, scripted: ScriptedUpstream, *, template: str, cwd: str) -> None:
     session_id, command_id = str(uuid4()), str(uuid4())
+    interrupted_session_id, interrupted_command_id = str(uuid4()), str(uuid4())
     prompt = "Read the setup marker and report the result."
     reasoning = "I will read the marker created during setup."
     answer = "The executor returned prepared-on-executor."
     is_vm = template == VM_TEMPLATE
     vm_execution: dict[str, str | int] | None = None
-    async with (
-        Endpoint(bind_host=node_ip()) as endpoint,
-        central_stack(tmp_path, endpoint.origin, template=template) as deployed,
-    ):
+    async with central_stack(tmp_path, template=template) as deployed:
+        model = scripted.model(deployed.sampler_pod_name, runner_pb2.HARNESS_CODEX)
+        assert isinstance(model, CodexModel)
+        session_spec = runner_pb2.SessionSpec(
+            harness=runner_pb2.HARNESS_CENTRAL_SAMPLER,
+            cwd=cwd,
+            model=MODEL,
+            central_sampler=runner_pb2.CentralSamplerConfig(service=SERVICE, provider=PROVIDER),
+        )
+        interrupted_opening = await deployed.dispatcher.OpenSession(
+            session_dispatcher_pb2.OpenSessionRequest(
+                session_id=interrupted_session_id, sandbox=deployed.sandbox, spec=session_spec, setup_script=":\n"
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        assert interrupted_opening.opening.sandbox_uid == deployed.sandbox_uid
+        interrupted_input = await deployed.dispatcher.SubmitInput(
+            session_dispatcher_pb2.SubmitInputRequest(
+                session_id=interrupted_session_id,
+                sandbox=deployed.sandbox,
+                sandbox_uid=deployed.sandbox_uid,
+                command_id=interrupted_command_id,
+                text="Start a long-running executor command and keep this turn active.",
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        assert interrupted_input.dispatch.command_id == interrupted_command_id
+        await _wait_for_setup(deployed, interrupted_session_id)
+        interrupted_request = await model.request()
+        assert interrupted_request.native.client_metadata.session_id == interrupted_session_id
+        assert interrupted_request.native.code_mode
+        async with interrupted_request._exchange as exchange:
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [
+                        responses_sse.Reasoning(
+                            "I will keep this executor command running until the turn is interrupted.",
+                            "test-opaque-interrupted-session-reasoning",
+                        ),
+                        responses_sse.CustomToolCall(
+                            "long-lived-executor-cell",
+                            "exec",
+                            '// @exec: {"yield_time_ms": 1}\nawait tools.exec_command({"cmd":"sleep 120"});',
+                        ),
+                    ],
+                    model=MODEL,
+                ).events
+            )
+        await _wait_for_execution_progress(deployed, interrupted_session_id, "cell", "live")
+        host_pid_file, host_pid = await _sampler_code_mode_host_pid(deployed)
+        # A yielded cell returns control to sampling. Hold that continuation explicitly so
+        # B's request is the next scripted exchange and A remains active until interruption.
+        continuation = await model.request()
+        assert continuation.native.client_metadata.session_id == interrupted_session_id
+        await model.hold(continuation)
+
         opening = await deployed.dispatcher.OpenSession(
             session_dispatcher_pb2.OpenSessionRequest(
                 session_id=session_id,
                 sandbox=deployed.sandbox,
-                spec=runner_pb2.SessionSpec(
-                    harness=runner_pb2.HARNESS_CENTRAL_SAMPLER,
-                    cwd=cwd,
-                    model=MODEL,
-                    central_sampler=runner_pb2.CentralSamplerConfig(service=SERVICE, provider=PROVIDER),
-                ),
+                spec=session_spec,
                 setup_script="printf 'prepared-on-executor\\n' > prepared.txt\nprintf 'setup-on-executor\\n'\n",
             ),
             metadata=deployed.metadata,
@@ -189,62 +298,71 @@ async def _central_sampler_scenario(tmp_path: Path, *, template: str, cwd: str) 
             changes.cancel()
         try:
             await _wait_for_setup(deployed, session_id)
-            first_exchange = await endpoint.next()
+            request = await model.request()
         except Exception:
             await _capture_session_diagnostics(
                 deployed, session_id, command_id, admission, phase="setup_or_initial_model_request"
             )
             raise
-        async with first_exchange as exchange:
-            assert any(item.get("content") == prompt for item in exchange.request.body["input"])
-            assert exchange.request.body["client_metadata"]["session_id"] == session_id
-            tool_command = "set -eu; cat prepared.txt; printf tool-on-executor > result.txt"
-            if is_vm:
-                tool_command = (
-                    "set -eu; printf 'VM_PID1 %s\\n' \"$(cat /proc/1/comm)\"; "
-                    "printf 'VM_EXECUTOR_UID %s\\n' \"$(id -u)\"; "
-                    "printf 'VM_EXECUTOR_CGROUP %s\\n' \"$(awk -F: '$1 == 0 {print $3}' /proc/self/cgroup)\"; "
-                    "cat prepared.txt; printf tool-on-executor > result.txt"
-                )
-            await exchange.send(
-                *response_stream(
-                    [
-                        Reasoning(reasoning, "test-opaque-central-reasoning"),
-                        CustomToolCall(
-                            "read-prepared-marker",
-                            "exec",
-                            f"text(await tools.exec_command({json.dumps({'cmd': tool_command})}));",
-                        ),
-                    ],
-                    model=MODEL,
-                ).events
+        assert request.model == MODEL
+        assert request.native.client_metadata.session_id == session_id
+        assert prompt in request.user_texts
+        tool_command = (
+            "set -eu; sleep 10; cat prepared.txt; printf 'tool-on-executor\\n' | tee result.txt; "
+            "printf 'CENTRAL_EXECUTOR_OK\\n'"
+        )
+        if is_vm:
+            tool_command = (
+                "set -eu; sleep 10; printf 'VM_PID1 %s\\n' \"$(cat /proc/1/comm)\"; "
+                "printf 'VM_EXECUTOR_UID %s\\n' \"$(id -u)\"; "
+                "printf 'VM_EXECUTOR_CGROUP %s\\n' \"$(awk -F: '$1 == 0 {print $3}' /proc/self/cgroup)\"; "
+                "cat prepared.txt; printf 'tool-on-executor\\n' | tee result.txt; "
+                "printf 'CENTRAL_EXECUTOR_OK\\n'"
             )
         try:
-            async with await endpoint.next() as exchange:
-                outputs = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
-                result = json.loads(outputs[-1]["output"][0]["text"])
-                assert result["exit_code"] == 0
-                if is_vm:
-                    assert "prepared-on-executor\n" in result["output"]
-                    assert "VM_PID1 systemd\n" in result["output"]
-                    assert "VM_EXECUTOR_UID 107\n" in result["output"]
-                    (cgroup_line,) = [
-                        line for line in result["output"].splitlines() if line.startswith("VM_EXECUTOR_CGROUP ")
-                    ]
-                    executor_cgroup = cgroup_line.removeprefix("VM_EXECUTOR_CGROUP ")
-                    assert executor_cgroup.startswith(
-                        "/agentplane.slice/agentplane-executors.slice/agentplane-native-"
-                    ), executor_cgroup
-                    assert executor_cgroup.count("/") == 3, executor_cgroup
-                    assert executor_cgroup.endswith(".service"), executor_cgroup
-                    vm_execution = {"pid1": "systemd", "uid": 107, "executor_cgroup": executor_cgroup}
-                else:
-                    assert result["output"] == "prepared-on-executor\n"
-                assert any(
-                    item.get("encrypted_content") == "test-opaque-central-reasoning"
-                    for item in exchange.request.body["input"]
+            await model.reply(request, Reasoning(reasoning), ShellCall("read-prepared-marker", tool_command))
+            # Require the executor process to be running before interrupting Session A; B's shell
+            # command sleeps for ten seconds so it can finish and return its real-executor output.
+            await _wait_for_execution_progress(deployed, session_id, "process", "running")
+            assert await _read_code_mode_host_pid(host_pid_file) == host_pid
+            interruption = await deployed.dispatcher.InterruptTurn(
+                session_dispatcher_pb2.InterruptTurnRequest(
+                    command_id=str(uuid4()),
+                    session_id=interrupted_session_id,
+                    sandbox=deployed.sandbox,
+                    sandbox_uid=deployed.sandbox_uid,
+                    turn_id=interrupted_command_id,
+                ),
+                metadata=deployed.metadata,
+                timeout=15,
+            )
+            assert interruption.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED
+            await _wait_for_turn_status(
+                deployed, interrupted_session_id, interrupted_command_id, event_pb2.TURN_STATUS_INTERRUPTED
+            )
+            assert await _read_code_mode_host_pid(host_pid_file) == host_pid
+            request = await model.request()
+            (tool_output,) = request.tool_outputs
+            output = "\n".join(tool_output.blocks)
+            assert "CENTRAL_EXECUTOR_OK" in output
+            if is_vm:
+                assert "prepared-on-executor\n" in output
+                assert "VM_PID1 systemd\n" in output
+                assert "VM_EXECUTOR_UID 107\n" in output
+                (cgroup_line,) = [line for line in output.splitlines() if line.startswith("VM_EXECUTOR_CGROUP ")]
+                executor_cgroup = cgroup_line.removeprefix("VM_EXECUTOR_CGROUP ")
+                assert executor_cgroup.startswith("/agentplane.slice/agentplane-executors.slice/agentplane-native-"), (
+                    executor_cgroup
                 )
-                await exchange.send(*response_stream([Message(answer)], model=MODEL).events)
+                assert executor_cgroup.count("/") == 3, executor_cgroup
+                assert executor_cgroup.endswith(".service"), executor_cgroup
+                vm_execution = {"pid1": "systemd", "uid": 107, "executor_cgroup": executor_cgroup}
+            else:
+                assert "prepared-on-executor\n" in output
+                assert "tool-on-executor\n" in output
+                assert "CENTRAL_EXECUTOR_OK\n" in output
+            assert any(item.encrypted_content for item in request.native.reasoning)
+            await model.reply(request, Text(answer))
         except Exception as error:
             try:
                 await _capture_session_diagnostics(
@@ -346,7 +464,7 @@ async def _central_sampler_scenario(tmp_path: Path, *, template: str, cwd: str) 
                     "sandbox_uid": deployed.sandbox_uid,
                     "incarnation_uid": deployed.incarnation_uid,
                     "template": template,
-                    "tool_output": result["output"],
+                    "tool_output": output,
                     "vm_execution": vm_execution,
                     "control_target": deployed.control_target,
                     "source_id": terminal.origin.source_id,
@@ -363,17 +481,23 @@ async def _central_sampler_scenario(tmp_path: Path, *, template: str, cwd: str) 
 
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
-async def test_dispatcher_central_setup_tool_and_retained_answer(k3s_deployment: None, tmp_path: Path) -> None:
+async def test_dispatcher_central_setup_tool_and_retained_answer(
+    k3s_deployment: None, tmp_path: Path, scripted: ScriptedUpstream
+) -> None:
     del k3s_deployment  # This scenario is only valid on its own disposable stack, never against staging.
-    await _central_sampler_scenario(tmp_path, template=POD_TEMPLATE, cwd="/state/workspaces/central-acceptance")
+    await _central_sampler_scenario(
+        tmp_path, scripted, template=POD_TEMPLATE, cwd="/state/workspaces/central-acceptance"
+    )
 
 
 @pytest.mark.vm_sandboxes
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
-async def test_dispatcher_central_setup_tool_and_retained_answer_vm(k3s_deployment: None, tmp_path: Path) -> None:
+async def test_dispatcher_central_setup_tool_and_retained_answer_vm(
+    k3s_deployment: None, tmp_path: Path, scripted: ScriptedUpstream
+) -> None:
     del k3s_deployment  # This scenario is only valid on its own disposable stack, never against staging.
-    await _central_sampler_scenario(tmp_path, template=VM_TEMPLATE, cwd=VM_WORKING_DIRECTORY)
+    await _central_sampler_scenario(tmp_path, scripted, template=VM_TEMPLATE, cwd=VM_WORKING_DIRECTORY)
 
 
 if __name__ == "__main__":

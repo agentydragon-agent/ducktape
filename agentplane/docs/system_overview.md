@@ -4,9 +4,9 @@ Per-path detail for the [README system overview](../README.md#system-overview), 
 API arrows point caller to callee, labels like `response` or `replication` show data on that edge,
 dashed arrows are runner-initiated platform routes.
 
-The experimental central sampler runs as its own Pod and Service in the
-[k3s acceptance scenarios](../system_tests/README.md#central-sampler), with its own image and
-projected service-account credentials. It is not deployed by default.
+The optional central sampler runs as its own Deployment and Service in staging and the
+[k3s acceptance scenarios](../system_tests/README.md#central-sampler), using the shared cdk8s
+construct, its own image and projected service-account credentials.
 
 ## Session delivery
 
@@ -34,7 +34,7 @@ flowchart LR
 ```mermaid
 flowchart LR
     dispatcher[Gateway Dispatcher]
-    sampler[Central sampler and per-Session JS host]
+    sampler[Central sampler and shared Codex host]
     db[(Sampler PostgreSQL)]
     gateway[Gateway ExecutorGateway]
     runner[Sandbox Runner]
@@ -51,7 +51,11 @@ flowchart LR
     sampler -->|Session identity| llm --> provider
 ```
 
-The JS host runs beside the sampler, one supervised resource-limited process per live Session.
+The sampler lazily starts one shared Codex host process when code-mode work needs it and multiplexes
+logical Sessions through it. The host retains per-Session `store()` / `load()` values across cells
+and idle turns; each code-mode cell runs in a fresh V8 isolate with no shared JavaScript globals.
+Provider continuation stays in the sampler.
+The Pod has aggregate CPU/memory limits, with no per-Session or per-cell kernel boundary today.
 Gateway relays the pinned upstream exec-server protocol without interpreting tools. Dispatcher
 is absent from that tool path. Sandbox UID and incarnation fence the executor binding; v1 does
 not replace an executor. An unavailable executor does not remove the sampler's persisted history
