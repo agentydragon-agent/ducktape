@@ -8,6 +8,7 @@ use std::path::Path;
 use analysis::DepKind;
 use anyhow::{Context, Result};
 use serde::Serialize;
+use swc_common::Span;
 
 use crate::FileRole;
 use crate::metrics::{DecompositionMetrics, OutputMetrics};
@@ -204,6 +205,35 @@ pub struct ChunkRuntimeFacts {
     /// host loading so direct ESM export bindings can retain value-type facts.
     pub has_own_cjs_export_surface: bool,
     pub static_requests: Vec<StaticModuleRequest>,
+    /// Source-only host interop sites from the canonical shallow SWC walk.
+    pub interop_uses: Vec<InteropUse>,
+}
+
+#[derive(Debug, Clone)]
+pub struct InteropUse {
+    pub item_index: usize,
+    pub line: Option<usize>,
+    /// Exact original SWC site, retained for future phase/call joins.
+    pub span: Span,
+    pub kind: InteropUseKind,
+    pub specifier: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InteropUseKind {
+    ImportMetaRequireLiteralCall,
+    ImportMetaRequireDynamicCall,
+    ImportMetaRequireReference,
+    GlobalThisRequire,
+    UnboundRequire,
+    UnboundModule,
+    UnboundExports,
+    ImportMetaDynamicProperty,
+    ImportMetaOtherProperty,
+    ImportMetaValue,
+    TsImportEquals,
+    TsExportAssignment,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
