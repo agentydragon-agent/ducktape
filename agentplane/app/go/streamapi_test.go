@@ -618,13 +618,19 @@ func TestThreadEventStreamResumesFollowAtCoveredCursorAndDrains(t *testing.T) {
 	if secondCall.GetAfterCursor() != 2 {
 		t.Fatalf("pre-history FollowSession cursor = %d, want 2", secondCall.GetAfterCursor())
 	}
+	firstStream := awaitFollowStream(t, follower)
 	waitForStreamText(t, response, "event: attached")
 	waitForStreamText(t, response, "id: 3")
 	thirdCall := awaitFollowCall(t, follower)
 	if thirdCall.GetAfterCursor() != 6 {
 		t.Fatalf("renewed FollowSession cursor = %d, want caught-up cursor 6", thirdCall.GetAfterCursor())
 	}
+	if firstStream.ctx.Err() == nil {
+		t.Fatal("History FollowSession stream was not canceled after reconnect_required")
+	}
+	renewedStream := awaitFollowStream(t, follower)
 	waitForStreamText(t, response, "id: 9007199254740993")
+	waitForStreamTextAfter(t, response, "id: 9007199254740993", ": keepalive")
 	var eventCursor string
 	for _, frame := range strings.Split(response.String(), "\n\n") {
 		var hasLargeID bool
@@ -652,12 +658,14 @@ func TestThreadEventStreamResumesFollowAtCoveredCursorAndDrains(t *testing.T) {
 	if eventCursor != "9007199254740993" {
 		t.Fatalf("large-cursor event payload cursor = %q, want exact ProtoJSON string", eventCursor)
 	}
-	waitForStreamText(t, response, ": keepalive")
 	server.BeginDrain()
 	select {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("thread event stream did not end during server drain")
+	}
+	if renewedStream.ctx.Err() == nil {
+		t.Fatal("renewed History FollowSession stream was not canceled during server drain")
 	}
 	if body := response.String(); strings.Contains(body, "event: end") || strings.Contains(body, "event: error") || strings.Contains(body, "event: settled") || strings.Contains(body, "event: removed") {
 		t.Fatalf("Thread event stream changed its event contract: %s", body)
@@ -956,6 +964,22 @@ func waitForStreamText(t *testing.T, response *streamingRecorder, text string) {
 		case <-response.written:
 		case <-deadline:
 			t.Fatalf("stream did not contain %q; body: %s", text, response.String())
+		}
+	}
+}
+
+func waitForStreamTextAfter(t *testing.T, response *streamingRecorder, before, after string) {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		body := response.String()
+		if index := strings.Index(body, before); index >= 0 && strings.Contains(body[index+len(before):], after) {
+			return
+		}
+		select {
+		case <-response.written:
+		case <-deadline:
+			t.Fatalf("stream did not contain %q after %q; body: %s", after, before, body)
 		}
 	}
 }

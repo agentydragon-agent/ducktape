@@ -23,6 +23,10 @@ Set `AGENTPLANE_ELECTRIC_URL` to enable the authenticated thread-sync API and El
 Omitting it leaves REST and SSE available without Electric; backend lifecycle and model-smoke
 fixtures use this composition. Electric configuration does not control static-file serving.
 
+The retained-event SSE API follows History's `FollowSession` RPC, resuming upstream renewals from
+its covered cursor. The app adds attachment and terminal feed frames from History summaries;
+protobuf payloads use standard ProtoJSON, with 64-bit integers encoded as decimal strings.
+
 ## Sandbox lifecycle ownership
 
 The app uses the shared `agentplane/sandboxes` inventory to submit lifecycle requests directly to
