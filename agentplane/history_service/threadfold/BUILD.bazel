@@ -10,6 +10,10 @@ go_library(
         "types.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service/threadfold",
+    visibility = [
+        "//agentplane/history_service:__subpackages__",
+        "//agentplane/x/central_sampler:__pkg__",
+    ],
     deps = [
         "//agentplane/history_service:history_service_go_proto",
         "//agentplane/history_service/settledcursors",

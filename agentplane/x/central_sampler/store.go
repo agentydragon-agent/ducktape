@@ -1814,6 +1814,7 @@ func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, conversation *Con
 	commandID *string, failure *KnownFailureError,
 ) error {
 	var command *Command
+	confirmedInput := false
 	if commandID != nil {
 		var err error
 		command, err = commandFor(ctx, tx, session.ID, *commandID)
@@ -1822,6 +1823,13 @@ func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, conversation *Con
 		}
 		if command != nil && command.Outcome != samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED {
 			return nil
+		}
+		if command != nil && session.ActiveTurn != nil && *session.ActiveTurn == command.ID {
+			payload := &commandpb.Command{}
+			if err := proto.Unmarshal(command.Payload, payload); err != nil {
+				return err
+			}
+			confirmedInput = payload.GetSubmitInput() != nil
 		}
 	}
 	unresolved, err := hasUnresolvedIntent(ctx, tx, conversation.ID, "")
@@ -1858,10 +1866,13 @@ func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, conversation *Con
 		if err := setCommandOutcome(ctx, tx, command.SessionID, command.ID, outcome, &reason); err != nil {
 			return err
 		}
-		if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandFailed{
-			CommandFailed: &eventpb.CommandFailed{CommandId: command.ID, Reason: reason},
-		}}); err != nil {
-			return err
+		// Confirmation already settles this command in History; retain only the sampler's run outcome.
+		if !confirmedInput {
+			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandFailed{
+				CommandFailed: &eventpb.CommandFailed{CommandId: command.ID, Reason: reason},
+			}}); err != nil {
+				return err
+			}
 		}
 	}
 	conversation.Stopped = true

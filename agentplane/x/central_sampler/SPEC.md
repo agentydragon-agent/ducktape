@@ -73,7 +73,9 @@ the command and turn fail without blocking the Session; subsequent input may con
 operation. Accepted tool calls that were never dispatched receive truthful failure outputs.
 Transport loss, streams without a terminal response and uncertain execution remain blocking failures. Nested
 executor failures remain conservative because the surrounding JavaScript may already have caused
-effects.
+effects. A submitted input is effected in History when it is confirmed and retained in the conversation;
+a later turn failure may still leave `GetCommand` as `FAILED` or `UNKNOWN`. The failure settles the turn
+without changing that confirmed input outcome, while queued commands follow the existing failure policy.
 
 Idle owners independently read process output and reconcile exit in bounded pages. Observed exit
 releases driver/host capacity without a model poll. At most 1 MiB of unread output per handle remains
