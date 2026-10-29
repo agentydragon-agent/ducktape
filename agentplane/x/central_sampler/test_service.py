@@ -1,9 +1,12 @@
 """Standalone API with real Postgres, V8 host and executor; no Runner or History."""
 
 import asyncio
+import base64
+import io
 import json
 import re
 import shlex
+import textwrap
 from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any
@@ -11,9 +14,10 @@ from typing import Any
 import grpc
 import pytest
 import pytest_bazel
+from PIL import Image
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
-from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, response_stream
+from agentplane.native.codex.testing.responses_sse import CustomToolCall, FunctionCall, Message, response_stream
 from agentplane.native.testing.model_endpoint import SseEvent
 from agentplane.proto import event_pb2
 from agentplane.runner import runner_service_pb2
@@ -124,7 +128,9 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
                             CustomToolCall(
                                 "start",
                                 "exec",
-                                'text(await tools.exec_command({cmd: "read line; printf received:%s \\"$line\\"", yield_time_ms: 1}));',
+                                # Only a TTY process keeps stdin open.
+                                'text(await tools.exec_command({cmd: "read line; printf received:%s \\"$line\\"", '
+                                "tty: true, yield_time_ms: 1}));",
                             )
                         ],
                         model="test-model",
@@ -132,7 +138,7 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
                 )
             async with await endpoint.next() as exchange:
                 outputs = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
-                process = json.loads(outputs[-1]["output"][0]["text"])["session_id"]
+                process = json.loads(outputs[-1]["output"][1]["text"])["session_id"]
                 await exchange.send(
                     *response_stream(
                         [
@@ -153,7 +159,7 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
                 if match is not None:
                     await exchange.send(
                         *response_stream(
-                            [CustomToolCall("wait", "wait", json.dumps({"cell_id": match[1], "yield_time_ms": 1000}))],
+                            [FunctionCall("wait", "wait", {"cell_id": match[1], "yield_time_ms": 1000})],
                             model="test-model",
                         ).events
                     )
@@ -295,6 +301,42 @@ async def test_interrupt_streaming_evidence_and_uid_authorization(
             await completed(stub, "continued")
 
 
+async def test_nested_command_inherits_executor_environment(
+    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+) -> None:
+    async with Endpoint() as endpoint:
+        config = settings(
+            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+        )
+        async with service(config) as stub:
+            request = open_request(tmp_path)
+            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            await stub.SubmitInput(
+                runner_service_pb2.SubmitInputRequest(
+                    session_id=request.session_id, command_id="env", text="Show the environment."
+                ),
+                metadata=METADATA,
+                timeout=10,
+            )
+            async with await endpoint.next() as exchange:
+                await exchange.send(
+                    *response_stream(
+                        [CustomToolCall("env", "exec", 'text((await tools.exec_command({cmd: "env"})).output);')],
+                        model="test-model",
+                    ).events
+                )
+            async with await endpoint.next() as exchange:
+                outputs = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
+                text = "\n".join(part["text"] for part in outputs[-1]["output"] if part["type"] == "input_text")
+                variables = dict(line.split("=", 1) for line in text.splitlines() if "=" in line)
+                await exchange.send(*response_stream([Message("done")], model="test-model").events)
+            assert (await completed(stub, "env", request.session_id)).status == event_pb2.TURN_STATUS_COMPLETED
+    # Inherited from the exec-server's own environment; the Session's variables are set over it.
+    assert variables.get("PATH")
+    assert variables.get("HOME")
+    assert variables.get("AGENTPLANE_DESTINATION")
+
+
 async def test_restart_never_replays_unresolved_provider_intent(
     database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:
@@ -364,7 +406,7 @@ async def test_interrupt_admission_survives_unavailable_executor(
                             CustomToolCall(
                                 "remote-process",
                                 "exec",
-                                'text(await tools.exec_command({cmd: "read line", yield_time_ms: 1}));',
+                                'text(await tools.exec_command({cmd: "read line", tty: true, yield_time_ms: 1}));',
                             )
                         ],
                         model="test-model",
@@ -494,7 +536,7 @@ async def test_unpolled_process_exit_releases_capacity_and_retains_output(
                 )
             async with await endpoint.next() as exchange:
                 outputs = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
-                process_id = json.loads(outputs[-1]["output"][0]["text"])["session_id"]
+                process_id = json.loads(outputs[-1]["output"][1]["text"])["session_id"]
                 await exchange.send(*response_stream([Message("Process started.")], model="test-model").events)
             assert (await completed(stub, "background")).status == event_pb2.TURN_STATUS_COMPLETED
             process = await store.process(process_id)
@@ -527,7 +569,7 @@ async def test_unpolled_process_exit_releases_capacity_and_retains_output(
                 timeout=10,
             )
             async with await endpoint.next() as exchange:
-                assert process_id in json.dumps(exchange.request.body)
+                assert str(process_id) in json.dumps(exchange.request.body)
                 await exchange.send(
                     *response_stream(
                         [
@@ -542,7 +584,9 @@ async def test_unpolled_process_exit_releases_capacity_and_retains_output(
                 )
             async with await endpoint.next() as exchange:
                 outputs = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
-                assert json.loads(outputs[-1]["output"][0]["text"]) == {"output": "retained-output", "exit_code": 0}
+                result = json.loads(outputs[-1]["output"][1]["text"])
+                assert (result["output"], result["exit_code"]) == ("retained-output", 0)
+                assert "session_id" not in result
                 await exchange.send(*response_stream([Message("Retained output read.")], model="test-model").events)
             assert (await completed(stub, "read-retained")).status == event_pb2.TURN_STATUS_COMPLETED
             process = await store.process(process_id)
@@ -551,11 +595,12 @@ async def test_unpolled_process_exit_releases_capacity_and_retains_output(
             assert process.buffered_output == b""
 
 
-def tool_outputs(body: dict[str, Any]) -> list[tuple[str, str]]:
+def tool_outputs(body: dict[str, Any]) -> list[tuple[str, list[str]]]:
+    """(call_id, text parts) per tool output; cell results lead with Codex's status header part."""
     return [
-        (item["call_id"], "".join(part["text"] for part in item["output"]))
+        (item["call_id"], [part["text"] for part in item["output"]])
         for item in body["input"]
-        if item["type"] == "custom_tool_call_output"
+        if item["type"] in {"custom_tool_call_output", "function_call_output"}
     ]
 
 
@@ -583,7 +628,11 @@ async def test_notify_outputs_follow_the_step_that_emitted_them(
                     ).events
                 )
             async with await endpoint.next() as exchange:
-                assert tool_outputs(exchange.request.body) == [("completed", "final"), ("completed", "progress")]
+                (exec_call, exec_parts), notification = tool_outputs(exchange.request.body)
+                assert exec_call == "completed"
+                assert exec_parts[0].startswith("Script completed")
+                assert exec_parts[1:] == ["final"]
+                assert notification == ("completed", ["progress"])
                 source = (
                     '// @exec: {"yield_time_ms": 10}\n'
                     "await new Promise((resolve) => setTimeout(resolve, 1500));\n"
@@ -596,15 +645,21 @@ async def test_notify_outputs_follow_the_step_that_emitted_them(
             async with await endpoint.next() as exchange:
                 outputs = tool_outputs(exchange.request.body)
                 assert "late" not in json.dumps(outputs)
-                match = re.search(r"cell ID ([A-Za-z0-9_:-]+)", outputs[-1][1])
+                match = re.search(r"cell ID ([A-Za-z0-9_:-]+)", outputs[-1][1][0])
                 assert match is not None
-                arguments = json.dumps({"cell_id": match[1], "yield_time_ms": 10000})
                 await exchange.send(
-                    *response_stream([CustomToolCall("wait", "wait", arguments)], model="test-model").events
+                    *response_stream(
+                        [FunctionCall("wait", "wait", {"cell_id": match[1], "yield_time_ms": 10000})],
+                        model="test-model",
+                    ).events
                 )
             async with await endpoint.next() as exchange:
                 # The yielded cell's notification belongs to its exec call but follows the wait output.
-                assert tool_outputs(exchange.request.body)[-2:] == [("wait", "done"), ("yielded", "late")]
+                (wait_call, wait_parts), notification = tool_outputs(exchange.request.body)[-2:]
+                assert wait_call == "wait"
+                assert wait_parts[0].startswith("Script completed")
+                assert wait_parts[1:] == ["done"]
+                assert notification == ("yielded", ["late"])
                 await exchange.send(*response_stream([Message("notified")], model="test-model").events)
             assert (await completed(stub, "notify", request.session_id)).status == event_pb2.TURN_STATUS_COMPLETED
 
@@ -659,6 +714,66 @@ async def test_interrupt_discards_queued_notify_output(
             if entry.event.boundary_record.boundary == "notification"
         ]
         assert settled == ["discarded"]
+
+
+async def test_view_image_reads_executor_file_and_prepares_cell_image(
+    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+) -> None:
+    oversized = io.BytesIO()
+    Image.new("RGB", (3000, 1000), (255, 0, 0)).save(oversized, format="PNG")
+    (tmp_path / "oversized.png").write_bytes(oversized.getvalue())
+    (tmp_path / "notes.txt").write_text("not an image")
+    source = textwrap.dedent(
+        """\
+        const viewed = await tools.view_image({path: "oversized.png"});
+        text(viewed.detail);
+        image(viewed);
+        for (const path of ["missing.png", "notes.txt"]) {
+          try {
+            await tools.view_image({path});
+          } catch {
+            text(`rejected ${path}`);
+          }
+        }
+        """
+    )
+    async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
+        config = settings(
+            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+        )
+        async with service(config) as stub:
+            request = open_request(tmp_path)
+            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            await stub.SubmitInput(
+                runner_service_pb2.SubmitInputRequest(
+                    session_id=request.session_id, command_id="view-image", text="Look at the image."
+                ),
+                metadata=METADATA,
+                timeout=10,
+            )
+            async with await endpoint.next() as exchange:
+                await exchange.send(
+                    *response_stream([CustomToolCall("view-image", "exec", source)], model="test-model").events
+                )
+            async with await endpoint.next() as exchange:
+                (output,) = [
+                    item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"
+                ]
+                # The first part is the cell's status header.
+                texts = [part["text"] for part in output["output"][1:] if part["type"] == "input_text"]
+                assert texts == ["high", "rejected missing.png", "rejected notes.txt"]
+                (shown,) = [part for part in output["output"] if part["type"] == "input_image"]
+                header, encoded = shown["image_url"].split(",", 1)
+                assert header == "data:image/png;base64"
+                # 3000x1000 exceeds high detail's 2048-pixel bound; the aspect ratio is kept.
+                assert Image.open(io.BytesIO(base64.b64decode(encoded))).size == (2048, 683)
+                await exchange.send(*response_stream([Message("Seen.")], model="test-model").events)
+            assert (await completed(stub, "view-image")).status == event_pb2.TURN_STATUS_COMPLETED
+            # Nested read evidence keeps digests, not the file's bytes.
+            file_base64 = base64.b64encode(oversized.getvalue()).decode()
+            assert not [
+                intent for intent in await Store(engine).intents() if file_base64 in f"{intent.request}{intent.result}"
+            ]
 
 
 if __name__ == "__main__":

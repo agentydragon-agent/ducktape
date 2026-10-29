@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	OutboxChannel         = "central_sampler_outbox"
-	maxProcessOutputBytes = 1024 * 1024
+	OutboxChannel  = "central_sampler_outbox"
+	processColumns = `id,conversation_id::text,generation,after_seq,status,tty,exit_code,buffered_output,model_session_id,omitted_bytes`
 )
 
 type rowScanner interface {
@@ -34,9 +34,11 @@ type rowScanner interface {
 // Store owns the central sampler's durable conversation, Session and evidence records.
 type Store struct {
 	db *sql.DB
+	// now dates the model-visible environment context.
+	now func() time.Time
 }
 
-func New(db *sql.DB) *Store { return &Store{db: db} }
+func New(db *sql.DB) *Store { return &Store{db: db, now: time.Now} }
 
 func (s *Store) DB() *sql.DB { return s.db }
 
@@ -159,10 +161,21 @@ func scanConversation(row rowScanner) (*Conversation, error) {
 		contextItems  []byte
 		instructions  sql.NullString
 		contextTokens sql.NullInt64
+		shell         sql.NullString
+		environment   []byte
 	)
 	if err := row.Scan(&conversation.ID, &conversation.Generation, &owner, &lease, &pending,
-		&conversation.Stopped, &executor, &contextItems, &instructions, &contextTokens); err != nil {
+		&conversation.Stopped, &executor, &contextItems, &instructions, &contextTokens, &shell, &environment); err != nil {
 		return nil, err
+	}
+	if shell.Valid {
+		conversation.ExecutorShell = &shell.String
+	}
+	if len(environment) != 0 {
+		conversation.EnvironmentContext = &EnvironmentContext{}
+		if err := json.Unmarshal(environment, conversation.EnvironmentContext); err != nil {
+			return nil, err
+		}
 	}
 	if owner.Valid {
 		conversation.Owner = &owner.String
@@ -194,7 +207,7 @@ func scanConversation(row rowScanner) (*Conversation, error) {
 }
 
 const conversationColumns = `id::text, generation, owner::text, lease_until, pending, stopped,
-	executor_session, context_items, instructions, context_tokens`
+	executor_session, context_items, instructions, context_tokens, executor_shell, environment_context`
 
 func lockOwner(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversation, error) {
 	token, err := parseOwnerToken(owner)
@@ -846,9 +859,14 @@ func updateConversation(ctx context.Context, tx *sql.Tx, conversation *Conversat
 	if conversation.ContextTokens != nil {
 		contextTokens = *conversation.ContextTokens
 	}
+	environment, err := marshal(conversation.EnvironmentContext)
+	if err != nil {
+		return err
+	}
 	_, err = tx.ExecContext(ctx, `UPDATE sampler_conversation SET pending=$2,stopped=$3,executor_session=$4,
-		context_items=$5,context_tokens=$6 WHERE id=$1`, conversation.ID, nullableJSON(pending), conversation.Stopped,
-		nullableString(conversation.ExecutorSession), contextItems, contextTokens)
+		context_items=$5,context_tokens=$6,executor_shell=$7,environment_context=$8 WHERE id=$1`, conversation.ID,
+		nullableJSON(pending), conversation.Stopped, nullableString(conversation.ExecutorSession), contextItems, contextTokens,
+		nullableString(conversation.ExecutorShell), nullableJSON(environment))
 	return err
 }
 
@@ -1128,7 +1146,18 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		if err != nil {
 			return err
 		}
-		conversation.ContextItems = replacement
+		// Codex rust-v0.162.1 core/src/compact.rs insert_initial_context_before_last_real_user_or_summary:
+		// with no retained user message, the full context goes before the compaction item.
+		environment, err := s.environmentContext(conversation, session)
+		if err != nil {
+			return err
+		}
+		environmentItem, err := newResponsesMessage("user", environmentContextUpdate(nil, environment))
+		if err != nil {
+			return err
+		}
+		conversation.ContextItems = append([]ResponsesItem{environmentItem}, replacement...)
+		conversation.EnvironmentContext = &environment
 		conversation.ContextTokens = nil
 		conversation.Pending = nil
 		if err := updateConversation(ctx, tx, conversation); err != nil {
@@ -1251,7 +1280,25 @@ func (s *Store) RegisterProcess(ctx context.Context, owner Owner, processID stri
 	})
 }
 
-func (s *Store) SetExecutorSession(ctx context.Context, owner Owner, sessionID string) error {
+// RegisterModelProcess records a model-visible process under a unified exec session number. It
+// returns ErrConflict while another unreleased process of the conversation holds that number; the
+// number is released when its process is recorded as exited.
+func (s *Store) RegisterModelProcess(ctx context.Context, owner Owner, processID string, sessionID int, tty bool) error {
+	if processID == "" {
+		return ErrInvalid
+	}
+	return s.transaction(ctx, func(tx *sql.Tx) error {
+		if _, err := lockOwner(ctx, tx, owner); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `INSERT INTO sampler_process(id,conversation_id,generation,after_seq,status,tty,exit_code,buffered_output,model_session_id)
+			VALUES($1,$2,$3,NULL,'starting',$4,NULL,''::bytea,$5)`, processID, owner.ConversationID, owner.Generation, tty, sessionID)
+		return s.pgError(err)
+	})
+}
+
+// SetExecutorSession records the exec-server session and the shell it reported, if any.
+func (s *Store) SetExecutorSession(ctx context.Context, owner Owner, sessionID string, shell *string) error {
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
@@ -1271,8 +1318,67 @@ func (s *Store) SetExecutorSession(ctx context.Context, owner Owner, sessionID s
 			}
 		}
 		conversation.ExecutorSession = &sessionID
+		conversation.ExecutorShell = shell
 		return updateConversation(ctx, tx, conversation)
 	})
+}
+
+// RecordEnvironmentContext appends an environment update before a sampling step, as Codex does
+// before each step, and returns the updated conversation.
+func (s *Store) RecordEnvironmentContext(ctx context.Context, owner Owner) (*Conversation, error) {
+	var conversation *Conversation
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
+		var err error
+		conversation, err = lockOwner(ctx, tx, owner)
+		if err != nil {
+			return err
+		}
+		if conversation.Pending != nil {
+			return &UnknownEffectError{Reason: "unresolved intent blocks an environment update; automatic replay is unsafe"}
+		}
+		session, err := sessionForConversation(ctx, tx, conversation.ID)
+		if err != nil {
+			return err
+		}
+		previous := conversation.EnvironmentContext
+		if err := s.recordEnvironmentContext(conversation, session); err != nil {
+			return err
+		}
+		if previous != nil && previous.equal(*conversation.EnvironmentContext) {
+			return nil
+		}
+		return updateConversation(ctx, tx, conversation)
+	})
+	return conversation, err
+}
+
+func (s *Store) environmentContext(conversation *Conversation, session *Session) (EnvironmentContext, error) {
+	request := &samplerpb.OpenSessionRequest{}
+	if err := proto.Unmarshal(session.Configuration, request); err != nil {
+		return EnvironmentContext{}, err
+	}
+	return currentEnvironmentContext(request.GetSpec().GetCwd(), conversation.ExecutorShell, s.now()), nil
+}
+
+// recordEnvironmentContext appends the update from the conversation's baseline to the Session's
+// current environment, then advances the baseline. The caller persists the conversation.
+func (s *Store) recordEnvironmentContext(conversation *Conversation, session *Session) error {
+	current, err := s.environmentContext(conversation, session)
+	if err != nil {
+		return err
+	}
+	if update := environmentContextUpdate(conversation.EnvironmentContext, current); update != "" {
+		item, err := newResponsesMessage("user", update)
+		if err != nil {
+			return err
+		}
+		conversation.Items = append(conversation.Items, item)
+		if conversation.ContextItems != nil {
+			conversation.ContextItems = append(conversation.ContextItems, item)
+		}
+	}
+	conversation.EnvironmentContext = &current
+	return nil
 }
 
 func persistSession(ctx context.Context, tx *sql.Tx, session *Session) error {
@@ -1463,6 +1569,10 @@ func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) 
 		case payload.GetSubmitInput() != nil:
 			if conversation.Pending != nil {
 				return &UnknownEffectError{Reason: "unresolved intent blocks queued input; automatic replay is unsafe"}
+			}
+			// Codex records environment updates before the turn's user input.
+			if err := s.recordEnvironmentContext(conversation, session); err != nil {
+				return err
 			}
 			text := payload.GetSubmitInput().GetText()
 			item, err := newResponsesMessage("user", text)
@@ -1963,8 +2073,26 @@ func (s *Store) Process(ctx context.Context, owner Owner, processID string) (*Re
 			return err
 		}
 		var err error
-		process, err = scanProcess(tx.QueryRowContext(ctx, `SELECT id,conversation_id::text,generation,after_seq,status,tty,exit_code,buffered_output
+		process, err = scanProcess(tx.QueryRowContext(ctx, `SELECT `+processColumns+`
 			FROM sampler_process WHERE id=$1 AND conversation_id=$2`, processID, owner.ConversationID))
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrMissing
+		}
+		return err
+	})
+	return process, err
+}
+
+// ProcessByModelSession resolves an unreleased model-facing session number.
+func (s *Store) ProcessByModelSession(ctx context.Context, owner Owner, sessionID int) (*RemoteProcess, error) {
+	var process *RemoteProcess
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
+		if _, err := lockOwner(ctx, tx, owner); err != nil {
+			return err
+		}
+		var err error
+		process, err = scanProcess(tx.QueryRowContext(ctx, `SELECT `+processColumns+`
+			FROM sampler_process WHERE conversation_id=$1 AND model_session_id=$2 AND status <> 'exited'`, owner.ConversationID, sessionID))
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrMissing
 		}
@@ -1977,11 +2105,16 @@ func scanProcess(row rowScanner) (*RemoteProcess, error) {
 	var process RemoteProcess
 	var afterSequence sql.NullInt64
 	var exitCode sql.NullInt64
+	var modelSessionID sql.NullInt64
 	var output []byte
 	err := row.Scan(&process.ID, &process.ConversationID, &process.Generation, &afterSequence, &process.Status,
-		&process.TTY, &exitCode, &output)
+		&process.TTY, &exitCode, &output, &modelSessionID, &process.OmittedBytes)
 	if err != nil {
 		return nil, err
+	}
+	if modelSessionID.Valid {
+		value := int(modelSessionID.Int64)
+		process.ModelSessionID = &value
 	}
 	if afterSequence.Valid {
 		value := uint64(afterSequence.Int64)
@@ -2004,7 +2137,7 @@ func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string
 		if err != nil {
 			return err
 		}
-		process, err := scanProcess(tx.QueryRowContext(ctx, `SELECT id,conversation_id::text,generation,after_seq,status,tty,exit_code,buffered_output
+		process, err := scanProcess(tx.QueryRowContext(ctx, `SELECT `+processColumns+`
 			FROM sampler_process WHERE id=$1 AND conversation_id=$2 FOR UPDATE`, processID, owner.ConversationID))
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrMissing
@@ -2024,14 +2157,12 @@ func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string
 		if exitCode != nil {
 			code = *exitCode
 		}
-		var output any
+		output, omitted := process.BufferedOutput, process.OmittedBytes
 		if consumeOutput {
-			output = []byte{}
-		} else {
-			output = process.BufferedOutput
+			output, omitted = []byte{}, 0
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET after_seq=$3,status=$4,exit_code=$5,buffered_output=$6 WHERE id=$1 AND conversation_id=$2`,
-			processID, owner.ConversationID, sequence, status, code, output); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET after_seq=$3,status=$4,exit_code=$5,buffered_output=$6,omitted_bytes=$7 WHERE id=$1 AND conversation_id=$2`,
+			processID, owner.ConversationID, sequence, status, code, output, omitted); err != nil {
 			return err
 		}
 		process.AfterSequence, process.Status, process.ExitCode = afterSequence, status, exitCode
@@ -2053,7 +2184,7 @@ func (s *Store) RetainProcessOutput(ctx context.Context, owner Owner, processID 
 		if err != nil {
 			return err
 		}
-		process, err := scanProcess(tx.QueryRowContext(ctx, `SELECT id,conversation_id::text,generation,after_seq,status,tty,exit_code,buffered_output
+		process, err := scanProcess(tx.QueryRowContext(ctx, `SELECT `+processColumns+`
 			FROM sampler_process WHERE id=$1 AND conversation_id=$2 FOR UPDATE`, processID, owner.ConversationID))
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrMissing
@@ -2064,10 +2195,13 @@ func (s *Store) RetainProcessOutput(ctx context.Context, owner Owner, processID 
 		if process.Generation != owner.Generation {
 			return &LostOwnershipError{Reason: "process belongs to another owner generation"}
 		}
-		if len(process.BufferedOutput)+len(output) > maxProcessOutputBytes {
-			return ErrPrecondition
+		// Unread output keeps its head and tail, as upstream's pending buffer does.
+		buffer, err := restoreHeadTailBuffer(unifiedExecOutputMaxBytes, process.BufferedOutput, process.OmittedBytes)
+		if err != nil {
+			return err
 		}
-		buffered := append(append([]byte(nil), process.BufferedOutput...), output...)
+		buffer.push(output)
+		buffered := buffer.retained()
 		status := process.Status
 		var code any
 		if exitCode != nil {
@@ -2076,15 +2210,15 @@ func (s *Store) RetainProcessOutput(ctx context.Context, owner Owner, processID 
 		if exited {
 			status = "exited_unread"
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET after_seq=$3,status=$4,exit_code=$5,buffered_output=$6 WHERE id=$1 AND conversation_id=$2`,
-			processID, owner.ConversationID, afterSequence, status, code, buffered); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET after_seq=$3,status=$4,exit_code=$5,buffered_output=$6,omitted_bytes=$7 WHERE id=$1 AND conversation_id=$2`,
+			processID, owner.ConversationID, afterSequence, status, code, buffered, buffer.omitted); err != nil {
 			return err
 		}
 		session, err := sessionForConversation(ctx, tx, conversation.ID)
 		if err != nil {
 			return err
 		}
-		payload := map[string]any{"after_seq": afterSequence, "exit_code": exitCode, "unread_bytes": len(buffered)}
+		payload := map[string]any{"after_seq": afterSequence, "exit_code": exitCode, "unread_bytes": buffer.totalBytes()}
 		return s.recordEvidence(ctx, tx, owner, conversation, session, processID, "process", status, payload)
 	})
 }
@@ -2117,7 +2251,7 @@ func (s *Store) ExecutionState(ctx context.Context, owner Owner) (*ExecutionStat
 		if _, err := lockOwner(ctx, tx, owner); err != nil {
 			return err
 		}
-		processRows, err := tx.QueryContext(ctx, `SELECT id,conversation_id::text,generation,after_seq,status,tty,exit_code,buffered_output
+		processRows, err := tx.QueryContext(ctx, `SELECT `+processColumns+`
 			FROM sampler_process WHERE conversation_id=$1 AND status <> 'exited'`, owner.ConversationID)
 		if err != nil {
 			return err
@@ -2460,54 +2594,42 @@ func setCommandOutcome(ctx context.Context, tx *sql.Tx, sessionID, commandID str
 	return err
 }
 
-func notDispatchedOutputs(items []ResponsesItem) []ResponsesItem {
+func unansweredCalls(items []ResponsesItem) []ResponsesToolCall {
 	completed := map[string]struct{}{}
 	for _, item := range items {
-		if item.Type == ResponsesItemCustomToolOutput {
+		if item.IsToolOutput() {
 			completed[item.CallID] = struct{}{}
 		}
 	}
-	var outputs []ResponsesItem
+	var calls []ResponsesToolCall
 	for _, item := range items {
-		callID := item.CallID
-		if item.Type != ResponsesItemCustomToolCall {
+		call, ok := item.ToolCall()
+		if !ok {
 			continue
 		}
-		if _, ok := completed[callID]; ok {
-			continue
+		if _, ok := completed[call.CallID]; !ok {
+			calls = append(calls, call)
 		}
-		outputs = append(outputs, ResponsesItem{
-			Type: ResponsesItemCustomToolOutput, CallID: callID,
-			Output: []ResponsesContentPart{{Type: "input_text", Text: "Not dispatched because the turn failed."}},
-		})
+	}
+	return calls
+}
+
+func notDispatchedOutputs(items []ResponsesItem) []ResponsesItem {
+	var outputs []ResponsesItem
+	for _, call := range unansweredCalls(items) {
+		outputs = append(outputs, call.OutputItem([]ResponsesContentPart{{Type: "input_text", Text: "Not dispatched because the turn failed."}}))
 	}
 	return outputs
 }
 
 func interruptedOutputs(items []ResponsesItem, activeCall string) []ResponsesItem {
-	completed := map[string]struct{}{}
-	for _, item := range items {
-		if item.Type == ResponsesItemCustomToolOutput {
-			completed[item.CallID] = struct{}{}
-		}
-	}
 	var outputs []ResponsesItem
-	for _, item := range items {
-		callID := item.CallID
-		if item.Type != ResponsesItemCustomToolCall {
-			continue
-		}
-		if _, ok := completed[callID]; ok {
-			continue
-		}
+	for _, call := range unansweredCalls(items) {
 		text := "Not started because user interrupted the turn."
-		if callID == activeCall {
+		if call.CallID == activeCall {
 			text = "Interrupted by user. Partial effects may have occurred."
 		}
-		outputs = append(outputs, ResponsesItem{
-			Type: ResponsesItemCustomToolOutput, CallID: callID,
-			Output: []ResponsesContentPart{{Type: "input_text", Text: text}},
-		})
+		outputs = append(outputs, call.OutputItem([]ResponsesContentPart{{Type: "input_text", Text: text}}))
 	}
 	return outputs
 }

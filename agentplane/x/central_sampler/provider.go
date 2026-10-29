@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,15 @@ import (
 )
 
 const maxProviderErrorBytes = 1024 * 1024
+
+// Codex rust-v0.162.1 codex-rs/models-manager/models.json: gpt-6.1-sol
+// model_messages.instructions_template, used for every model. Pre-commit trims trailing whitespace.
+// Re-copy it on Codex pin bumps.
+// TODO: Consider pruning or rewriting it for the sampler's tool surface, or choosing it per model
+// as Codex does.
+//
+//go:embed codex/base_instructions.txt
+var baseInstructions string
 
 type ResponseEvidence struct {
 	Store    *Store
@@ -30,54 +40,33 @@ func (r ProviderResponse) Audit() map[string]any {
 	return map[string]any{"response": r.Terminal, "events": r.Events}
 }
 
+// TODO: Codex also nests update_plan and MCP tools (namespaced, e.g. via the Action Service);
+// consider exposing them here.
 func toolDefinitions() []ResponsesCodeToolDefinition {
 	return []ResponsesCodeToolDefinition{
-		{
-			Name: "exec_command", ToolName: ResponsesToolName{Name: "exec_command"},
-			Description: "Run /bin/sh -c; returns output, exit_code, and session_id while running. Poll with write_stdin.",
-			Kind:        "function", InputSchema: &ResponsesObjectSchema{
-				Type: "object", Properties: map[string]ResponsesPropertySchema{
-					"cmd": {Type: "string"}, "workdir": {Type: "string"}, "tty": {Type: "boolean"}, "yield_time_ms": {Type: "integer"},
-				}, Required: []string{"cmd"}, AdditionalProperties: false,
-			},
-			OutputSchema: json.RawMessage("null"),
-		},
-		{
-			Name: "write_stdin", ToolName: ResponsesToolName{Name: "write_stdin"},
-			Description: "Write stdin or poll with empty chars. A sole Ctrl-C signals interrupt. eof requires tty=true and empty chars.",
-			Kind:        "function", InputSchema: &ResponsesObjectSchema{
-				Type: "object", Properties: map[string]ResponsesPropertySchema{
-					"session_id": {Type: "string"}, "chars": {Type: "string"}, "eof": {Type: "boolean"}, "yield_time_ms": {Type: "integer"},
-				}, Required: []string{"session_id"}, AdditionalProperties: false,
-			},
-			OutputSchema: json.RawMessage("null"),
-		},
+		execCommandToolDefinition(),
+		writeStdinToolDefinition(),
 		{
 			Name: "apply_patch", ToolName: ResponsesToolName{Name: "apply_patch"},
 			Description: "Apply a Codex *** Begin Patch / *** End Patch patch through upstream apply-patch.",
-			Kind:        "freeform", InputSchema: nil, OutputSchema: json.RawMessage("null"),
+			Kind:        "freeform",
 		},
+		viewImageToolDefinition(),
+		// TODO: update_plan and Action-backed (MCP) tools, which Codex also nests.
 	}
 }
 
 func RequestBody(model, conversationID string, items []ResponsesItem, instructions *string, executionState *ExecutionState) (ResponsesRequest, error) {
-	description := "Run raw JavaScript as an async module in a fresh V8 isolate. Call tools.exec_command({cmd, workdir?}) " +
-		"or tools.apply_patch(patch). Emit results with text(value). No Node, filesystem, network or console. " +
-		"exec_command supports tty and yield_time_ms; a running process returns session_id. " +
-		"Use tools.write_stdin({session_id, chars?, eof?, yield_time_ms?}) to send input or poll. " +
-		`An exec first-line // @exec: {"yield_time_ms": 10} yields an active JS cell; ` +
-		"call wait with JSON {cell_id, yield_time_ms?, terminate?} to observe it. " +
-		"Process session_id and JavaScript cell_id are distinct. No persistent JS store. " +
-		"notify(value) injects an extra custom_tool_call_output for the current exec call. Await all tool calls. "
-	definitionBytes, err := json.Marshal(toolDefinitions())
+	description, err := execToolDescription(toolDefinitions())
 	if err != nil {
 		return ResponsesRequest{}, err
 	}
-	description += string(definitionBytes)
+	strict := false
 	input := []ResponsesItem{{
 		Type: ResponsesItemAdditionalTools, Role: "developer", Tools: []ResponsesAdditionalTool{
-			{Type: "custom", Name: "exec", Description: description, Format: ResponsesToolFormat{Type: "text"}},
-			{Type: "custom", Name: "wait", Description: "Observe a yielded JavaScript cell. Input JSON: {cell_id, yield_time_ms?, terminate?}.", Format: ResponsesToolFormat{Type: "text"}},
+			// Codex rust-v0.162.1 core/src/tools/code_mode/execute_spec.rs create_code_mode_tool.
+			{Type: "custom", Name: "exec", Description: description, Format: &ResponsesToolFormat{Type: "grammar", Syntax: "lark", Definition: execFreeformGrammar}},
+			{Type: "function", Name: "wait", Description: waitToolDescription(), Strict: &strict, Parameters: waitToolParameters()},
 		},
 	}}
 	if instructions != nil && *instructions != "" {
@@ -94,8 +83,11 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 		}
 		processes := make([]ResponsesActiveProcess, 0, len(executionState.Processes))
 		for _, process := range executionState.Processes {
+			if process.ModelSessionID == nil {
+				continue
+			}
 			processes = append(processes, ResponsesActiveProcess{
-				SessionID: process.ID, Status: process.Status, TTY: process.TTY, ExitCode: process.ExitCode,
+				SessionID: *process.ModelSessionID, Status: process.Status, TTY: process.TTY, ExitCode: process.ExitCode,
 			})
 		}
 		state, err := json.Marshal(ResponsesExecutionState{Cells: cells, Processes: processes})
@@ -110,7 +102,7 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 	}
 	input = append(input, items...)
 	return ResponsesRequest{
-		Model: model, Input: input, Stream: true, Store: false,
+		Model: model, Instructions: baseInstructions, Input: input, Stream: true, Store: false,
 		Include: []string{"reasoning.encrypted_content"}, PromptCacheKey: conversationID,
 		ClientMetadata: ResponsesClientMetadata{SessionID: conversationID, ThreadID: conversationID, TurnID: conversationID},
 	}, nil
@@ -127,7 +119,7 @@ type ResponsesActiveCell struct {
 }
 
 type ResponsesActiveProcess struct {
-	SessionID string `json:"session_id"`
+	SessionID int    `json:"session_id"`
 	Status    string `json:"status"`
 	TTY       bool   `json:"tty"`
 	ExitCode  *int   `json:"exit_code"`

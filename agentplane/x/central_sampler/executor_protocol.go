@@ -29,6 +29,17 @@ type executorRPCError struct {
 	Data    json.RawMessage `json:"data,omitempty"`
 }
 
+// executorRejectedError is an exec-server JSON-RPC error reply: the request had no effect.
+type executorRejectedError struct {
+	method  string
+	code    int
+	message string
+}
+
+func (e *executorRejectedError) Error() string {
+	return fmt.Sprintf("exec-server rejected %s (%d): %s", e.method, e.code, e.message)
+}
+
 type executorInitialize struct {
 	ClientName      string  `json:"clientName"`
 	ResumeSessionID *string `json:"resumeSessionId"`
@@ -36,22 +47,37 @@ type executorInitialize struct {
 
 type (
 	executorInitialized struct {
-		SessionID string `json:"sessionId"`
+		SessionID       string                   `json:"sessionId"`
+		EnvironmentInfo *executorEnvironmentInfo `json:"environmentInfo"`
+	}
+	executorEnvironmentInfo struct {
+		Shell execShell `json:"shell"`
 	}
 	executorEmpty   struct{}
 	executorStarted struct {
 		ProcessID string `json:"processId"`
 	}
 	executorStart struct {
-		ProcessID string            `json:"processId"`
-		Argv      []string          `json:"argv"`
-		Cwd       string            `json:"cwd"`
-		Env       map[string]string `json:"env"`
-		TTY       bool              `json:"tty"`
-		PipeStdin bool              `json:"pipeStdin"`
-		Arg0      *string           `json:"arg0"`
+		ProcessID string             `json:"processId"`
+		Argv      []string           `json:"argv"`
+		Cwd       string             `json:"cwd"`
+		EnvPolicy *executorEnvPolicy `json:"envPolicy"`
+		Env       map[string]string  `json:"env"`
+		TTY       bool               `json:"tty"`
+		PipeStdin bool               `json:"pipeStdin"`
+		Arg0      *string            `json:"arg0"`
 	}
 )
+
+// executorEnvPolicy builds a child environment on the executor; `env` is applied over it.
+// Codex rust-v0.162.1 exec-server-protocol/src/protocol.rs ExecEnvPolicy.
+type executorEnvPolicy struct {
+	Inherit               string            `json:"inherit"`
+	IgnoreDefaultExcludes bool              `json:"ignoreDefaultExcludes"`
+	Exclude               []string          `json:"exclude"`
+	Set                   map[string]string `json:"set"`
+	IncludeOnly           []string          `json:"includeOnly"`
+}
 
 type executorRead struct {
 	ProcessID string  `json:"processId"`
@@ -127,6 +153,41 @@ type (
 	}
 )
 
+// sandbox is always null: like process/start, reads run with the executor's own permissions.
+type (
+	executorFSGetMetadata struct {
+		Path    string    `json:"path"`
+		Sandbox *struct{} `json:"sandbox"`
+	}
+	executorFSMetadata struct {
+		IsDirectory bool   `json:"isDirectory"`
+		IsFile      bool   `json:"isFile"`
+		IsSymlink   bool   `json:"isSymlink"`
+		Size        uint64 `json:"size"`
+	}
+	executorFSOpen struct {
+		HandleID string    `json:"handleId"`
+		Path     string    `json:"path"`
+		Mode     string    `json:"mode"`
+		Sandbox  *struct{} `json:"sandbox"`
+	}
+	executorFSOpened struct {
+		HandleID string `json:"handleId"`
+	}
+	executorFSReadBlock struct {
+		HandleID string `json:"handleId"`
+		Offset   uint64 `json:"offset"`
+		Len      int    `json:"len"`
+	}
+	executorFSBlock struct {
+		Chunk []byte `json:"chunk"`
+		EOF   bool   `json:"eof"`
+	}
+	executorFSClose struct {
+		HandleID string `json:"handleId"`
+	}
+)
+
 // Decode one complete JSON object. Raw payloads remain available to the evidence journal.
 func decodeProtocolObject(data []byte, value any) error {
 	trimmed := bytes.TrimSpace(data)
@@ -158,7 +219,11 @@ func protocolObject(value any) (map[string]any, error) {
 }
 
 func executorRPC[R any, P any](ctx context.Context, e *Executor, method string, params P) (*R, error) {
-	raw, err := e.rpc(ctx, method, params)
+	return executorRPCWithEvidence[R](ctx, e, method, params, nil)
+}
+
+func executorRPCWithEvidence[R any, P any](ctx context.Context, e *Executor, method string, params P, resultEvidence func(map[string]any) map[string]any) (*R, error) {
+	raw, err := e.rpc(ctx, method, params, resultEvidence)
 	if err != nil {
 		return nil, err
 	}

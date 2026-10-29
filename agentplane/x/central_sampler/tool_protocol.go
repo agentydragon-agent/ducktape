@@ -5,41 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 )
 
-type execCommandInput struct {
-	Cmd         string  `json:"cmd"`
-	Workdir     *string `json:"workdir,omitempty"`
-	TTY         bool    `json:"tty,omitempty"`
-	YieldTimeMS *int    `json:"yield_time_ms,omitempty"`
-}
-
-type writeStdinInput struct {
-	SessionID   string `json:"session_id"`
-	Chars       string `json:"chars,omitempty"`
-	EOF         bool   `json:"eof,omitempty"`
-	YieldTimeMS *int   `json:"yield_time_ms,omitempty"`
-}
-
+// Codex rust-v0.162.1 core/src/tools/code_mode/wait_handler.rs ExecWaitArgs.
 type waitInput struct {
-	CellID      string `json:"cell_id"`
-	YieldTimeMS *int   `json:"yield_time_ms,omitempty"`
-	Terminate   bool   `json:"terminate,omitempty"`
+	CellID      string  `json:"cell_id"`
+	YieldTimeMS *uint64 `json:"yield_time_ms,omitempty"`
+	MaxTokens   *uint64 `json:"max_tokens,omitempty"`
+	Terminate   bool    `json:"terminate,omitempty"`
 }
 
+// Codex rust-v0.162.1 code-mode-protocol/src/description.rs CodeModeExecPragma.
 type execPragma struct {
-	YieldTimeMS *int `json:"yield_time_ms,omitempty"`
-}
-
-type processToolResult struct {
-	Output    string  `json:"output"`
-	ExitCode  *int    `json:"exit_code"`
-	SessionID *string `json:"session_id,omitempty"`
-}
-
-func processOutput(output []byte, exitCode *int, sessionID *string) *processToolResult {
-	return &processToolResult{Output: strings.ToValidUTF8(string(output), "�"), ExitCode: exitCode, SessionID: sessionID}
+	YieldTimeMS     *uint64 `json:"yield_time_ms,omitempty"`
+	MaxOutputTokens *uint64 `json:"max_output_tokens,omitempty"`
 }
 
 // Tools have a closed schema. Explicit null is invalid for every supported input field.

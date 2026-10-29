@@ -59,6 +59,35 @@ turn completes; an interrupted or effect-uncertain turn discards them, as Codex 
 **Deviation:** a failed turn also discards them, because its unresolved intent must precede any
 later output. Boundary evidence records each output as `recorded` or `discarded`.
 
+The model sees Codex's Code Mode Only surface at the pinned version: freeform `exec` (Lark grammar,
+optional `// @exec:` pragma with `yield_time_ms` and `max_output_tokens`) described by Codex's
+template with a TypeScript declaration per nested tool, and function `wait` with Codex's schema
+and defaults. Results carry Codex's status header and token-budget truncation. Deviations: the
+`exec` description omits Codex's deferred-tool guidance and shared MCP TypeScript types until the
+sampler has MCP/Action tools and tool search or deferred tools; `wait`
+accepts only a live cell this Session recorded (rejected before dispatch rather than reported as a
+missing cell), unknown or `null` tool arguments are rejected, and audio truncation estimates
+tokens from data URL size rather than decoded duration.
+
+Nested `exec_command` and `write_stdin` match Codex 0.162.1 unified exec for one remote environment:
+upstream schemas and result objects (`chunk_id`, `wall_time_seconds`,
+`exit_code`, numeric `session_id`, `original_token_count`, `output`), yield bounds, `max_output_tokens`
+truncation and the unified exec environment overlay. Every executor process (nested tools and the
+setup script) inherits the executor's environment under Codex's default shell environment policy,
+with the Session's variables set over it, as wrapped Codex's commands do. Commands run in the executor-reported shell, as
+a login shell unless `login: false`; a requested `shell` must match it, and an executor that reports
+none falls back to `/bin/sh`. Processes have no stdin pipe without `tty`; there a sole Ctrl-C
+interrupts. Session numbers are random in upstream's range and unique among a conversation's
+processes until their exit is reported. Argument and session errors reject the nested call in
+JavaScript instead of failing the Session, as do exec-server rejections, which have no effect.
+
+**Deviation:** `exec_command` omits upstream's approval parameters (`sandbox_permissions`,
+`justification`, `prefix_rule`); Agentplane's Sandbox, egress and Action Service own those
+boundaries, and sampler approvals are out of scope.
+
+TODO: Revisit the approval parameters upstream `exec_command` includes if the sampler gains an
+approval flow.
+
 TODO: Evaluate a stronger kernel-enforced isolation boundary for cells or Sessions if aggregate
 container limits prove insufficient.
 
@@ -82,15 +111,20 @@ the command and turn fail without blocking the Session; subsequent input may con
 operation. Accepted tool calls that were never dispatched receive truthful failure outputs.
 Transport loss, streams without a terminal response and uncertain execution remain blocking failures. Nested
 executor failures remain conservative because the surrounding JavaScript may already have caused
-effects. A submitted input is effected in History when it is confirmed and retained in the conversation;
+effects. Nested `view_image` has no external effect: missing, unreadable, oversized (over 32 MiB)
+or non-image files reject the cell's tool promise with upstream's message and resolve the intent.
+Its reads and result journal digests, not image bytes. Images a cell emits are prepared like upstream
+tool output (bounded to high- or original-detail size, labelled with their real MIME type) before
+entering the conversation; ones that cannot be prepared become upstream's placeholder text.
+A submitted input is effected in History when it is confirmed and retained in the conversation;
 a later turn failure may still leave `GetCommand` as `FAILED` or `UNKNOWN`. The failure settles the turn
 without changing that confirmed input outcome, while queued commands follow the existing failure policy.
 
 Idle owners independently read process output and reconcile exit in bounded pages. Observed exit
-releases driver/host capacity without a model poll. At most 1 MiB of unread output per handle remains
-in PostgreSQL and can be consumed by an empty `write_stdin`, including after the old executor
-session expires. Unknown outcomes or unread-output overflow block continuation without advancing
-the retained read cursor. Truly running processes and live JS cells retain a runtime slot.
+releases driver/host capacity without a model poll. Unread output per handle remains in PostgreSQL as
+upstream's 1 MiB head and tail with an omission count, and can be consumed by an empty `write_stdin`,
+including after the old executor session expires. Unknown outcomes block continuation without
+advancing the retained read cursor. Truly running processes and live JS cells retain a runtime slot.
 
 When a Session is blocked, `GetSession.blocked_reason` names the unresolved intent or live handle and
 points operators to the linked boundary evidence. V1 never replays uncertain provider or executor
@@ -104,8 +138,19 @@ executor URL crosses that API. The relay bounds each message to 1 MiB and each R
 oversized tool messages fail the channel rather than being silently truncated. An open relay
 blocks executor Sandbox autosuspend and publishes the Sandbox-wide `ExecutorRelay` blocker until
 its channel closes. Dispatcher does
-not relay tools. Standing instructions are supported; remote
+not relay tools. Every provider request carries Codex's `gpt-6.1-sol` base instructions as
+`instructions`, whatever the model. Standing instructions are supported; remote
 AGENTS.md discovery, subagents, skills/MCP, approvals/hooks and a Claude sampler are deferred.
+
+The conversation carries Codex's `<environment_context>` user message: the Session cwd, the name of
+the executor-reported shell that `exec_command` launches (omitted for an executor that reports none,
+although `exec_command` then falls back to `/bin/sh`) and the sampler's local date. The full context
+precedes the first input; afterwards an update is recorded before a turn's input, or before a
+sampling step after that step's queued `notify()` outputs, whenever a value changed (a date rollover
+renders only the date), and compaction re-injects the full context before the compaction item. Timezone and
+Codex's network, filesystem, permission-profile and subagents sections are omitted; Agentplane owns
+those boundaries. **Deviation:** the executor connects lazily, so a shell first learned after the
+initial context renders an update; Codex resolves the shell before its first render.
 
 ## Evidence and continuation
 
