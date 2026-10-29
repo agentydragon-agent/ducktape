@@ -14,19 +14,12 @@ import {
   routes,
   UNANSWERED,
 } from "./network";
-import type {
-  ActionPolicyView,
-  BindingView,
-  Decision,
-  DecisionsSnapshot,
-  PolicySetView,
-  SandboxSnapshot,
-  SandboxView,
-  SandboxesSnapshot,
-  ThreadView,
-  ThreadsSnapshot,
-  WatchHealth,
-} from "../schema";
+import type { SandboxView, ThreadView } from "../schema";
+import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
+import type { BindingView, Decision, PolicySetView } from "../sandboxes/client";
+import type { DecisionsSnapshot, SandboxSnapshot, SandboxesSnapshot } from "../sandboxes/live";
+import type { WatchHealth } from "../live";
+import type { ThreadsSnapshot } from "../threads/live";
 import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
 import "@mantine/core/styles.css";
 
@@ -57,7 +50,6 @@ import type { Connection } from "../connections/models";
 
 import type { DispatchReceipt } from "../threads/client";
 import { ACTION_RENDERERS } from "../actions/rendering/index";
-import type { ActionGroupView, ActionRequestView } from "../actions/client";
 import type { McpLinkageView } from "../mcp_linkage_client";
 import type {
   GitHubSubject,
@@ -84,6 +76,25 @@ localStorage.clear();
 // The visual harness freezes the wall clock before this bundle runs, so relative ages stay put.
 const NOW = Date.now();
 const HOUR = 3_600_000;
+const NULL_SANDBOX_FIELDS = {
+  binding: null,
+  preset: null,
+  idle_suspend_after_seconds: null,
+  suspended_by: null,
+  idle_suspend_at: null,
+  autosuspend_blockers: [],
+};
+const NULL_THREAD_FIELDS = {
+  sandbox_uid: null,
+  last_model_activity_at: null,
+  idle_since: null,
+  setup_state: null,
+  launch_outcome: null,
+  active_turn_id: null,
+  reasoning_effort: null,
+  feed_status: null,
+  last_turn_status: null,
+};
 
 function ago(ms: number): string {
   return new Date(NOW - ms).toISOString();
@@ -91,6 +102,7 @@ function ago(ms: number): string {
 
 const SANDBOXES: SandboxView[] = [
   {
+    ...NULL_SANDBOX_FIELDS,
     name: "ready-sandbox",
     uid: "0f9c1d2e-0000-4000-8000-00000000a1b2",
     namespace: "agentplane-visual",
@@ -132,6 +144,7 @@ const SANDBOXES: SandboxView[] = [
     },
   },
   {
+    ...NULL_SANDBOX_FIELDS,
     name: "pending-sandbox",
     uid: "0f9c1d2e-0000-4000-8000-00000000c3d4",
     namespace: "agentplane-visual",
@@ -176,6 +189,7 @@ const SANDBOXES: SandboxView[] = [
     },
   },
   {
+    ...NULL_SANDBOX_FIELDS,
     name: "suspended-sandbox",
     uid: "0f9c1d2e-0000-4000-8000-00000000e5f6",
     namespace: "agentplane-visual",
@@ -193,6 +207,7 @@ const SANDBOXES: SandboxView[] = [
 function addSuspendedSandboxes(): void {
   SANDBOXES.push(
     {
+      ...NULL_SANDBOX_FIELDS,
       name: "idle-suspended-sandbox",
       uid: "0f9c1d2e-0000-4000-8000-00000000b7c8",
       namespace: "agentplane-visual",
@@ -207,6 +222,7 @@ function addSuspendedSandboxes(): void {
       pod: null,
     },
     {
+      ...NULL_SANDBOX_FIELDS,
       name: "requested-suspended-sandbox",
       uid: "0f9c1d2e-0000-4000-8000-00000000d9e0",
       namespace: "agentplane-visual",
@@ -225,6 +241,7 @@ function addSuspendedSandboxes(): void {
 
 function addProvisioningSandbox(): void {
   SANDBOXES.push({
+    ...NULL_SANDBOX_FIELDS,
     name: "test-provisioning",
     uid: "0f9c1d2e-0000-4000-8000-000000000007",
     namespace: "agentplane-visual",
@@ -232,7 +249,7 @@ function addProvisioningSandbox(): void {
     operating_mode: "Running",
     service_account: { namespace: "agentplane-visual", name: "test-provisioning" },
     wake_on_send: false,
-    status: null,
+    status: {},
     phase: "Creating",
     pod: null,
   });
@@ -815,6 +832,7 @@ function notificationStatus(sandbox: string): SandboxNotificationStatus {
 /** The store's copy of the sessions: the idle one named, the stopped one not, so both renderings are on the page. */
 const THREADS: ThreadView[] = [
   {
+    ...NULL_THREAD_FIELDS,
     id: IDLE_THREAD,
     sandbox: "ready-sandbox",
     harness: "HARNESS_CLAUDE",
@@ -829,6 +847,7 @@ const THREADS: ThreadView[] = [
     feed_status: "active",
   },
   {
+    ...NULL_THREAD_FIELDS,
     id: UNNAMED_STOPPED_THREAD,
     sandbox: "ready-sandbox",
     harness: "HARNESS_CLAUDE",
@@ -843,6 +862,7 @@ const THREADS: ThreadView[] = [
     feed_status: "active",
   },
   {
+    ...NULL_THREAD_FIELDS,
     id: RUNNING_THREAD,
     sandbox: "ready-sandbox",
     harness: "HARNESS_CLAUDE",
@@ -867,6 +887,7 @@ const THREADS: ThreadView[] = [
 const THREADS_WITH_SANDBOXES: ThreadView[] = [
   ...THREADS,
   {
+    ...NULL_THREAD_FIELDS,
     id: THREE_UNPROCESSED_THREAD,
     sandbox: "ready-sandbox",
     harness: "HARNESS_CLAUDE",
@@ -881,6 +902,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     feed_status: "active",
   },
   {
+    ...NULL_THREAD_FIELDS,
     id: ONE_UNPROCESSED_THREAD,
     sandbox: "ready-sandbox",
     harness: "HARNESS_CLAUDE",
@@ -895,6 +917,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     feed_status: "active",
   },
   {
+    ...NULL_THREAD_FIELDS,
     id: DELIVERY_FAILED_THREAD,
     sandbox: "ready-sandbox",
     harness: "HARNESS_CLAUDE",
@@ -909,6 +932,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     feed_status: "active",
   },
   {
+    ...NULL_THREAD_FIELDS,
     id: "5f1c4a2e-0000-4000-8000-000000000003",
     sandbox: "pending-sandbox",
     harness: "HARNESS_CODEX",
@@ -922,6 +946,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     harness_state: "HARNESS_STATE_STOPPED",
   },
   {
+    ...NULL_THREAD_FIELDS,
     id: SUSPENDED_THREAD,
     sandbox: "suspended-sandbox",
     harness: "HARNESS_CLAUDE",
@@ -937,6 +962,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     launch_outcome: "LAUNCH_OUTCOME_STARTED",
   },
   {
+    ...NULL_THREAD_FIELDS,
     id: "5f1c4a2e-0000-4000-8000-000000000005",
     sandbox: "deleted-sandbox",
     harness: "HARNESS_CLAUDE",
@@ -950,6 +976,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     harness_state: "HARNESS_STATE_STOPPED",
   },
   {
+    ...NULL_THREAD_FIELDS,
     id: "5f1c4a2e-0000-4000-8000-000000000006",
     sandbox: "ready-sandbox",
     harness: "HARNESS_CLAUDE",
@@ -1034,7 +1061,7 @@ function autosuspendStarting(): void {
     service_account: { namespace: ready.namespace, name: "starting-sandbox" },
     phase: "Creating",
     pod: null,
-    status: null,
+    status: {},
     idle_suspend_at: null,
     autosuspend_blockers: [],
   });

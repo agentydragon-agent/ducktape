@@ -543,7 +543,6 @@ ts_library(
     deps = [
         ":format_time",
         ":live_stream",
-        ":schema",
         ":stream_status",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -1047,7 +1046,7 @@ ts_library(
     name = "harness_behavior",
     srcs = ["harness_behavior.ts"],
     tsconfig = TSCONFIG,
-    deps = [":schema"],
+    deps = [":model_catalog"],
 )
 
 ts_library(

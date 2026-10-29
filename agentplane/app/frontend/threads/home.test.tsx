@@ -5,9 +5,9 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
-import type { SandboxView, ThreadView, ThreadsSnapshot } from "../schema";
+import type { SandboxView, ThreadView } from "../schema";
 import { Home } from "./home";
-import { RoutedThreadsLiveProvider } from "./live";
+import { RoutedThreadsLiveProvider, type ThreadsSnapshot } from "./live";
 import type { SessionNoticeStates } from "../notification_types";
 import { Sidebar } from "../sidebar";
 
@@ -26,10 +26,17 @@ const SANDBOX: SandboxView = {
   uid: "00000000-0000-4000-8000-000000000001",
   namespace: "agentplane-test",
   created_at: "2026-01-01T00:00:00Z",
+  binding: null,
+  preset: null,
   operating_mode: "Running",
   service_account: { namespace: "agentplane-test", name: "test-sandbox" },
+  idle_suspend_after_seconds: null,
+  idle_suspend_at: null,
+  autosuspend_blockers: [],
+  suspended_by: null,
   status: { conditions: [{ type: "Ready", status: "True" }] },
   phase: "Running",
+  pod: null,
   wake_on_send: false,
 };
 
@@ -42,8 +49,17 @@ function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "name">
     created_at: "2026-01-01T00:00:00Z",
     archived: false,
     last_cursor: 0,
+    sandbox_uid: null,
+    last_event_at: null,
+    last_model_activity_at: null,
+    idle_since: null,
     harness_state: "HARNESS_STATE_RUNNING",
+    setup_state: null,
+    launch_outcome: null,
+    active_turn_id: null,
+    reasoning_effort: null,
     feed_status: "active",
+    last_turn_status: null,
     ...overrides,
   };
 }

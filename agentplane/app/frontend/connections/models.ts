@@ -1,4 +1,5 @@
-import type { CallerGrantView } from "../schema";
+import type { components } from "../schema";
+import type { ActionPolicyUnavailable, ActionPolicyView } from "../actions/client";
 
 export interface CallerServiceAccount {
   namespace: string;
@@ -37,6 +38,11 @@ export type Connection = {
   updated_at: string;
   grants: ConnectionGrant[];
   bound_caller: CallerServiceAccount | null;
+};
+
+export type CallerGrantView = Omit<components["schemas"]["CallerGrantsView"], "action_policy" | "bindings"> & {
+  bindings: NonNullable<components["schemas"]["CallerGrantsView"]["bindings"]>;
+  action_policy: ActionPolicyView | ActionPolicyUnavailable | null;
 };
 
 export type CallerGrantReader = (account: CallerServiceAccount, signal: AbortSignal) => Promise<CallerGrantView>;

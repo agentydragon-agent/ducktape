@@ -12,11 +12,16 @@
  */
 import { useEffect, useState } from "react";
 
-import type { WatchHealth } from "./schema";
 import { ageAgo } from "./format_time";
 import { followStream, type StreamConnection } from "./live_stream";
 import { type StreamStatus, useStreamStatus } from "./stream_status";
 
+// The raw live streams use app/go's watchHealthView JSON shape.
+export type WatchHealth = {
+  fresh: boolean;
+  stale_after_seconds: number;
+  refreshed_seconds_ago: Record<string, number>;
+};
 export interface Live<T> {
   /** The last snapshot, or null until the first frame arrives. */
   snapshot: T | null;

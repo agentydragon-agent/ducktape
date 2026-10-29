@@ -15,7 +15,7 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
-import type { NewSandbox, NewSandboxDefaults, SandboxPresetView, SandboxView, SandboxesSnapshot } from "../schema";
+import type { NewSandboxDefaults, NewSandboxInputBody, SandboxPresetView, SandboxView } from "../schema";
 import { IconDotsVertical } from "../icons";
 import { type JSX, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -23,7 +23,7 @@ import { useSearchParams } from "react-router";
 import { api, displayableError } from "../client";
 import { IdleSuspendField, IdleSuspendInput } from "./idle_suspend";
 import { ConfirmDelete, deletable, deleting, SuspendResume } from "./lifecycle";
-import { liveSandboxesUrl } from "./live";
+import { liveSandboxesUrl, type SandboxesSnapshot } from "./live";
 import { useLive } from "../live";
 import { MarkGlyph } from "../mark_glyph";
 import { placeholderSandboxName, sandboxNameError } from "./sandbox_name";
@@ -32,13 +32,16 @@ import { SANDBOX_STATUS_MARKS } from "../status_mark";
 import { TopbarTitle } from "../topbar";
 import { WakeOnSendCheckbox } from "./wake_on_send";
 
-const EMPTY_FORM: NewSandbox = {
+const EMPTY_FORM: NewSandboxInputBody = {
   name: "",
   template: "",
   policy_sets: [],
   inbox_tags: [],
   bootstrap: "",
   wake_on_send: false,
+};
+type NewSandboxForm = Omit<NewSandboxInputBody, "idle_suspend_after_seconds"> & {
+  idle_suspend_after_seconds?: number | null;
 };
 // The picked preset, in the URL like the sandbox page's tab, so a launch form can be linked to.
 const PRESET_PARAM = "preset";
@@ -57,9 +60,12 @@ function StatusIcon({ row }: { row: SandboxView }): JSX.Element {
 export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX.Element {
   // The list is pushed; an action's own failure is what this holds.
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState<NewSandbox>(EMPTY_FORM);
+  const [form, setForm] = useState<NewSandboxForm>(EMPTY_FORM);
   // The app's starting wake and idle suspension values; a preset leaves them alone.
-  const [defaults, setDefaults] = useState<NewSandboxDefaults>({ wake_on_send: false });
+  const [defaults, setDefaults] = useState<NewSandboxDefaults>({
+    wake_on_send: false,
+    idle_suspend_after_seconds: null,
+  });
   const [presets, setPresets] = useState<SandboxPresetView[]>([]);
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [templates, setTemplates] = useState<string[]>([]);
@@ -133,8 +139,10 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   }
 
   async function create(): Promise<void> {
+    const { idle_suspend_after_seconds: idleSuspendAfterSeconds, ...formFields } = form;
     const body = {
-      ...form,
+      ...formFields,
+      ...(idleSuspendAfterSeconds == null ? {} : { idle_suspend_after_seconds: idleSuspendAfterSeconds }),
       name: form.name || placeholderName,
       preset: selectedPreset ?? undefined,
     };

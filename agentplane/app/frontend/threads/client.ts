@@ -1,21 +1,66 @@
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 
 import type {
-  ArchivedObservationEntry,
   EvidencePage,
   NativeFramePage,
+  ObservationEntry,
   ObservationPage,
-  ThreadScopeResponse,
-  ThreadView,
+  ThreadView as ThreadViewSchema,
 } from "../schema";
 import { api, displayableError, fetchWithLogin, ok } from "../client";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 
+type ThreadView = ThreadViewSchema;
+export type ThreadScope = { projection_epoch: string; through_cursor: string };
+export type ThreadPayloadRef = {
+  projection_epoch: string;
+  owner_cursor: string;
+  owner_id: string;
+  field: "text" | "arguments" | "output" | "confirmed_input" | "command_input";
+  revision_cursor: string;
+  generation: string;
+  chunk_count: string;
+};
+export type ThreadEntityState =
+  | {
+      controls: {
+        applied_model: string | null;
+        applied_reasoning_effort: string | null;
+        active_turn_id: string | null;
+        harness_state: string | null;
+      };
+      operational: {
+        status: "active" | "ended" | "failed";
+        last_verified_cursor: string;
+        feed_error: { cursor: string | null; message: string } | null;
+      };
+    }
+  | {
+      kind: number;
+      tool_name: string;
+      completion: string | null;
+      tool_succeeded: boolean | null;
+      recovery: number | null;
+      recovery_reason: string | null;
+    }
+  | { harness_message_id: string; origin_command_ids: string[] }
+  | { observation: string; event: unknown }
+  | {
+      operation: string;
+      outcome: "pending" | "effected" | "failed" | "noop";
+      outcome_cursor: string | null;
+      outcome_reason: string | null;
+      requested_value: string | null;
+    };
+export type ThreadEntityView = {
+  text_ref: ThreadPayloadRef | null;
+  state: ThreadEntityState;
+};
 export async function threadObservationEntry(
   threadId: string,
   cursor: string,
   signal?: AbortSignal
-): Promise<ArchivedObservationEntry> {
+): Promise<ObservationEntry> {
   return ok(
     await api.GET("/threads/{thread_id}/observations/{cursor}", {
       // openapi-fetch serializes path values without converting them to JS numbers.
@@ -233,12 +278,12 @@ export async function interruptTurn(threadId: string, commandId: string, turnId:
  * The epoch a thread's shapes are pinned to. A long poll: the server holds the read until the
  * thread has a fold, and answers null if it still has none when the hold runs out.
  */
-export async function threadScope(threadId: string, signal?: AbortSignal): Promise<ThreadScopeResponse | null> {
+export async function threadScope(threadId: string, signal?: AbortSignal): Promise<ThreadScope | null> {
   const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/scope`, window.location.href);
   const response = await fetchWithLogin(url, { signal });
   if (response.status === 204) return null;
   if (!response.ok) throw new Error(`Thread scope failed with ${response.status}`);
-  return (await response.json()) as ThreadScopeResponse;
+  return (await response.json()) as ThreadScope;
 }
 
 export async function getThread(threadId: string): Promise<ThreadView> {

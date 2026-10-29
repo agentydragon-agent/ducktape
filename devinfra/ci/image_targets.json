@@ -210,7 +210,7 @@
       "registry": "forgejo"
     },
     "agentplane-app": {
-      "target": "//agentplane/app:image",
+      "target": "//agentplane/app:python_image",
       "test": "//agentplane/app/...",
       "registry": "forgejo"
     },

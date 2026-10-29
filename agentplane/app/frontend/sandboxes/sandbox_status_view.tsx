@@ -1,15 +1,14 @@
 import { Accordion, Badge, Button, Group, Paper, Stack, Table, Text, Title } from "@mantine/core";
 import { type JSX, type ReactNode, useEffect, useState } from "react";
 
-import type {
-  RunnerLifecycleBlockerView,
-  RunnerLifecycleView,
-  RunnerStatusView,
-  SandboxView,
-  ThreadView,
-} from "../schema";
+import type { SandboxView, ThreadView } from "../schema";
 import { displayableError } from "../client";
-import { getRunnerStatus } from "./client";
+import {
+  getRunnerStatus,
+  type RunnerLifecycleBlockerView,
+  type RunnerLifecycleView,
+  type RunnerStatusView,
+} from "./client";
 import { harnessLabel } from "../model_catalog";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import { IdleSuspendInput } from "./idle_suspend";
@@ -297,6 +296,8 @@ function processStateLabel(state: RunnerStatusView["processes"][number]["state"]
       return "Running";
     case "PROCESS_STATE_STOPPING":
       return "Stopping";
+    case "PROCESS_STATE_UNSPECIFIED":
+      return "Unspecified";
   }
 }
 
@@ -310,6 +311,8 @@ function executionStateLabel(state: RunnerStatusView["sessions"][number]["execut
       return "Ready";
     case "SESSION_EXECUTION_STATE_FAILED":
       return "Failed";
+    case "SESSION_EXECUTION_STATE_UNSPECIFIED":
+      return "Unspecified";
   }
 }
 

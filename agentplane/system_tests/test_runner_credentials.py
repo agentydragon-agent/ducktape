@@ -10,9 +10,10 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
+from tenacity import AsyncRetrying, retry_if_exception_type, retry_if_result, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
+from agentplane.app.threads.thread_view import ThreadView
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.sandbox_resource import OperatingMode
@@ -67,7 +68,14 @@ async def _turn(
         entry.event.HasField("command_admitted") and entry.event.command_admitted.command.command_id == command_id
         for entry in entries
     ), f"History did not retain command admission {command_id}"
-    assert (await client.thread(agent.thread_id)).last_turn_status == "TURN_STATUS_COMPLETED"
+    # FollowSession exposes committed archive entries before History's asynchronous fold applies
+    # them. The Thread summary is authoritative only once it covers this completed turn.
+    view: ThreadView = await AsyncRetrying(
+        stop=stop_after_delay(REQUEST_SECONDS),
+        wait=wait_fixed(0.05),
+        retry=retry_if_result(lambda row: row.last_cursor < entries[-1].cursor),
+    )(client.thread, agent.thread_id)
+    assert view.last_turn_status == "TURN_STATUS_COMPLETED"
     return turn, entries, request
 
 

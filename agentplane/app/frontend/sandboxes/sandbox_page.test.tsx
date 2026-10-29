@@ -1,13 +1,6 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
-import type {
-  LangfuseSearchSettings,
-  RunnerStatusView,
-  SandboxSnapshot,
-  SandboxView,
-  ThreadView,
-  TraceSearchSettings,
-} from "../schema";
+import type { LangfuseSearchSettings, SandboxView, ThreadView, TraceSearchSettings } from "../schema";
 import { TEST_REASONING_EFFORTS, testModelCatalog } from "../testing/model_catalog";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -21,6 +14,8 @@ import type { Live } from "../live";
 import { SandboxRoute } from "../app";
 import { SandboxPage } from "./sandbox_page";
 import { TopbarContext } from "../topbar";
+import type { RunnerStatusView } from "./client";
+import type { SandboxSnapshot } from "./live";
 
 const fetchMock = vi.hoisted(() => {
   const fetch = vi.fn<(request: Request) => Promise<Response>>();
@@ -40,7 +35,12 @@ const live = vi.hoisted(
           operating_mode: "Running",
           wake_on_send: false,
           service_account: { namespace: "agentplane-test", name: "startup-test" },
+          binding: null,
           preset: "test-preset",
+          idle_suspend_after_seconds: null,
+          idle_suspend_at: null,
+          suspended_by: null,
+          autosuspend_blockers: [],
           status: { conditions: [{ type: "Ready", status: "True" }] },
           phase: "Running",
           pod: {
@@ -146,7 +146,17 @@ function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id">): Thread
     name: null,
     archived: false,
     last_cursor: 0,
+    sandbox_uid: null,
     harness_state: "HARNESS_STATE_UNSPECIFIED",
+    last_event_at: null,
+    last_model_activity_at: null,
+    idle_since: null,
+    setup_state: null,
+    launch_outcome: null,
+    active_turn_id: null,
+    reasoning_effort: null,
+    feed_status: null,
+    last_turn_status: null,
     ...overrides,
   };
 }

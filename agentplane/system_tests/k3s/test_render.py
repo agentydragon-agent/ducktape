@@ -291,6 +291,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     assert app_uri.hostname == f"{fixture_database.SERVICE}.{NAMESPACE}.svc"
     assert app_uri.port == 5432
     assert app_uri.path == "/app"
+    assert app_uri.query == "sslmode=disable"
     assert not any(doc["kind"] == "Secret" and doc["metadata"]["name"] == "postgres-electric" for doc in docs)
 
     # The fixture's one Pod execution environment, on its local-path storage.

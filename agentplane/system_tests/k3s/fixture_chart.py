@@ -53,7 +53,7 @@ from trust_manager_crds.io.cert_manager.trust import (
 from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.model_catalog import CentralSamplerChoice
-from agentplane.app.settings import AppSettingsConfig
+from agentplane.app.settings import AppSettingsConfig, FrontendConfig, LangfuseSearchSettings, TraceSearchSettings
 from agentplane.runner.configuration import GuestResources, ResourceLimits
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests import launch_preset, probe_credential, runtime_grant, send_grant
@@ -262,6 +262,19 @@ def environment(
             },
             egress_admin_url=AnyHttpUrl(egress.admin(NAMESPACE).url),
             action_federation=dex.action_federation(operator_oidc),
+            frontend_config=FrontendConfig(
+                trace_search=TraceSearchSettings(
+                    grafana_base_url=AnyHttpUrl("https://grafana.example.test/"),
+                    tempo_datasource_uid="fixture-tempo",
+                    deployment_environment="system-test",
+                ),
+                langfuse_search=LangfuseSearchSettings(
+                    base_url=AnyHttpUrl("https://langfuse.example.test/"),
+                    project_id="fixture-project",
+                    sandbox_namespace_metadata_key="fixture_namespace",
+                    sandbox_service_account_metadata_key="fixture_service_account",
+                ),
+            ),
         ),
         settle_deltas=True,
         central_sampler=central_sampler_props,

@@ -1,4 +1,4 @@
-import type { SandboxSnapshot, SandboxView, ThreadView } from "../schema";
+import type { SandboxView, ThreadView } from "../schema";
 import { NotificationStatus } from "../notification_status";
 import {
   ActionIcon,
@@ -23,9 +23,9 @@ import { findThread, getThread } from "../threads/client";
 import { getSessionOpening, openSession } from "./client";
 import { ActionPolicySection } from "../actions/policy";
 import { EgressLog } from "./egress";
+import { liveSandboxUrl, type SandboxSnapshot } from "./live";
 import { MarkGlyph } from "../mark_glyph";
 import { ConfirmDelete, deletable, DELETE_NEEDS_SUSPENDED, SuspendResume } from "./lifecycle";
-import { liveSandboxUrl } from "./live";
 import { useLive } from "../live";
 import { PolicyBindingsSection } from "./policy_bindings";
 import { SandboxConsole } from "./sandbox_console";

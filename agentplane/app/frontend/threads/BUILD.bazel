@@ -581,7 +581,6 @@ ts_library(
         "//:node_modules/zod",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:live_stream",
-        "//agentplane/app/frontend:schema",
     ],
 )
 
@@ -610,7 +609,6 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:live_stream",
-        "//agentplane/app/frontend:schema",
     ],
 )
 

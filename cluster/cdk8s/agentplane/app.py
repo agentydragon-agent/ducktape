@@ -262,8 +262,8 @@ class App(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=self.memory_limit),
             ),
-            # 5s HTTP/SSE drain (--shutdown-timeout), with room for the bridge's lease
-            # release and the store's close.
+            # The Go HTTP/SSE drain is bounded by --shutdown-timeout (5s by default); the rest
+            # of the grace period allows background workers and stores to close cleanly.
             termination_grace=Duration.seconds(60),
             # The app's Alembic history. The app itself creates no tables; it verifies
             # the migrated schema at startup and fails if this hasn't run.
