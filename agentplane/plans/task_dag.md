@@ -8,6 +8,12 @@ intra-Sandbox hardening reminder retained here at Rai's request.
 
 ## Current state and scheduling
 
+**Operator scheduling, 2026-10-27 PDT:** runner lifecycle implementation and the central Codex
+spike are assigned to other agents. Do not dispatch duplicate work on those tracks.
+
+Audit metadata consumers (`sandbox`, `harness`, `model`, `cwd`, summary/activity fields) before
+deleting useful UI projections.
+
 States: **in flight** means reported work is underway; **in review** means an unmerged PR;
 **paused** means no worker is assigned; **decision** needs a reviewed outcome;
 **blocked** names prerequisites; **candidate** is dispatchable when selected, not a priority claim.

@@ -1,7 +1,7 @@
 # VM Codex executor readiness
 
-CI run 40835085459 at `01f147b890` failed
-`test_vm_mtls_certificate_authenticates_a_session[codex]`.
+[CI run 40835085459](https://github.com/agentydragon/ducktape/actions/runs/40835085459)
+at `01f147b890` failed `test_vm_mtls_certificate_authenticates_a_session[codex]`.
 The other 1,669 tests passed. [BuildBuddy invocation](https://app.buildbuddy.io/invocation/2e1af4b4-2dbe-5b6f-b70d-ccd76e4e76b7)
 retains the test log, native History and guest console under `test.outputs/vm-artifacts/`.
 
