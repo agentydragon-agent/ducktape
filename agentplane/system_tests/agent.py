@@ -172,6 +172,7 @@ class Agent:
 
     async def _collect(self, *, after: int, awaiting_command_id: str | None) -> Turn:
         turn = Turn(accepted=time.monotonic())
+        command_admitted = awaiting_command_id is None
         async with (
             asyncio.timeout(TURN_SECONDS),
             aclosing(
@@ -184,6 +185,15 @@ class Agent:
                 self._cursor = entry.cursor
                 event = entry.event
                 match event.WhichOneof("observation"):
+                    case "command_admitted" if event.command_admitted.command.command_id == awaiting_command_id:
+                        command_admitted = True
+                    case "command_failed" if (
+                        awaiting_command_id is None or event.command_failed.command_id == awaiting_command_id
+                    ):
+                        failed = event.command_failed
+                        raise AssertionError(f"command {failed.command_id!r} failed: {failed.reason!r}")
+                    case "harness_launch_failed" if command_admitted:
+                        raise AssertionError(f"harness launch failed: {event.harness_launch_failed.reason!r}")
                     case "harness_started":
                         turn.resumed = event.harness_started.resumed
                     case "harness_user_message_confirmed":

@@ -103,8 +103,15 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	if err != nil {
 		return err
 	}
+	writtenPhase := current.Phase
 	write := func() error {
 		changed, err := componentWrite(ctx, r, ResourceID, current)
+		if err == nil {
+			if changed && writtenPhase == Probing && current.Phase == Stopping {
+				zap.L().Warn("Codex exec-server readiness failed", zap.String("process_id", current.ProcessID), zap.Time("deadline", current.ReadyDeadline), zap.String("error", current.Error))
+			}
+			writtenPhase = current.Phase
+		}
 		h.withRuntimeChange(changed)
 		return err
 	}
@@ -169,6 +176,9 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 
 	if probeDone {
 		probeErr := probeResult.Err()
+		if current.Phase == Probing && probeErr != nil && current.Error != probeErr.Error() {
+			zap.L().Warn("Codex exec-server readiness probe failed", zap.String("process_id", current.ProcessID), zap.Error(probeErr))
+		}
 		switch current.Phase {
 		case Probing:
 			if probeErr == nil {
@@ -252,7 +262,11 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	}
 	if current.Phase == Probing {
 		if !now.Before(current.ReadyDeadline) {
+			lastProbeError := current.Error
 			current.Error = "Codex exec-server did not become ready before the readiness deadline"
+			if lastProbeError != "" {
+				current.Error += ": " + lastProbeError
+			}
 			current.RestartFailures++
 			current.Phase = Stopping
 			if err := write(); err != nil {

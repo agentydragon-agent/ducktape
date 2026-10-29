@@ -14,13 +14,16 @@ import (
 
 func TestProbeRequiresValidRPCAndBoundsUnresponsiveServer(t *testing.T) {
 	for _, test := range []struct {
-		name, response string
-		success        bool
+		name, response, status, wantError string
 	}{
-		{"healthy", `{"id":1,"result":{"sessionId":"test-session"}}`, true},
-		{"RPC error", `{"id":1,"error":{"code":-32603,"message":"unavailable"}}`, false},
-		{"wrong request", `{"id":2,"result":{"sessionId":"test-session"}}`, false},
-		{"stalled dispatcher", "", false},
+		{"healthy", `{"id":1,"result":{"sessionId":"test-session"}}`, `{"id":2,"result":{"status":"ready"}}`, ""},
+		{"RPC error", `{"id":1,"error":{"code":-32603,"message":"unavailable"}}`, "", "executor health initialize returned no session"},
+		{"wrong request", `{"id":2,"result":{"sessionId":"test-session"}}`, "", "executor health initialize returned no session"},
+		{"stalled dispatcher", "", "", "executor initialize read"},
+		{"invalid initialize JSON", "{", "", "executor initialize decode"},
+		{"stalled status", `{"id":1,"result":{"sessionId":"test-session"}}`, "", "executor environment/status read"},
+		{"invalid status JSON", `{"id":1,"result":{"sessionId":"test-session"}}`, "{", "executor environment/status decode"},
+		{"not ready", `{"id":1,"result":{"sessionId":"test-session"}}`, `{"id":2,"result":{"status":"starting"}}`, `executor environment/status returned id=2 status="starting"`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -37,14 +40,14 @@ func TestProbeRequiresValidRPCAndBoundsUnresponsiveServer(t *testing.T) {
 				if test.response != "" {
 					_ = connection.Write(ctx, websocket.MessageText, []byte(test.response))
 				}
-				if test.success {
-					if _, _, err := connection.Read(ctx); err != nil {
-						return
-					}
-					if _, _, err := connection.Read(ctx); err != nil {
-						return
-					}
-					_ = connection.Write(ctx, websocket.MessageText, []byte(`{"id":2,"result":{"status":"ready"}}`))
+				if _, _, err := connection.Read(ctx); err != nil {
+					return
+				}
+				if _, _, err := connection.Read(ctx); err != nil {
+					return
+				}
+				if test.status != "" {
+					_ = connection.Write(ctx, websocket.MessageText, []byte(test.status))
 				}
 				_, _, _ = connection.Read(ctx)
 			}))
@@ -52,8 +55,11 @@ func TestProbeRequiresValidRPCAndBoundsUnresponsiveServer(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 			defer cancel()
 			err := ProbeAt("ws" + strings.TrimPrefix(server.URL, "http"))(ctx)
-			if (err == nil) != test.success {
-				t.Fatalf("probe = %v, success=%t", err, test.success)
+			if test.wantError == "" && err != nil {
+				t.Fatalf("probe = %v, want success", err)
+			}
+			if test.wantError != "" && (err == nil || !strings.Contains(err.Error(), test.wantError)) {
+				t.Fatalf("probe = %v, want error containing %q", err, test.wantError)
 			}
 		})
 	}

@@ -49,8 +49,10 @@ for the Pod system tests. The outer replacement boundary is described in the Run
 [supervision contract](../runner/docs/supervision.md#pid-1-and-the-outer-fence).
 
 `Agent.run` returns only for `TURN_STATUS_COMPLETED`. Any other terminal status fails immediately
-with the turn id, status and quoted runner diagnostic, before scenario assertions about tool effects.
-It does not dump prompts, tool output or native frames, or automatically resend the admitted input.
+with the turn id, status and quoted runner diagnostic. Its collector also stops at a new
+`command_failed` (matching the awaited command when one is specified) or a `harness_launch_failed`
+after the awaited command is admitted, before scenario assertions about tool effects. It does not dump
+prompts, tool output or native frames, or automatically resend the admitted input.
 
 The general egress and instruction scenarios run on **both harnesses**. The runner protocol is the
 same for Claude and Codex, so one parametrized harness case covers both; `offered_model` asks the deployment

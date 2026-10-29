@@ -2,6 +2,7 @@ load("//agentplane/system_tests:defs.bzl", "system_test")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # gazelle:resolve py agentplane.x.central_sampler.sampler_pb2_grpc //agentplane/x/central_sampler:sampler_pb2_grpc
+# gazelle:resolve py agentplane.system_tests.test_runner_credentials :test_runner_credentials_lib
 # gazelle:exclude test_central_sampler.py
 # gazelle:exclude test_agent_messaging.py
 # gazelle:exclude test_dcr.py
@@ -456,6 +457,8 @@ system_test(
 py_test(
     name = "test_agent",
     srcs = ["test_agent.py"],
+    # The driver regression imports a scenario helper, but owns only these offline cases.
+    args = ["$(location test_agent.py)"],
     deps = [
         ":agent",
         ":conftest",
@@ -467,6 +470,9 @@ py_test(
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/system_tests:test_runner_credentials_lib",
+        "//agentplane/testing:scripted_model",
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",

@@ -44,24 +44,25 @@ async def _turn(
     shell_command: str | None = None,
     response: str = "Done.",
 ) -> tuple[Turn, list[event_log_pb2.EventEntry], ModelRequest[Any]]:
-    collecting = asyncio.create_task(agent.next_turn(awaiting_command_id=command_id))
-    command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text=prompt))
-    admission = await client.submit_input(agent.thread_id, command_id, prompt)
-    if isinstance(admission, session_dispatcher_pb2.Dispatch):
-        assert admission.command_id == command_id
-        assert admission.operation == session_dispatcher_pb2.OPERATION_SUBMIT_INPUT
-    else:
-        assert isinstance(admission, event_log_pb2.EventEntry)
-        assert admission.event.command_admitted.command == command
+    async with asyncio.TaskGroup() as turns:
+        collecting = turns.create_task(agent.next_turn(awaiting_command_id=command_id))
+        command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text=prompt))
+        admission = await client.submit_input(agent.thread_id, command_id, prompt)
+        if isinstance(admission, session_dispatcher_pb2.Dispatch):
+            assert admission.command_id == command_id
+            assert admission.operation == session_dispatcher_pb2.OPERATION_SUBMIT_INPUT
+        else:
+            assert isinstance(admission, event_log_pb2.EventEntry)
+            assert admission.event.command_admitted.command == command
 
-    request = await model.request()
-    assert prompt in request.user_texts
-    if shell_command is None:
-        await model.reply(request, Text(response))
-    else:
-        await model.reply(request, ShellCall(call_id=f"call-{uuid4().hex[:8]}", command=shell_command))
-        await model.reply(await model.request(), Text(response))
-    turn = await collecting
+        request = await model.request()
+        assert prompt in request.user_texts
+        if shell_command is None:
+            await model.reply(request, Text(response))
+        else:
+            await model.reply(request, ShellCall(call_id=f"call-{uuid4().hex[:8]}", command=shell_command))
+            await model.reply(await model.request(), Text(response))
+    turn = collecting.result()
     assert turn.status == event_pb2.TURN_STATUS_COMPLETED
     entries = await _history(client, agent.thread_id, completed_turns=history_turns)
     assert any(
