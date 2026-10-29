@@ -7,6 +7,9 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+
+	"github.com/go-logr/logr"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 func main() {
@@ -48,4 +51,5 @@ func configureLogLevels(levels map[string]string) {
 		}
 	}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+	log.SetLogger(logr.FromSlogHandler(slog.Default().Handler()))
 }
