@@ -57,6 +57,7 @@ def test_app_and_migration_use_same_database_uri_secret(staging_manifests: list[
         doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == app.NAME
     )
     pod = deployment["spec"]["template"]["spec"]
+
     containers = [
         one(container for container in pod["containers"] if container["name"] == "app"),
         one(container for container in pod["initContainers"] if container["name"] == "migrate"),
@@ -71,6 +72,19 @@ def test_app_and_migration_use_same_database_uri_secret(staging_manifests: list[
             "valueFrom": {"secretKeyRef": {"name": "postgres-app", "key": "uri"}},
         }
         assert not any(variable["name"].startswith("AGENTPLANE_DB_") for variable in variables)
+
+
+def test_app_uses_dispatcher_grpc_target_without_legacy_http_flag(staging_manifests: list[dict[str, Any]]) -> None:
+    deployment = one(
+        doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == app.NAME
+    )
+    pod = deployment["spec"]["template"]["spec"]
+    app_container = one(container for container in pod["containers"] if container["name"] == "app")
+    assert (
+        f"--session-dispatcher-target={session_dispatcher.service(staging.ENV.namespace).fqdn}:"
+        f"{session_dispatcher.service(staging.ENV.namespace).port.number}"
+    ) in app_container["args"]
+    assert not any(arg.startswith("--session-dispatcher-http-url=") for arg in app_container["args"])
 
 
 if __name__ == "__main__":

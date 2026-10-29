@@ -3678,7 +3678,6 @@ spec:
             - --runner-gateway-token-file=/var/run/secrets/agentplane-runner-gateway/token
             - --history-service-target=history-service.agentplane-staging.svc.cluster.local:8080
             - --session-dispatcher-target=session-dispatcher.agentplane-staging.svc.cluster.local:8080
-            - --session-dispatcher-http-url=http://session-dispatcher.agentplane-staging.svc.cluster.local:8081
             - --notifications-url=http://notifications.agentplane-staging.svc.cluster.local:8080
             - --notifications-token-file=/var/run/secrets/agentplane-notifications/token
             - --host=0.0.0.0
