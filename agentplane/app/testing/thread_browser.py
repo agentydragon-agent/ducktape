@@ -20,7 +20,7 @@ import pytest
 from playwright.async_api import Locator, Page, TimeoutError as PlaywrightTimeoutError, async_playwright
 
 from agentplane.app.testing import history_probe, thread_view_marks
-from agentplane.app.testing.history import SeededEventLogStore
+from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.http2_proxy import BrowserCertificate, Ingress, browser_certificate, http2_proxy
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.replication_source import (
@@ -30,8 +30,7 @@ from agentplane.app.testing.replication_source import (
     ReplicationSource,
     add_replication_source,
 )
-from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.testing.thread_test_support import ThreadHTTP
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.electric_service import (
     BrowserPostgres,
@@ -55,8 +54,12 @@ from util.testing.viewports import DESKTOP, Viewport
 
 
 @pytest.fixture
-def certificate(tmp_path: Path) -> BrowserCertificate:
-    return browser_certificate(tmp_path / "tls")
+def certificate(tmp_path: Path) -> Iterator[BrowserCertificate]:
+    certificate = browser_certificate(tmp_path / "tls")
+    try:
+        yield certificate
+    finally:
+        certificate.port_reservation.close()
 
 
 @pytest.fixture
@@ -120,9 +123,9 @@ async def expect_projected_cursor(page: Page, cursor: int) -> None:
 class ThreadBrowser:
     page: Page
     source: ReplicationSource
-    store: ThreadStore
-    event_logs: SeededEventLogStore
-    content: ContentStore
+    store: ThreadHTTP
+    event_logs: SessionHistory
+    content: SessionHistory
     history: History
     opened: Opened
     app: AppProcess
@@ -201,9 +204,9 @@ def thread_source() -> ReplicationSource:
 async def thread_browser(
     page: Page,
     db_url: str,
-    store: ThreadStore,
-    event_logs: SeededEventLogStore,
-    content: ContentStore,
+    store: ThreadHTTP,
+    event_logs: SessionHistory,
+    content: SessionHistory,
     thread_source: ReplicationSource,
     history: History,
     history_client: HistoryServiceClient,
@@ -228,14 +231,14 @@ async def thread_browser(
             sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
             gateway=gateway_access,
             browser_login=True,
+            certificate=certificate,
             replay_after=replay_after,
             electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
         # The operator session the app's relay of the Dispatcher's watch requires.
-        login = await page.request.post(f"{ingress.url}/test-login", params={"seconds": 3600})
-        assert login.ok, await login.text()
+        await app.login(page)
         async with asyncio.timeout(30):
             opened = await source.opened.get()
             await page.goto(f"{ingress.url}/#/threads/{thread_id}")

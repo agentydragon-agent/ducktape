@@ -172,7 +172,7 @@ does not require an HTTP facade.
 - **Wire form:** stock gRPC-Gateway. Fields are camelCase, enums their names, unpopulated fields
   present. A server stream is newline-delimited JSON, one `{"result": <message>}` per line.
 - **Browser:** the app serves `/upstream/<service>/v1/` through generated gateway handlers or typed
-  adapters over generated stubs, calling backend gRPC directly. Go HTTP boundaries use generated gateway handlers; the Python app uses typed adapters. Neither
+  adapters over generated stubs, calling backend gRPC directly. Go HTTP boundaries use generated gateway handlers. Neither
   makes an HTTP call to a backend RPC facade.
   The browser decodes ProtoJSON into protobuf-es messages from `ts_proto_library`, which for an
   annotated proto needs the root [`//google/api`](../../google/api/BUILD.bazel) package, and follows a

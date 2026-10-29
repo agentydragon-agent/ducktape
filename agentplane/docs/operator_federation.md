@@ -295,15 +295,16 @@ by L7 HTTP inspection of encrypted TLS. A different Gateway/DNS/L7-proxy setup r
   using the repo-pinned Terraform/provider mirror, backend-free.
 - `//cluster/validation:test_flux_build` and `:test_cluster_integration`: full offline Flux/Kustomize
   manifest rendering and dependency/health-check validation.
-- `//agentplane/app:test_main`: application Settings environment parsing and OIDC source coexistence.
+- `//agentplane/app:test_settings`: application Settings environment parsing and OIDC source coexistence.
 - `//agentplane/action_service:config_test`: Go service Settings and catalog validation.
 - `//agentplane/action_service:integration_test`: Go startup, workload and MCP execution, and OAuth edge composition.
 - `//agentplane/app:test_action_api`, `//agentplane/action_service/api:unit_test`, and
   `//agentplane/action_service/api:integration_test`: signed app-federation flows, Go operator-token
   claim verification, and operator-only Action Service admission.
-- `//util:test_oidc_principal` and `//agentplane/app:test_action_federation`: strict shared
-  verification and the independently selected login/target profiles for direct Dex federation; login
-  token renewal, one refresh for two replicas renewing at once, and a refused renewal ending the session.
+- `//util:test_oidc_principal`, `//agentplane/app/go/federation:unit_test`, and
+  `//agentplane/app/go/auth:session_integration_test`: strict shared verification, independently
+  selected login/target profiles, serialized login-token renewal, and the signed OIDC login/session
+  lifecycle across replicas.
 
 Run through `bbr`/CI only. There is no parallel copied-literal HCL/manifest contract test: those
 assertions detected edits rather than executing federation. Synthetic Settings JSON also did not

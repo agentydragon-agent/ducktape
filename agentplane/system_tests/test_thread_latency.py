@@ -10,7 +10,7 @@ clock in the frame that ends it: Claude's `result` `duration_ms`, Codex's `turn/
 difference, the runner's and the app's share, since the model's leg alone varies by seconds.
 
 **The open.** The reads `electric_sync.tsx` makes before it can show that answer, through the app's
-sync proxy (`agentplane/app/electric.py`), each stage timed from sending its first request to
+sync proxy (`agentplane/app/go/proxy/electric.go`), each stage timed from sending its first request to
 reading its last body:
 
 - `scope`: `GET /threads/{id}/sync/scope`, the projection epoch every shape request names.
@@ -44,8 +44,8 @@ import pytest_bazel
 from more_itertools import one
 from pydantic import BaseModel, Field
 
-from agentplane.app.electric import SUBSET_ROW_LIMIT, SubsetRequest, ThreadScopeResponse
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
+from agentplane.app.testing.models import SUBSET_ROW_LIMIT, SubsetRequest, ThreadScopeResponse
 from agentplane.history_service.fold.views import EntityKind, PayloadField, ThreadItemState, ThreadPayloadReference
 from agentplane.native.claude import wire as claude_wire  # Both harnesses name their frame module `wire`.
 from agentplane.native.codex import wire as codex_wire

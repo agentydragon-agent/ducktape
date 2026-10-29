@@ -105,7 +105,7 @@ remain HTTP at their owning components. They are protocol endpoints, not alterna
 - **Action Service:** Action authorization and Decisions, execution lifecycle, and canonical Action
   history.
 
-`app/threads/` owns only the app's Thread metadata, projections, and browser-facing composition. Its
+`app/go/threads/` owns only the app's Thread metadata, projections, and browser-facing composition. Its
 session adapter uses the History Service; it does not own Sandbox reconciliation or connect directly
 to runners. Thread identities do not travel in Runner control-stream metadata.
 

@@ -379,12 +379,11 @@ func checkEntitySubset(subset SubsetRequest) error {
 		if !ok {
 			return errors.New("subset parameters do not match its form")
 		}
-		for _, digit := range value {
-			if digit < '0' || digit > '9' {
-				if where == "entity_index < $1" {
+		if where == "entity_index < $1" {
+			for _, digit := range value {
+				if digit < '0' || digit > '9' {
 					return errors.New("an index bound is a non-negative integer")
 				}
-				return errors.New("subset parameters do not match its form")
 			}
 		}
 		if where == "entity_index < $1" && value == "" {

@@ -157,23 +157,36 @@ func TestElectricSubsetIsValidatedAndForwarded(t *testing.T) {
 	store := newFakeThreadScopeStore(true, ThreadScope{ProjectionEpoch: epoch}, true)
 	mux := http.NewServeMux()
 	mustElectricProxy(t, server.Client(), server.URL, store, time.Second).Register(mux)
-	subsetJSON := `{"where":"entity_index < $1","params":{"1":"40"},"order_by":"entity_index DESC","limit":200}`
-	request := httptest.NewRequest(http.MethodPost,
-		"/threads/"+threadID+"/sync/entities?projection_epoch="+epoch+"&offset=0_0&handle=h",
-		strings.NewReader(subsetJSON))
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("If-None-Match", `"etag"`)
-	response := httptest.NewRecorder()
-	mux.ServeHTTP(response, request)
-	if response.Code != http.StatusNotModified || response.Body.Len() != 0 {
-		t.Fatalf("response = %d %q", response.Code, response.Body.String())
-	}
-	if forwarded.Where == nil || *forwarded.Where != "entity_index < $1" || forwarded.Params["1"] != "40" ||
-		forwarded.OrderBy == nil || *forwarded.OrderBy != entityOrder || forwarded.Limit == nil || *forwarded.Limit != 200 {
-		t.Fatalf("forwarded subset = %+v", forwarded)
-	}
-	if forwardedQuery.Get("params[1]") != threadID || forwardedQuery.Get("params[2]") != epoch {
-		t.Fatalf("pinned query parameters = %v", forwardedQuery)
+	for _, test := range []struct{ where, value string }{
+		{"entity_index < $1", "40"},
+		{"entity_kind = 'command' AND entity_id = ANY($1)", `{selected-command,"id-with-comma,quote\\\""}`},
+	} {
+		t.Run(test.where, func(t *testing.T) {
+			body, err := json.Marshal(map[string]any{
+				"where": test.where, "params": map[string]string{"1": test.value},
+				"order_by": entityOrder, "limit": 200,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(http.MethodPost,
+				"/threads/"+threadID+"/sync/entities?projection_epoch="+epoch+"&offset=0_0&handle=h",
+				strings.NewReader(string(body)))
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("If-None-Match", `"etag"`)
+			response := httptest.NewRecorder()
+			mux.ServeHTTP(response, request)
+			if response.Code != http.StatusNotModified || response.Body.Len() != 0 {
+				t.Fatalf("response = %d %q", response.Code, response.Body.String())
+			}
+			if forwarded.Where == nil || *forwarded.Where != test.where || forwarded.Params["1"] != test.value ||
+				forwarded.OrderBy == nil || *forwarded.OrderBy != entityOrder || forwarded.Limit == nil || *forwarded.Limit != 200 {
+				t.Fatalf("forwarded subset = %+v", forwarded)
+			}
+			if forwardedQuery.Get("params[1]") != threadID || forwardedQuery.Get("params[2]") != epoch {
+				t.Fatalf("pinned query parameters = %v", forwardedQuery)
+			}
+		})
 	}
 }
 

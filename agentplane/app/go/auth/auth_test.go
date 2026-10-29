@@ -1,12 +1,15 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -229,3 +232,42 @@ func (f *fakeTokenReviews) Create(_ context.Context, review *authenticationv1.To
 }
 
 var _ = errors.New
+
+func TestTokenReviewRejectionLogsOnlyCuratedIdentity(t *testing.T) {
+	const token = "opaque-bearer-must-not-be-logged"
+	const subject = "system:serviceaccount:testing:caller"
+	for _, reason := range []string{"unauthenticated", "missing_username", "wrong_audience", "subject_not_allowed"} {
+		t.Run(reason, func(t *testing.T) {
+			review := &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
+				Authenticated: true,
+				User:          authenticationv1.UserInfo{Username: subject}, Audiences: []string{"app-audience"}, Error: "private-provider-detail: " + token,
+			}}
+			switch reason {
+			case "unauthenticated":
+				review.Status.Authenticated = false
+			case "missing_username":
+				review.Status.User.Username = ""
+			case "wrong_audience":
+				review.Status.Audiences = []string{"wrong"}
+			}
+			var log bytes.Buffer
+			original := slog.Default()
+			slog.SetDefault(slog.New(slog.NewJSONHandler(&log, nil)))
+			defer slog.SetDefault(original)
+			caller, code, detail := reviewToken(t.Context(), &fakeTokenReviews{review: review}, "app-audience", map[string]struct{}{}, token)
+			if caller != nil || (code != http.StatusUnauthorized && code != http.StatusForbidden) {
+				t.Fatalf("rejection = %v %d %s", caller, code, detail)
+			}
+			var record map[string]any
+			if err := json.Unmarshal(log.Bytes(), &record); err != nil {
+				t.Fatal(err)
+			}
+			if record["reason"] != reason {
+				t.Fatalf("log = %s", log.String())
+			}
+			if strings.Contains(log.String()+detail, token) || strings.Contains(log.String()+detail, "private-provider-detail") {
+				t.Fatal("credential-bearing TokenReview data escaped")
+			}
+		})
+	}
+}

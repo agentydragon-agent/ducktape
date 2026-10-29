@@ -41,13 +41,13 @@ intended consequences.
 create, because they are one principal. The operation is closed: no chain gains authority.
 
 **Egress attribution collapses per principal in the app's view, not in the record.**
-`DecisionsClient.watch` (<../../egress/decisions_client.py>) asks the proxy for decisions _by ServiceAccount_
-and projects a `Decision` with no Pod field, so `GET /live/sandboxes/{name}/egress/decisions` returns one
-combined stream for every sandbox of one account. The proxy's own record does carry
-`source_pod_uid`, persisted with the rest (<../../egress/decisions.py>), so per-box attribution is a
-field the app's projection does not read rather than evidence nobody has. Accounts still differ from
-each other. This knowingly deviates from the [egress specification](../../egress/SPEC.md)'s "bind only
-an account dedicated to one workload".
+The app's Go stream route (<../../app/go/streamapi.go>) asks the proxy for decisions _by ServiceAccount_
+and projects a `Decision` with no Pod field, so `GET /live/sandboxes/{name}/egress/decisions` returns
+one combined stream for every sandbox of one account. The proxy's own record does carry
+`source_pod_uid`, persisted with the rest (<../../egress/history/store.go>), so per-box attribution is
+a field the app's projection does not read rather than evidence nobody has. Accounts still differ
+from each other. This knowingly deviates from the [egress specification](../../egress/SPEC.md)'s
+"bind only an account dedicated to one workload".
 
 **The workload must never read the token.** `automountServiceAccountToken: false`, with the
 projected audience-scoped token mounted by the egress sidecar alone, is what keeps a shared account
@@ -57,7 +57,7 @@ invariant; breaking it costs the whole account's authority rather than one box's
 ## Separation from the integration app
 
 **Its own label and selector.** Not `agentplane.allegedly.works/managed`, which identifies Session
-Sandboxes that carry runners (<../../sandboxes/inventory.py>). A box carrying it would join the
+Sandboxes that carry runners (<../../app/go/sandboxes/inventory.go>). A box carrying it would join the
 fleet view, which then looks for a runner the box does not have.
 
 **Owned by its caller's account.** Each box carries an owner reference to the ServiceAccount it runs

@@ -118,3 +118,37 @@ func TestSandboxViewSerializesEmptyAutosuspendBlockersAsEmptyArray(t *testing.T)
 		t.Fatalf("empty browser autosuspend blockers = %v, want []", object["autosuspend_blockers"])
 	}
 }
+
+func TestSandboxViewProjectsEveryPhaseAndAbsentMode(t *testing.T) {
+	phases := map[sandboxespb.SandboxPhase]string{
+		sandboxespb.SandboxPhase_SANDBOX_PHASE_UNSPECIFIED:  "Unspecified",
+		sandboxespb.SandboxPhase_SANDBOX_PHASE_CREATING:     "Creating",
+		sandboxespb.SandboxPhase_SANDBOX_PHASE_RUNNING:      "Running",
+		sandboxespb.SandboxPhase_SANDBOX_PHASE_SUSPENDING:   "Suspending",
+		sandboxespb.SandboxPhase_SANDBOX_PHASE_SUSPENDED:    "Suspended",
+		sandboxespb.SandboxPhase_SANDBOX_PHASE_QUIESCING:    "Quiescing",
+		sandboxespb.SandboxPhase_SANDBOX_PHASE_TEARING_DOWN: "Tearing down",
+	}
+	if len(phases) != len(sandboxespb.SandboxPhase_name) {
+		t.Fatal("every service phase needs a browser projection")
+	}
+	for phase, want := range phases {
+		t.Run(want, func(t *testing.T) {
+			view := sandboxView(&sandboxespb.Sandbox{Phase: phase})
+			if view.Phase != want || view.OperatingMode != nil {
+				t.Fatalf("Sandbox projection = %+v", view)
+			}
+			body, err := json.Marshal(view)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var object map[string]any
+			if err := json.Unmarshal(body, &object); err != nil {
+				t.Fatal(err)
+			}
+			if mode, ok := object["operating_mode"]; !ok || mode != nil {
+				t.Fatalf("absent operating mode must be JSON null: %s", body)
+			}
+		})
+	}
+}

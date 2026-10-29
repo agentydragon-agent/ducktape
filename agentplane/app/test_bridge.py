@@ -1,9 +1,6 @@
-"""The app's runner path under faults a deployment cannot be made to produce, for both harnesses: a
+"""The real Go app's Runner Gateway path under faults a deployment cannot be made to produce: a
 harness killed or a runner restarted mid-turn, an app replica exiting, History's archive held back,
-a Dispatcher answering before delivery or ahead of the archive, and a Session opened behind the
-app's back. The runner takes control through the Go Runner Gateway, whose Dispatcher delivers the
-app's commands; the scripted Dispatchers stand in only where a case needs one to answer as no real
-one would on cue. The fault-free flows a browser sees are scenarios in
+and a Session opened behind the app's back. The fault-free flows a browser sees are scenarios in
 `agentplane/system_tests/test_thread_stream.py`."""
 
 from __future__ import annotations
@@ -12,81 +9,46 @@ import asyncio
 import json
 import logging
 import shlex
+import signal
 from collections.abc import AsyncIterator, Callable
-from contextlib import aclosing
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast, override
+from typing import Any
 from uuid import UUID, uuid4
 
-import grpc
 import httpx
 import pytest
 import pytest_bazel
-from google.protobuf.json_format import MessageToDict
-from google.protobuf.timestamp_pb2 import Timestamp
+from google.protobuf.json_format import MessageToDict, ParseDict
 from sqlalchemy import select
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.api import create_app
-from agentplane.app.conftest import listening
-from agentplane.app.database import connect
-from agentplane.app.database_updates import Channel
-from agentplane.app.egress_access import EgressAccess
-from agentplane.app.electric import ElectricProxy
-from agentplane.app.identity import TokenReviewer
-from agentplane.app.live import LiveIndex
-from agentplane.app.notifications_operator_client import NotificationsOperatorClient
-from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.sandbox_access import SandboxAccess
-from agentplane.app.testing.dispatcher import served_dispatcher
-from agentplane.app.testing.history import SeededEventLogStore
-from agentplane.app.testing.model_test_data import TEST_MODELS
-from agentplane.app.testing.runner_gateway import APP, admitted, delivered_opening, discover, session_dispatcher_client
-from agentplane.app.testing.system_status import answering_system_status
-from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
-from agentplane.app.threads.events.stream import follow
-from agentplane.app.threads.history_watch import SessionOpenings
-from agentplane.app.threads.runner_directory import RunnerDirectory
-from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.summaries import Summaries
-from agentplane.app.threads.view.content import ContentStore
-from agentplane.changes import ChangeSignal
-from agentplane.egress.decisions_client import DecisionsClient
-from agentplane.grpc.calls import dial
-from agentplane.grpc.serving import serving
+from agentplane.app.testing.dispatcher_client import SessionDispatcherClient
+from agentplane.app.testing.history import SessionHistory
+from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
+from agentplane.app.testing.runner_gateway import admitted, delivered_opening
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from agentplane.history_service.testing.history import History
-from agentplane.postgres.wakeups import WakeupListener
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
-from agentplane.runner import runner_service_pb2
+from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.testing.failure_journal import FailureEvidence
 from agentplane.runner.testing.process import RunningRunner, kill_harness
-from agentplane.runner_gateway.client import SandboxControlClient
-from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
+from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
-from util.testing.asgi import serve_app_in_loop
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # pytest loads this plugin by name from the test target's args.
 # gazelle:include_dep //util/testing:pytest_logfile
 
-SESSION = "8e414bdd-1310-4687-b768-3f1d69047122"
 SESSIONS = f"/sandboxes/{SANDBOX}/sessions"
 
 
 @pytest.fixture
 async def failed_bridge_state(
-    request: pytest.FixtureRequest,
-    runner: RunningRunner,
-    event_logs: SeededEventLogStore,
-    history_client: HistoryServiceClient,
-    local_runners: RunnerDirectory,
+    request: pytest.FixtureRequest, runner: RunningRunner, event_logs: SessionHistory, sandbox_runner: SandboxRunner
 ) -> AsyncIterator[None]:
     """Preserve each service's cursor and admission state when an app-level bridge case fails.
 
@@ -96,21 +58,22 @@ async def failed_bridge_state(
     if (evidence := FailureEvidence.for_failed_call(request)) is None:
         return
     state: dict[str, Any] = {}
-    for session in await local_runners.client(SANDBOX).list_sessions():
+    for session in await sandbox_runner.list_sessions():
         session_id = session.session_id
         observed: dict[str, Any] = {"runner_cursor": session.last_cursor}
         state[session_id] = observed
         try:
             async with asyncio.timeout(5):
                 thread_id = UUID(session_id)
-                observed["app_cursor"] = await event_logs.last_cursor(thread_id)
-                snapshot = await event_logs.feed_state(thread_id)
-                observed["app_feed"] = (
+                observed["history_cursor"] = await event_logs.last_cursor(thread_id)
+                observed["history_watermark"] = await event_logs.read_watermark(thread_id)
+                scope = await event_logs.current_scope(thread_id)
+                observed["history_scope"] = (
                     None
-                    if snapshot is None
-                    else {"attached": MessageToDict(snapshot.attached), "end": repr(snapshot.end)}
+                    if scope is None
+                    else {"projection_epoch": scope.projection_epoch, "through_cursor": scope.through_cursor}
                 )
-                page = await history_client.read_session_events(session_id, after_cursor=0, limit=1)
+                page = await event_logs.reader.read_session_events(session_id, after_cursor=0, limit=1)
                 observed["history_cursor"] = page.last_cursor
                 observed["history_feed"] = MessageToDict(page.feed_state) if page.HasField("feed_state") else None
         except Exception as error:
@@ -132,68 +95,13 @@ async def _create(http: httpx.AsyncClient, spec: runner_pb2.SessionSpec, session
     return thread_id
 
 
-async def _submit_input(
-    bridge: RunnerBridge, thread_id: UUID, sandbox_uid: str, command_id: str, text: str
-) -> session_dispatcher_pb2.Dispatch:
-    response = cast(
-        session_dispatcher_pb2.SubmitInputResponse,
-        await bridge.dispatcher.unary(
-            bridge.dispatcher.stub.SubmitInput,
-            session_dispatcher_pb2.SubmitInputRequest(
-                command_id=command_id, session_id=str(thread_id), sandbox=SANDBOX, sandbox_uid=sandbox_uid, text=text
-            ),
-        ),
-    )
-    return response.dispatch
-
-
-async def test_new_session_always_uses_dispatcher_over_grpc(tmp_path: Path, bridge: RunnerBridge) -> None:
-    session_id = uuid4()
-    spec = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CODEX, model="test-model")
-    received: list[session_dispatcher_pb2.OpenSessionRequest] = []
-
-    class QueuedOpenDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
-        @override
-        async def OpenSession(
-            self, request: session_dispatcher_pb2.OpenSessionRequest, _context: grpc.aio.ServicerContext
-        ) -> session_dispatcher_pb2.OpenSessionResponse:
-            received.append(request)
-            return session_dispatcher_pb2.OpenSessionResponse(
-                opening=session_dispatcher_pb2.SessionOpening(
-                    session_id=request.session_id,
-                    sandbox=request.sandbox,
-                    state=session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER,
-                    reason="sandbox_resuming",
-                )
-            )
-
-    server = grpc.aio.server()
-    session_dispatcher_pb2_grpc.add_SessionDispatcherServicer_to_server(QueuedOpenDispatcher(), server)
-    token_file = tmp_path / "dispatcher-token"
-    await asyncio.to_thread(token_file.write_text, "test-app-command-peer")
-    async with serving(server, "127.0.0.1:0", grace_s=0) as port, dial(f"127.0.0.1:{port}") as channel:
-        bridge.dispatcher = SessionDispatcherClient(channel, token_file=token_file, request_timeout_s=5)
-
-        result = await bridge.create_session(SANDBOX, session_id, spec, "bootstrap")
-
-    assert result.session_id == str(session_id)
-    assert result.sandbox == SANDBOX
-    assert result.state == session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
-    assert result.reason == "sandbox_resuming"
-    assert len(received) == 1
-    assert received[0].session_id == str(session_id)
-    assert received[0].sandbox == SANDBOX
-    assert received[0].spec == spec
-    assert received[0].setup_script == "bootstrap"
-
-
-async def _runner_session(runners: RunnerDirectory, thread_id: str | UUID) -> runner_pb2.SessionStatus:
-    status = await runners.client(SANDBOX).status()
+async def _runner_session(runner: SandboxRunner, thread_id: str | UUID) -> runner_pb2.SessionStatus:
+    status = await runner.status()
     return next(session for session in status.sessions if session.session_id == str(thread_id))
 
 
-async def _kill_harness(runners: RunnerDirectory, thread_id: str | UUID) -> None:
-    await kill_harness(await runners.client(SANDBOX).status(), str(thread_id))
+async def _kill_harness(runner: SandboxRunner, thread_id: str | UUID) -> None:
+    await kill_harness(await runner.status(), str(thread_id))
 
 
 @dataclass(frozen=True)
@@ -242,83 +150,11 @@ async def read_until(lines: AsyncIterator[str], key: str) -> list[SseMessage]:
 
 
 @pytest.fixture
-def register_attached_sessions() -> bool:
-    # The local runner pushes its history to the History Service ingress; the app only reads it.
-    return True
-
-
-@pytest.fixture
-async def local_runners(
-    live_index: LiveIndex, sandbox: SandboxCluster, sandbox_control: SandboxControlClient, runner: RunningRunner
-) -> RunnerDirectory:
-    """`SANDBOX` in the app's index, its runner connected to the Gateway."""
-    await discover(live_index, sandbox.server, namespace=sandbox.namespace, name=sandbox.name)
-    return RunnerDirectory(live_index, sandbox_control)
-
-
-@pytest.fixture
-def inventory(sandbox: SandboxCluster) -> SandboxAccess:
-    return SandboxAccess(sandbox.inventory, default_policy_sets=frozenset(), caller=APP)
-
-
-@pytest.fixture
-async def session_openings(
-    history_client: HistoryServiceClient, event_logs: SeededEventLogStore
-) -> AsyncIterator[None]:
-    """A Thread for every Session History records, as `main.py` runs it."""
-    async with history_client.new_client() as client:
-        openings = asyncio.create_task(SessionOpenings(client, event_logs, retry_interval_s=0.05).run())
-        try:
-            yield
-        finally:
-            openings.cancel()
-            await asyncio.gather(openings, return_exceptions=True)
-
-
-@pytest.fixture
-async def app_url(
-    local_runners: RunnerDirectory,
-    session_openings: None,
-    inventory: SandboxAccess,
-    store: ThreadStore,
-    database_updates: WakeupListener,
-    operator_sessions: OperatorSessionStore,
-    egress: EgressAccess,
-    decisions: DecisionsClient,
-    live_index: LiveIndex,
-    action_policy: ActionPolicyInventory,
-    reviewer: TokenReviewer,
-    event_logs: SeededEventLogStore,
-    content: ContentStore,
-    history: History,
-    electric_proxy: ElectricProxy,
-    notifications: NotificationsOperatorClient,
-    session_dispatcher: SessionDispatcherClient,
-) -> AsyncIterator[str]:
-    """The app served by uvicorn, with the one test Sandbox's runner behind the Gateway. The server
-    is real because SSE needs a response that streams, which an in-process ASGI transport would
-    buffer."""
-    bridge = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, dispatcher=session_dispatcher)
-    app = create_app(
-        inventory,
-        bridge,
-        store,
-        TEST_MODELS,
-        egress,
-        decisions,
-        live_index,
-        action_policy,
-        reviewer=reviewer,
-        event_logs=event_logs,
-        content=content,
-        database_updates=database_updates,
-        operator_sessions=operator_sessions,
-        electric=electric_proxy,
-        notifications=notifications,
-        system_status=answering_system_status(),
-    )
-    async with serve_app_in_loop(app) as origin:
-        yield origin
+def sandbox_runner(
+    sandbox: SandboxCluster, sandbox_control: SandboxControlClient, runner: RunningRunner
+) -> SandboxRunner:
+    """The production Runner Gateway's proxy for this test's Sandbox."""
+    return sandbox_control.runner(sandbox.destination)
 
 
 async def _stored_events(
@@ -426,9 +262,9 @@ def _has_turn_status(entries: list[dict[str, Any]], status: str) -> bool:
 
 @pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
 async def test_stream_recovery_reports_the_content_the_model_receives(
-    app_url: str,
+    app: AppProcess,
     agent_auth: dict[str, str],
-    local_runners: RunnerDirectory,
+    sandbox_runner: SandboxRunner,
     model: ScriptedModel,
     runner: RunningRunner,
     history: History,
@@ -438,7 +274,7 @@ async def test_stream_recovery_reports_the_content_the_model_receives(
 ) -> None:
     seed_prompt, seed_answer = "Remember the seed prompt", "SEED_ANSWER_FOR_STREAM_RECOVERY"
     partial = "PARTIAL_STREAM_MUST_STAY_UNFINISHED"
-    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=agent_auth) as http:
+    async with httpx.AsyncClient(base_url=app.url, timeout=60, headers=agent_auth) as http:
         thread_id = await _open_thread_with_seed(http, model, spec, seed_prompt=seed_prompt, seed_answer=seed_answer)
         accepted = await http.post(
             f"/threads/{thread_id}/submit-input", json={"commandId": "streaming-input", "text": "Start a long answer"}
@@ -453,7 +289,7 @@ async def test_stream_recovery_reports_the_content_the_model_receives(
         )
         item_id = next(row.entity_id for row in items.values() if _folded_body(chunks, row.text_ref) == partial)
         assert items[item_id].state["completion"] is None
-        turn_id, before = await _interrupt_and_recover(http, runner, local_runners, thread_id, stop_mode)
+        turn_id, before = await _interrupt_and_recover(http, runner, sandbox_runner, thread_id, stop_mode)
         accepted = await http.post(
             f"/threads/{thread_id}/submit-input",
             json={"commandId": "stream-recovery-input", "text": "Continue after recovery"},
@@ -487,15 +323,15 @@ async def test_stream_recovery_reports_the_content_the_model_receives(
 
 
 async def _interrupt_and_recover(
-    http: httpx.AsyncClient, runner: RunningRunner, runners: RunnerDirectory, thread_id: str, mode: str
+    http: httpx.AsyncClient, runner: RunningRunner, sandbox_runner: SandboxRunner, thread_id: str, mode: str
 ) -> tuple[str, int]:
-    session = await _runner_session(runners, thread_id)
+    session = await _runner_session(sandbox_runner, thread_id)
     turn_id = session.active_turn_id
     assert turn_id
     existing = await runner.history_entries(thread_id)
     before = existing[-1].cursor if existing else 0
     if mode == "kill":
-        await _kill_harness(runners, thread_id)
+        await _kill_harness(sandbox_runner, thread_id)
     elif mode == "interrupt":
         response = await http.post(
             f"/threads/{thread_id}/interrupt-turn", json={"commandId": "interrupt-for-recovery", "turnId": turn_id}
@@ -557,9 +393,9 @@ async def _wait_for_conversation_reconciliation(
 
 @pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
 async def test_tool_recovery_reports_context_without_repeating_side_effects(
-    app_url: str,
+    app: AppProcess,
     agent_auth: dict[str, str],
-    local_runners: RunnerDirectory,
+    sandbox_runner: SandboxRunner,
     model: ScriptedModel,
     runner: RunningRunner,
     history: History,
@@ -588,7 +424,7 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
             event_pb2.RECOVERY_DISPOSITION_REVISED,
         }
     )
-    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=agent_auth) as http:
+    async with httpx.AsyncClient(base_url=app.url, timeout=60, headers=agent_auth) as http:
         thread_id = await _open_thread_with_seed(http, model, spec, seed_prompt=seed_prompt, seed_answer=seed_answer)
         accepted = await http.post(
             f"/threads/{thread_id}/submit-input",
@@ -620,7 +456,7 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
         assert _folded_body(chunks, incomplete_tools[0].output_ref) == ""
 
         item_id = incomplete_tools[0].entity_id
-        turn_id, before = await _interrupt_and_recover(http, runner, local_runners, thread_id, stop_mode)
+        turn_id, before = await _interrupt_and_recover(http, runner, sandbox_runner, thread_id, stop_mode)
         accepted = await http.post(
             f"/threads/{thread_id}/submit-input", json={"commandId": "tool-recovery-input", "text": recovery_prompt}
         )
@@ -662,9 +498,9 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
 
 @pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
 async def test_resume_after_tool_completion_preserves_the_result_and_does_not_repeat_it(
-    app_url: str,
+    app: AppProcess,
     agent_auth: dict[str, str],
-    local_runners: RunnerDirectory,
+    sandbox_runner: SandboxRunner,
     model: ScriptedModel,
     runner: RunningRunner,
     history: History,
@@ -682,7 +518,7 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
         f"printf '%s\\n' {shlex.quote(token)} >> {shlex.quote(str(marker))}; printf '%s' {shlex.quote(tool_output)}"
     )
     partial = "PARTIAL_AFTER_COMPLETED_TOOL"
-    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=agent_auth) as http:
+    async with httpx.AsyncClient(base_url=app.url, timeout=60, headers=agent_auth) as http:
         thread_id = await _open_thread_with_seed(http, model, spec, seed_prompt=seed_prompt, seed_answer=seed_answer)
         accepted = await http.post(
             f"/threads/{thread_id}/submit-input",
@@ -720,7 +556,7 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
             ),
         )
 
-        turn_id, before = await _interrupt_and_recover(http, runner, local_runners, thread_id, stop_mode)
+        turn_id, before = await _interrupt_and_recover(http, runner, sandbox_runner, thread_id, stop_mode)
         items, chunks = await _folded_items(history, thread_id)
         completed_tools = [
             row
@@ -765,222 +601,101 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
         assert marker.read_text().splitlines() == [token]
 
 
-async def test_command_returns_dispatch_receipt_before_app_archive_catches_up(
+async def test_replica_commands_and_database_stream_survive_owner_replica_exit(
+    app: AppProcess,
+    db_url: str,
+    history_client: HistoryServiceClient,
     sandbox: SandboxCluster,
-    bridge: RunnerBridge,
-    event_logs: SeededEventLogStore,
-    content: ContentStore,
-    history: History,
-    tmp_path: Path,
-) -> None:
-    thread = await event_logs.seed(SANDBOX, SESSION)
-    await history.open(thread)
-    command = command_pb2.Command(
-        command_id="ahead-of-archive", interrupt_turn=command_pb2.InterruptTurn(turn_id="target")
-    )
-    timestamp = Timestamp()
-    timestamp.GetCurrentTime()
-    receipt = event_log_pb2.EventEntry(
-        cursor=1,
-        origin=event_log_pb2.EventOrigin(source_id="test-runner", sequence=1),
-        event=event_pb2.Event(at=timestamp, command_admitted=event_pb2.CommandAdmitted(command=command)),
-    )
-    received: list[session_dispatcher_pb2.InterruptTurnRequest] = []
-
-    class AdmittedInterrupt(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
-        @override
-        async def InterruptTurn(self, request, _context):
-            received.append(request)
-            return session_dispatcher_pb2.InterruptTurnResponse(
-                state=session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED, admission=receipt
-            )
-
-    async with served_dispatcher(
-        AdmittedInterrupt(), tmp_path / "admitted-dispatcher-token", request_timeout_s=5
-    ) as client:
-        bridge.dispatcher = client
-        response = await bridge.dispatcher.unary(
-            bridge.dispatcher.stub.InterruptTurn,
-            session_dispatcher_pb2.InterruptTurnRequest(
-                command_id=command.command_id,
-                session_id=str(thread),
-                sandbox=SANDBOX,
-                sandbox_uid=sandbox.uid,
-                turn_id=command.interrupt_turn.turn_id,
-            ),
-        )
-        assert isinstance(response, session_dispatcher_pb2.InterruptTurnResponse)
-        assert response.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED
-        assert response.admission == receipt
-        assert await content.admitted_command(thread, command) is None
-        assert await event_logs.events(thread, limit=10) == []
-
-        await history.record(thread, [receipt])
-        assert await content.admitted_command(thread, command) == receipt
-        # The archive, not the runner, answers exact retries once it has caught up.
-        assert await content.admitted_command(thread, command) == receipt
-    assert [(request.sandbox, request.session_id, request.command_id, request.turn_id) for request in received] == [
-        (SANDBOX, str(thread), command.command_id, command.interrupt_turn.turn_id)
-    ]
-
-
-@dataclass
-class Replicas:
-    owner: RunnerBridge
-    # The owner replica's Session openings, which a test stops as the replica exiting would.
-    owner_openings: asyncio.Task[None]
-    survivor: RunnerBridge
-    # What the survivor streams a thread from: its own pool and its own listener.
-    survivor_event_logs: SeededEventLogStore
-    survivor_changes: ChangeSignal
-    sandbox_uid: str
-
-
-@pytest.fixture
-async def replicas(
     gateway_service: GatewayProcess,
     app_token_file: Path,
-    local_runners: RunnerDirectory,
-    live_index: LiveIndex,
-    database_updates: WakeupListener,
-    db_url: str,
-    event_logs: SeededEventLogStore,
-    content: ContentStore,
-    history: History,
-    history_client: HistoryServiceClient,
-    session_dispatcher: SessionDispatcherClient,
-    sandbox: SandboxCluster,
-) -> AsyncIterator[Replicas]:
-    replica_engine = connect(db_url)
-    survivor_event_logs = SeededEventLogStore(
-        replica_engine,
-        history=event_logs.history,
-        history_reader=history_client,
-        summaries=Summaries(history_client),
-        sandbox_namespaces=event_logs.sandbox_namespaces,
-    )
-    owner = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, dispatcher=session_dispatcher)
-    try:
-        async with (
-            listening(replica_engine, history_client) as replica_updates,
-            history_client.new_client() as owner_openings_client,
-            history_client.new_client() as survivor_openings_client,
-        ):
-            survivor_runners = RunnerDirectory(live_index, gateway_service.gateway_client(app_token_file))
-            async with session_dispatcher_client(gateway_service, app_token_file) as survivor_dispatcher:
-                survivor = RunnerBridge(
-                    runners=survivor_runners,
-                    event_logs=survivor_event_logs,
-                    content=ContentStore(replica_engine, history_reader=history_client),
-                    dispatcher=survivor_dispatcher,
-                )
-                owner_openings = asyncio.create_task(
-                    SessionOpenings(owner_openings_client, event_logs, retry_interval_s=0.05).run()
-                )
-                survivor_openings = asyncio.create_task(
-                    SessionOpenings(survivor_openings_client, survivor_event_logs, retry_interval_s=0.05).run()
-                )
-                try:
-                    yield Replicas(
-                        owner,
-                        owner_openings,
-                        survivor,
-                        survivor_event_logs,
-                        replica_updates.changes[Channel.THREADS],
-                        sandbox.uid,
-                    )
-                finally:
-                    owner_openings.cancel()
-                    survivor_openings.cancel()
-                    await asyncio.gather(owner_openings, survivor_openings, return_exceptions=True)
-    finally:
-        await replica_engine.dispose()
-
-
-async def frame_lines(frames: AsyncIterator[bytes]) -> AsyncIterator[str]:
-    async for frame in frames:
-        for line in frame.decode().splitlines():
-            yield line
-
-
-async def test_replica_commands_and_database_stream_survive_owner_replica_exit(
+    http: httpx.AsyncClient,
     runner: RunningRunner,
-    replicas: Replicas,
-    event_logs: SeededEventLogStore,
+    session_dispatcher: SessionDispatcherClient,
     model: ScriptedModel,
     spec: runner_pb2.SessionSpec,
 ) -> None:
-    thread = UUID((await replicas.owner.create_session(SANDBOX, uuid4(), spec)).session_id)
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
+    sandboxes = SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace)
+    gateway = GatewayAccess(gateway_service.target, app_token_file)
+    async with (
+        app_process(db_url, history_client, sandboxes=sandboxes, gateway=gateway) as survivor,
+        httpx.AsyncClient(
+            base_url=survivor.url, cookies=survivor.cookies, headers={"Origin": survivor.url}, timeout=60
+        ) as survivor_http,
     ):
-        with attempt:
-            # The Thread row comes from the Session openings once History records the opening.
-            assert await replicas.survivor_event_logs.exists(thread)
-            assert await event_logs.feed_state(thread) is not None
-    async with aclosing(
-        follow(replicas.survivor_event_logs, replicas.survivor_changes, thread, after_cursor=0)
-    ) as frames:
-        lines = frame_lines(frames)
-        assert (await next_message(lines)).event == "attached"
-        await _submit_input(replicas.survivor, thread, replicas.sandbox_uid, "input-1", "FIRST_REPLICA_TURN")
-        await model.reply(await model.request(), Text("FIRST_REPLICA_TURN"))
-        async with asyncio.timeout(10):
-            first = await read_until(lines, "turnCompleted")
+        thread = UUID(await _create(http, spec, uuid4()))
+        await delivered_opening(session_dispatcher, thread)
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                response = await survivor_http.get(f"/threads/{thread}")
+                assert response.status_code == 200, response.text
 
-        await _submit_input(replicas.survivor, thread, replicas.sandbox_uid, "input-2", "AFTER_OWNER_EXIT")
-        request = await model.request()
-        replicas.owner_openings.cancel()
-        await model.reply(request, Text("AFTER_OWNER_EXIT"))
-        async with asyncio.timeout(10):
-            second = await read_until(lines, "turnCompleted")
-        seen = [*first, *second]
-        assert [message.id for message in seen] == list(range(1, len(seen) + 1))
-        assert [
-            message.data["event"]["itemCompleted"]["text"]
-            for message in seen
-            if "itemCompleted" in message.data["event"]
-        ] == ["FIRST_REPLICA_TURN", "AFTER_OWNER_EXIT"]
-        await runner.restart()
-        async with asyncio.timeout(10):
-            await read_until(lines, "harnessExited")
-            assert (await next_message(lines)).event == "end"
+        async with survivor_http.stream("GET", f"/threads/{thread}/events/stream") as response:
+            assert response.status_code == 200, await response.aread()
+            lines = response.aiter_lines()
+            assert (await next_message(lines)).event == "attached"
+
+            first_submit = await survivor_http.post(
+                f"/threads/{thread}/submit-input", json={"commandId": "input-1", "text": "FIRST_REPLICA_TURN"}
+            )
+            assert first_submit.status_code == 200, first_submit.text
+            await model.reply(await model.request(), Text("FIRST_REPLICA_TURN"))
+            async with asyncio.timeout(20):
+                first = await read_until(lines, "turnCompleted")
+
+            await app.kill()
+            assert app.process.returncode == -signal.SIGKILL
+            second_submit = await survivor_http.post(
+                f"/threads/{thread}/submit-input", json={"commandId": "input-2", "text": "AFTER_OWNER_EXIT"}
+            )
+            assert second_submit.status_code == 200, second_submit.text
+            request = await model.request()
+            await model.reply(request, Text("AFTER_OWNER_EXIT"))
+            async with asyncio.timeout(20):
+                second = await read_until(lines, "turnCompleted")
+            seen = [*first, *second]
+            cursors = [message.id for message in seen if message.id is not None]
+            assert cursors == list(range(1, len(cursors) + 1))
+            assert [
+                message.data["event"]["itemCompleted"]["text"]
+                for message in seen
+                if "itemCompleted" in message.data["event"]
+            ] == ["FIRST_REPLICA_TURN", "AFTER_OWNER_EXIT"]
+            await runner.restart()
+            async with asyncio.timeout(10):
+                await read_until(lines, "harnessExited")
+                assert (await next_message(lines)).event == "end"
 
 
 async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
     sandbox: SandboxCluster,
     sandbox_control: SandboxControlClient,
     runner: RunningRunner,
-    store: ThreadStore,
+    http: httpx.AsyncClient,
     spec: runner_pb2.SessionSpec,
-    session_openings: None,
 ) -> None:
-    # The app's informer has never seen the Sandbox: the Thread comes from the History Service alone.
+    # No app HTTP request opened this Thread; History's Session opening creates its row.
     session_id = uuid4()
     # This seeds a runner-owned Session without going through Dispatcher admission or app open.
-    await sandbox_control.runner_unary(
-        sandbox.destination,
-        lambda stub: stub.OpenSession,
-        runner_service_pb2.OpenSessionRequest(session_id=str(session_id), spec=spec),
-        timeout_s=sandbox_control.lifecycle_timeout_s,
-    )
-    # Only the openings can create this row: no bridge exists, so no command or SSE request ran.
+    await sandbox_control.runner(sandbox.destination).open_session(session_id=session_id, spec=spec)
+    # The app's production History watcher creates the Thread row; no command or SSE request ran.
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
     ):
         with attempt:
-            rows = await store.list_threads()
-            assert len(rows) == 1
-            thread = rows[0]
-            assert thread.id == session_id
-    assert thread.sandbox == SANDBOX
+            response = await http.get(f"/threads/{session_id}")
+            assert response.status_code == 200, response.text
+            thread = response.json()
+            assert thread["id"] == str(session_id)
+            assert thread["sandbox"] == SANDBOX
 
 
 async def test_open_and_inputs_reach_the_runner_while_history_lags(
     sandbox: SandboxCluster,
-    local_runners: RunnerDirectory,
-    event_logs: SeededEventLogStore,
-    content: ContentStore,
+    sandbox_runner: SandboxRunner,
+    event_logs: SessionHistory,
+    http: httpx.AsyncClient,
     model: ScriptedModel,
     spec: runner_pb2.SessionSpec,
     session_dispatcher: SessionDispatcherClient,
@@ -988,39 +703,46 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
 ) -> None:
     """The Dispatcher opens the Session and delivers its inputs, before and after a harness kill, while
     History's ingress is held back."""
-    bridge = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, dispatcher=session_dispatcher)
-    opened = await bridge.create_session(SANDBOX, uuid4(), spec)
-    thread_id = UUID(opened.session_id)
+    thread_id = UUID(await _create(http, spec, uuid4()))
     await delivered_opening(session_dispatcher, thread_id)
     await history.service.settled(thread_id, lambda _summary: True)
-    (runner_session,) = [
-        row for row in await local_runners.client(SANDBOX).list_sessions() if row.session_id == opened.session_id
-    ]
+    (runner_session,) = [row for row in await sandbox_runner.list_sessions() if row.session_id == str(thread_id)]
     opened_cursor = runner_session.last_cursor
     assert opened_cursor == 0
     async with history.fence_ingress(thread_id):
-        seed = await admitted(
-            session_dispatcher, await _submit_input(bridge, thread_id, sandbox.uid, "seed-before-archive", "SEED")
+        seed_response = await http.post(
+            f"/threads/{thread_id}/submit-input", json={"commandId": "seed-before-archive", "text": "SEED"}
         )
+        assert seed_response.status_code == 200, seed_response.text
+        assert seed_response.json()["kind"] == "dispatch"
+        seed = await admitted(
+            session_dispatcher, ParseDict(seed_response.json()["dispatch"], session_dispatcher_pb2.Dispatch())
+        )
+        assert await event_logs.read_watermark(thread_id) == 0
         await model.reply(await model.request(), Text("SEED_REPLY"))
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(20), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
         ):
             with attempt:
-                (summary,) = await local_runners.client(SANDBOX).list_sessions()
+                (summary,) = await sandbox_runner.list_sessions()
                 assert summary.last_cursor > seed.admission.cursor
                 assert not summary.active_turn_id
 
-        await _kill_harness(local_runners, thread_id)
+        await _kill_harness(sandbox_runner, thread_id)
         # The native process exited while History stayed behind; later input prepares it again.
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
         ):
             with attempt:
-                (summary,) = await local_runners.client(SANDBOX).list_sessions()
+                (summary,) = await sandbox_runner.list_sessions()
                 assert summary.harness_state == runner_pb2.HARNESS_STATE_STOPPED
+        receipt_response = await http.post(
+            f"/threads/{thread_id}/submit-input", json={"commandId": "after-archive-lag", "text": "CONTINUE"}
+        )
+        assert receipt_response.status_code == 200, receipt_response.text
+        assert receipt_response.json()["kind"] == "dispatch"
         receipt = await admitted(
-            session_dispatcher, await _submit_input(bridge, thread_id, sandbox.uid, "after-archive-lag", "CONTINUE")
+            session_dispatcher, ParseDict(receipt_response.json()["dispatch"], session_dispatcher_pb2.Dispatch())
         )
         assert receipt.admission.cursor > opened_cursor
         await model.reply(await model.request(), Text("CONTINUED"))
@@ -1029,7 +751,7 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
             stop=stop_after_delay(20), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
         ):
             with attempt:
-                (summary,) = await local_runners.client(SANDBOX).list_sessions()
+                (summary,) = await sandbox_runner.list_sessions()
                 assert summary.last_cursor > receipt.admission.cursor
                 assert not summary.active_turn_id
                 control_cursor = summary.last_cursor
@@ -1041,7 +763,7 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
         stop=stop_after_delay(20), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
     ):
         with attempt:
-            (summary,) = await local_runners.client(SANDBOX).list_sessions()
+            (summary,) = await sandbox_runner.list_sessions()
             assert summary.last_cursor == control_cursor
             assert await event_logs.read_watermark(thread_id) == control_cursor
             assert await event_logs.last_cursor(thread_id) == control_cursor

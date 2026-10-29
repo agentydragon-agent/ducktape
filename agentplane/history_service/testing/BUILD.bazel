@@ -28,6 +28,13 @@ py_library(
 py_library(
     name = "fixtures",
     srcs = ["fixtures.py"],
+    visibility = [
+        "//agentplane/app:__pkg__",
+        "//agentplane/history_service/fold:__pkg__",
+        "//agentplane/runner:__pkg__",
+        "//agentplane/runner_gateway:__pkg__",
+        "//agentplane/x/runner_layering:__pkg__",
+    ],
     deps = [
         ":go_service",
         ":history",
@@ -50,7 +57,6 @@ py_library(
         "//agentplane/history_service:history_service_pb2",
         "//agentplane/history_service/fold:models",
         "//agentplane/history_service/fold:views",
-        "//agentplane/postgres:wakeups",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/testing:kubernetes_apiserver",

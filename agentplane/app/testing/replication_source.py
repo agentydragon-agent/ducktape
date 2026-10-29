@@ -95,6 +95,18 @@ class Runner(runner_service_pb2_grpc.RunnerServicer):
         self._admissions: dict[str, event_log_pb2.EventEntry] = {}
 
     @override
+    async def GetStatus(
+        self, request: runner_pb2.GetStatusRequest, context: grpc.aio.ServicerContext
+    ) -> runner_pb2.RunnerStatus:
+        return runner_pb2.RunnerStatus(
+            sessions=[
+                runner_pb2.SessionStatus(
+                    session_id=str(self.source.session_id), busy=bool(self.source.attached.active_turn_id)
+                )
+            ]
+        )
+
+    @override
     async def ListSessions(
         self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:

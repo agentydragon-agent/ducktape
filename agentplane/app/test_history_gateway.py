@@ -2,19 +2,17 @@
 
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 import pytest_bazel
+from google.protobuf.json_format import MessageToDict, ParseDict
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.app.live import LiveIndex
-from agentplane.app.testing.history import SeededEventLogStore
-from agentplane.app.testing.runner_gateway import admitted, delivered_opening, discover
-from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
-from agentplane.app.threads.runner_directory import RunnerDirectory
-from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.testing.dispatcher_client import SessionDispatcherClient
+from agentplane.app.testing.history import SessionHistory
+from agentplane.app.testing.runner_gateway import admitted, delivered_opening
 from agentplane.grpc.calls import ServiceError
-from agentplane.postgres.wakeups import WakeupListener
+from agentplane.history_service import history_service_pb2
 from agentplane.proto import command_pb2, runner_pb2
 from agentplane.runner import runner_service_pb2
 from agentplane.runner.testing import launches
@@ -30,39 +28,28 @@ from agentplane.testing.scripted_model import ScriptedModel, Text
 # gazelle:include_dep @pypi//grpcio
 
 
-@pytest.fixture
-def register_attached_sessions() -> bool:
-    # The runner pushes its history to the History Service ingress; the app only reads it.
-    return True
-
-
-@pytest.fixture(autouse=True)
-async def discovered(live_index: LiveIndex, sandbox: SandboxCluster) -> None:
-    await discover(live_index, sandbox.server, namespace=sandbox.namespace, name=sandbox.name)
-
-
 async def test_production_bridge_reads_runner_history_across_gateway_restarts(
-    live_index: LiveIndex,
     sandbox: SandboxCluster,
     gateway_service: GatewayProcess,
     sandbox_control: SandboxControlClient,
     session_dispatcher: SessionDispatcherClient,
-    event_logs: SeededEventLogStore,
-    content: ContentStore,
-    database_updates: WakeupListener,
+    event_logs: SessionHistory,
+    http: httpx.AsyncClient,
     runner: RunningRunner,
     spec: runner_pb2.SessionSpec,
     model: ScriptedModel,
 ) -> None:
-    directory = RunnerDirectory(live_index, sandbox_control)
-    bridge = RunnerBridge(runners=directory, event_logs=event_logs, content=content, dispatcher=session_dispatcher)
-    opening = await bridge.create_session(SANDBOX, uuid4(), spec)
+    response = await http.post(
+        f"/sandboxes/{SANDBOX}/sessions", json={"session_id": str(uuid4()), "spec": MessageToDict(spec)}
+    )
+    assert response.status_code == 201, response.text
+    opening = ParseDict(response.json(), session_dispatcher_pb2.SessionOpening())
     await delivered_opening(session_dispatcher, UUID(opening.session_id))
-    (runner_session,) = await directory.client(SANDBOX).list_sessions()
+    (runner_session,) = await sandbox_control.runner(sandbox.destination).list_sessions()
     assert runner_session.session_id == opening.session_id
     assert launches.PLATFORM_INSTRUCTIONS in runner_session.spec.instructions
     thread = UUID(opening.session_id)
-    runner_client = directory.client(SANDBOX)
+    runner_client = sandbox_control.runner(sandbox.destination)
     status = await runner_client.status()
     assert not status.processes
     (dormant,) = [row for row in status.sessions if row.session_id == str(thread)]
@@ -97,9 +84,8 @@ async def test_production_bridge_reads_runner_history_across_gateway_restarts(
         with attempt:
             first_turn = await runner.history_entries(str(thread))
             assert any(entry.event.WhichOneof("observation") == "turn_completed" for entry in first_turn)
-    snapshot = await event_logs.feed_state(thread)
-    assert snapshot is not None
-    assert snapshot.end is None
+    summary = await event_logs.reader.get_session_summary(str(thread))
+    assert summary.feed_status == history_service_pb2.FEED_STATUS_ACTIVE
     active = await runner_client.status()
     (active_session,) = [row for row in active.sessions if row.session_id == str(thread)]
     native_session_id = active_session.native_session_id
@@ -165,21 +151,18 @@ async def test_production_bridge_reads_runner_history_across_gateway_restarts(
 
 
 async def test_runner_client_does_not_fall_back_after_gateway_stops(
-    live_index: LiveIndex,
     sandbox: SandboxCluster,
     sandbox_control: SandboxControlClient,
     gateway_service: GatewayProcess,
     runner: RunningRunner,
 ) -> None:
-    directory = RunnerDirectory(live_index, sandbox_control)
-    assert await directory.client(SANDBOX).list_sessions() == []
+    assert await sandbox_control.runner(sandbox.destination).list_sessions() == []
     await gateway_service.stop()
     with pytest.raises(ServiceError):
-        await directory.client(SANDBOX).list_sessions()
+        await sandbox_control.runner(sandbox.destination).list_sessions()
 
 
 async def test_runner_proxy_lists_and_sends_to_a_dormant_session(
-    live_index: LiveIndex,
     sandbox: SandboxCluster,
     gateway_service: GatewayProcess,
     sandbox_control: SandboxControlClient,
@@ -201,8 +184,7 @@ async def test_runner_proxy_lists_and_sends_to_a_dormant_session(
         runner_service_pb2.SubmitInputRequest(session_id=session_id, command_id="first", text="hi"),
     )
     await model.reply(await model.request(), Text("hello"))
-    directory = RunnerDirectory(live_index, sandbox_control)
-    client = directory.client(SANDBOX)
+    client = sandbox_control.runner(sandbox.destination)
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
     ):

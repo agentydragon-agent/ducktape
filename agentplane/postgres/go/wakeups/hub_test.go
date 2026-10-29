@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"testing"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // awaitBound only fails a test whose wakeup never comes.
@@ -124,6 +126,17 @@ func TestSubscribingToAChannelNobodyListensToIsRefused(t *testing.T) {
 	}
 }
 
+func TestDisconnectWakesSubscribersWithTheDisconnectedState(t *testing.T) {
+	hub := &Hub{subscribers: map[string]map[chan struct{}]struct{}{"updates": {}}}
+	onUpdates, _ := subscribe(t, hub, "updates")
+	hub.connected.Store(true)
+	hub.observeConnectionEvent(pq.ListenerEventDisconnected)
+	awaitWakeup(t, onUpdates)
+	if hub.Connected() {
+		t.Fatal("disconnect wakeup must expose the disconnected state")
+	}
+}
+
 func TestEverySubscriberWakesAfterTheConnectionIsLostAndListeningContinues(t *testing.T) {
 	db, hub := openDB(t), listen(t, "test-wakeups-reconnect", "test_wakeups_a", "test_wakeups_b")
 	onA, _ := subscribe(t, hub, "test_wakeups_a")
@@ -134,6 +147,11 @@ func TestEverySubscriberWakesAfterTheConnectionIsLostAndListeningContinues(t *te
 	}
 	awaitWakeup(t, onA)
 	awaitWakeup(t, onB)
+	// Signals coalesce: the subscriber can resume after reconnection has already completed.
+	for !hub.Connected() {
+		awaitWakeup(t, onA)
+		awaitWakeup(t, onB)
+	}
 	// The listener registered its channels again on the new connection.
 	notify(t, db, "test_wakeups_a")
 	awaitWakeup(t, onA)

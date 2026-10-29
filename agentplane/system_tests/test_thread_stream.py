@@ -25,8 +25,8 @@ import pytest
 import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.app.sandbox_models import SandboxView
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
+from agentplane.app.testing.models import SandboxView
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, Agent

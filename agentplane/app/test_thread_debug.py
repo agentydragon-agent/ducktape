@@ -3,46 +3,22 @@
 import httpx
 import pytest_bazel
 
-from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.api import create_app
-from agentplane.app.egress_access import EgressAccess
-from agentplane.app.electric import ElectricProxy
-from agentplane.app.identity import TokenReviewer
-from agentplane.app.live import LiveIndex
-from agentplane.app.notifications_operator_client import NotificationsOperatorClient
-from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.sandbox_access import SandboxAccess
-from agentplane.app.testing.history import SeededEventLogStore
-from agentplane.app.testing.model_test_data import TEST_MODELS
+from agentplane.app.testing.history import SessionHistory
+from agentplane.app.testing.replication_process import AppProcess
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.testing.system_status import answering_system_status
-from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.view.content import ContentStore
-from agentplane.egress.decisions_client import DecisionsClient
+from agentplane.app.testing.thread_test_support import ThreadHTTP
 from agentplane.history_service.testing.history import History
-from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import command_pb2, event_pb2
 
 # gazelle:include_dep @pypi//protobuf
 
 
 async def test_lazy_scoped_evidence_and_native_expansion(
-    inventory: SandboxAccess,
-    bridge: RunnerBridge,
-    store: ThreadStore,
-    event_logs: SeededEventLogStore,
-    content: ContentStore,
+    app: AppProcess,
+    store: ThreadHTTP,
+    event_logs: SessionHistory,
+    content: SessionHistory,
     history: History,
-    database_updates: WakeupListener,
-    operator_sessions: OperatorSessionStore,
-    egress: EgressAccess,
-    decisions: DecisionsClient,
-    live_index: LiveIndex,
-    action_policy: ActionPolicyInventory,
-    reviewer: TokenReviewer,
-    electric_proxy: ElectricProxy,
-    notifications: NotificationsOperatorClient,
     agent_auth: dict[str, str],
 ) -> None:
     source = ReplicationSource()
@@ -73,27 +49,10 @@ async def test_lazy_scoped_evidence_and_native_expansion(
     await history.record(thread, source.entries)
     scope = await content.current_scope(thread)
     assert scope is not None
-    app = create_app(
-        inventory,
-        bridge,
-        store,
-        TEST_MODELS,
-        egress,
-        decisions,
-        live_index,
-        action_policy,
-        reviewer=reviewer,
-        event_logs=event_logs,
-        content=content,
-        database_updates=database_updates,
-        operator_sessions=operator_sessions,
-        electric=electric_proxy,
-        notifications=notifications,
-        system_status=answering_system_status(),
-    )
+    await store.wait(thread)
     path = f"/threads/{thread}/evidence"
     params = {"projection_epoch": scope.projection_epoch, "entity_kind": "item", "entity_id": "first"}
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+    async with httpx.AsyncClient(base_url=app.url) as client:
         denied = await client.get(path, params=params)
         assert denied.status_code == 401
         first = await client.get(path, params=params | {"limit": "2"}, headers=agent_auth)

@@ -13,7 +13,7 @@ from typing import Self
 from uuid import UUID, uuid4
 
 from kubernetes_asyncio import client as k8s_client
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from agentplane import sandbox_resource
@@ -22,7 +22,6 @@ from agentplane.history_service.channels import Channel
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity
 from agentplane.history_service.fold.views import EntityKind
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService, go_history_service
-from agentplane.postgres.wakeups import notify
 from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
@@ -158,7 +157,7 @@ class History:
                     "feed_error": {"cursor": None if error_cursor is None else str(error_cursor), "message": error},
                 },
             }
-            await notify(session, Channel.SUMMARIES)
+            await session.execute(select(func.pg_notify(Channel.SUMMARIES, "")))
 
     @staticmethod
     async def fence_fold(session: AsyncSession, session_id: UUID) -> None:
@@ -186,7 +185,7 @@ class History:
     async def announce_fold_commit(self) -> None:
         """Commit the notice a fold commit sends, without folding anything."""
         async with self.sessions.begin() as session:
-            await notify(session, Channel.SUMMARIES)
+            await session.execute(select(func.pg_notify(Channel.SUMMARIES, "")))
 
     async def _writer(self, session_id: UUID) -> ServiceAccountRef | None:
         async with self.engine.connect() as connection:

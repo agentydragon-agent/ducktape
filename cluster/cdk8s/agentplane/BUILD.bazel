@@ -696,6 +696,7 @@ py_library(
     name = "environment",
     srcs = ["environment.py"],
     deps = [
+        "//agentplane:subjects",
         "//agentplane/action_service:catalog",
         "//agentplane/action_service:mcp_settings",
         "//agentplane/action_service:operator_oidc_settings",

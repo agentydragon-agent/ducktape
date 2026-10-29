@@ -9,12 +9,11 @@ selected rows and content to the browser through authenticated Electric endpoint
 Actions, operator decisions and Connection consent. The staging instance lives in
 `cluster/k8s/agentplane-staging/`.
 
-The Go image is exercised by the k3s system tests. Image publication still selects
-`//agentplane/app:python_image`, so merging the Go implementation alone keeps staging on Python.
-A stacked cutover change switches publication and retires the Python runtime after retargeting its
-integration tests. Go tests live under `agentplane/app/go/`. The separate
-`//agentplane/app:migration_image` remains Python/Alembic until that retirement layer; it is a
-Deployment init container, not an API runtime.
+The published API image runs Go. Python remains only for the settings schema consumed by cdk8s,
+test fixtures, and HTTP test clients; app integration tests start the real Go executable.
+`//agentplane/app:migration_image` runs `//agentplane/app/go/migrate:app-migrate`, which applies the
+embedded Goose migrations before the API starts. The baseline adopts the existing app schema
+without dropping operator sessions or Thread metadata and retains the Alembic head marker for rollback.
 
 The API image contains no browser assets. The separate [static frontend](frontend/serving/README.md)
 serves the SPA and service worker on the same public origin through Gateway path routing; API,
@@ -67,95 +66,30 @@ bbr test //agentplane/app/...
 
 Thread lists, Thread views, the retained-event SSE API and Thread commands fail with the History
 Service's error: each typed command route first looks for its admission in the archive and checks
-the Thread's feed state (`api.py`, `threads/bridge.py`), so even a command the runner would accept is refused. Resume
+the Thread's feed state (`go/threadcommands/`), so even a command the runner would accept is refused. Resume
 reads the feed state the same way. Sandbox lifecycle and Action review keep working.
-`HistoryWatch` reconnects on its own, and Sessions recorded meanwhile get their Threads once it does.
+The app’s History watch reconnects on its own, and Sessions recorded meanwhile get their Threads once it does.
 
-## Python reference and tests
+## Implementation and testing
 
-The following Python modules are not packaged into the serving image. They remain available for the
-Python-specific tests and, where noted, the migration source. They do not provide coverage of the Go
-runtime.
-
-- `main.py`: the former Python entry point; `Settings` names every knob as a flag, an `AGENTPLANE_*`
-  variable, and a key of the YAML file `AGENTPLANE_CONFIG_FILE` points at.
-  `runner_gateway_target` is only for the health check; app live reads use the per-Sandbox
-  `runner_gateway_control_target` and projected `runner_gateway_token_file`.
-- `presets.py`: app-owned `SandboxPreset` and `ThreadPreset` configuration and concrete launch
-  resolution. Preset names stop at the app boundary; Kubernetes and the runner receive resolved
-  fields.
-- Sandbox provisioning uses the shared `agentplane/sandboxes` inventory directly as the requesting
-  operator. Session openings and commands use `SessionDispatcherClient`; the Sandbox control client
-  reads current-incarnation checks and runner status through the per-Sandbox Runner Proxy, carrying
-  the live Sandbox name, UID and owner. Runner status is informational and never wakes a Sandbox.
-  The app reads Kubernetes projections for UI updates and has no Gateway Session API client.
-- `egress_access.py`: PolicyBinding projections for the UI, and the operator's grants and
-  revocations of `PolicyBinding`s, written through the Kubernetes API by the app itself. Bindings remain
-  desired-state grants, with expiry/revocation per binding; Flux-owned and Sandbox-controlled bindings
-  are refused ([composition](../docs/egress_composition.md)).
-  The egress decision stream is in `live.py`; an unreachable proxy leaves the binding views readable.
-- `action_policy.py`: Action Service's auto-approval list for a ServiceAccount, read over gRPC with the operator federation.
-  App-level `default_policy_sets` are combined with the selected preset's policy sets by the shared
-  Sandbox inventory; Policy Controller materializes the resulting grants.
-- `threads/`: Threads over the History Service. The app's database holds each Thread's identity,
-  the name and archive state an operator sets (`Thread`, `models.py`). Everything folded from a
-  Session's events (summaries, entities, payload chunks, evidence) is the History Service's, read
-  over its gRPC API (`summaries.py`, `view/`) or replicated by Electric from its database.
-  `history_watch.py` follows the History Service's watch: `HistoryWatch` turns its fold commits
-  into `Channel.THREADS` wake-ups, and `SessionOpenings` opens a Thread for each Session it records,
-  whoever started it. `store.py` (`ThreadStore`) composes the app database and the History Service;
-  runners push their events to the History Service.
-- `threads/bridge.py`: browser-facing composition of session operations with archive synchronization.
-  `threads/runner_directory.py` resolves a Thread's Sandbox through the Runner Gateway and creates
-  UID-fenced clients for operations that need live runner state. The Sandbox page's retained Session
-  inventory comes from History Thread summaries, not a runner inventory RPC.
-- `api.py` is the Python REST behavior reference. The frontend's generated OpenAPI client comes from
-  Huma's typed Go routes via `//agentplane/app/go:export_schema_bin`. Raw streaming, auth-flow,
-  telemetry and pass-through proxy handlers remain ordinary HTTP handlers and are not included in
-  that generated JSON API document.
-- `threads/events/`: a Thread's archived events, read through the History Service. `event_log.py`
-  (`EventLogStore`: the Thread mapping, the archive's events and the feed state), `stream.py` (a
-  thread's archived events as SSE, so any replica serves it without a runner) and `debug.py` (the
-  typed, paginated observation and evidence reads).
-- `client.py`: the Python test client for the former Python HTTP surface, speaking its request and
-  response models and the runner protocol's `Event` messages.
-- `live.py`: one list-and-watch over Sandboxes, their Pods and the egress objects
-  (`../kubernetes_watch.py`), the action policy kinds watched only as a trigger to re-ask the Action
-  Service, and the SSE streams that push a snapshot of it to every open tab.
-- `changes.py`: the payload-free wake-up a reader of the cluster index or the thread store waits
-  on; a burst of changes coalesces into one re-read.
-- `database_updates.py`: the replica's one PostgreSQL `LISTEN` connection, turning each channel's
-  committed notifications (thread writes, deleted operator sessions) into that channel's
-  `changes.py` wake-up, and waking every channel after a reconnect.
-- `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
-  `auth_routes.py` are the browser's half of that (see below).
-- `threads/view/content.py`: `ContentStore`, reads of what the History Service's fold assembled
-  (`ThreadEntityView`, `../history_service/fold/views.py`).
-- `electric.py`: authenticated, scope-checked metadata, selected-command, and payload shape proxy.
-  The private Electric service reads PostgreSQL logical replication; app replicas do not retain
-  per-listener thread copies. The scope read is a long poll held until the thread's first fold.
-- `system_status.py`: the System page's checks. `GET /system/status` probes, concurrently and each
-  within a 5-second budget, the gRPC health service of the Runner Gateway, History Service, Action Service,
-  Connection Service, Notification Service and egress proxy admin port,
-  plus Electric's `/v1/health`; a probe that fails or times out is `down` with its
-  reason, never an error response. The Kubernetes API is not probed either; the freshness of the live
-  views shows it.
-- `action_federation.py`: request-bound operator federation into the canonical Action Service.
-- `grpc_stream.py`: shared gRPC deadlines and bearer handling for the generated operator-facing service
-  stubs, and the bounded opening/cleanup lifecycle for browser-relayed watches.
-- `frontend/connections/connection_service_client.ts`: generated ConnectionService ProtoJSON/NDJSON
-  message adapters for the consent page and OAuth-client settings; the app's BFF owns the browser HTTP
-  routes while the service owns Connections and consent.
-- `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.
-- `database.py`: the declarative `Base` every table maps onto and, in the former Python runtime, the
-  connection pool passed to each store and the database update listener.
-- `database_migrate.py` and `migrations/`: the Python Alembic history covering the tables of
-  `operator_sessions.py` and `threads/models.py`. Migrations run separately through
-  `:migration_image`, which fails when the migrated schema differs from the models; the Go server
-  itself never creates or checks tables at startup. `:image` and `:migration_image` are separate OCI
-  targets.
-- `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual
-  scenarios under `frontend/harness/`.
+- `go/`: configuration, Huma REST routes, raw HTTP streams and the service lifecycle. The generated
+  frontend API comes from `//agentplane/app/go:export_schema_bin`.
+- `go/threads/` and `go/threadcommands/`: operator-owned Thread metadata and Dispatcher submissions.
+  History owns event storage, folding and evidence; `go/historydata/` reads it through gRPC.
+- `go/liveinventory/` and `go/policyaccess/`: Kubernetes list/watch snapshots and policy projections.
+  Policy watches invalidate cached Action policy reads; the Action Service owns their evaluation.
+- `go/proxy/`: authenticated Electric shape forwarding with pinned Thread/projection scope.
+  Native service RPCs use generated app-side HTTP gateways with request-bound credentials.
+- `go/auth/` and `go/federation/`: PostgreSQL browser sessions, signed OIDC login and operator token
+  exchange. Logout, expiry and replica notifications end browser streams.
+- `go/migrations/` and `go/migrate/`: embedded Goose schema and the init-container executable.
+  The API itself never creates tables at startup.
+- `settings.py`, `presets.py`, `model_catalog.py`, `action_federation_settings.py`, `oidc.py` and
+  `sandbox_models.py`: deployment configuration schema used by cdk8s.
+- `testing/`: Go process fixtures, real service peers and test-only HTTP DTOs checked against Go's
+  OpenAPI schema. Browser and Electric tests use Chromium, PostgreSQL, History and Electric with
+  the Go API process. k3s tests deploy the packaged Go image.
+- `frontend/`: React SPA and visual scenarios on the repository's TypeScript/esbuild toolchain.
 
 ## Live views
 
@@ -260,7 +194,7 @@ their badges even while collapsed, and interrupted items do not become streaming
 a later turn starts.
 
 The retained-event SSE API reads archived events through the History Service on whichever replica
-receives its request. The History Service's fold-commit notices (`HistoryWatch`) and the app's
+receives its request. The History Service's fold-commit notices and the app's
 transactional `NOTIFY` wake Thread and inventory readers; both are hints, and the History Service's
 cursor remains authoritative.
 
@@ -634,7 +568,7 @@ keeps the status and reason visible while the projection catches up.
 ## Policy bindings
 
 The Sandbox page's Policies tab, carried in the live snapshot frame, lists every `PolicyBinding` naming
-the ServiceAccount the Sandbox runs as, from the objects the app's own watch holds (`egress_views.py`).
+the ServiceAccount the Sandbox runs as, from the objects the app's own watch holds (`go/policyaccess/`).
 A row is the binding's provenance (git; the Sandbox's own, which its controller keeps equal to the
 Sandbox's policy sets; or an operator's grant), its expiry, and the sets it names, a missing or refused
 one in red. Its icon sums up the verdicts each reader wrote to the binding's status (`KubernetesReady`,

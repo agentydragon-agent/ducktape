@@ -1,4 +1,4 @@
-"""The integration app: its Deployment (+ Alembic migrate initContainer), RBAC,
+"""The integration app: its Deployment (+ Goose migrate initContainer), RBAC,
 HTTPRoute, NetworkPolicy, and the agent and app ServiceAccounts.
 """
 
@@ -265,8 +265,8 @@ class App(Construct):
             # The Go HTTP/SSE drain is bounded by --shutdown-timeout (5s by default); the rest
             # of the grace period allows background workers and stores to close cleanly.
             termination_grace=Duration.seconds(60),
-            # The app's Alembic history. The app itself creates no tables; it verifies
-            # the migrated schema at startup and fails if this hasn't run.
+            # The Go migrator adopts the verified Alembic baseline and applies the app schema
+            # before the API starts.
             migrate=migrate_init_container(
                 f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}",
                 name="migrate",

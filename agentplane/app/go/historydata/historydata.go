@@ -240,9 +240,13 @@ func (s *Store) Observations(ctx context.Context, id uuid.UUID, before, after *u
 		cursors = append(cursors, row.GetCursor())
 	}
 	settled := page.GetSettled()
+	walk := cursors
 	var within, shortOK bool
 	if after != nil {
-		walk := append([]uint64{*after}, cursors...)
+		if *after > page.GetLastCursor() {
+			return ObservationPage{}, fmt.Errorf("%w: observation cursor exceeds the History watermark", ErrInvalidPage)
+		}
+		walk = append([]uint64{*after}, cursors...)
 		last := walk[len(walk)-1]
 		within = len(cursors) == 0 || cursors[len(cursors)-1] <= page.GetLastCursor()
 		shortOK = settledcursors.NextStored(last, settled) > page.GetLastCursor()
@@ -259,8 +263,8 @@ func (s *Store) Observations(ctx context.Context, id uuid.UUID, before, after *u
 		shortOK = (len(cursors) > 0 && cursors[0] == 1) || (len(cursors) == 0 && end < 1)
 	}
 	contiguous := true
-	for index := 1; index < len(cursors); index++ {
-		if cursors[index] != settledcursors.NextStored(cursors[index-1], settled) {
+	for index := 1; index < len(walk); index++ {
+		if walk[index] != settledcursors.NextStored(walk[index-1], settled) {
 			contiguous = false
 			break
 		}
