@@ -225,8 +225,8 @@
       "sha256": "oafEbvVhizs90iOC6SXiVX4M+FRvWkDaimjt4iYLJGI="
     },
     "skill-ci_latency": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_latency-62dbed5e7f12/ci_latency.skill",
-      "sha256": "YtvtXn8SfKPESdQ6QKcev9cRL/czCETKsj7o44Tb7dI="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_latency-cccd88c81391/ci_latency.skill",
+      "sha256": "zM2IyBORmIzwIWG8KbjIQDrSlt47bYQwqMgFiJBdqdM="
     },
     "skill-seaweed_operator": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-seaweed_operator-64e2b5617599/seaweed_operator.skill",
@@ -261,8 +261,8 @@
       "sha256": "xUItGqlnTTF8+qgdA/tqg6ZNnhIxMoP3fHK725YlEGY="
     },
     "cpap-gateway-health": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/cpap-gateway-health-15135a862953/cpap_gateway_health-0.1.0-py3-none-any.whl",
-      "sha256": "FRNahilTWful9uzcU5qrzvRQV7hTiZereAgAe+4s9FM="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/cpap-gateway-health-545fd14a47c4/cpap_gateway_health-0.1.0-py3-none-any.whl",
+      "sha256": "VF/RSkfEQSFx1Ngh1rF66OKKbKzLAC+ov4/OWyS28Pg="
     },
     "skill-debundle_explain": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_explain-b1c0a4cc9e1a/debundle_explain.skill",
