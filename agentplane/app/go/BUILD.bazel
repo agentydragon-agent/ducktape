@@ -138,6 +138,18 @@ go_test(
 )
 
 go_test(
+    name = "runnerapi_test",
+    srcs = ["runnerapi_test.go"],
+    embed = [":main_lib"],
+    deps = [
+        "//agentplane/app/go/auth",
+        "//agentplane/proto:runner_go_proto",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+    ],
+)
+
+go_test(
     name = "sandboxapi_test",
     srcs = ["sandboxapi_test.go"],
     embed = [":main_lib"],
