@@ -20,10 +20,12 @@ js_run_binary(
     tool = ":generate",
 )
 
+# quicktype-generated union decoders trigger SA4006 on unused object results.
 go_library(
     name = "protocol",
     srcs = [":generate_types"],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/codex/protocol",
+    tags = ["no-nogo"],
     visibility = ["//agentplane/runner:__subpackages__"],
 )
 
