@@ -1891,7 +1891,7 @@ old paths.
 
 ## 14. App Go port
 
-[#12223](https://github.com/agentydragon/ducktape/pull/12223) supersedes [#11821](https://github.com/agentydragon/ducktape/pull/11821). It builds the Go integration app and exercises its image in k3s while keeping Python image publication. The operator requested one stacked cutover/retirement PR on 2026-10-29: switch publication to Go, retarget integration tests and the test client, transfer the migration executable to Goose, and delete the Python runtime together. These implementation steps can proceed together under that request; the parent must land before the cutover layer. No manifest shape or database ownership moves between services.
+[#12223](https://github.com/agentydragon/ducktape/pull/12223) supersedes [#11821](https://github.com/agentydragon/ducktape/pull/11821). It builds the Go integration app and exercises its image in k3s while keeping Python image publication. The operator requested one stacked cutover/retirement PR on 2026-10-29 ([#12832](https://github.com/agentydragon/ducktape/pull/12832)): switch publication to Go, retarget integration tests and the test client, transfer the migration executable to Goose, and delete the Python runtime together. These implementation steps can proceed together under that request; the parent must land before the cutover layer. No manifest shape or database ownership moves between services.
 
 ```mermaid
 flowchart LR
