@@ -1,4 +1,5 @@
-import type { components } from "../schema";\nimport type { ActionPolicyUnavailable, ActionPolicyView } from "../actions/client";\n
+import type { components } from "../schema";
+import type { ActionPolicyUnavailable, ActionPolicyView } from "../actions/client";
 
 export interface CallerServiceAccount {
   namespace: string;
