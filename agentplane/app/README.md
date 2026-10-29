@@ -9,11 +9,12 @@ selected rows and content to the browser through authenticated Electric endpoint
 Actions, operator decisions and Connection consent. The staging instance lives in
 `cluster/k8s/agentplane-staging/`.
 
-The Python request-serving executable has been removed from the published image. The Python sources
-and tests remain as a reference implementation and Python-specific test suite; those tests exercise
-the Python app, not the Go runtime. Go tests live under `agentplane/app/go/`. The separate
-`//agentplane/app:migration_image` remains Python/Alembic because it still owns the app's database
-migrations; it is a Deployment init container, not an API runtime.
+The Go image is exercised by the k3s system tests. Image publication still selects
+`//agentplane/app:python_image`, so merging the Go implementation alone keeps staging on Python.
+A stacked cutover change switches publication and retires the Python runtime after retargeting its
+integration tests. Go tests live under `agentplane/app/go/`. The separate
+`//agentplane/app:migration_image` remains Python/Alembic until that retirement layer; it is a
+Deployment init container, not an API runtime.
 
 The API image contains no browser assets. The separate [static frontend](frontend/serving/README.md)
 serves the SPA and service worker on the same public origin through Gateway path routing; API,
