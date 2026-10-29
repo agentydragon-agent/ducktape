@@ -10,7 +10,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
 from agentplane.action_service.policy_view import EffectivePolicyView
-from agentplane.app.sandbox_models import MIN_IDLE_SUSPEND_AFTER_SECONDS, InboxTag, SessionDefaults
+from agentplane.app.sandbox_models import MIN_IDLE_SUSPEND_AFTER_SECONDS, InboxTag
 from agentplane.egress.decisions import Decision
 from agentplane.egress.resources import Target
 from agentplane.policy_sets import ConditionStatus
@@ -271,6 +271,19 @@ class RunnerStatusView(BaseModel):
     processes: list[HarnessProcessView]
     sessions: list[RunnerSessionView]
     lifecycle: RunnerLifecycleView | None = None
+
+
+class SessionDefaults(BaseModel):
+    """Session launch defaults returned by the Go app's preset endpoint."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    harness: Harness | None = None
+    model: str | None = None
+    cwd: str | None = None
+    reasoning_effort: str | None = None
+    instructions: str | None = None
+    setup_script: str | None = Field(default=None, max_length=65_536)
 
 
 class SandboxPresetView(BaseModel):
