@@ -25,11 +25,13 @@ fn prototype_intrinsic_roots(
     value: &ValueExpr,
     aliases: &BTreeMap<Id, NativeReceiverRoots>,
     index: &ExecutionIndex,
+    declared: &BTreeSet<Id>,
 ) -> IntrinsicRoots {
     intrinsic_roots(
         value,
         aliases,
         &index.global_object_names,
+        declared,
         &BTreeMap::new(),
         &BTreeMap::new(),
     )
@@ -39,7 +41,8 @@ fn prototype_intrinsic_roots(
         | NativeReceiverRoot::IntrinsicPrototype(root)
         | NativeReceiverRoot::IntrinsicDescendant(root) => Some(root),
         NativeReceiverRoot::OrdinaryDirect { .. }
-        | NativeReceiverRoot::OrdinaryDescendant { .. } => None,
+        | NativeReceiverRoot::OrdinaryDescendant { .. }
+        | NativeReceiverRoot::ArrayIteratorPrototype => None,
     })
     .collect()
 }
@@ -48,12 +51,13 @@ fn contained_roots(
     value: &ValueExpr,
     aliases: &BTreeMap<Id, NativeReceiverRoots>,
     index: &ExecutionIndex,
+    declared: &BTreeSet<Id>,
 ) -> IntrinsicRoots {
-    let mut roots = prototype_intrinsic_roots(value, aliases, index);
+    let mut roots = prototype_intrinsic_roots(value, aliases, index, declared);
     match value {
         ValueExpr::ObjectLiteral(_, properties) => {
             for (_, value) in properties {
-                roots.extend(contained_roots(value, aliases, index));
+                roots.extend(contained_roots(value, aliases, index, declared));
             }
         }
         ValueExpr::Origin(ValueOrigin::Function(key)) => {
@@ -67,6 +71,7 @@ fn contained_roots(
                     &ValueExpr::Binding(id.clone()),
                     aliases,
                     index,
+                    declared,
                 ));
             }
         }
@@ -84,6 +89,7 @@ fn contained_roots(
                                 &ValueExpr::Binding(id.clone()),
                                 aliases,
                                 index,
+                                declared,
                             ));
                         }
                     }
@@ -91,25 +97,25 @@ fn contained_roots(
             }
             if let Some(class) = index.class_values.get(key) {
                 for value in class.static_fields.values() {
-                    roots.extend(contained_roots(value, aliases, index));
+                    roots.extend(contained_roots(value, aliases, index, declared));
                 }
             }
         }
         ValueExpr::Member(base, property, _) => {
-            roots.extend(contained_roots(base, aliases, index));
+            roots.extend(contained_roots(base, aliases, index, declared));
             if property.as_deref().is_some_and(identity_property) {
                 roots.insert(IntrinsicRoot::Object);
             }
         }
         ValueExpr::Call(callee, args, _) | ValueExpr::New(callee, args, _) => {
-            roots.extend(contained_roots(callee, aliases, index));
+            roots.extend(contained_roots(callee, aliases, index, declared));
             for argument in args {
-                roots.extend(contained_roots(argument, aliases, index));
+                roots.extend(contained_roots(argument, aliases, index, declared));
             }
         }
         ValueExpr::Alternatives(options) => {
             for option in options {
-                roots.extend(contained_roots(option, aliases, index));
+                roots.extend(contained_roots(option, aliases, index, declared));
             }
         }
         _ => {}
@@ -162,6 +168,9 @@ fn contained_root_bindings(value: &ValueExpr, index: &ExecutionIndex, bindings: 
             }
         }
         ValueExpr::Member(base, ..) => contained_root_bindings(base, index, bindings),
+        ValueExpr::ArrayIteratorPrototype(expression) => {
+            contained_root_bindings(expression, index, bindings);
+        }
         ValueExpr::Call(callee, args, _) | ValueExpr::New(callee, args, _) => {
             contained_root_bindings(callee, index, bindings);
             for argument in args {
@@ -185,6 +194,7 @@ fn contained_root_bindings(value: &ValueExpr, index: &ExecutionIndex, bindings: 
 struct CapabilityContainmentRules<'a> {
     bindings: Vec<(Id, ValueExpr)>,
     index: &'a ExecutionIndex,
+    declared: &'a BTreeSet<Id>,
 }
 
 impl IterativeRules for CapabilityContainmentRules<'_> {
@@ -197,7 +207,7 @@ impl IterativeRules for CapabilityContainmentRules<'_> {
         let mut reads = BTreeSet::new();
         contained_root_bindings(value, self.index, &mut reads);
         let aliases = read_intrinsic_aliases(context, reads);
-        let roots = contained_roots(value, &aliases, self.index);
+        let roots = contained_roots(value, &aliases, self.index, self.declared);
         let roots: NativeReceiverRoots = roots
             .into_iter()
             .map(NativeReceiverRoot::Intrinsic)
@@ -242,6 +252,7 @@ impl ExecutionIndex {
         let mut inference = IterativeInference::new(CapabilityContainmentRules {
             bindings,
             index: self,
+            declared,
         });
         for (id, roots) in aliases {
             inference.seed(id.clone(), roots.clone());
@@ -322,7 +333,7 @@ impl ExecutionIndex {
             // even inside a deferred closure or an unindexed accessor body.
             if let ValueExpr::Member(base, Some(property), _) = &call.callee
                 && identity_property(property)
-                && prototype_intrinsic_roots(base, aliases, self).is_empty()
+                && prototype_intrinsic_roots(base, aliases, self, declared).is_empty()
             {
                 mutations.push(mutation(
                     call.owner,
@@ -346,7 +357,7 @@ impl ExecutionIndex {
                 continue;
             }
             if call.args.iter().any(|argument| {
-                let roots = contained_roots(argument, &capabilities, self);
+                let roots = contained_roots(argument, &capabilities, self, declared);
                 !roots.is_empty()
             }) {
                 mutations.push(mutation(
