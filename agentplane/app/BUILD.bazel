@@ -137,20 +137,6 @@ py_test(
 )
 
 py_test(
-    name = "test_presets",
-    srcs = ["test_presets.py"],
-    deps = [
-        ":conftest",
-        ":presets",
-        ":sandbox_models",
-        "//:conftest",
-        "//agentplane/runner:harness",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_bridge",
     size = "large",
     srcs = ["test_bridge.py"],
@@ -503,10 +489,7 @@ py_library(
         "//agentplane:__subpackages__",
         "//cluster/cdk8s:__subpackages__",
     ],
-    deps = [
-        "//agentplane/runner:harness",
-        "@pypi//pydantic",
-    ],
+    deps = ["@pypi//pydantic"],
 )
 
 py_library(
