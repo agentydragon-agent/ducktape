@@ -100,6 +100,14 @@ func (c *Client) ReadSessionEvents(ctx context.Context, request *historypb.ReadS
 	return client.ReadSessionEvents(ctx, request)
 }
 
+func (c *Client) FollowSession(ctx context.Context, request *historypb.FollowSessionRequest) (grpc.ServerStreamingClient[historypb.FollowSessionResponse], error) {
+	client, err := c.grpcClient()
+	if err != nil {
+		return nil, err
+	}
+	return client.FollowSession(ctx, request)
+}
+
 func (c *Client) ReadSessionObservations(ctx context.Context, request *historypb.ReadSessionObservationsRequest) (*historypb.ReadSessionObservationsResponse, error) {
 	client, err := c.grpcClient()
 	if err != nil {
@@ -178,6 +186,7 @@ func (c *Client) Close() error {
 
 var _ interface {
 	ReadSessionEvents(context.Context, *historypb.ReadSessionEventsRequest) (*historypb.ReadSessionEventsResponse, error)
+	FollowSession(context.Context, *historypb.FollowSessionRequest) (grpc.ServerStreamingClient[historypb.FollowSessionResponse], error)
 	ReadSessionObservations(context.Context, *historypb.ReadSessionObservationsRequest) (*historypb.ReadSessionObservationsResponse, error)
 	GetSessionSummary(context.Context, *historypb.GetSessionSummaryRequest) (*historypb.SessionSummary, error)
 	ReadThreadEntities(context.Context, *historypb.ReadThreadEntitiesRequest) (*historypb.ReadThreadEntitiesResponse, error)

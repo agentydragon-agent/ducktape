@@ -65,6 +65,7 @@ type FoldSummary struct {
 	Sandbox             string
 	SandboxUID          string
 	ProjectionEpoch     *string
+	CommittedCursor     uint64
 	FoldedThrough       uint64
 	FirstEventAt        *time.Time
 	LastEventAt         *time.Time
@@ -155,7 +156,7 @@ func foldSummary(message *historypb.SessionSummary) (FoldSummary, error) {
 	if message == nil {
 		return FoldSummary{}, fmt.Errorf("%w: empty summary", ErrInvalidPage)
 	}
-	view := FoldSummary{Present: true, FoldedThrough: message.GetFoldedThrough()}
+	view := FoldSummary{Present: true, CommittedCursor: message.GetCommittedCursor(), FoldedThrough: message.GetFoldedThrough()}
 	if message.ProjectionEpoch != nil {
 		epoch := message.GetProjectionEpoch()
 		view.ProjectionEpoch = &epoch
@@ -320,80 +321,6 @@ func (s *Store) ObservationEntry(ctx context.Context, id uuid.UUID, cursor uint6
 		return nil, err
 	}
 	return &ObservationEntry{Cursor: fmt.Sprint(cursor), Entry: entry}, nil
-}
-
-// Events returns a bounded contiguous runner-event window, treating settled and removed cursor
-// ranges as covered. A first NOT_FOUND means the runner has not pushed the Session yet.
-func (s *Store) Events(ctx context.Context, id uuid.UUID, after uint64, limit int) ([]*eventlogpb.EventEntry, error) {
-	if limit < 0 {
-		return nil, errors.New("event limit must be non-negative")
-	}
-	result := make([]*eventlogpb.EventEntry, 0, limit)
-	cursor := after
-	var through *uint64
-	for len(result) < limit {
-		requested := min(limit-len(result), 1000)
-		if through != nil {
-			if cursor > *through {
-				return nil, fmt.Errorf("%w: History Service regressed behind cursor", ErrInvalidPage)
-			}
-			remaining := *through - cursor
-			if remaining < uint64(requested) {
-				requested = int(remaining)
-			}
-			if requested == 0 {
-				break
-			}
-		}
-		page, err := s.reader.ReadSessionEvents(ctx, &historypb.ReadSessionEventsRequest{
-			SessionId: id.String(), AfterCursor: cursor, Limit: uint32(requested),
-		})
-		if status.Code(err) == codes.NotFound && through == nil {
-			return result, nil
-		}
-		if err != nil {
-			return nil, err
-		}
-		if through == nil {
-			watermark := page.GetLastCursor()
-			through = &watermark
-		}
-		if page.GetLastCursor() < *through || cursor > page.GetLastCursor() {
-			return nil, fmt.Errorf("%w: History Service regressed behind cursor", ErrInvalidPage)
-		}
-		entries := page.GetEntries()
-		unstored := settledcursors.Unstored(page)
-		if len(entries) > requested {
-			return nil, fmt.Errorf("%w: History Service exceeded requested page size", ErrInvalidPage)
-		}
-		previous := cursor
-		for _, entry := range entries {
-			if entry.GetCursor() != settledcursors.NextStored(previous, unstored) {
-				return nil, fmt.Errorf("%w: History Service page has an uncovered cursor gap", ErrInvalidPage)
-			}
-			previous = entry.GetCursor()
-		}
-		if len(entries) > 0 && entries[len(entries)-1].GetCursor() > page.GetLastCursor() {
-			return nil, fmt.Errorf("%w: History Service entry exceeds watermark", ErrInvalidPage)
-		}
-		if len(entries) == 0 {
-			if settledcursors.NextStored(cursor, unstored) <= *through {
-				return nil, fmt.Errorf("%w: History Service omitted entries from published prefix", ErrInvalidPage)
-			}
-			break
-		}
-		prior := len(result)
-		for _, entry := range entries {
-			if entry.GetCursor() <= *through {
-				result = append(result, entry)
-			}
-		}
-		if len(result) == prior {
-			break
-		}
-		cursor = result[len(result)-1].GetCursor()
-	}
-	return result, nil
 }
 
 type Scope struct {

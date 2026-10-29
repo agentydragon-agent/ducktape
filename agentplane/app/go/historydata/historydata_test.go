@@ -96,39 +96,19 @@ func TestObservationWindowRejectsUncoveredCursorGap(t *testing.T) {
 	}
 }
 
-func TestEventsAcceptSettlementRangesButRejectMissingPublishedEvents(t *testing.T) {
-	id := uuid.New()
-	store, err := New(&fakeHistoryReader{events: &historypb.ReadSessionEventsResponse{
-		LastCursor:  3,
-		Entries:     []*eventlogpb.EventEntry{{Cursor: 1}, {Cursor: 3}},
-		Settlements: []*historypb.SettledDeltas{{Ranges: []*historypb.CursorRange{{First: 2, Last: 2}}}},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	entries, err := store.Events(t.Context(), id, 0, 2)
-	if err != nil || len(entries) != 2 {
-		t.Fatalf("Events = %v, %v", entries, err)
-	}
-	store.reader = &fakeHistoryReader{events: &historypb.ReadSessionEventsResponse{
-		LastCursor: 3, Entries: []*eventlogpb.EventEntry{{Cursor: 1}, {Cursor: 3}},
-	}}
-	_, err = store.Events(t.Context(), id, 0, 2)
-	if !errors.Is(err, ErrInvalidPage) {
-		t.Fatalf("Events error = %v, want ErrInvalidPage", err)
-	}
-}
-
 func TestFoldSummaryPreservesSandboxIncarnation(t *testing.T) {
 	uid := uuid.NewString()
 	view, err := foldSummary(&historypb.SessionSummary{
-		Sandbox: &historypb.SandboxRef{Name: "worker", Uid: &uid},
+		Sandbox: &historypb.SandboxRef{Name: "worker", Uid: &uid}, CommittedCursor: 19,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if view.Sandbox != "worker" || view.SandboxUID != uid {
 		t.Fatalf("summary Sandbox identity = %q/%q, want worker/%q", view.Sandbox, view.SandboxUID, uid)
+	}
+	if view.CommittedCursor != 19 {
+		t.Fatalf("committed cursor = %d, want 19", view.CommittedCursor)
 	}
 }
 

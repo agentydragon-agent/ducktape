@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
@@ -25,7 +24,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
-	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
@@ -34,13 +32,11 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/reflect/protoreflect"
 	corev1 "k8s.io/api/core/v1"
 )
 
 const (
 	liveHealthInterval = 15 * time.Second
-	eventReplayPage    = 1000
 	maxNoticeThreads   = 200
 )
 
@@ -74,7 +70,6 @@ type streamThreadStore interface {
 type streamHistoryStore interface {
 	threadReadHistory
 	ReadWatermark(context.Context, uuid.UUID) (uint64, error)
-	Events(context.Context, uuid.UUID, uint64, int) ([]*eventlogpb.EventEntry, error)
 }
 
 // StreamingDependencies are the narrow runtime interfaces used by SSE and raw upstream routes.
@@ -87,6 +82,9 @@ type StreamingDependencies struct {
 	Sandboxes        streamSandboxInventory
 	Threads          streamThreadStore
 	History          streamHistoryStore
+	HistoryFollower  interface {
+		FollowSession(context.Context, *historypb.FollowSessionRequest) (grpc.ServerStreamingClient[historypb.FollowSessionResponse], error)
+	}
 	ActionPolicy     policyaccess.ActionPolicyRPC
 	Federator        policyaccess.ActionFederator
 	ActionServiceURL string
@@ -914,8 +912,8 @@ func (r *streamingRoutes) relayNotificationStream(w http.ResponseWriter, ctx con
 				r.logger().WarnContext(ctx, label+" stream sent an empty snapshot")
 				return
 			}
-			data, err := protoJSONData(message, true)
-			if err != nil || writeSSE(w, "snapshot", data, nil) != nil {
+			data, err := (protojson.MarshalOptions{EmitDefaultValues: true}).Marshal(message)
+			if err != nil || writeSSEData(w, "snapshot", data, nil) != nil {
 				return
 			}
 			first = false
@@ -999,7 +997,7 @@ func (r *streamingRoutes) relayConsole(w http.ResponseWriter, ctx context.Contex
 }
 
 func (r *streamingRoutes) threadEvents(w http.ResponseWriter, request *http.Request) {
-	if r.deps.Threads == nil || r.deps.History == nil || r.deps.Updates == nil {
+	if r.deps.Threads == nil || r.deps.History == nil || r.deps.HistoryFollower == nil || r.deps.Updates == nil {
 		writeDetailError(w, http.StatusServiceUnavailable, "Thread event stream is unavailable")
 		return
 	}
@@ -1059,72 +1057,193 @@ func (r *streamingRoutes) threadEvents(w http.ResponseWriter, request *http.Requ
 		return
 	}
 	attachedSent := false
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-		if !attachedSent {
-			summary, err := r.deps.History.GetSummary(ctx, id)
-			if err != nil {
-				r.logger().WarnContext(ctx, "read Thread event feed snapshot", "error", err)
-				return
-			}
-			if summary.Feed != nil && summary.Feed.Attached != nil {
-				data, marshalErr := protoJSONData(summary.Feed.Attached, false)
-				if marshalErr != nil || writeSSE(w, "attached", data, nil) != nil {
-					return
-				}
-				attachedSent = true
-			}
-		}
-		entries, err := r.deps.History.Events(ctx, id, cursor, eventReplayPage)
-		if err != nil {
-			r.logger().WarnContext(ctx, "read Thread event stream", "error", err)
-			return
-		}
-		for _, entry := range entries {
-			data, marshalErr := protoJSONData(entry, false)
-			if marshalErr != nil || writeSSE(w, "event", data, &entry.Cursor) != nil {
-				return
-			}
-			cursor = entry.GetCursor()
-			if awaiting != nil && entry.GetEvent() != nil && entry.GetEvent().GetCommandAdmitted() != nil && entry.GetEvent().GetCommandAdmitted().GetCommand().GetCommandId() == *awaiting {
-				awaiting = nil
-			}
-		}
+	checkSummary := func() bool {
 		summary, err := r.deps.History.GetSummary(ctx, id)
 		if err != nil {
 			r.logger().WarnContext(ctx, "read Thread event feed status", "error", err)
-			return
+			return true
 		}
-		if awaiting == nil && summary.Feed != nil && summary.Feed.End != nil && summary.Feed.Attached != nil && summary.Feed.Attached.GetLastCursor() >= cursor && summary.FoldedThrough <= cursor {
+		if !attachedSent && summary.Feed != nil && summary.Feed.Attached != nil {
+			data, marshalErr := (protojson.MarshalOptions{}).Marshal(summary.Feed.Attached)
+			if marshalErr != nil || writeSSEData(w, "attached", data, nil) != nil {
+				return true
+			}
+			attachedSent = true
+		}
+		if awaiting == nil && summary.Feed != nil && summary.Feed.End != nil && summary.Feed.Attached != nil && summary.CommittedCursor <= cursor && summary.Feed.Attached.GetLastCursor() >= cursor {
 			if summary.Feed.Status == historypb.FeedStatus_FEED_STATUS_FAILED {
 				_ = writeSSE(w, "error", map[string]string{"message": summary.Feed.End.Message}, nil)
 			} else {
 				_ = writeSSE(w, "end", map[string]any{}, nil)
 			}
-			return
+			return true
 		}
-		heartbeat := r.deps.ThreadHeartbeat
-		if heartbeat <= 0 {
-			heartbeat = 15 * time.Second
+		return false
+	}
+	heartbeat := r.deps.ThreadHeartbeat
+	if heartbeat <= 0 {
+		heartbeat = 15 * time.Second
+	}
+	timer := time.NewTimer(heartbeat)
+	defer timer.Stop()
+	resetHeartbeat := func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
 		}
-		timer := time.NewTimer(heartbeat)
+		timer.Reset(heartbeat)
+	}
+	waitForHistory := func() bool {
 		select {
 		case <-ctx.Done():
-			timer.Stop()
-			return
+			return true
 		case <-changes:
-			timer.Stop()
+			resetHeartbeat()
+			return checkSummary()
 		case <-timer.C:
 			if _, err := io.WriteString(w, ": keepalive\n\n"); err != nil {
-				return
+				return true
 			}
 			if flusher, ok := w.(http.Flusher); ok {
 				flusher.Flush()
 			}
+			if checkSummary() {
+				return true
+			}
+			timer.Reset(heartbeat)
+			return false
+		}
+	}
+	if checkSummary() {
+		return
+	}
+	type followOutcome int
+	const (
+		followStop followOutcome = iota
+		followRenew
+		followRetryMissing
+	)
+	followOnce := func() followOutcome {
+		followCtx, cancelFollow := context.WithCancel(ctx)
+		defer cancelFollow()
+		stream, err := r.deps.HistoryFollower.FollowSession(followCtx, &historypb.FollowSessionRequest{
+			SessionId: id.String(), Start: &historypb.FollowSessionRequest_AfterCursor{AfterCursor: cursor}, Follow: true,
+		})
+		if err != nil {
+			if status.Code(err) == codes.NotFound {
+				return followRetryMissing
+			}
+			r.logger().WarnContext(ctx, "open Thread event follow", "error", err)
+			return followStop
+		}
+		received := make(chan struct {
+			response *historypb.FollowSessionResponse
+			err      error
+		}, 1)
+		startReceive := func() {
+			go func() {
+				response, err := stream.Recv()
+				received <- struct {
+					response *historypb.FollowSessionResponse
+					err      error
+				}{response: response, err: err}
+			}()
+		}
+		startReceive()
+		for {
+			select {
+			case <-ctx.Done():
+				return followStop
+			case <-changes:
+				if checkSummary() {
+					return followStop
+				}
+				resetHeartbeat()
+			case <-timer.C:
+				if _, err := io.WriteString(w, ": keepalive\n\n"); err != nil {
+					return followStop
+				}
+				if flusher, ok := w.(http.Flusher); ok {
+					flusher.Flush()
+				}
+				if checkSummary() {
+					return followStop
+				}
+				timer.Reset(heartbeat)
+			case result := <-received:
+				if result.err != nil {
+					if ctx.Err() != nil {
+						return followStop
+					}
+					if status.Code(result.err) == codes.NotFound {
+						return followRetryMissing
+					}
+					if errors.Is(result.err, io.EOF) {
+						r.logger().WarnContext(ctx, "Thread event follow ended before a terminal frame", "error", result.err)
+					} else {
+						r.logger().WarnContext(ctx, "Thread event follow ended", "error", result.err)
+					}
+					return followStop
+				}
+				if result.response == nil {
+					r.logger().WarnContext(ctx, "Thread event follow returned an empty frame")
+					return followStop
+				}
+				response := result.response
+				switch frame := response.GetFrame().(type) {
+				case *historypb.FollowSessionResponse_Entries:
+					if frame.Entries == nil {
+						r.logger().WarnContext(ctx, "Thread event follow returned an empty entries frame")
+						return followStop
+					}
+					for _, entry := range frame.Entries.GetEntries() {
+						if entry == nil {
+							r.logger().WarnContext(ctx, "Thread event follow returned an empty entry")
+							return followStop
+						}
+						data, marshalErr := (protojson.MarshalOptions{}).Marshal(entry)
+						entryCursor := entry.GetCursor()
+						if marshalErr != nil || writeSSEData(w, "event", data, &entryCursor) != nil {
+							return followStop
+						}
+						if awaiting != nil && entry.GetEvent() != nil && entry.GetEvent().GetCommandAdmitted() != nil && entry.GetEvent().GetCommandAdmitted().GetCommand().GetCommandId() == *awaiting {
+							awaiting = nil
+						}
+					}
+					cursor = response.GetThroughCursor()
+				case *historypb.FollowSessionResponse_CaughtUp:
+					cursor = response.GetThroughCursor()
+					if checkSummary() {
+						return followStop
+					}
+				case *historypb.FollowSessionResponse_Settled, *historypb.FollowSessionResponse_Removed:
+				case *historypb.FollowSessionResponse_ReconnectRequired:
+					cursor = response.GetThroughCursor()
+					if checkSummary() {
+						return followStop
+					}
+					return followRenew
+				default:
+					r.logger().WarnContext(ctx, "Thread event follow returned an unknown frame")
+					return followStop
+				}
+				resetHeartbeat()
+				startReceive()
+			}
+		}
+	}
+	for {
+		switch followOnce() {
+		case followRenew:
+			continue
+		case followRetryMissing:
+			if waitForHistory() {
+				return
+			}
+		default:
+			return
 		}
 	}
 }
@@ -1251,88 +1370,6 @@ func writeSSEData(w http.ResponseWriter, event string, data []byte, id *uint64) 
 		flusher.Flush()
 	}
 	return nil
-}
-
-// protoJSONData follows the protobuf JSON field/enum spellings while matching Python's
-// MessageToDict integer representation (64-bit integers remain JSON numbers rather than strings).
-func protoJSONData(message proto.Message, emitDefaults bool) (any, error) {
-	encoded, err := (protojson.MarshalOptions{EmitDefaultValues: emitDefaults}).Marshal(message)
-	if err != nil {
-		return nil, err
-	}
-	decoder := json.NewDecoder(strings.NewReader(string(encoded)))
-	decoder.UseNumber()
-	var value any
-	if err := decoder.Decode(&value); err != nil {
-		return nil, err
-	}
-	return normalizeProtoJSON(message.ProtoReflect().Descriptor(), value), nil
-}
-
-func normalizeProtoJSON(descriptor protoreflect.MessageDescriptor, value any) any {
-	if descriptor == nil || value == nil {
-		return value
-	}
-	switch string(descriptor.FullName()) {
-	case "google.protobuf.Timestamp", "google.protobuf.Duration", "google.protobuf.Any", "google.protobuf.Struct", "google.protobuf.Value", "google.protobuf.ListValue":
-		return value
-	}
-	fields, ok := value.(map[string]any)
-	if !ok {
-		return value
-	}
-	for index := 0; index < descriptor.Fields().Len(); index++ {
-		field := descriptor.Fields().Get(index)
-		name := string(field.JSONName())
-		current, present := fields[name]
-		if !present {
-			continue
-		}
-		fields[name] = normalizeProtoJSONField(field, current)
-	}
-	return fields
-}
-
-func normalizeProtoJSONField(field protoreflect.FieldDescriptor, value any) any {
-	if value == nil {
-		return nil
-	}
-	if field.IsMap() {
-		values, ok := value.(map[string]any)
-		if !ok {
-			return value
-		}
-		for key, item := range values {
-			values[key] = normalizeProtoScalar(field.MapValue(), item)
-		}
-		return values
-	}
-	if field.IsList() {
-		values, ok := value.([]any)
-		if !ok {
-			return value
-		}
-		for index, item := range values {
-			values[index] = normalizeProtoScalar(field, item)
-		}
-		return values
-	}
-	return normalizeProtoScalar(field, value)
-}
-
-func normalizeProtoScalar(field protoreflect.FieldDescriptor, value any) any {
-	switch field.Kind() {
-	case protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind,
-		protoreflect.Uint64Kind, protoreflect.Fixed64Kind:
-		if text, ok := value.(string); ok {
-			return json.Number(text)
-		}
-	case protoreflect.MessageKind, protoreflect.GroupKind:
-		if value != nil {
-			return normalizeProtoJSON(field.Message(), value)
-		}
-	}
-	return value
 }
 
 func waitContext(ctx context.Context, duration time.Duration) bool {

@@ -313,7 +313,7 @@ func run(ctx context.Context, config Config) error {
 	server.RegisterRawRoute("POST /telemetry/v1/traces", traceRelayHandler(), true)
 	RegisterStreamingRoutes(server, StreamingDependencies{
 		Auth: appAuth, Updates: wakeupHub, UpdatesConnected: wakeupHub.Connected,
-		Live: liveIndex, Sandboxes: inventory, Threads: threadStore, History: history,
+		Live: liveIndex, Sandboxes: inventory, Threads: threadStore, History: history, HistoryFollower: historyReaderClient,
 		ActionPolicy: actionClient, Federator: federator,
 		ActionServiceURL: config.ActionFederation.ServiceURL,
 		DispatcherHTTP:   dispatcherGateway, ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,
