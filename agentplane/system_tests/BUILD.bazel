@@ -288,6 +288,7 @@ system_test(
         "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//agentplane:sandbox_resource",
         "//agentplane/app/testing:client",
+        "//agentplane/app/threads:thread_view",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
