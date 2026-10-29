@@ -3,8 +3,7 @@ import { useMatch } from "react-router";
 
 import { useLive, type Live, type WatchHealth } from "../live";
 
-import type { SandboxView } from "../sandboxes/client";
-import type { ThreadView } from "./client";
+import type { SandboxView, ThreadView } from "../schema";
 
 export type ThreadsSnapshot = {
   sandboxes: SandboxView[];

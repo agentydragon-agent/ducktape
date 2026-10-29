@@ -1,13 +1,6 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
-import type {
-  LangfuseSearchSettings,
-  RunnerStatusView,
-  SandboxSnapshot,
-  SandboxView,
-  ThreadView,
-  TraceSearchSettings,
-} from "../schema";
+import type { LangfuseSearchSettings, SandboxView, ThreadView, TraceSearchSettings } from "../schema";
 import { TEST_REASONING_EFFORTS, testModelCatalog } from "../testing/model_catalog";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -21,6 +14,8 @@ import type { Live } from "../live";
 import { SandboxRoute } from "../app";
 import { SandboxPage } from "./sandbox_page";
 import { TopbarContext } from "../topbar";
+import type { RunnerStatusView } from "./client";
+import type { SandboxSnapshot } from "./live";
 
 const fetchMock = vi.hoisted(() => {
   const fetch = vi.fn<(request: Request) => Promise<Response>>();

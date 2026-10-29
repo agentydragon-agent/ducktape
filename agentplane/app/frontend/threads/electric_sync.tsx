@@ -29,9 +29,8 @@ import {
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState, useSyncExternalStore } from "react";
 import { z } from "zod";
 
-import type { ThreadScopeResponse } from "../schema";
 import { displayableError, fetchWithLogin } from "../client";
-import { threadScope } from "./client";
+import { threadScope, type ThreadScope } from "./client";
 import { backoff, type StreamConnection } from "../live_stream";
 import {
   decimalBigInt,
@@ -605,7 +604,7 @@ class EpochWindow extends Listeners {
   #position: ShapePosition | null = null;
   #state: WindowState = NO_WINDOW;
 
-  constructor(threadId: string, scope: ThreadScopeResponse, onGone: () => void) {
+  constructor(threadId: string, scope: ThreadScope, onGone: () => void) {
     super();
     this.#threadId = threadId;
     this.epoch = scope.projection_epoch;

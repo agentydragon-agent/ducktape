@@ -23,7 +23,6 @@ ts_library(
     srcs = ["state.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:status_mark",
         "//agentplane/app/frontend/sandboxes:client",
     ],
@@ -35,7 +34,6 @@ agentplane_vitest_test(
     deps = [
         ":state",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/sandboxes:client",
     ],
 )
@@ -51,7 +49,6 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//agentplane/app/frontend:mark_glyph",
-        "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:status_mark",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend/sandboxes:client",

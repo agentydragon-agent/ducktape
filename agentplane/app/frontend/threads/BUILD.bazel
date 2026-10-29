@@ -581,7 +581,6 @@ ts_library(
         "//:node_modules/zod",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:live_stream",
-        "//agentplane/app/frontend:schema",
     ],
 )
 
@@ -610,7 +609,6 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:live_stream",
-        "//agentplane/app/frontend:schema",
     ],
 )
 
@@ -875,12 +873,11 @@ ts_library(
     srcs = ["live.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//agentplane/app/frontend:live",
-        "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/app/frontend:schema",
     ],
 )
 

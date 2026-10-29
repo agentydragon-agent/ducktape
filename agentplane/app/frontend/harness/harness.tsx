@@ -14,19 +14,12 @@ import {
   routes,
   UNANSWERED,
 } from "./network";
-import type {
-  ActionPolicyView,
-  BindingView,
-  Decision,
-  DecisionsSnapshot,
-  PolicySetView,
-  SandboxSnapshot,
-  SandboxView,
-  SandboxesSnapshot,
-  ThreadView,
-  ThreadsSnapshot,
-  WatchHealth,
-} from "../schema";
+import type { SandboxView, ThreadView } from "../schema";
+import type { ActionPolicyView } from "../actions/client";
+import type { BindingView, Decision, PolicySetView } from "../sandboxes/client";
+import type { DecisionsSnapshot, SandboxSnapshot, SandboxesSnapshot } from "../sandboxes/live";
+import type { WatchHealth } from "../live";
+import type { ThreadsSnapshot } from "../threads/live";
 import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
 import "@mantine/core/styles.css";
 

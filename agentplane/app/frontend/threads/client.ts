@@ -1,10 +1,16 @@
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 
-import type { components } from "../schema";
+import type {
+  EvidencePage,
+  NativeFramePage,
+  ObservationEntry,
+  ObservationPage,
+  ThreadView as ThreadViewSchema,
+} from "../schema";
 import { api, displayableError, fetchWithLogin, ok } from "../client";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 
-export type ThreadView = components["schemas"]["ThreadView"];
+type ThreadView = ThreadViewSchema;
 export type ThreadScope = { projection_epoch: string; through_cursor: string };
 export type ThreadPayloadRef = {
   projection_epoch: string;
@@ -50,16 +56,11 @@ export type ThreadEntityView = {
   text_ref: ThreadPayloadRef | null;
   state: ThreadEntityState;
 };
-export type EvidencePage = components["schemas"]["EvidencePage"];
-export type NativeFramePage = components["schemas"]["NativeFramePage"];
-export type ObservationPage = components["schemas"]["ObservationPage"];
-export type ArchivedObservationEntry = components["schemas"]["ObservationEntry"];
-
 export async function threadObservationEntry(
   threadId: string,
   cursor: string,
   signal?: AbortSignal
-): Promise<ArchivedObservationEntry> {
+): Promise<ObservationEntry> {
   return ok(
     await api.GET("/threads/{thread_id}/observations/{cursor}", {
       // openapi-fetch serializes path values without converting them to JS numbers.

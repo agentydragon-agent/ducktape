@@ -1,4 +1,4 @@
-import type { BindingView } from "../schema";
+import type { BindingView } from "../sandboxes/client";
 import type { BindingStateKind } from "../status_mark";
 
 export interface BindingState {

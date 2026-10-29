@@ -1,9 +1,6 @@
-import type { components } from "./schema";
+import type { ModelCatalog, ModelOption, ThreadView } from "./schema";
 import { api, ok } from "./client";
 
-export type ModelOption = components["schemas"]["ModelOption"];
-export type ModelCatalog = components["schemas"]["ModelCatalog"];
-type ThreadView = components["schemas"]["ThreadView"];
 export type Harness = NonNullable<ThreadView["harness"]>;
 
 /** An empty model list disables new-session selection, not the native harness. */

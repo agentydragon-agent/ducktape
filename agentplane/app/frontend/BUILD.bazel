@@ -119,17 +119,6 @@ openapi_js_library(
 )
 
 ts_library(
-    name = "test_model_catalog",
-    testonly = True,
-    srcs = ["test_model_catalog.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":model_catalog",
-    ],
-)
-
-ts_library(
     name = "frontend_config",
     srcs = ["frontend_config.ts"],
     tsconfig = TSCONFIG,
@@ -1057,7 +1046,7 @@ ts_library(
     name = "harness_behavior",
     srcs = ["harness_behavior.ts"],
     tsconfig = TSCONFIG,
-    deps = [":schema"],
+    deps = [":model_catalog"],
 )
 
 ts_library(

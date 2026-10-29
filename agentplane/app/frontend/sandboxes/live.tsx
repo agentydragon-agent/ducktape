@@ -3,8 +3,8 @@ import { createContext, type JSX, type ReactNode, useContext } from "react";
 import { useLive, type Live, type WatchHealth } from "../live";
 
 import type { ActionPolicyUnavailable, ActionPolicyView } from "../actions/client";
-import type { BindingView, Decision, SandboxView } from "./client";
-import type { ThreadView } from "../threads/client";
+import type { SandboxView, ThreadView } from "../schema";
+import type { BindingView, Decision } from "./client";
 
 export type SandboxesSnapshot = { sandboxes: SandboxView[]; watch: WatchHealth };
 export type SandboxSnapshot = {

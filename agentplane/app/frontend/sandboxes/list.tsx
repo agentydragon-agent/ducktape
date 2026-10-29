@@ -15,7 +15,7 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
-import type { NewSandbox, NewSandboxDefaults, SandboxPresetView, SandboxView, SandboxesSnapshot } from "../schema";
+import type { NewSandboxDefaults, NewSandboxInputBody, SandboxPresetView, SandboxView } from "../schema";
 import { IconDotsVertical } from "../icons";
 import { type JSX, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -23,7 +23,7 @@ import { useSearchParams } from "react-router";
 import { api, displayableError } from "../client";
 import { IdleSuspendField, IdleSuspendInput } from "./idle_suspend";
 import { ConfirmDelete, deletable, deleting, SuspendResume } from "./lifecycle";
-import { liveSandboxesUrl } from "./live";
+import { liveSandboxesUrl, type SandboxesSnapshot } from "./live";
 import { useLive } from "../live";
 import { MarkGlyph } from "../mark_glyph";
 import { placeholderSandboxName, sandboxNameError } from "./sandbox_name";
@@ -32,7 +32,7 @@ import { SANDBOX_STATUS_MARKS } from "../status_mark";
 import { TopbarTitle } from "../topbar";
 import { WakeOnSendCheckbox } from "./wake_on_send";
 
-const EMPTY_FORM: NewSandbox = {
+const EMPTY_FORM: NewSandboxInputBody = {
   name: "",
   template: "",
   policy_sets: [],
@@ -40,7 +40,9 @@ const EMPTY_FORM: NewSandbox = {
   bootstrap: "",
   wake_on_send: false,
 };
-type NewSandboxForm = Omit<NewSandbox, "idle_suspend_after_seconds"> & { idle_suspend_after_seconds?: number | null };
+type NewSandboxForm = Omit<NewSandboxInputBody, "idle_suspend_after_seconds"> & {
+  idle_suspend_after_seconds?: number | null;
+};
 // The picked preset, in the URL like the sandbox page's tab, so a launch form can be linked to.
 const PRESET_PARAM = "preset";
 
