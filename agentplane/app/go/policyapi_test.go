@@ -39,10 +39,11 @@ func TestFrontendConfigServesOnlyBrowserSettings(t *testing.T) {
 				},
 				LangfuseSearch: &LangfuseSearchSettings{
 					BaseURL: "https://langfuse.example.test/", ProjectID: "fixture-project",
+					SessionMetadataKey:          "session",
 					SandboxNamespaceMetadataKey: "namespace", SandboxServiceAccountMetadataKey: "account",
 				},
 			},
-			want: `{"trace_search":{"grafana_base_url":"https://grafana.example.test/","tempo_datasource_uid":"fixture-tempo","deployment_environment":"fixture"},"langfuse_search":{"base_url":"https://langfuse.example.test/","project_id":"fixture-project","sandbox_namespace_metadata_key":"namespace","sandbox_service_account_metadata_key":"account"}}`,
+			want: `{"trace_search":{"grafana_base_url":"https://grafana.example.test/","tempo_datasource_uid":"fixture-tempo","deployment_environment":"fixture"},"langfuse_search":{"base_url":"https://langfuse.example.test/","project_id":"fixture-project","session_metadata_key":"session","sandbox_namespace_metadata_key":"namespace","sandbox_service_account_metadata_key":"account"}}`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

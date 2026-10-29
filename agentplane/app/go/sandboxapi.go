@@ -37,7 +37,7 @@ type SandboxView struct {
 }
 
 type AutosuspendBlockerView struct {
-	Reason    string  `json:"reason" enum:"ActiveTurn,PendingCommand,Setup,Activation,Bootstrap,Admission"`
+	Reason    string  `json:"reason" enum:"ActiveTurn,PendingCommand,Setup,Activation,Bootstrap,Admission,ExecutorRelay"`
 	SessionID *string `json:"session_id" nullable:"true"`
 }
 

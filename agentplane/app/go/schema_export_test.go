@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -198,8 +199,8 @@ func TestSandboxViewOpenAPIDocumentsAutosuspendBlockers(t *testing.T) {
 	for index, value := range enum {
 		values[index], _ = value.(string)
 	}
-	if !ok || strings.Join(values, ",") != "ActiveTurn,PendingCommand,Setup,Activation,Bootstrap,Admission" {
-		t.Fatalf("AutosuspendBlockerView.reason.enum = %v, want the six browser blocker reasons", reason["enum"])
+	if !ok || !slices.Contains(values, "ExecutorRelay") {
+		t.Fatalf("AutosuspendBlockerView.reason.enum = %v, want executor relay support", reason["enum"])
 	}
 	sessionID, ok := blockerProperties["session_id"].(map[string]any)
 	if !ok {

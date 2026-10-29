@@ -175,6 +175,9 @@ session_dispatcher_http_url: http://dispatcher:8080
 		c.FrontendConfig.LangfuseSearch == nil || c.FrontendConfig.LangfuseSearch.ProjectID != "fixture-project" {
 		t.Fatalf("frontend config was not loaded from YAML: %+v", c.FrontendConfig)
 	}
+	if key := c.FrontendConfig.LangfuseSearch.SessionMetadataKey; key != "attributes.litellm.metadata.spend_logs_metadata.agentplane.session_id" {
+		t.Fatalf("default Langfuse Session filter key = %q", key)
+	}
 	t.Setenv("AGENTPLANE_FRONTEND_CONFIG", `{"trace_search":{"grafana_base_url":"https://grafana.example.test/","tempo_datasource_uid":"env-tempo","deployment_environment":"env"}}`)
 	c, err = loadConfigWithArgs(nil)
 	if err != nil {
@@ -183,16 +186,17 @@ session_dispatcher_http_url: http://dispatcher:8080
 	if c.FrontendConfig.TraceSearch == nil || c.FrontendConfig.TraceSearch.TempoDatasourceUID != "env-tempo" || c.FrontendConfig.LangfuseSearch != nil {
 		t.Fatalf("frontend config environment override = %+v", c.FrontendConfig)
 	}
-	c, err = loadConfigWithArgs([]string{`--frontend-config={"langfuse_search":{"base_url":"https://langfuse.example.test/","project_id":"cli-project","sandbox_namespace_metadata_key":"namespace","sandbox_service_account_metadata_key":"account"}}`})
+	c, err = loadConfigWithArgs([]string{`--frontend-config={"langfuse_search":{"base_url":"https://langfuse.example.test/","project_id":"cli-project","session_metadata_key":"session","sandbox_namespace_metadata_key":"namespace","sandbox_service_account_metadata_key":"account"}}`})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.FrontendConfig.TraceSearch != nil || c.FrontendConfig.LangfuseSearch == nil || c.FrontendConfig.LangfuseSearch.ProjectID != "cli-project" {
+	if c.FrontendConfig.TraceSearch != nil || c.FrontendConfig.LangfuseSearch == nil || c.FrontendConfig.LangfuseSearch.ProjectID != "cli-project" || c.FrontendConfig.LangfuseSearch.SessionMetadataKey != "session" {
 		t.Fatalf("frontend config CLI override = %+v", c.FrontendConfig)
 	}
 	for _, invalid := range []string{
 		`{"trace_search":{}}`,
 		`{"langfuse_search":{"base_url":"https://langfuse.example.test/","project_id":"partial"}}`,
+		`{"langfuse_search":{"base_url":"https://langfuse.example.test/","project_id":"project","session_metadata_key":"","sandbox_namespace_metadata_key":"namespace","sandbox_service_account_metadata_key":"account"}}`,
 		`{"unknown":"refused"}`,
 	} {
 		if _, err := loadConfigWithArgs([]string{"--frontend-config=" + invalid}); err == nil {
@@ -201,6 +205,13 @@ session_dispatcher_http_url: http://dispatcher:8080
 	}
 	if !reflect.DeepEqual(c.TokenSubjects, []string{"system:serviceaccount:sandboxes:agentplane-agent"}) {
 		t.Fatalf("token subjects environment override = %#v", c.TokenSubjects)
+	}
+	c, err = loadConfigWithArgs([]string{`--models={"models":[{"model":"model-a","display_name":"Model A","reasoning_efforts":[]}],"harnesses":{"HARNESS_CLAUDE":["model-a"],"HARNESS_CODEX":[],"HARNESS_CENTRAL_SAMPLER":["model-a"]},"central_sampler":{"service":"sampler-fixture","provider":"responses"}}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Models.CentralSampler == nil || c.Models.CentralSampler.Service != "sampler-fixture" || c.Models.CentralSampler.Provider != "responses" {
+		t.Fatalf("central sampler catalog = %+v", c.Models)
 	}
 }
 
@@ -323,7 +334,7 @@ func TestValidateCatalogRequiresBothHarnessesAndAValidPreset(t *testing.T) {
 		{
 			name:   "missing harness key",
 			change: func(c *Config) { delete(c.Models.Harnesses, "HARNESS_CLAUDE") },
-			want:   "every harness",
+			want:   "both native harnesses",
 		},
 		{
 			name: "no offered model",
@@ -332,6 +343,27 @@ func TestValidateCatalogRequiresBothHarnessesAndAValidPreset(t *testing.T) {
 				c.Models.Harnesses["HARNESS_CODEX"] = nil
 			},
 			want: "offer at least one model",
+		},
+		{
+			name: "central models need a runtime",
+			change: func(c *Config) {
+				c.Models.Harnesses["HARNESS_CENTRAL_SAMPLER"] = []string{"model-a"}
+			},
+			want: "models.central_sampler",
+		},
+		{
+			name: "central runtime needs service and provider",
+			change: func(c *Config) {
+				c.Models.CentralSampler = &CentralSamplerChoice{Service: "sampler-fixture"}
+			},
+			want: "service and provider",
+		},
+		{
+			name: "unknown harness",
+			change: func(c *Config) {
+				c.Models.Harnesses["HARNESS_UNKNOWN"] = []string{"model-a"}
+			},
+			want: "unknown harness",
 		},
 		{
 			name:   "unsupported reasoning effort",

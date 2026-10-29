@@ -13,6 +13,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
@@ -63,8 +64,21 @@ type Config struct {
 }
 
 type ModelCatalog struct {
-	Models    []ModelOption       `mapstructure:"models" json:"models"`
-	Harnesses map[string][]string `mapstructure:"harnesses" json:"harnesses"`
+	Models         []ModelOption         `mapstructure:"models" json:"models"`
+	Harnesses      map[string][]string   `mapstructure:"harnesses" json:"harnesses"`
+	CentralSampler *CentralSamplerChoice `mapstructure:"central_sampler" json:"central_sampler"`
+}
+
+func (ModelCatalog) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	schema.Properties["central_sampler"] = &huma.Schema{AnyOf: []*huma.Schema{
+		schema.Properties["central_sampler"], {Type: "null"},
+	}}
+	return schema
+}
+
+type CentralSamplerChoice struct {
+	Service  string `mapstructure:"service" json:"service" minLength:"1"`
+	Provider string `mapstructure:"provider" json:"provider" minLength:"1"`
 }
 
 type ModelOption struct {
@@ -486,6 +500,13 @@ func rawHasKey(value any, key string) bool {
 }
 
 func (c *Config) applyDefaults(raw map[string]any) {
+	if langfuse := c.FrontendConfig.LangfuseSearch; langfuse != nil {
+		frontend, _ := rawSection(raw, "frontend_config")
+		settings, _ := rawSection(rawMap(frontend), "langfuse_search")
+		if !rawHasKey(settings, "session_metadata_key") {
+			langfuse.SessionMetadataKey = "attributes.litellm.metadata.spend_logs_metadata.agentplane.session_id"
+		}
+	}
 	if c.Models.Models == nil {
 		c.Models.Models = []ModelOption{}
 	}
@@ -663,12 +684,18 @@ func validateCatalog(catalog ModelCatalog, threadPresets map[string]ThreadPreset
 	}
 	_, hasClaude := catalog.Harnesses["HARNESS_CLAUDE"]
 	_, hasCodex := catalog.Harnesses["HARNESS_CODEX"]
-	if len(catalog.Harnesses) != 2 || !hasClaude || !hasCodex {
-		return errors.New("models.harnesses must configure every harness: HARNESS_CLAUDE and HARNESS_CODEX")
+	if !hasClaude || !hasCodex {
+		return errors.New("models.harnesses must configure both native harnesses: HARNESS_CLAUDE and HARNESS_CODEX")
+	}
+	if choice := catalog.CentralSampler; choice != nil && (choice.Service == "" || choice.Provider == "") {
+		return errors.New("models.central_sampler requires non-empty service and provider")
+	}
+	if len(catalog.Harnesses["HARNESS_CENTRAL_SAMPLER"]) > 0 && catalog.CentralSampler == nil {
+		return errors.New("central code-mode models require models.central_sampler")
 	}
 	hasOffer := false
 	for harness, models := range catalog.Harnesses {
-		if harness != "HARNESS_CLAUDE" && harness != "HARNESS_CODEX" {
+		if harness != "HARNESS_CLAUDE" && harness != "HARNESS_CODEX" && harness != "HARNESS_CENTRAL_SAMPLER" {
 			return fmt.Errorf("unknown harness %q", harness)
 		}
 		if len(models) > 0 {

@@ -33,6 +33,7 @@ type TraceSearchSettings struct {
 type LangfuseSearchSettings struct {
 	BaseURL                          string `mapstructure:"base_url" json:"base_url" format:"uri"`
 	ProjectID                        string `mapstructure:"project_id" json:"project_id" minLength:"1"`
+	SessionMetadataKey               string `mapstructure:"session_metadata_key" json:"session_metadata_key" minLength:"1"`
 	SandboxNamespaceMetadataKey      string `mapstructure:"sandbox_namespace_metadata_key" json:"sandbox_namespace_metadata_key" minLength:"1"`
 	SandboxServiceAccountMetadataKey string `mapstructure:"sandbox_service_account_metadata_key" json:"sandbox_service_account_metadata_key" minLength:"1"`
 }
@@ -51,6 +52,7 @@ func (c FrontendConfig) validate() error {
 			return err
 		}
 		required["frontend_config.langfuse_search.project_id"] = langfuse.ProjectID
+		required["frontend_config.langfuse_search.session_metadata_key"] = langfuse.SessionMetadataKey
 		required["frontend_config.langfuse_search.sandbox_namespace_metadata_key"] = langfuse.SandboxNamespaceMetadataKey
 		required["frontend_config.langfuse_search.sandbox_service_account_metadata_key"] = langfuse.SandboxServiceAccountMetadataKey
 	}
