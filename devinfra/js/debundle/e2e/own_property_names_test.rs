@@ -63,6 +63,8 @@ console.log(names[0], names[1], names[2], names[3], names[4], names[5], names[6]
             ]),
             value_input_refs: BTreeSet::new(),
             descriptor_copy_author_refs: Default::default(),
+            argument_input_refs: BTreeSet::new(),
+            argument_input_spec_locations: BTreeSet::new(),
         }
     );
 }
