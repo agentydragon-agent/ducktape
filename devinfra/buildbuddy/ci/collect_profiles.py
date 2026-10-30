@@ -3,7 +3,7 @@
 This is an investigation helper, not production CI code. It shells out to:
 
 - `gh` for GitHub Actions metadata and logs;
-- the repo-local `bbapi` binary for BuildBuddy build tool logs;
+- the repo-local `bbapi` binary for BuildBuddy events and build tool logs;
 - `bb download` for probe bundles uploaded to BuildBuddy CAS.
 """
 
@@ -13,13 +13,10 @@ import argparse
 import dataclasses
 import gzip
 import json
-import os
 import re
 import statistics
 import subprocess
 import tarfile
-import urllib.parse
-import urllib.request
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from pathlib import Path
@@ -254,15 +251,9 @@ def profile_summary(path: Path) -> dict[str, Any]:
     }
 
 
-def fetch_bes_events(invocation_id: str) -> list[dict[str, Any]]:
-    api_key = os.environ.get("BUILDBUDDY_API_KEY")
-    if not api_key:
-        raise RuntimeError("BUILDBUDDY_API_KEY environment variable is not set")
-    base_url = os.environ.get("BUILDBUDDY_URL", "https://app.buildbuddy.io").rstrip("/")
-    query = urllib.parse.urlencode({"invocation_id": invocation_id, "artifact": "raw_json"})
-    req = urllib.request.Request(f"{base_url}/file/download?{query}", headers={"x-buildbuddy-api-key": api_key})
-    with urllib.request.urlopen(req) as resp:
-        data = json.loads(resp.read())
+def fetch_bes_events(invocation_id: str, *, bbapi: Path = Path("bbapi")) -> list[dict[str, Any]]:
+    result = run([str(bbapi), "invocation", "events", invocation_id])
+    data = json.loads(result.stdout)
     if not isinstance(data, list):
         raise RuntimeError(f"BES raw JSON for {invocation_id} was not a list")
     return cast(list[dict[str, Any]], data)
@@ -402,7 +393,7 @@ def collect_run(repo: str, run_id: str, out_root: Path, bbapi: Path) -> dict[str
 
     for invocation in parsed["invocations"]:
         try:
-            events = fetch_bes_events(invocation["id"])
+            events = fetch_bes_events(invocation["id"], bbapi=bbapi)
             invocation["bes_summary"] = bes_summary(events)
         except Exception as e:
             invocation["bes_error"] = repr(e)
@@ -649,7 +640,7 @@ def parser() -> argparse.ArgumentParser:
         "--bbapi",
         type=Path,
         default=Path("bazel-bin/devinfra/buildbuddy/bbapi/bbapi_/bbapi"),
-        help="Path to repo-local bbapi binary with tool-log support",
+        help="Path to repo-local bbapi binary with invocation-events and tool-log support",
     )
     p.add_argument(
         "--write-md", action="store_true", help="Also write aggregate.md as a human-readable derived summary"

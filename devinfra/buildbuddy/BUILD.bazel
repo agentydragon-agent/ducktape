@@ -42,3 +42,9 @@ py_wheel(
     visibility = ["//visibility:public"],
     deps = [":bbr_pkg"],
 )
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    visibility = ["//:__subpackages__"],
+)

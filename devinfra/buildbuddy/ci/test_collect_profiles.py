@@ -1,3 +1,7 @@
+import json
+from pathlib import Path
+
+import pytest
 import pytest_bazel
 
 from devinfra.buildbuddy.ci import collect_profiles
@@ -108,6 +112,20 @@ def test_bes_summary_extracts_analysis_metrics() -> None:
     assert metrics["ac_misses"] == 64
     assert metrics["ac_miss_details"] == {"DIFFERENT_FILES": 31}
     assert metrics["runner_counts"] == {"remote": 5}
+
+
+def test_bes_events_are_read_through_bbapi(monkeypatch: pytest.MonkeyPatch) -> None:
+    events = [{"started": {"command": "test"}}, {"buildMetrics": {"wallTimeInMs": "123"}}]
+    calls: list[list[str]] = []
+
+    def fake_run(argv: list[str], **_kwargs: object) -> collect_profiles.CommandResult:
+        calls.append(argv)
+        return collect_profiles.CommandResult(argv=argv, stdout=json.dumps(events), stderr="")
+
+    monkeypatch.setattr(collect_profiles, "run", fake_run)
+
+    assert collect_profiles.fetch_bes_events("invocation-123", bbapi=Path("tools/bbapi")) == events
+    assert calls == [["tools/bbapi", "invocation", "events", "invocation-123"]]
 
 
 if __name__ == "__main__":

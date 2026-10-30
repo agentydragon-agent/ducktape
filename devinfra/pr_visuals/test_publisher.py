@@ -3,8 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
-import urllib.parse
-import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -58,24 +56,6 @@ class FakeBaselineSource:
         return self.objects.get(key)
 
 
-def _search_reply(*invocations: dict[str, object]) -> Callable[..., bytes]:
-    return lambda _request: json.dumps({"invocation": list(invocations)}).encode()
-
-
-def _cas(blobs: dict[str, bytes]) -> Callable[[urllib.request.Request], bytes]:
-    """Serve blobs by the `bytestream://` URI the artifact listing advertised.
-
-    An unlisted URI is a KeyError, which is the point: the publisher may only ask for
-    a blob the listing named.
-    """
-
-    def fetch(request: urllib.request.Request) -> bytes:
-        query = urllib.parse.parse_qs(urllib.parse.urlparse(request.full_url).query)
-        return blobs[query["bytestream_url"][0]]
-
-    return fetch
-
-
 def _manifest(title: str, *assets: str) -> bytes:
     return json.dumps(
         {
@@ -86,20 +66,37 @@ def _manifest(title: str, *assets: str) -> bytes:
     ).encode()
 
 
-def _listing(artifacts: list[dict[str, object]]) -> Callable[..., subprocess.CompletedProcess[str]]:
+def _listing(
+    artifacts: list[dict[str, object]], blobs: dict[str, bytes] | None = None
+) -> Callable[..., subprocess.CompletedProcess[str]]:
+    blobs = blobs or {}
+
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        words = [str(part) for part in command]
+        if "blob" in words and words[words.index("blob") + 1] == "download":
+            manifest = json.loads(Path(words[words.index("--manifest") + 1]).read_text())
+            for item in manifest:
+                Path(item["destination"]).write_bytes(blobs[item["uri"]])
+            return subprocess.CompletedProcess(command, 0, "", "")
         return subprocess.CompletedProcess(command, 0, json.dumps(artifacts), "")
 
     return fake_run
 
 
 def _listing_per_invocation(
-    by_invocation: dict[str, list[dict[str, object]]],
+    by_invocation: dict[str, list[dict[str, object]]], blobs: dict[str, bytes] | None = None
 ) -> Callable[..., subprocess.CompletedProcess[str]]:
     """`bbapi artifact list <invocation> --json`, answered differently per invocation."""
+    blobs = blobs or {}
 
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(command, 0, json.dumps(by_invocation[str(command[3])]), "")
+        words = [str(part) for part in command]
+        if "blob" in words and words[words.index("blob") + 1] == "download":
+            manifest = json.loads(Path(words[words.index("--manifest") + 1]).read_text())
+            for item in manifest:
+                Path(item["destination"]).write_bytes(blobs[item["uri"]])
+            return subprocess.CompletedProcess(command, 0, "", "")
+        return subprocess.CompletedProcess(command, 0, json.dumps(by_invocation[words[3]]), "")
 
     return fake_run
 
@@ -108,17 +105,49 @@ def test_the_full_sweep_wins_over_an_affected_set_run_at_the_same_commit() -> No
     """The case that made #4927 insufficient: one commit, several CI runs. Only the
     `//...` sweep carries the visual manifests; an affected-set run at the same commit
     is complete and real and has none. Picking by commit must prefer the sweep."""
+    command_seen: list[list[str]] = []
+
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        words = [str(part) for part in command]
+        command_seen.append(words)
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            json.dumps(
+                {
+                    "invocation": [
+                        {"invocationId": "affected-set", "pattern": ["//cluster/k8s:cluster_all_files"]},
+                        {"invocationId": "full-sweep", "pattern": ["//..."]},
+                    ]
+                }
+            ),
+            "",
+        )
+
     found = find_test_invocations(
-        run_id="33066954750",
-        run_attempt="1",
-        commit_sha="5ee3b732cc68b03ef86a1b6e95598f54d796e8f2",
-        api_key="key",
-        fetch=_search_reply(
-            {"invocationId": "affected-set", "pattern": ["//cluster/k8s:cluster_all_files"]},
-            {"invocationId": "full-sweep", "pattern": ["//..."]},
-        ),
+        run_id="33066954750", run_attempt="1", commit_sha="5ee3b732cc68b03ef86a1b6e95598f54d796e8f2", run=fake_run
     )
     assert found == ["full-sweep"]
+    assert command_seen == [
+        [
+            "bbapi",
+            "--timeout",
+            "30s",
+            "invocation",
+            "list",
+            "--repo",
+            "https://github.com/agentydragon/ducktape",
+            "--commit",
+            "5ee3b732cc68b03ef86a1b6e95598f54d796e8f2",
+            "--command",
+            "test",
+            "--role",
+            "CI",
+            "--count",
+            "25",
+            "--json",
+        ]
+    ]
 
 
 def test_an_invocation_that_never_existed_is_not_a_failure() -> None:
@@ -150,19 +179,22 @@ def test_late_invocation_artifacts_are_read_only_after_completion(
     complete = False
     listed_after_completion: list[bool] = []
 
-    def fetch(request: urllib.request.Request) -> bytes:
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        words = [str(part) for part in command]
+        if "invocation" in words and words[words.index("invocation") + 1] == "list":
+            return subprocess.CompletedProcess(
+                command, 0, '{"invocation":[{"invocationId":"late-sweep","pattern":["//..."]}]}', ""
+            )
         nonlocal complete
-        if request.full_url.endswith("/SearchInvocation"):
-            return b'{"invocation":[{"invocationId":"late-sweep","pattern":["//..."]}]}'
         state = next(states)
         complete = state == "COMPLETE_INVOCATION_STATUS"
-        return json.dumps({"invocation": [{"invocationStatus": state}]}).encode()
+        return subprocess.CompletedProcess(command, 0, json.dumps({"invocation": [{"invocationStatus": state}]}), "")
 
-    def download(_invocations: list[str], _destination: Path, *, api_key: str) -> list[DownloadedVisualTest]:
+    def download(_invocations: list[str], _destination: Path, **_kwargs: object) -> list[DownloadedVisualTest]:
         listed_after_completion.append(complete)
         return [candidate] if complete else []
 
-    monkeypatch.setattr("devinfra.pr_visuals.publisher._read", fetch)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.subprocess.run", fake_run)
     monkeypatch.setattr("devinfra.pr_visuals.publisher.download_visual_tests", download)
     monkeypatch.setattr("devinfra.pr_visuals.publisher.INVOCATION_POLL_SECONDS", 0)
     monkeypatch.setattr("devinfra.pr_visuals.publisher.boto3.client", lambda *_a, **_k: EmptyBucket())
@@ -181,7 +213,10 @@ def test_incomplete_invocation_cannot_advance_a_devel_baseline(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, publisher_run: PublisherRun
 ) -> None:
     monkeypatch.setattr("sys.argv", _publisher_argv(tmp_path / "work"))
-    monkeypatch.setattr("devinfra.pr_visuals.publisher._read", lambda _request: b'{"invocation":[]}')
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.subprocess.run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, '{"invocation":[]}', ""),
+    )
     monkeypatch.setattr("devinfra.pr_visuals.publisher.wait_for_test_invocations", lambda *_a, **_k: "incomplete")
     _forbid(monkeypatch, "download_visual_tests", "upload_bundle", "write_baseline_pointers")
 
@@ -198,10 +233,12 @@ def test_wait_for_invocations_uses_terminal_state(first: str | None) -> None:
     assert (
         wait_for_test_invocations(
             ["known"],
-            api_key="key",
-            fetch=lambda _request: json.dumps(
-                {"invocation": [{"invocationStatus": state}] if (state := next(statuses)) else []}
-            ).encode(),
+            run=lambda command, **_kwargs: subprocess.CompletedProcess(
+                command,
+                0,
+                json.dumps({"invocation": [{"invocationStatus": state}] if (state := next(statuses)) else []}),
+                "",
+            ),
             monotonic=lambda: 0,
             wait=waits.append,
         )
@@ -215,8 +252,9 @@ def test_wait_for_invocations_has_a_bounded_deadline() -> None:
     assert (
         wait_for_test_invocations(
             ["still-running"],
-            api_key="key",
-            fetch=lambda _request: b'{"invocation":[{"invocationStatus":"PARTIAL_INVOCATION_STATUS"}]}',
+            run=lambda command, **_kwargs: subprocess.CompletedProcess(
+                command, 0, '{"invocation":[{"invocationStatus":"PARTIAL_INVOCATION_STATUS"}]}', ""
+            ),
             monotonic=lambda: next(clock),
             wait=lambda _seconds: pytest.fail("the deadline elapsed"),
         )
@@ -228,21 +266,22 @@ def test_failed_workflow_does_not_treat_missing_invocations_as_no_tests() -> Non
     states = iter([None, "PARTIAL_INVOCATION_STATUS", "COMPLETE_INVOCATION_STATUS"])
     waits: list[float] = []
 
-    def fetch(request: urllib.request.Request) -> bytes:
-        assert isinstance(request.data, bytes)
-        selected = json.loads(request.data)["selector"]["invocationId"]
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        words = [str(part) for part in command]
+        selected = words[words.index("status") + 1]
         if selected == "build":
-            return b"{}"
+            return subprocess.CompletedProcess(command, 0, "{}", "")
         state = next(states)
-        return json.dumps({"invocation": [{"invocationStatus": state}] if state else []}).encode()
+        return subprocess.CompletedProcess(
+            command, 0, json.dumps({"invocation": [{"invocationStatus": state}] if state else []}), ""
+        )
 
     assert (
         wait_for_test_invocations(
             ["test"],
-            api_key="key",
             allow_build_only=True,
             build_invocation_id="build",
-            fetch=fetch,
+            run=fake_run,
             monotonic=lambda: 0,
             wait=waits.append,
         )
@@ -256,19 +295,22 @@ def test_successful_build_only_run_has_no_visuals_without_waiting(
 ) -> None:
     monkeypatch.setattr("sys.argv", _publisher_argv(tmp_path / "work"))
 
-    def fetch(request: urllib.request.Request) -> bytes:
-        if request.full_url.endswith("/SearchInvocation"):
-            return b'{"invocation":[]}'
-        assert isinstance(request.data, bytes)
-        selector = json.loads(request.data)["selector"]["invocationId"]
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        words = [str(part) for part in command]
+        if "invocation" in words and words[words.index("invocation") + 1] == "list":
+            return subprocess.CompletedProcess(command, 0, '{"invocation":[]}', "")
+        selector = words[words.index("status") + 1]
         build_id = str(invocation_id(run_id="33060467222", attempt="1", role="build"))
-        return (
-            b'{"invocation":[{"invocationStatus":"COMPLETE_INVOCATION_STATUS"}]}'
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            '{"invocation":[{"invocationStatus":"COMPLETE_INVOCATION_STATUS"}]}'
             if selector == build_id
-            else b'{"invocation":[]}'
+            else '{"invocation":[]}',
+            "",
         )
 
-    monkeypatch.setattr("devinfra.pr_visuals.publisher._read", fetch)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.subprocess.run", fake_run)
     _forbid(monkeypatch, "download_visual_tests", "upload_bundle", "write_baseline_pointers")
 
     main()
@@ -296,27 +338,24 @@ def test_download_visual_tests_groups_manifests_by_executed_target(tmp_path: Pat
         },
     ]
     commands: list[list[str | Path]] = []
+    blob_values = {
+        "bytestream://manifest-haku": _manifest("Haku Console", "preview.png"),
+        "bytestream://preview-haku": b"png",
+        "bytestream://manifest-aiquota": _manifest("AI quota", "hot.png"),
+        "bytestream://hot-aiquota": b"png",
+    }
+    download_blobs = _listing(artifacts, blob_values)
 
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         commands.append(command)
-        if command[3] == "missing":
+        words = [str(part) for part in command]
+        if "blob" in words and words[words.index("blob") + 1] == "download":
+            return download_blobs(command, **_kwargs)
+        if words[3] == "missing":
             return subprocess.CompletedProcess(command, 1, "", "invocation not found")
         return subprocess.CompletedProcess(command, 0, json.dumps(artifacts), "")
 
-    tests = download_visual_tests(
-        ["missing", "real"],
-        tmp_path / "tests",
-        api_key="key",
-        fetch=_cas(
-            {
-                "bytestream://manifest-haku": _manifest("Haku Console", "preview.png"),
-                "bytestream://preview-haku": b"png",
-                "bytestream://manifest-aiquota": _manifest("AI quota", "hot.png"),
-                "bytestream://hot-aiquota": b"png",
-            }
-        ),
-        run=fake_run,
-    )
+    tests = download_visual_tests(["missing", "real"], tmp_path / "tests", run=fake_run)
 
     assert [test.target_label for test in tests] == [
         "//aiquota/gnome:test_render",
@@ -324,13 +363,12 @@ def test_download_visual_tests_groups_manifests_by_executed_target(tmp_path: Pat
     ]
     assert (tests[0].directory / "hot.png").read_bytes() == b"png"
     assert commands[1] == [Path("bbapi"), "artifact", "list", "real", "--json"]
+    assert sum("blob" in [str(part) for part in command] for command in commands) == 2
 
 
-def test_bbapi_is_asked_once_per_invocation_however_many_files_a_commit_has(tmp_path: Path) -> None:
-    """The artifact listing resolves every blob's URI at once, so the per-file fetch goes
-    straight to the CAS. Reintroducing a per-file `bbapi artifact download` would refetch
-    the invocation's whole build event stream — 33 MB on a `//...` sweep — for each of a
-    commit's ~294 files, which is what made a publish take a quarter of an hour."""
+def test_bbapi_lists_once_and_downloads_each_blob_wave_from_one_manifest(tmp_path: Path) -> None:
+    """The listing resolves each URI once; manifests and images then download in two
+    bulk calls, without refetching the invocation's event stream per file."""
     artifacts = [
         {
             "id": {"testResult": {"label": "//ui:screenshots"}},
@@ -346,24 +384,37 @@ def test_bbapi_is_asked_once_per_invocation_however_many_files_a_commit_has(tmp_
     ]
     shots = [f"shot-{index}.png" for index in range(12)]
     calls: list[list[str | Path]] = []
+    manifests: list[list[dict[str, str]]] = []
+    blobs = {"bytestream://manifest": _manifest("UI", *shots)} | {
+        f"bytestream://shot-{index}": b"png" for index in range(12)
+    }
 
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append(command)
+        words = [str(part) for part in command]
+        if "blob" in words and words[words.index("blob") + 1] == "download":
+            manifest = json.loads(Path(words[words.index("--manifest") + 1]).read_text())
+            manifests.append(manifest)
+            for item in manifest:
+                Path(item["destination"]).write_bytes(blobs[item["uri"]])
+            return subprocess.CompletedProcess(command, 0, "", "")
         return subprocess.CompletedProcess(command, 0, json.dumps(artifacts), "")
 
-    tests = download_visual_tests(
-        ["invocation"],
-        tmp_path / "tests",
-        api_key="key",
-        fetch=_cas(
-            {"bytestream://manifest": _manifest("UI", *shots)}
-            | {f"bytestream://shot-{index}": b"png" for index in range(12)}
-        ),
-        run=fake_run,
-    )
+    tests = download_visual_tests(["invocation"], tmp_path / "tests", run=fake_run)
 
     assert len(tests[0].manifest.assets) == 12
-    assert calls == [[Path("bbapi"), "artifact", "list", "invocation", "--json"]]
+    assert [call for call in calls if [str(part) for part in call][1:3] == ["artifact", "list"]] == [
+        [Path("bbapi"), "artifact", "list", "invocation", "--json"]
+    ]
+    assert len(manifests) == 2
+    assert len(manifests[0]) == 1
+    assert len(manifests[1]) == 12
+    assert all(item["invocation_id"] == "invocation" for manifest in manifests for item in manifest)
+    slug = target_slug("//ui:screenshots")
+    assert manifests[0][0]["destination"] == str(tmp_path / "tests" / ".manifests" / slug / "0.json")
+    assert [item["destination"] for item in manifests[1]] == [
+        str(tmp_path / "tests" / slug / f"shot-{index}.png") for index in range(12)
+    ]
 
 
 def test_download_visual_tests_rejects_missing_declared_asset(tmp_path: Path) -> None:
@@ -378,9 +429,7 @@ def test_download_visual_tests_rejects_missing_declared_asset(tmp_path: Path) ->
         download_visual_tests(
             ["invocation"],
             tmp_path / "tests",
-            api_key="key",
-            fetch=_cas({"bytestream://manifest": _manifest("UI", "missing.png")}),
-            run=_listing(artifacts),
+            run=_listing(artifacts, {"bytestream://manifest": _manifest("UI", "missing.png")}),
         )
 
 
@@ -404,15 +453,14 @@ def test_download_visual_tests_deduplicates_equivalent_manifests(tmp_path: Path)
     tests = download_visual_tests(
         ["invocation"],
         tmp_path / "tests",
-        api_key="key",
-        fetch=_cas(
+        run=_listing(
+            artifacts,
             {
                 "bytestream://manifest-first": manifest,
                 "bytestream://manifest-retry": manifest,
                 "bytestream://screen": b"png",
-            }
+            },
         ),
-        run=_listing(artifacts),
     )
 
     assert len(tests) == 1
@@ -446,16 +494,15 @@ def test_download_visual_tests_unions_a_sharded_targets_manifests(tmp_path: Path
     tests = download_visual_tests(
         ["invocation"],
         tmp_path / "tests",
-        api_key="key",
-        fetch=_cas(
+        run=_listing(
+            artifacts,
             {
                 "bytestream://shard-0": _manifest("UI", "list.png"),
                 "bytestream://shard-1": _manifest("UI", "detail.png"),
                 "bytestream://list": b"list-png",
                 "bytestream://detail": b"detail-png",
-            }
+            },
         ),
-        run=_listing(artifacts),
     )
 
     assert len(tests) == 1
@@ -503,16 +550,15 @@ def test_download_visual_tests_rejects_a_sweep_and_an_affected_set_run_disagreei
         download_visual_tests(
             ["sweep", "affected"],
             tmp_path / "tests",
-            api_key="key",
-            fetch=_cas(
+            run=_listing_per_invocation(
+                by_invocation,
                 {
                     "bytestream://sweep-manifest": _manifest("UI", "list.png", "detail.png"),
                     "bytestream://affected-manifest": _manifest("UI", "list.png"),
                     "bytestream://list": b"list-png",
                     "bytestream://detail": b"detail-png",
-                }
+                },
             ),
-            run=_listing_per_invocation(by_invocation),
         )
 
 
@@ -540,16 +586,15 @@ def test_download_visual_tests_unions_shards_across_a_retried_invocation(tmp_pat
     tests = download_visual_tests(
         ["primary", "child"],
         tmp_path / "tests",
-        api_key="key",
-        fetch=_cas(
+        run=_listing_per_invocation(
+            {"primary": shards, "child": shards},
             {
                 "bytestream://shard-0": _manifest("UI", "list.png"),
                 "bytestream://shard-1": _manifest("UI", "detail.png"),
                 "bytestream://list": b"list-png",
                 "bytestream://detail": b"detail-png",
-            }
+            },
         ),
-        run=_listing_per_invocation({"primary": shards, "child": shards}),
     )
 
     assert len(tests) == 1
@@ -572,11 +617,10 @@ def test_download_visual_tests_rejects_conflicting_titles(tmp_path: Path) -> Non
         download_visual_tests(
             ["invocation"],
             tmp_path / "tests",
-            api_key="key",
-            fetch=_cas(
-                {"manifest-one": _manifest("UI 1", "screen-1.png"), "manifest-two": _manifest("UI 2", "screen-2.png")}
+            run=_listing(
+                artifacts,
+                {"manifest-one": _manifest("UI 1", "screen-1.png"), "manifest-two": _manifest("UI 2", "screen-2.png")},
             ),
-            run=_listing(artifacts),
         )
 
 
@@ -604,9 +648,7 @@ def test_download_visual_tests_rejects_one_asset_described_two_ways(tmp_path: Pa
         download_visual_tests(
             ["invocation"],
             tmp_path / "tests",
-            api_key="key",
-            fetch=_cas({"manifest-one": _manifest("UI", "screen.png"), "manifest-two": relabelled}),
-            run=_listing(artifacts),
+            run=_listing(artifacts, {"manifest-one": _manifest("UI", "screen.png"), "manifest-two": relabelled}),
         )
 
 
@@ -614,7 +656,7 @@ def test_download_visual_tests_treats_null_artifact_list_as_empty(tmp_path: Path
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(command, 0, "null", "")
 
-    assert download_visual_tests(["invocation"], tmp_path / "tests", api_key="key", run=fake_run) == []
+    assert download_visual_tests(["invocation"], tmp_path / "tests", run=fake_run) == []
 
 
 def test_list_ci_failures_is_best_effort_and_deduplicates_labels() -> None:
@@ -859,17 +901,19 @@ def test_a_superseded_run_publishes_its_bundle_but_leaves_the_comment_alone(
     )
     downloaded: list[list[str]] = []
 
-    def record(invocations: list[str], _destination: Path, *, api_key: str) -> list[object]:
+    def record(invocations: list[str], _destination: Path, **_kwargs: object) -> list[object]:
         downloaded.append(invocations)
         return []
 
     monkeypatch.setattr("devinfra.pr_visuals.publisher.download_visual_tests", record)
     # BuildBuddy holds nothing under this commit — a PR run records the merge SHA — so
     # the lookup falls through to the IDs derived from the run.
-    monkeypatch.setattr("devinfra.pr_visuals.publisher._read", lambda _request: b'{"invocation": []}')
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.subprocess.run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, '{"invocation": []}', ""),
+    )
     monkeypatch.setattr("devinfra.pr_visuals.publisher.wait_for_test_invocations", lambda *_a, **_k: "incomplete")
     monkeypatch.setenv("GITHUB_TOKEN", "token")
-    monkeypatch.setenv("BUILDBUDDY_API_KEY", "key")
     monkeypatch.setattr(
         "sys.argv",
         _publisher_argv(tmp_path / "work", "--ci-conclusion", "cancelled", "--pull-request-head", PR_HEAD_REF),
@@ -910,16 +954,22 @@ def publisher_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> PublisherR
         "devinfra.pr_visuals.publisher.upsert_pull_request_comment", lambda **kwargs: run.comments.append(kwargs)
     )
 
-    # The PR head is absent from SearchInvocation (CI records the merge SHA), but
+    # The PR head is absent from invocation search (CI records the merge SHA), but
     # its derived test invocation is complete when publication begins.
-    def fetch(request: urllib.request.Request) -> bytes:
-        if request.full_url.endswith("/GetInvocation"):
-            return b'{"invocation":[{"invocationStatus":"COMPLETE_INVOCATION_STATUS"}]}'
-        return b'{"invocation": []}'
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        words = [str(part) for part in command]
+        if "invocation" in words and words[words.index("invocation") + 1] == "list":
+            output = '{"invocation": []}'
+        elif "status" in words:
+            output = '{"invocation":[{"invocationStatus":"COMPLETE_INVOCATION_STATUS"}]}'
+        elif "artifact" in words:
+            output = "[]"
+        else:
+            raise AssertionError(f"unexpected command {words}")
+        return subprocess.CompletedProcess(command, 0, output, "")
 
-    monkeypatch.setattr("devinfra.pr_visuals.publisher._read", fetch)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.subprocess.run", fake_run)
     monkeypatch.setenv("GITHUB_TOKEN", "token")
-    monkeypatch.setenv("BUILDBUDDY_API_KEY", "key")
     monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
     monkeypatch.setattr(
         "sys.argv",

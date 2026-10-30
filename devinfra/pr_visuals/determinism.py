@@ -17,11 +17,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shlex
 import subprocess
-import urllib.parse
-import urllib.request
 import uuid
 from collections import defaultdict
 from collections.abc import Callable, Sequence
@@ -86,13 +83,11 @@ class TargetObservations:
     unavailable_invocations: list[str]
 
 
-def load_manifest(uri: str) -> VisualReviewManifest:
-    request = urllib.request.Request(
-        f"https://app.buildbuddy.io/file/download?bytestream_url={urllib.parse.quote(uri, safe='')}",
-        headers={"x-buildbuddy-api-key": os.environ["BUILDBUDDY_API_KEY"]},
-    )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return VisualReviewManifest.model_validate_json(response.read())
+def load_manifest(uri: str, *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run) -> VisualReviewManifest:
+    result = run([bbapi, "--timeout", "30s", "blob", "cat", uri], check=False, text=True, capture_output=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"bbapi blob cat failed for {uri}: {result.stderr.strip()}")
+    return VisualReviewManifest.model_validate_json(result.stdout)
 
 
 def visual_fleet(*, bbr: Path, run: Runner) -> list[str]:
@@ -371,7 +366,12 @@ def main() -> None:
     attempted_invocations = [execution.invocation for execution in executions]
     target_observations = observe_targets(attempted_invocations, targets, bbapi=args.bbapi, run=subprocess.run)
     invocations = target_observations.invocations
-    observations = observe(invocations, bbapi=args.bbapi, run=subprocess.run, read_manifest=load_manifest)
+    observations = observe(
+        invocations,
+        bbapi=args.bbapi,
+        run=subprocess.run,
+        read_manifest=lambda uri: load_manifest(uri, bbapi=args.bbapi, run=subprocess.run),
+    )
     summary = report(
         observations,
         invocations,

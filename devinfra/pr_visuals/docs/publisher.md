@@ -15,8 +15,9 @@ SHA, not the head SHA) or a run cancelled before Bazel started.
 **Gotcha: artifacts come from the CAS, not `bbapi artifact download`.** That command
 refetches the invocation's whole build event stream (33 MB on a sweep) per file,
 ~4.4 s per artifact (~16 min for a commit's ~294 files). The artifact listing already
-carries each blob's `bytestream://` URI; the publisher reads them from
-`app.buildbuddy.io/file/download`, eight at a time (<20 s).
+carries each blob's `bytestream://` URI; the publisher passes exact destinations to
+`bbapi blob download` in two manifest calls, one for review manifests and one for their
+assets. Each call downloads up to eight blobs concurrently (<20 s for a commit's files).
 
 ## Which PR a run is for
 

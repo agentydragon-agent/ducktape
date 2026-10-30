@@ -1,9 +1,7 @@
 import json
 import subprocess
 import sys
-import urllib.request
 from datetime import timedelta
-from io import BytesIO
 from pathlib import Path
 from uuid import UUID
 
@@ -154,18 +152,16 @@ def test_conflicting_outputs_in_one_run_do_not_hide_a_missing_run() -> None:
     assert analyze(observations, runs=2) == Findings(drifted=[render], missing=[render])
 
 
-def test_manifest_is_read_directly_from_the_listed_cas_uri(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_manifest_is_read_through_bbapi_blob_cat() -> None:
     manifest = _manifest("loading.png")
-    monkeypatch.setenv("BUILDBUDDY_API_KEY", "test-key")
+    seen: list[list[str]] = []
 
-    def fetch(request: urllib.request.Request, *, timeout: int) -> BytesIO:
-        assert request.full_url == "https://app.buildbuddy.io/file/download?bytestream_url=bytestream%3A%2F%2Fmanifest"
-        assert request.get_header("X-buildbuddy-api-key") == "test-key"
-        assert timeout > 0
-        return BytesIO(manifest.model_dump_json(by_alias=True).encode())
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        seen.append([str(part) for part in command])
+        return subprocess.CompletedProcess(command, 0, manifest.model_dump_json(by_alias=True), "")
 
-    monkeypatch.setattr(urllib.request, "urlopen", fetch)
-    assert load_manifest("bytestream://manifest") == manifest
+    assert load_manifest("bytestream://manifest", run=fake_run) == manifest
+    assert seen == [["bbapi", "--timeout", "30s", "blob", "cat", "bytestream://manifest"]]
 
 
 def test_unreadable_manifest_is_not_silently_treated_as_diagnostic() -> None:
@@ -400,7 +396,7 @@ def test_exit_status_preserves_review_and_test_failures_but_not_diagnostic_drift
         return subprocess.CompletedProcess(command, 0, json.dumps(payload) if payload is not None else "", "")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    monkeypatch.setattr("devinfra.pr_visuals.determinism.load_manifest", lambda _: _manifest("list.png"))
+    monkeypatch.setattr("devinfra.pr_visuals.determinism.load_manifest", lambda _, **_kwargs: _manifest("list.png"))
     monkeypatch.setattr(sys, "argv", ["determinism", "--runs", str(len(published_uris)), "//ui:visual"])
 
     assert _exit_status() == exit_code
@@ -458,7 +454,7 @@ def test_unstarted_commands_are_reported_without_discarding_observations(
                 raise AssertionError(f"unexpected command {other}")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    monkeypatch.setattr("devinfra.pr_visuals.determinism.load_manifest", lambda _: _manifest("list.png"))
+    monkeypatch.setattr("devinfra.pr_visuals.determinism.load_manifest", lambda _, **_kwargs: _manifest("list.png"))
     monkeypatch.setattr(sys, "argv", ["determinism", "--runs", str(run_count), "//ui:visual"])
 
     assert _exit_status() == 1
