@@ -201,7 +201,8 @@ sender holds the fixture's [`send_grant`](send_grant.py) PolicySet, a `session_i
 inbox tag the recipient carries, and runs `agentplane notifications send`; the recipient reads and
 acknowledges its inbox when the platform's notice starts its turn. It asserts the entry's authenticated
 sender and the sender's view of its message: covered while the recipient holds the notice, acknowledged
-after. Most of its run is the Notification Service's notice debounce.
+after. The k3s fixture uses a one-second notification quiet window and a two-second maximum wait;
+the Notification Service's worker integration tests cover debounce deadlines.
 
 ## Dispatcher queue and replicas
 

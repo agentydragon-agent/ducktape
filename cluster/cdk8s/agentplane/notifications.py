@@ -26,7 +26,6 @@ from agentplane.notification_service.settings import (
     TOKEN_AUDIENCE,
     ActionsSettings,
     HistoryServiceSettings,
-    NoticeDebounceSettings,
     RunnerGatewaySettings,
     SessionDispatcherSettings,
     Settings,
@@ -113,7 +112,7 @@ class Notifications(Construct):
             "namespace": env.namespace,
             "token_audience": TOKEN_AUDIENCE,
             "operator_reader_account": "app",
-            "notice_debounce": NoticeDebounceSettings(quiet_seconds=60, max_wait_seconds=120),
+            "notice_debounce": env.notifications_debounce,
             "actions": ActionsSettings(
                 url=AnyHttpUrl(f"http://{actions.fqdn}:{actions.port.number}"),
                 token_file=Path("/var/run/secrets/notifications/actions"),

@@ -28,6 +28,7 @@ from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.contract.actions import Action
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
 from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
+from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.runner.configuration import GuestResources, ResourceLimits
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
@@ -410,6 +411,7 @@ ENV = Environment(
         lease_seconds=60,
     ),
     settle_deltas=True,
+    notifications_debounce=NoticeDebounceSettings(quiet_seconds=60, max_wait_seconds=120),
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
     kubernetes_binding_cleanup_namespaces=frozenset(agent_access_profiles.cleanup_namespaces()),
     llm_ingress=LlmIngressProps(
