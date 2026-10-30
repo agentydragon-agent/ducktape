@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -93,6 +92,9 @@ type artifact struct {
 	// registry or release tag without fetching the bytes at all.
 	Digest string `json:"digest,omitempty"`
 	Size   int64  `json:"size,omitempty"`
+	// The aspect that produced this build output, or "" for the target's own
+	// outputs. Test artifacts do not have an aspect.
+	Aspect string `json:"aspect,omitempty"`
 	// Which result of its target a test artifact came from. A sharded test, or one that runs more than once
 	// or is retried, reports one result per shard, run and attempt, each with a test.log of the same name,
 	// so Label and Name cannot tell them apart. Shard, Run and Attempt count from 1, as Bazel's
@@ -545,9 +547,7 @@ func listArtifactsResolved(c *client, invocationID string) ([]artifact, error) {
 }
 
 func listArtifacts(c *client, invocationID string) ([]artifact, error) {
-	besURL := fmt.Sprintf("%s/file/download?invocation_id=%s&artifact=raw_json",
-		c.baseURL, url.QueryEscape(invocationID))
-	data, err := c.fetchURL(besURL)
+	data, err := readInvocationEvents(c, invocationID)
 	if err != nil {
 		return nil, fmt.Errorf("fetch BES event stream: %w", err)
 	}
@@ -639,6 +639,7 @@ func parseArtifacts(data []byte) ([]artifact, error) {
 					PathPrefix:  strings.Join(f.GetPathPrefix(), "/"),
 					Digest:      f.GetDigest(),
 					Size:        f.GetLength(),
+					Aspect:      ev.GetId().GetTargetCompleted().GetAspect(),
 				})
 			}
 		}

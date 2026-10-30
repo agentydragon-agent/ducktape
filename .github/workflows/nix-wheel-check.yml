@@ -109,11 +109,14 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
-      # The remote build only needs bb; use the same pin and checksum as Bazel CI.
-      - name: Install pinned BuildBuddy CLI
+      # Install from the Nix pins with stdlib Python: bb runs the remote build,
+      # while bbapi handles a cancellation request if the build is interrupted.
+      - name: Install pinned BuildBuddy CLIs
         run: |
-          python3 devinfra/buildbuddy/ci/install_bb.py --pins nix/artifact-pins.json \
+          python3 devinfra/buildbuddy/ci/install_bb.py --tool bb --pins nix/artifact-pins.json \
             --destination "$RUNNER_TEMP/buildbuddy-cli/bin/bb"
+          python3 devinfra/buildbuddy/ci/install_bb.py --tool bbapi --pins nix/artifact-pins.json \
+            --destination "$RUNNER_TEMP/buildbuddy-cli/bin/bbapi"
           echo "$RUNNER_TEMP/buildbuddy-cli/bin" >> "$GITHUB_PATH"
 
       # Derive the Bazel target list + nix package list from the SSOT.

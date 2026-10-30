@@ -105,12 +105,14 @@ jobs:
           SOURCE_COMMIT: ${{ inputs.source_commit }}
         run: python3 devinfra/ci/pr_mergeability.py verify-source
 
-      # The launcher helpers use stdlib Python; only bb needs installing here.
-      # Use the same artifact and checksum as the Nix package.
-      - name: Install pinned BuildBuddy CLI
+      # The launcher helpers use stdlib Python; install the two CLIs needed by
+      # bb remote and its cancellation handler from their Nix artifact pins.
+      - name: Install pinned BuildBuddy CLIs
         run: |
-          python3 devinfra/buildbuddy/ci/install_bb.py --pins nix/artifact-pins.json \
+          python3 devinfra/buildbuddy/ci/install_bb.py --tool bb --pins nix/artifact-pins.json \
             --destination "$RUNNER_TEMP/buildbuddy-cli/bin/bb"
+          python3 devinfra/buildbuddy/ci/install_bb.py --tool bbapi --pins nix/artifact-pins.json \
+            --destination "$RUNNER_TEMP/buildbuddy-cli/bin/bbapi"
           echo "$RUNNER_TEMP/buildbuddy-cli/bin" >> "$GITHUB_PATH"
 
       # Combined test + build in one bb-remote `--script` invocation:
@@ -163,10 +165,10 @@ jobs:
         run: |
           set -euo pipefail
           echo "::notice::BuildBuddy test invocation: https://app.buildbuddy.io/invocation/$TEST_INVOCATION_ID"
-          python3 devinfra/buildbuddy/ci/live_test_status.py pending \
+          python3 -m devinfra.buildbuddy.ci.live_test_status pending \
             --invocation-id "$TEST_INVOCATION_ID" --sha "$STATUS_SHA" \
             --state-file "$LIVE_TEST_STATE_FILE"
-          setsid python3 devinfra/buildbuddy/ci/live_test_status.py watch \
+          setsid python3 -m devinfra.buildbuddy.ci.live_test_status watch \
             --invocation-id "$TEST_INVOCATION_ID" --sha "$STATUS_SHA" \
             --state-file "$LIVE_TEST_STATE_FILE" \
             >"$RUNNER_TEMP/buildbuddy-test-watcher.log" 2>&1 < /dev/null &
@@ -212,7 +214,7 @@ jobs:
           LIVE_TEST_STATE_FILE: ${{ runner.temp }}/buildbuddy-test-${{ github.run_id }}-${{ github.run_attempt }}.json
           LIVE_TEST_PID_FILE: ${{ runner.temp }}/buildbuddy-test-${{ github.run_id }}-${{ github.run_attempt }}.pid
         run: |
-          python3 devinfra/buildbuddy/ci/live_test_status.py finish \
+          python3 -m devinfra.buildbuddy.ci.live_test_status finish \
             --invocation-id "$TEST_INVOCATION_ID" --sha "$STATUS_SHA" \
             --state-file "$LIVE_TEST_STATE_FILE" --pid-file "$LIVE_TEST_PID_FILE" \
             --remote-outcome "${REMOTE_OUTCOME:-cancelled}"

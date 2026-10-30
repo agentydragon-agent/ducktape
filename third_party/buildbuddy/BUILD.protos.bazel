@@ -1130,3 +1130,27 @@ go_proto_library(
         ":zip_go_proto",
     ],
 )
+
+proto_library(
+    name = "api_v1_file_proto",
+    srcs = ["proto/api/v1/file.proto"],
+)
+
+go_proto_library(
+    name = "api_v1_file_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/api/v1/file",
+    proto = ":api_v1_file_proto",
+)
+
+proto_library(
+    name = "api_v1_invocation_proto",
+    srcs = ["proto/api/v1/invocation.proto"],
+    deps = [":api_v1_file_proto"],
+)
+
+go_proto_library(
+    name = "api_v1_invocation_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/api/v1/invocation",
+    proto = ":api_v1_invocation_proto",
+    deps = [":api_v1_file_go_proto"],
+)

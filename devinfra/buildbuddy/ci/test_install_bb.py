@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from devinfra.buildbuddy.ci.install_bb import install_bb
+from devinfra.buildbuddy.ci.install_bb import install_cli
 
 
-def write_pin(tmp_path: Path, contents: bytes) -> tuple[Path, Path]:
+def write_pin(tmp_path: Path, tool: str, contents: bytes) -> tuple[Path, Path]:
     artifact = tmp_path / "artifact"
     artifact.write_bytes(contents)
     pins = tmp_path / "artifact-pins.json"
@@ -18,7 +18,7 @@ def write_pin(tmp_path: Path, contents: bytes) -> tuple[Path, Path]:
         json.dumps(
             {
                 "pins": {
-                    "bb": {
+                    tool: {
                         "url": artifact.as_uri(),
                         "sha256": base64.b64encode(hashlib.sha256(contents).digest()).decode(),
                     }
@@ -29,12 +29,13 @@ def write_pin(tmp_path: Path, contents: bytes) -> tuple[Path, Path]:
     return pins, artifact
 
 
-def test_verified_download_is_installed_executable(tmp_path: Path) -> None:
-    contents = b"verified CLI bytes"
-    pins, _ = write_pin(tmp_path, contents)
-    destination = tmp_path / "bin" / "bb"
+@pytest.mark.parametrize("tool", ["bb", "bbapi"])
+def test_verified_download_is_installed_executable(tmp_path: Path, tool: str) -> None:
+    contents = f"verified {tool} bytes".encode()
+    pins, _ = write_pin(tmp_path, tool, contents)
+    destination = tmp_path / "bin" / tool
 
-    install_bb(pins, destination)
+    install_cli(pins, destination, tool)
 
     assert destination.read_bytes() == contents
     assert stat.S_IMODE(destination.stat().st_mode) == 0o755
@@ -42,16 +43,17 @@ def test_verified_download_is_installed_executable(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("already_installed", [False, True])
-def test_corrupt_download_does_not_replace_destination(tmp_path: Path, already_installed: bool) -> None:
-    pins, artifact = write_pin(tmp_path, b"expected bytes")
+@pytest.mark.parametrize("tool", ["bb", "bbapi"])
+def test_corrupt_download_does_not_replace_destination(tmp_path: Path, already_installed: bool, tool: str) -> None:
+    pins, artifact = write_pin(tmp_path, tool, b"expected bytes")
     artifact.write_bytes(b"corrupt download")
-    destination = tmp_path / "bin" / "bb"
+    destination = tmp_path / "bin" / tool
     if already_installed:
         destination.parent.mkdir()
         destination.write_bytes(b"previous CLI")
 
     with pytest.raises(ValueError, match="pinned SHA-256"):
-        install_bb(pins, destination)
+        install_cli(pins, destination, tool)
 
     if already_installed:
         assert destination.read_bytes() == b"previous CLI"

@@ -7,11 +7,14 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
+	"time"
 
 	invocationpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -25,6 +28,7 @@ type client struct {
 	apiKey  string
 	http    *http.Client
 	groupID string
+	retries int
 }
 
 func newClient() (*client, error) {
@@ -36,16 +40,20 @@ func newClient() (*client, error) {
 	if base == "" {
 		base = defaultBaseURL
 	}
-	return &client{baseURL: base, apiKey: key, http: &http.Client{}}, nil
+	return &client{baseURL: base, apiKey: key, http: &http.Client{Timeout: requestTimeout}, retries: 3}, nil
 }
 
 // call makes a Twirp JSON RPC call: POST /rpc/BuildBuddyService/<method>.
 func (c *client) call(method string, req proto.Message, resp proto.Message) error {
+	return c.callPath("/rpc/BuildBuddyService/"+method, req, resp)
+}
+
+func (c *client) callPath(path string, req proto.Message, resp proto.Message) error {
 	body, err := protojson.Marshal(req)
 	if err != nil {
 		return fmt.Errorf("marshal request: %w", err)
 	}
-	url := fmt.Sprintf("%s/rpc/BuildBuddyService/%s", c.baseURL, method)
+	url := c.baseURL + path
 	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
@@ -53,18 +61,9 @@ func (c *client) call(method string, req proto.Message, resp proto.Message) erro
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("x-buildbuddy-api-key", c.apiKey)
 
-	httpResp, err := c.http.Do(httpReq)
+	respBody, err := c.readResponse(httpReq, strings.Contains(path, "/Get") || strings.Contains(path, "/Search"))
 	if err != nil {
-		return fmt.Errorf("http request: %w", err)
-	}
-	defer httpResp.Body.Close()
-
-	respBody, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		return fmt.Errorf("read response: %w", err)
-	}
-	if httpResp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d: %s", httpResp.StatusCode, string(respBody))
+		return err
 	}
 	if err := unmarshalJSON(respBody, resp); err != nil {
 		return fmt.Errorf("unmarshal response: %w", err)
@@ -105,27 +104,69 @@ func (c *client) resolveGroupID(repo string) (string, error) {
 }
 
 // fetchURL does a GET with the API key header, returning raw bytes.
+type httpError struct {
+	status int
+	body   string
+}
+
+func (e *httpError) Error() string { return fmt.Sprintf("HTTP %d: %s", e.status, e.body) }
+
+// readResponse retries idempotent reads on transient failures. Mutation RPCs
+// such as CancelExecutions are sent once so retries cannot duplicate effects.
+func (c *client) readResponse(req *http.Request, retry bool) ([]byte, error) {
+	attempts := 1
+	if retry {
+		attempts += c.retries
+	}
+	var last error
+	for attempt := 0; attempt < attempts; attempt++ {
+		next := req.Clone(req.Context())
+		if req.GetBody != nil {
+			body, err := req.GetBody()
+			if err != nil {
+				return nil, err
+			}
+			next.Body = body
+		}
+		body, err := c.readResponseOnce(next)
+		if err == nil {
+			return body, nil
+		}
+		last = err
+		var status *httpError
+		if errors.As(err, &status) && status.status != 408 && status.status != 425 && status.status != 429 && status.status < 500 {
+			return nil, err
+		}
+		if attempt+1 < attempts {
+			time.Sleep(time.Second * time.Duration(1<<attempt))
+		}
+	}
+	return nil, last
+}
+
+func (c *client) readResponseOnce(req *http.Request) ([]byte, error) {
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("http request: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, &httpError{status: resp.StatusCode, body: string(body)}
+	}
+	return body, nil
+}
+
 func (c *client) fetchURL(url string) ([]byte, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("x-buildbuddy-api-key", c.apiKey)
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
-	}
-	return body, nil
+	return c.readResponse(req, true)
 }
 
 // bytestreamDownloadURL includes invocation_id because BuildBuddy's legacy

@@ -8,6 +8,7 @@ on:
       - ".github/actions/build-runner-image/action.yml"
       - ".github/actions/setup-nix-devtools/action.yml"
       - ".github/workflows/buildbuddy-remote-runner-image.yml"
+      - "devinfra/buildbuddy/ci/install_bb.py"
       - "devinfra/buildbuddy/images/runner/build.py"
       - "devinfra/buildbuddy/images/runner/image.nix"
       - "devinfra/buildbuddy/images/runner/test_build.py"
@@ -75,11 +76,13 @@ jobs:
             --state "$RUNNER_TEMP/runner-image/state.json" \
             --image "$RUNNER_IMAGE" --tag "$GITHUB_SHA"
 
-      - name: Install the pinned BuildBuddy launcher
+      - name: Install pinned BuildBuddy CLIs
         if: steps.image.outputs.needs_publish == 'true'
         run: |
-          python3 devinfra/buildbuddy/ci/install_bb.py --pins nix/artifact-pins.json \
+          python3 devinfra/buildbuddy/ci/install_bb.py --tool bb --pins nix/artifact-pins.json \
             --destination "$RUNNER_TEMP/buildbuddy-cli/bin/bb"
+          python3 devinfra/buildbuddy/ci/install_bb.py --tool bbapi --pins nix/artifact-pins.json \
+            --destination "$RUNNER_TEMP/buildbuddy-cli/bin/bbapi"
           echo "$RUNNER_TEMP/buildbuddy-cli/bin" >> "$GITHUB_PATH"
 
       - name: Exercise candidate on a BuildBuddy runner before pinning
