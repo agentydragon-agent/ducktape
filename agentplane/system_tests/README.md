@@ -39,6 +39,14 @@ Suites do not declare volume counts; deleting and recreating a claim never reuse
 
 Pod and MCP suites remain separate so their larger scenario sets can run on different workers.
 The sampler shares MCP's stack rather than paying for another k3s startup.
+Within each suite, independent Claude/Codex cases run together through
+[`run_harness_pair`](harness_pair.py), sharing the test's clients and scripted model server.
+Each harness still creates its own Sandboxes and runs every scenario assertion. Seven Pod pairs
+and four MCP pairs overlap; the messaging and launcher pairs each peak at four Sandbox Pods.
+Storage remains sequential because it requires an empty Sandbox inventory and changes shared
+configuration. MCP OAuth linkage remains parametrized and sequential because both harnesses
+update the same operator/server record. A pair failure names its harness and cancels and awaits
+its peer before fixture cleanup.
 The Dispatcher suite remains separate because replica coverage changes the shared Runner Gateway
 Deployment and deletes a recorded Pod while checking controller behavior.
 
@@ -93,8 +101,8 @@ after the awaited command is admitted, before scenario assertions about tool eff
 prompts, tool output or native frames, or automatically resend the admitted input.
 
 The general egress and instruction scenarios run on **both harnesses**. The runner protocol is the
-same for Claude and Codex, so one parametrized harness case covers both; `offered_model` asks the deployment
-which models it offers for that harness rather than hardcoding one. The presets scenario instead exercises a Codex launch preset's
+same for Claude and Codex, so the same scenario function covers both. Both `offered_model` and
+`run_harness_pair` ask the deployment which models it offers for each harness. The presets scenario instead exercises a Codex launch preset's
 defaults, Sandbox binding, bootstrap marker, inherited fields, and local override, with the scripted
 model only. The k3s fixture configures that preset (`launch_preset.py`) in place of the deployment's.
 Initial session Open uses a 120-second retry budget for HTTP 503, retaining the same session id;

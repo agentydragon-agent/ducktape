@@ -18,7 +18,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
@@ -103,8 +103,10 @@ async def _open(client: Client, view: SandboxView, harness: runner_pb2.Harness, 
     return thread_id
 
 
-def _input(command_id: str, text: str) -> command_pb2.Command:
-    return command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text=text))
+def _input(label: str, text: str) -> command_pb2.Command:
+    # Command IDs are deployment-wide. Keep retries on the returned command while
+    # giving concurrent harness cases distinct identities.
+    return command_pb2.Command(command_id=f"{label}-{uuid4()}", submit_input=command_pb2.SubmitInput(text=text))
 
 
 async def _submit(client: Client, thread_id: UUID, command: command_pb2.Command) -> None:
