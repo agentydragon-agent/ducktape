@@ -45,7 +45,7 @@ def k3s_suite(name, srcs, deps, stack, tags = []):
     properties = {}
     suite_tags = K3S_TAGS + tags
     if config.vm:
-        # Six 1.5 GiB guests boot alongside k3s services; request the 20 GiB worker shape.
+        # Six 1.5 GiB guests, unpacked images and k3s services need the 20 GiB worker shape.
         properties["EstimatedComputeUnits"] = "8"
         guests = [
             "//agentplane/system_tests/k3s/guest:vm_guest_boot_layout",
@@ -54,7 +54,7 @@ def k3s_suite(name, srcs, deps, stack, tags = []):
         data += K3S_VM_DATA + guests
         env |= K3S_VM_ENV | {"K3S_GUEST_IMAGE_LAYOUTS": " ".join(["$(rlocationpath " + image + ")" for image in guests])}
 
-        # VM layers stay on disk; Pod runners use a different tmpfs image store.
+        # Keep the VM suite's larger worker snapshots separate from Pod suites.
         properties["test.runner-recycling-key"] = "k3s-vm"
     if config.real_model:
         properties["test.env-secrets"] = "OPENAI_API_KEY"
