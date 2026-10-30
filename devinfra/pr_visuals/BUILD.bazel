@@ -234,7 +234,7 @@ py_test(
 py_package(
     name = "pr_visuals_pkg",
     packages = [
-        "devinfra.ci",
+        "devinfra.buildbuddy.ci",
         "devinfra.pr_visuals",
         "util",
     ],
