@@ -1,5 +1,6 @@
 # Build the homepage image (website/default.nix) and push it to the Forgejo registry.
-# Pull requests build and smoke-test it; only devel pushes.
+# Pull requests build and smoke-test it; fork PRs use pull_request_target with the trusted-fork
+# review gate. Only devel pushes and manual devel runs publish.
 name: Website Image
 
 on:
@@ -9,6 +10,7 @@ on:
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/nix-image.yml"
       - ".github/workflows/website-image.yml"
+      - "devinfra/ci/pr_mergeability.py"
       - "flake.lock"
       - "flake.nix"
       - "nix/flake/packages.nix"
@@ -21,6 +23,22 @@ on:
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/nix-image.yml"
       - ".github/workflows/website-image.yml"
+      - "devinfra/ci/pr_mergeability.py"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/flake/packages.nix"
+      - "website/**"
+      # keep-sorted end
+  # Fork PRs use pull_request_target so the build can read the Attic cache. The caller resolves
+  # GitHub's merge commit and gates non-allowlisted authors with fork-ci-review before checkout.
+  pull_request_target:
+    branches: [devel]
+    paths:
+      # keep-sorted start
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/nix-image.yml"
+      - ".github/workflows/website-image.yml"
+      - "devinfra/ci/pr_mergeability.py"
       - "flake.lock"
       - "flake.nix"
       - "nix/flake/packages.nix"
@@ -29,14 +47,47 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: website-image-${{ github.ref }}
+  # Keep a skipped fork pull_request run from canceling its trusted pull_request_target run.
+  group: website-image-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
+  resolve-merge-commit:
+    name: Resolve PR merge commit
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      # pull_request_target loads this workflow from the base branch. Resolve the exact merge
+      # commit for this PR head before checking out any PR-controlled code.
+      - uses: actions/checkout@v7
+        with:
+          ref: devel
+          fetch-depth: 1
+      - name: Resolve the merge commit GitHub built for this PR head
+        id: resolve
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 devinfra/ci/pr_mergeability.py resolve
+
   image:
+    needs: [resolve-merge-commit]
+    if: >-
+      always() &&
+      (github.event_name != 'pull_request_target' || needs.resolve-merge-commit.outputs.sha != '') &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     uses: ./.github/workflows/nix-image.yml
     with:
       attr: website-image
@@ -50,6 +101,16 @@ jobs:
             -o /dev/null "http://127.0.0.1:8080$path"
         done
         docker stop website
+      source_commit: ${{ needs.resolve-merge-commit.outputs.sha }}
+      allow_unsafe_pr_checkout: ${{ github.event_name == 'pull_request_target' }}
+      environment: >-
+        ${{
+          github.event_name == 'pull_request_target' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          github.event.pull_request.user.login != 'agentydragon-agent' &&
+          github.event.pull_request.user.login != 'agentydragon' &&
+          'fork-ci-review' || ''
+        }}
     secrets:
       FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
       FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
