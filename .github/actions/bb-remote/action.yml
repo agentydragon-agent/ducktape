@@ -1,8 +1,8 @@
 # Wrapper around `bb remote` that ensures --config=rbe is always passed.
 #
 # Direct `bb remote` keeps a bootstrap path independent of the pinned bbr wheel.
-# This action reads runner/action image pins from devinfra/image_pins.json;
-# interactive bbr reads its defaults from devinfra/bbr.json.
+# Runner defaults come from the workspace .bbrc, shared with interactive bbr.
+# The action image comes from devinfra/image_pins.json.
 # Centralize --config=rbe here so workflows do not fall back to linux-sandbox
 # on a runner VM lacking action tools such as cpio.
 #
@@ -177,25 +177,15 @@ runs:
           pin_digest=$(jq -r '.rbe_container.digest' devinfra/image_pins.json)
           RBE_CONTAINER_IMAGE="${pin_image}@${pin_digest}"
         fi
-        RUNNER_CONTAINER_IMAGE="$INPUT_RUNNER_CONTAINER_IMAGE"
-        if [[ -z "$RUNNER_CONTAINER_IMAGE" ]]; then
-          runner_image=$(jq -r '.buildbuddy_remote_runner.image' devinfra/image_pins.json)
-          runner_digest=$(jq -r '.buildbuddy_remote_runner.digest' devinfra/image_pins.json)
-          RUNNER_CONTAINER_IMAGE="${runner_image}@${runner_digest}"
+        BB_IMAGE_ARGS=()
+        if [[ -n "$INPUT_RUNNER_CONTAINER_IMAGE" ]]; then
+          BB_IMAGE_ARGS+=(--container_image="docker://${INPUT_RUNNER_CONTAINER_IMAGE}")
         fi
-        BB_IMAGE_ARGS=(--container_image="docker://${RUNNER_CONTAINER_IMAGE}")
 
-        # Share bbr's clocksource workaround for restored Firecracker guests.
-        run_under=$(jq -er '.runner_exec_properties["run-under"]' devinfra/bbr.json)
+        # Override only CI-specific resources; bb reads shared defaults from .bbrc.
         RUNNER_EXEC_PROPS=(
-          --runner_exec_properties=run-under="$run_under"
           --runner_exec_properties=EstimatedFreeDiskBytes="$INPUT_DISK_BYTES"
           --runner_exec_properties=EstimatedComputeUnits="$INPUT_COMPUTE_UNITS"
-          --runner_exec_properties=workload-isolation-type=firecracker
-          --runner_exec_properties=init-dockerd=true
-          --runner_exec_properties=recycle-runner=true
-          --runner_exec_properties=remote-snapshot-save-policy=always
-          --runner_exec_properties=snapshot-read-policy=newest
         )
         if [[ -n "$INPUT_RUNNER_RECYCLING_KEY" ]]; then
           RUNNER_EXEC_PROPS+=(--runner_exec_properties=runner-recycling-key="$INPUT_RUNNER_RECYCLING_KEY")

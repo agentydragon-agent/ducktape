@@ -506,6 +506,10 @@ Select the named section with `bb remote --bb_config=large build //target`.
 Bazel options belong in `.bazelrc`; Bazel named configs use `--config`, not
 `--bb_config`.
 
+The workspace root is the first ancestor of the current directory containing
+`MODULE.bazel`, `WORKSPACE`, or `WORKSPACE.bazel`. Intermediate directories
+do not contribute additional `.bbrc` files.
+
 Files are read in increasing precedence order:
 
 1. Workspace `.bbrc`.
@@ -518,11 +522,18 @@ expand where selected. `--ignore_all_bb_rc_files` disables all these files;
 `--bbrc=/dev/null` stops subsequent explicit files, but does not disable the
 implicit workspace/home files.
 
-The repo currently uses `devinfra/bbr.json`, read by our `bbr` wrapper, to
-construct CLI flags. Native `bb` does not read that JSON. The GitHub
-`bb-remote` action independently constructs most flags and reads the clock
-workaround's `run-under` value from that JSON. `bb` also applies `.bbrc`
-when invoked by these wrappers.
+The repo's root `.bbrc` supplies the runner image, resource defaults, snapshot
+policy, and clock workaround. Both `bbr` and the GitHub `bb-remote` action
+invoke native `bb remote`, so they share these settings without parsing rc
+files themselves. CI overrides resources and candidate images explicitly.
+`devinfra/update_image_pin.py` updates the runner image in `.bbrc` when repinning
+`devinfra/image_pins.json`.
+
+`bbr` adds session metadata (`BBR_BAZELRC`), a stale Git-base check, mounted
+credential-file loading, and inner invocation-ID reporting/recording. Remote
+options go before the Bazel verb, e.g. `bbr --timeout=10m test //target`.
+Its dry-run prints the forwarded command; native `.bbrc` expansion happens
+only when `bb` executes.
 
 Validation with pinned 5.0.466: an explicit `.bbrc` containing
 `remote --timeout=cli-doc-audit-invalid-duration` caused the remote parser to

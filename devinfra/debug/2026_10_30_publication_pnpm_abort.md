@@ -140,10 +140,10 @@ therefore absent from both the console and the returned stderr.
 
 ## Workaround
 
-`devinfra/bbr.json` configures BuildBuddy's `run-under` wrapper to select
-`kvm-clock` before starting the hosted runner. The GitHub `bb-remote` action
-reads the same property, covering publication and Bazel CI as well as `bbr`
-and arbitrary remote scripts. This runs before a restored Bazel JVM resumes
+The repo `.bbrc` configures BuildBuddy's `run-under` wrapper to select
+`kvm-clock` before starting the hosted runner (originally in `devinfra/bbr.json`).
+Both the GitHub `bb-remote` action and `bbr` use these native defaults, covering
+publication, Bazel CI, and arbitrary remote scripts. This runs before a restored Bazel JVM resumes
 work; changing the platform property also creates a new snapshot namespace,
 leaving behind the retained extension failure.
 
