@@ -216,6 +216,27 @@ func TestSessionCommandsReachTheDispatcherForTheLaunchedIncarnationOnly(t *testi
 	}
 }
 
+func TestCentralSamplerSessionSelectionReachesDispatcher(t *testing.T) {
+	f := newFixture(t)
+	launched := f.launch(t, "test-worker")
+	session := uuid.NewString()
+	resultOf[map[string]any](f.attempt(t, f.caller, contract.ActionOpenSession, fmt.Sprintf(`{
+		"sandbox": {"name": %q, "uid": %q}, "session_id": %q,
+		"spec": {"harness": "HARNESS_CENTRAL_SAMPLER", "model": "test-model", "cwd": "/test/{session_id}",
+		"central_sampler": {"service": "test-central"}}
+	}`, launched.Name, launched.UID, session)))
+	want := &dispatcherpb.OpenSessionRequest{
+		SessionId: session, Sandbox: launched.Name,
+		Spec: &runnerpb.SessionSpec{
+			Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test/" + session,
+			CentralSampler: &runnerpb.CentralSamplerConfig{Service: "test-central"},
+		},
+	}
+	if got := f.dispatcher.received(); len(got) != 1 || !proto.Equal(got[0], want) {
+		t.Fatalf("dispatcher received %v, want %v", got, want)
+	}
+}
+
 func TestADispatcherRefusalFailsAndAnyOtherErrorLeavesTheOutcomeUnknown(t *testing.T) {
 	f := newFixture(t)
 	launched := f.launch(t, "test-worker")
