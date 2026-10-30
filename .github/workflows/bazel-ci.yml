@@ -105,15 +105,12 @@ jobs:
           SOURCE_COMMIT: ${{ inputs.source_commit }}
         run: python3 devinfra/ci/pr_mergeability.py verify-source
 
-      # The launcher helpers use stdlib Python; install the two CLIs needed by
-      # bb remote and its cancellation handler from their Nix artifact pins.
-      - name: Install pinned BuildBuddy CLIs
-        run: |
-          python3 devinfra/buildbuddy/ci/install_bb.py --tool bb --pins nix/artifact-pins.json \
-            --destination "$RUNNER_TEMP/buildbuddy-cli/bin/bb"
-          python3 devinfra/buildbuddy/ci/install_bb.py --tool bbapi --pins nix/artifact-pins.json \
-            --destination "$RUNNER_TEMP/buildbuddy-cli/bin/bbapi"
-          echo "$RUNNER_TEMP/buildbuddy-cli/bin" >> "$GITHUB_PATH"
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: bb
+
+      - name: Install pinned bbapi
+        run: nix profile install .#bbapi
 
       # Combined test + build in one bb-remote `--script` invocation:
       # - Saves one Firecracker VM allocation per CI run.
