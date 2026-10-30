@@ -320,7 +320,6 @@ func (event ResponsesEvent) MarshalJSON() ([]byte, error) {
 
 type ResponsesTerminal struct {
 	Status json.RawMessage `json:"status,omitempty"`
-	Output json.RawMessage `json:"output,omitempty"`
 	Usage  json.RawMessage `json:"usage,omitempty"`
 	Raw    json.RawMessage `json:"-"`
 }
@@ -331,15 +330,14 @@ func (terminal *ResponsesTerminal) UnmarshalJSON(data []byte) error {
 	}
 	var wire struct {
 		Status json.RawMessage `json:"status"`
-		Output json.RawMessage `json:"output"`
 		Usage  json.RawMessage `json:"usage"`
 	}
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return err
 	}
 	*terminal = ResponsesTerminal{
-		Status: cloneJSON(wire.Status), Output: cloneJSON(wire.Output),
-		Usage: cloneJSON(wire.Usage), Raw: cloneJSON(data),
+		Status: cloneJSON(wire.Status),
+		Usage:  cloneJSON(wire.Usage), Raw: cloneJSON(data),
 	}
 	return nil
 }
@@ -361,20 +359,6 @@ func (terminal ResponsesTerminal) MarshalJSON() ([]byte, error) {
 	}
 	type wire ResponsesTerminal
 	return json.Marshal(wire(terminal))
-}
-
-func (terminal ResponsesTerminal) OutputItems() ([]ResponsesItem, bool, error) {
-	if len(terminal.Output) == 0 {
-		return nil, false, nil
-	}
-	if !bytes.HasPrefix(bytes.TrimSpace(terminal.Output), []byte("[")) {
-		return nil, true, errors.New("terminal output is not an array")
-	}
-	var items []ResponsesItem
-	if err := json.Unmarshal(terminal.Output, &items); err != nil {
-		return nil, true, err
-	}
-	return items, true, nil
 }
 
 func (terminal ResponsesTerminal) TotalTokens() *int {
