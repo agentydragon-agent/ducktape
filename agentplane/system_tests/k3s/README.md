@@ -142,6 +142,8 @@ in a private registry and would boot for minutes without KVM: a Debian cloud ker
 directly, a BusyBox initramfs that mounts an erofs root under a tmpfs overlay, and real systemd as
 PID 1. The guest installs the same runner service and resource slices as
 [`vm.nix`](../../runner/vm.nix), with fixture-specific tool paths and mount/network preparation.
+The root image includes a hardware database compiled from its Debian package closure, letting
+systemd skip rebuilding it at each boot before starting udev's device discovery.
 The runner comes from the production runner disk, as in a Pod; both harnesses, Git and `findmnt`
 are pinned in the root disk. Runner uses systemd's private manager connection; a real system bus
 also exercises denial of unprivileged management requests.
