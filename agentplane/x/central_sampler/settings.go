@@ -18,26 +18,44 @@ type Provider struct {
 	ReasoningEfforts []string `json:"reasoning_efforts"`
 }
 
+type APIStyle string
+
+const APIStyleResponses APIStyle = "responses"
+
+type ResponsesDialect string
+
+const (
+	ResponsesDialectLite     ResponsesDialect = "lite"
+	ResponsesDialectStandard ResponsesDialect = "standard"
+)
+
+type ExecEncoding string
+
+const (
+	ExecEncodingFreeform ExecEncoding = "freeform"
+	ExecEncodingJSON     ExecEncoding = "json"
+)
+
 // ModelConfig contains the wire and tool-call encodings supported by one model route.
 type ModelConfig struct {
 	Provider     string          `json:"provider"`
-	API          string          `json:"api"`
+	API          APIStyle        `json:"api"`
 	Responses    ResponsesConfig `json:"responses"`
-	ExecEncoding string          `json:"exec_encoding"`
+	ExecEncoding ExecEncoding    `json:"exec_encoding"`
 }
 
 type ResponsesConfig struct {
-	Dialect string `json:"dialect"`
+	Dialect ResponsesDialect `json:"dialect"`
 }
 
 func (c ModelConfig) Validate() error {
-	if c.API != "responses" {
+	if c.API != APIStyleResponses {
 		return errors.New("model api must be responses")
 	}
-	if c.Responses.Dialect != "lite" && c.Responses.Dialect != "standard" {
+	if c.Responses.Dialect != ResponsesDialectLite && c.Responses.Dialect != ResponsesDialectStandard {
 		return errors.New("responses.dialect must be lite or standard")
 	}
-	if c.ExecEncoding != "freeform" && c.ExecEncoding != "json" {
+	if c.ExecEncoding != ExecEncodingFreeform && c.ExecEncoding != ExecEncodingJSON {
 		return errors.New("exec_encoding must be freeform or json")
 	}
 	return nil

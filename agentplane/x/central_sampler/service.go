@@ -159,7 +159,7 @@ func (s *Sampler) command(ctx context.Context, sessionID string, command *comman
 		if !configured {
 			return nil, status.Error(codes.FailedPrecondition, "session cannot apply this operation")
 		}
-		if modelConfig.Responses.Dialect == "standard" {
+		if modelConfig.Responses.Dialect == ResponsesDialectStandard {
 			return nil, status.Error(codes.FailedPrecondition, "manual compaction requires Responses lite mode")
 		}
 	}

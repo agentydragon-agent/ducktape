@@ -788,7 +788,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 }
 
 func (r *Runtime) compact(ctx context.Context, owner Owner, provider Provider, model string) error {
-	if r.settings.Models[model].Responses.Dialect != "lite" {
+	if r.settings.Models[model].Responses.Dialect != ResponsesDialectLite {
 		return &KnownFailureError{Evidence: map[string]any{"reason": "compaction requires a Responses Lite route; standard Responses compaction is not supported"}}
 	}
 	state, err := r.store.ExecutionState(ctx, owner)

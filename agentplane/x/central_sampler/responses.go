@@ -130,7 +130,7 @@ type ResponsesToolCall struct {
 
 // IsModelTool checks the exact tool surface declared for this model route.
 func (call ResponsesToolCall) IsModelTool(config ModelConfig) bool {
-	if config.ExecEncoding == "json" {
+	if config.ExecEncoding == ExecEncodingJSON {
 		return call.Name == "exec" && call.Type == ResponsesItemFunctionCall
 	}
 	return call.Name == "exec" && call.Type == ResponsesItemCustomToolCall ||

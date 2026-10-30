@@ -10,18 +10,18 @@ import (
 
 func fixtureSettings() Settings {
 	return Settings{
-		Models: map[string]ModelConfig{"test-model": {Provider: "responses", API: "responses", Responses: ResponsesConfig{Dialect: "lite"}, ExecEncoding: "freeform"}}, DatabaseURL: "postgresql://fixture.invalid/sampler", Listen: "127.0.0.1:0", ServiceName: "fixture", Providers: map[string]Provider{"responses": {Endpoint: "https://model.invalid/responses", Credential: "test-credential", ReasoningEfforts: []string{"", "high"}}}, Audience: "test-sampler", AllowedAccounts: []string{"test/client"}, CodeModeHost: "/fixture/host", ExecutorCodex: "/fixture/codex", Logs: "/fixture/logs", DirectExecutorURL: "ws://executor.invalid", MaxLiveSessions: 2, TurnTimeoutSeconds: 40, RPCTimeoutSeconds: 10, LeaseSeconds: 60,
+		Models: map[string]ModelConfig{"test-model": {Provider: "responses", API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform}}, DatabaseURL: "postgresql://fixture.invalid/sampler", Listen: "127.0.0.1:0", ServiceName: "fixture", Providers: map[string]Provider{"responses": {Endpoint: "https://model.invalid/responses", Credential: "test-credential", ReasoningEfforts: []string{"", "high"}}}, Audience: "test-sampler", AllowedAccounts: []string{"test/client"}, CodeModeHost: "/fixture/host", ExecutorCodex: "/fixture/codex", Logs: "/fixture/logs", DirectExecutorURL: "ws://executor.invalid", MaxLiveSessions: 2, TurnTimeoutSeconds: 40, RPCTimeoutSeconds: 10, LeaseSeconds: 60,
 	}
 }
 
 func TestProviderRequiresExplicitSupportedModelConfiguration(t *testing.T) {
 	for name, config := range map[string]ModelConfig{
-		"missing api":                {Responses: ResponsesConfig{Dialect: "lite"}, ExecEncoding: "freeform"},
-		"unsupported api":            {API: "anthropic_messages", Responses: ResponsesConfig{Dialect: "lite"}, ExecEncoding: "json"},
-		"missing responses config":   {API: "responses", ExecEncoding: "freeform"},
-		"unsupported responses mode": {API: "responses", Responses: ResponsesConfig{Dialect: "unknown"}, ExecEncoding: "freeform"},
-		"missing exec encoding":      {API: "responses", Responses: ResponsesConfig{Dialect: "lite"}},
-		"unsupported exec encoding":  {API: "responses", Responses: ResponsesConfig{Dialect: "lite"}, ExecEncoding: "yaml"},
+		"missing api":                {Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform},
+		"unsupported api":            {API: "anthropic_messages", Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingJSON},
+		"missing responses config":   {API: APIStyleResponses, ExecEncoding: ExecEncodingFreeform},
+		"unsupported responses mode": {API: APIStyleResponses, Responses: ResponsesConfig{Dialect: "unknown"}, ExecEncoding: ExecEncodingFreeform},
+		"missing exec encoding":      {API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}},
+		"unsupported exec encoding":  {API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: "yaml"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s := fixtureSettings()

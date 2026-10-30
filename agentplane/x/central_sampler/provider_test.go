@@ -57,7 +57,7 @@ func TestResponsesRequestUsesCodexToolsAndPreservesOpaqueContext(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"type":"reasoning","encrypted_content":"opaque","provider_sequence":9007199254740993}`), &item); err != nil {
 		t.Fatal(err)
 	}
-	body, err := RequestBody("fixture-model", "fixture-session", []ResponsesItem{item}, nil, nil, ModelConfig{API: "responses", Responses: ResponsesConfig{Dialect: "lite"}, ExecEncoding: "freeform"})
+	body, err := RequestBody("fixture-model", "fixture-session", []ResponsesItem{item}, nil, nil, ModelConfig{API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,10 +103,10 @@ func TestResponsesRequestUsesCodexToolsAndPreservesOpaqueContext(t *testing.T) {
 }
 
 func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
-	for _, mode := range []string{"standard", "lite"} {
-		for _, encoding := range []string{"json", "freeform"} {
-			t.Run(mode+"/"+encoding, func(t *testing.T) {
-				config := ModelConfig{API: "responses", Responses: ResponsesConfig{Dialect: mode}, ExecEncoding: encoding}
+	for _, mode := range []ResponsesDialect{ResponsesDialectStandard, ResponsesDialectLite} {
+		for _, encoding := range []ExecEncoding{ExecEncodingJSON, ExecEncodingFreeform} {
+			t.Run(string(mode)+"/"+string(encoding), func(t *testing.T) {
+				config := ModelConfig{API: APIStyleResponses, Responses: ResponsesConfig{Dialect: mode}, ExecEncoding: encoding}
 				body, err := RequestBody("fixture", "session", nil, nil, nil, config)
 				if err != nil {
 					t.Fatal(err)
@@ -120,7 +120,7 @@ func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
 					t.Fatal(err)
 				}
 				tools := body.Tools
-				if mode == "lite" {
+				if mode == ResponsesDialectLite {
 					tools = body.Input[0].(ResponsesItem).Tools
 					if _, present := wire["tools"]; present {
 						t.Fatal("Lite declares top-level tools")
@@ -138,7 +138,7 @@ func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
 						t.Fatal("standard request includes additional_tools")
 					}
 				}
-				if encoding == "json" {
+				if encoding == ExecEncodingJSON {
 					if len(tools) != 1 || tools[0].Name != "exec" || tools[0].Type != "function" {
 						t.Fatalf("JSON tools: %+v", tools)
 					}
@@ -153,13 +153,13 @@ func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
 					{Type: ResponsesItemCustomToolCall, Name: "exec"},
 					{Type: ResponsesItemFunctionCall, Name: "wait"},
 				} {
-					want := encoding == "json" && call.Name == "exec" && call.Type == ResponsesItemFunctionCall || encoding == "freeform" && (call.Name == "wait" || call.Type == ResponsesItemCustomToolCall)
+					want := encoding == ExecEncodingJSON && call.Name == "exec" && call.Type == ResponsesItemFunctionCall || encoding == ExecEncodingFreeform && (call.Name == "wait" || call.Type == ResponsesItemCustomToolCall)
 					if call.IsModelTool(config) != want {
 						t.Fatalf("wrong tool validation: %+v", call)
 					}
 				}
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					if got := r.Header.Get("x-openai-internal-codex-responses-lite"); (got == "true") != (mode == "lite") {
+					if got := r.Header.Get("x-openai-internal-codex-responses-lite"); (got == "true") != (mode == ResponsesDialectLite) {
 						t.Errorf("Lite header: %q", got)
 					}
 					_, _ = w.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n"))
@@ -180,7 +180,7 @@ func TestStandardResponsesSerializesTextAndAsyncNotifications(t *testing.T) {
 	items := []ResponsesItem{
 		{Type: ResponsesItemFunctionCall, Name: "exec", CallID: "call", Arguments: `{"code":"text(1)"}`}, output, notification,
 	}
-	body, err := RequestBody("fixture", "session", items, nil, nil, ModelConfig{API: "responses", Responses: ResponsesConfig{Dialect: "standard"}, ExecEncoding: "json"})
+	body, err := RequestBody("fixture", "session", items, nil, nil, ModelConfig{API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectStandard}, ExecEncoding: ExecEncodingJSON})
 	if err != nil {
 		t.Fatal(err)
 	}
