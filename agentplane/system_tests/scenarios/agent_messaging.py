@@ -21,7 +21,6 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-import pytest_bazel
 from google.protobuf.json_format import ParseDict
 from google.protobuf.message import Message
 from more_itertools import one
@@ -147,7 +146,3 @@ async def test_an_agent_messages_another_which_reads_and_acknowledges_it(
     followed = await _follow(sender_agent, sender_model, sent.id)
     assert followed.covered, followed
     assert followed.acknowledged, f"the recipient acknowledged its inbox through the message: {followed}"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

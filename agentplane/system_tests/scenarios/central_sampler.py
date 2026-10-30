@@ -8,7 +8,6 @@ from uuid import uuid4
 
 import grpc
 import pytest
-import pytest_bazel
 
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service import history_service_pb2
@@ -505,8 +504,5 @@ async def test_dispatcher_central_setup_tool_and_retained_answer_vm(
     del k3s_deployment  # This scenario is only valid on its own disposable stack, never against staging.
     await _central_sampler_scenario(tmp_path, scripted, template=VM_TEMPLATE, cwd=VM_WORKING_DIRECTORY)
 
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 # gazelle:include_dep @pypi//protobuf

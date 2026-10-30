@@ -8,7 +8,6 @@ from urllib.parse import urlsplit
 
 import httpx
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.conftest import MCP_EDGE_URL
 
@@ -96,7 +95,3 @@ async def test_deployed_discovery_and_registration(pytestconfig: pytest.Config) 
     except Exception as error:
         # HTTP errors and JSON/assertion diagnostics can contain client credentials.
         pytest.fail(f"Deployed DCR failed at {phase}: {type(error).__name__}; HTTP details withheld", pytrace=False)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

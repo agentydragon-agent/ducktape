@@ -18,7 +18,7 @@ from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests import agent as agent_module, conftest as fixtures
 from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, Agent
 from agentplane.system_tests.conftest import SandboxNotReadyError, suspend_and_delete
-from agentplane.system_tests.test_runner_credentials import _turn
+from agentplane.system_tests.scenarios.runner_credentials import _turn
 from agentplane.testing.scripted_model import ScriptedModel
 
 # gazelle:include_dep @pypi//protobuf

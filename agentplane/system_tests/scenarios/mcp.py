@@ -20,7 +20,6 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-import pytest_bazel
 from google.protobuf import json_format
 from google.protobuf.struct_pb2 import Value
 from more_itertools import one
@@ -779,7 +778,3 @@ async def test_launcher_drives_only_the_sandbox_it_launched(
     finally:
         if not deleted:
             await suspend_and_delete(client, name, UUID(target["uid"]))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

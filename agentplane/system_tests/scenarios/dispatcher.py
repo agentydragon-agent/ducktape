@@ -15,7 +15,6 @@ from uuid import UUID, uuid4
 
 import grpc
 import pytest
-import pytest_bazel
 import yaml
 from kubernetes_asyncio import client as k8s, watch as k8s_watch
 
@@ -24,6 +23,7 @@ from agentplane.grpc.calls import dial
 from agentplane.proto import runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
+from agentplane.system_tests import runner_data_archive
 from agentplane.system_tests.cleanup_diagnostics import capture_without_masking, cleanup_without_masking
 from agentplane.system_tests.cluster import api_client, kubectl
 from agentplane.system_tests.conftest import POD_TEMPLATE, namespace
@@ -178,7 +178,7 @@ async def _archive_runner_data(
     )
     process = await asyncio.create_subprocess_exec(
         sys.executable,
-        str(Path(__file__).with_name("runner_data_archive.py")),
+        str(Path(runner_data_archive.__file__)),
         str(plan_path),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -923,7 +923,3 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
         await cleanup_without_masking(failure, lambda: cleanup(failure))
     evidence["cleanup_complete"] = True
     path.write_text(json.dumps(evidence, indent=2) + "\n")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -1,6 +1,6 @@
 """A pytest plugin that runs system test scenarios against a k3s stack of their own.
 
-A scenario's k3s, `_vm` and `_real_model` targets load it by name (`PYTEST_PLUGINS`). Before any
+Each suite target loads it by name (`PYTEST_PLUGINS`). Before any
 scenario fixture runs, it starts the stack and publishes it the way an operator names a deployment:
 the `AGENTPLANE_SYSTEM_TEST_*` variables the system tests' `conftest` reads, `KUBECONFIG`, and `kubectl`
 on `PATH`. LLM ingress forwards to the scenario's scripted model on the node, which the scenario starts

@@ -6,7 +6,8 @@ The VM lifecycle findings and selected TestRunner artifact identity remain there
 
 Baseline source: `51542844ae8d9d18e71cab407b288ec309f80cbf`. The probe ran
 `//agentplane/system_tests:test_vm_sandbox_vm` through `bbr`, selecting the
-Claude smoke case with uncached test results.
+Claude smoke case with uncached test results. This is the historical target name; the current VM
+suite target is `//agentplane/system_tests/suites:test_vm`.
 
 The CLI retried after a log-stream `RST_STREAM INTERNAL_ERROR`, reusing the
 [Bazel invocation ID](https://app.buildbuddy.io/invocation/c7d1affd-a5eb-44f0-b09b-bf63ae1dcae4).

@@ -8,7 +8,6 @@ import time
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
@@ -124,7 +123,3 @@ async def test_a_preset_launches_an_initialized_editable_codex_thread(
     local = await client.wait_for_thread_feed(local_id, timeout_s=RUNNER_ANSWERS_SECONDS)
     assert inherited.model == preset.session_defaults.model
     assert local.model == local_model
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

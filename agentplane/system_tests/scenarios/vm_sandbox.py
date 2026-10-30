@@ -8,7 +8,6 @@ import re
 from typing import Any
 
 import pytest
-import pytest_bazel
 from opentelemetry import trace
 from pydantic import BaseModel
 
@@ -309,7 +308,3 @@ async def test_vm_sandbox_scenarios(client: Client, sandbox: Sandboxes, scripted
                 _run_codex_tool_oom(client, sandbox, offered_models[runner_pb2.HARNESS_CODEX], scripted),
             )
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

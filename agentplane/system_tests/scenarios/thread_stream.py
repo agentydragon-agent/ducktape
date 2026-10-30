@@ -22,7 +22,6 @@ from uuid import UUID
 
 import httpx
 import pytest
-import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
@@ -304,7 +303,3 @@ async def test_turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_nex
     assert recovered[-1].data["event"]["turnCompleted"]["turnId"] != failed[-1].data["event"]["turnCompleted"]["turnId"]
     assert _admitted(recovered) == [follow_up.command_id]
     assert _texts(recovered) == ["AFTER_HTTP_ERROR_OK"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

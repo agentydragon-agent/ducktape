@@ -10,7 +10,6 @@ from contextlib import AsyncExitStack
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 import yaml
 from kubernetes_asyncio import client as k8s
 
@@ -426,7 +425,3 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, case
         save()
     evidence["cleanup_complete"] = True
     save()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

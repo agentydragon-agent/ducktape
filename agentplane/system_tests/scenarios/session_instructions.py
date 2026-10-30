@@ -19,7 +19,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-import pytest_bazel
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
@@ -100,7 +99,3 @@ async def test_the_standing_instruction_reaches_the_model_and_only_in_its_own_se
         request = await model.request()
         assert INSTRUCTIONS not in request.system_text, request.system_text
         await model.reply(request, Text("A checksum detects corrupted data."))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

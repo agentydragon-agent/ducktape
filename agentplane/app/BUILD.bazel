@@ -5,7 +5,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = [
     "//agentplane/app:__subpackages__",
-    "//agentplane/system_tests:__pkg__",
+    "//agentplane/system_tests:__subpackages__",
 ])
 
 # gazelle:resolve py agentplane.action_service.action_service_pb2 //agentplane/action_service:action_service_pb2
@@ -27,7 +27,7 @@ py_library(
     srcs = ["presets.py"],
     visibility = [
         "//agentplane/app:__subpackages__",
-        "//agentplane/system_tests:__pkg__",
+        "//agentplane/system_tests:__subpackages__",
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
@@ -264,7 +264,7 @@ py_library(
     srcs = ["oidc.py"],
     visibility = [
         "//agentplane/app:__subpackages__",
-        "//agentplane/system_tests:__pkg__",
+        "//agentplane/system_tests:__subpackages__",
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [

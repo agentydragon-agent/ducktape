@@ -8,7 +8,6 @@ import shlex
 from uuid import UUID, uuid4
 
 import pytest
-import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 
 from agentplane.app.testing.client import Client
@@ -147,7 +146,3 @@ async def test_fresh_vm_session_workspace_is_created_for_harness_identity(client
     }
     output_path = undeclared_outputs_dir() / "vm-workspace-ownership.json"
     output_path.write_text(json.dumps(evidence, indent=2) + "\n")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

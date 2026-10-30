@@ -243,7 +243,7 @@ one passing run does not establish the frequency of the earlier startup failure.
 ## VM setup stdout missing from retained events
 
 In [CI invocation 1f9fca25](https://app.buildbuddy.io/invocation/1f9fca25-3dec-528a-96d0-9fdcff5b2c67),
-`test_central_sampler_vm` reached successful setup, read the file created by setup through the
+The historical `test_central_sampler_vm` target reached successful setup, read the file created by setup through the
 VM executor, and passed PID 1, UID and cgroup checks. Retained `setup_finished` had exit code 0,
 but retained setup stdout was empty instead of `setup-on-executor`. The Pod variant passed.
 The VM timeline includes the runner disk and both guest images. This run reached execution;

@@ -9,7 +9,6 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, retry_if_result, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
@@ -293,7 +292,3 @@ async def test_vm_mtls_certificates_authenticate_both_harnesses(
                     ),
                 )
             )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

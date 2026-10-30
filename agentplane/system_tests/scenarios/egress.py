@@ -30,7 +30,6 @@ import textwrap
 from datetime import UTC, datetime
 
 import pytest
-import pytest_bazel
 from pydantic import BaseModel, ConfigDict, Field
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
@@ -249,7 +248,3 @@ async def test_a_policy_granted_after_the_sandbox_is_running_takes_effect(
             admitted = await _decision_for(client, view.name, host, after=after)
             assert admitted.outcome is Outcome.ALLOW, f"{admitted!r}\n{turn.transcript}"
             assert admitted.policy == runtime_grant.POLICY_SET, f"{admitted!r}"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

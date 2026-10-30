@@ -1,7 +1,7 @@
 # k3s system test stack
 
-The stack every [system test](../README.md) scenario runs on: the Agentplane services on a
-bare k3s inside the scenario's own RBE action (no Cilium), which PR CI runs like any test.
+The stack every [system test](../README.md) suite runs on: the Agentplane services on a
+bare k3s inside the suite's own RBE action (no Cilium), which PR CI runs like any test.
 [`system_test_target.py`](system_test_target.py) is the pytest plugin that starts it and publishes it as
 the deployment under test, with LLM ingress forwarding to the scenario's scripted model on the node.
 Scripted targets take the `harnesses/runner_layout` image, which carries both pinned harnesses.
@@ -19,7 +19,7 @@ Each stack records its setup in `k3s-timeline.jsonl` among the test's undeclared
 step finished and how long each image took to import, written as it happens, so a hung run shows how far
 it got. A k3s target's test log ends with the same timeline.
 
-A target declared with `mcp_fixtures = True` takes the `rendered/local-model-mcp-fixtures.json`
+A suite using the MCP fixture stack takes the `rendered/local-model-mcp-fixtures.json`
 rendering and also imports and runs Dex, `mcp-everything` and the OAuth MCP fixture
 (`mcp_fixtures/*_layout`), with test-only Dex clients, operator, MCP server and Action groups. The
 standalone MCP edge serves its OAuth and MCP endpoints in this fixture; Actions keeps its separate
@@ -94,8 +94,8 @@ descriptors with the rendered tags, and streams each distinct blob once. It does
 Docker-format `oci_load` tarballs.
 
 The Pod runner uses the production `//agentplane/runner:disk_image` volume at `/run/agentplane/runner`, with a
-tools image for the rest. Model-free Pod targets import `:runner_image`; targets that run a turn import
-`:runner_harnesses_image`, which adds pinned Claude Code and Codex. VM-only targets omit the Pod runner image:
+tools image for the rest. Pod suites import `:runner_harnesses_image`, which adds pinned Claude Code and Codex.
+VM-only targets omit the Pod runner image:
 their Sandboxes use the runner disk and test guest images. Image volumes need containerd 2.1 or later and the
 `ImageVolume` feature gate, which `stack.py` turns on in the API server and kubelet.
 
@@ -113,7 +113,7 @@ quarters of import time; with the chart rendered at build time, imports still ta
 
 ## Sandbox lifecycle coverage
 
-The model-free `test_storage` scenario creates a Sandbox and waits for its own `Ready=True` and
+The model-free storage scenario in `test_pod` creates a Sandbox and waits for its own `Ready=True` and
 `Bootstrapped` conditions, reads the markers its bootstrap wrote, suspends it until the Pod is gone,
 resumes it with its state and workspace volumes unchanged, and deletes it until it and its claims are gone.
 The controller gates Ready on workload readiness, runner connection and bootstrap success.
@@ -125,8 +125,9 @@ Exact bootstrap and seal-before-stop ordering belongs in deterministic
 
 ## VM Sandboxes
 
-A system test scenario's `_vm` target ([system tests README](../README.md)) runs on a
-stack rendered with VM Sandboxes (`rendered/local-model-vm.json`), so [`vm_sandboxes.py`](vm_sandboxes.py)
+VM stacks, including `test_vm`, `test_vm_systemd`, `test_vm_manual` and `test_sampler_vm`
+([system tests README](../README.md)), run on a stack rendered with VM Sandboxes
+(`rendered/local-model-vm.json`), so [`vm_sandboxes.py`](vm_sandboxes.py)
 installs production's KubeVirt release with `useEmulation` (QEMU TCG; the executor has no `/dev/kvm`)
 and Kyverno's admission controller, which adds the egress relay to each launcher Pod as in
 production. The fixture applies once KubeVirt's VirtualMachine API is served: the Sandbox Controller
@@ -142,12 +143,12 @@ The runner comes from the production runner disk, as in a Pod; both harnesses, G
 are pinned in the root disk. Runner uses systemd's private manager connection; a real system bus
 also exercises denial of unprivileged management requests.
 
-The dedicated CI target `//agentplane/system_tests:test_runner_systemd_vm` selects a guest root
+The dedicated CI target `//agentplane/system_tests/suites:test_vm_systemd` selects a guest root
 with `runner_systemd_fixture` and an entrypoint override. Before `exec`ing the production runner,
 it runs all subtests against the real manager. Its isolated `/state/.supervision-proof`
 exercises native process streams, limits, descendant fencing, uncertain launch outcomes and parent
 death. A failed proof prevents runner startup; its output is retained in the guest console. The
-outer test requires the completed success receipt as well as runner readiness. Ordinary VM targets
+outer test requires the completed success receipt as well as runner readiness. Other VM suites
 use a root disk without the proof binary or override and start the runner directly. Both variants
 share the kernel, production runner disk, systemd units and guest preparation. The proof target
 still uses the full k3s application stack.
@@ -162,7 +163,7 @@ exits; otherwise Pod termination can stop the state filesystem while the guest c
 Existing KubeVirt initializers run before these daemons; ContainerPath daemons retain their ordinary
 container placement for KubeVirt reconciliation.
 
-`test_vm_sandbox_vm` starts three VM Sandboxes concurrently in one stack: one per harness for the
+`test_vm` starts three VM Sandboxes concurrently in one stack: one per harness for the
 scripted turn and one for Codex tool OOM containment. The OOM scenario drives the real Codex
 app-server to run a memory-exhausting shell command through its isolated exec-server. The allocator
 touches memory beyond the configured executor limit, with a raised `oom_score_adj` to select that

@@ -4,6 +4,9 @@ The minimal CI guest does not respond to KubeVirt's graceful shutdown request. K
 its grace period, destroys the domain, then removes the launcher. The observed cleanup tail is
 mostly this shutdown path; changing Sandbox finalizer or live-update sequencing would not remove it.
 
+The `test_vm_sandbox_vm` command below is the historical target name used for this measurement;
+the current VM suite target is `//agentplane/system_tests/suites:test_vm`.
+
 ## Evidence
 
 Baseline source: `51542844ae8d9d18e71cab407b288ec309f80cbf`. The only experimental changes retained

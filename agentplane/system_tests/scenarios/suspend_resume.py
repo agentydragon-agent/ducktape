@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from uuid import UUID, uuid4
 
 import pytest
-import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import Client
@@ -368,7 +367,3 @@ async def test_codex_standing_instructions_after_suspend_and_compact(
     run.checks.append("standing_instructions_retained_after_suspend_resume_and_auto_compaction")
     run.passed = True
     run.save()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

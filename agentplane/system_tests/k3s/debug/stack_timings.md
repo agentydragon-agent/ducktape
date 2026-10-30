@@ -4,6 +4,10 @@ Measurements behind the stack's setup choices, for the work on k3s system test l
 measurements (Python services, image splits, import profiles before 2026-10-21) are in
 [the README as of `7fd9f16f7d`](https://github.com/agentydragon/ducktape/blob/7fd9f16f7d/agentplane/x/k3s_env/README.md).
 
+This is historical measurement data. Target names and invocation identities below are preserved as
+recorded before scenarios were grouped into suites; current targets are listed in the
+[system tests README](../../README.md).
+
 ## VM stack timings, 2026-10-21
 
 Booting, suspending and resuming one VM Sandbox with those images imported

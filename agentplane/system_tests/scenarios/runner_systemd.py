@@ -1,7 +1,6 @@
 """Gate the real-manager kernel proof once, independently of the VM harness scenarios."""
 
 import pytest
-import pytest_bazel
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.conftest import VM_TEMPLATE, Sandboxes
@@ -17,7 +16,3 @@ async def test_real_systemd_supervision(sandbox: Sandboxes) -> None:
         with attempt:
             check_boot()
             assert systemd_proof_passed(), "Missing completed systemd proof receipt in retained guest console"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()
