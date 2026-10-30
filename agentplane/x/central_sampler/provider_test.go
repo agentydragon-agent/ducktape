@@ -196,10 +196,6 @@ func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
 				if strings.Contains(execDescription, "{{") {
 					t.Fatal("unresolved exec description template")
 				}
-				wantAsync := mode == ResponsesDialectStandard || encoding == ExecEncodingJSON
-				if strings.Contains(execDescription, "asynchronous developer message") != wantAsync {
-					t.Fatal("exec description has wrong notification contract")
-				}
 				if strings.Contains(execDescription, "// @exec:") != (encoding == ExecEncodingFreeform) {
 					t.Fatal("exec description has wrong input contract")
 				}

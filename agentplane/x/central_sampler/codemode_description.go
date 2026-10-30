@@ -61,21 +61,16 @@ func templateText(text string) string { return strings.TrimSuffix(text, "\n") }
 func execToolDescription(definitions []ResponsesCodeToolDefinition, config ModelConfig) (string, error) {
 	inputContract := "- Accepts raw JavaScript source text, not JSON, quoted strings, or markdown code fences.\n" +
 		"- You may optionally start the tool input with a first-line pragma like `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`."
-	notificationBehavior := "immediately injects an extra `custom_tool_call_output` for the current `exec` call"
 	if config.ExecEncoding == ExecEncodingJSON {
 		inputContract = "- Pass JavaScript source in the JSON code field.\n" +
 			"- To resume a yielded cell, pass cell_id instead of code, with optional yield_time_ms (default 10000), max_output_tokens (default 10000), and terminate: true.\n" +
 			"- Resume only after exec reports Script running with cell ID. Each resume returns new output or completion.\n" +
 			"- Pass exactly one of code or cell_id; terminate is only valid with cell_id."
 	}
-	if config.Responses.Dialect == ResponsesDialectStandard || config.ExecEncoding == ExecEncodingJSON {
-		notificationBehavior = "queues an asynchronous developer message identifying the current `exec` call"
-	}
 	description := strings.NewReplacer(
 		"{{ default_exec_yield_time_ms }}", strconv.Itoa(defaultExecYieldTimeMS),
 		"{{ image_helper }}", templateText(legacyImageHelperDescription),
 		"{{ input_contract }}", inputContract,
-		"{{ notification_behavior }}", notificationBehavior,
 	).Replace(templateText(execDescriptionTemplate))
 	// TODO: Codex also renders DEFERRED_NESTED_TOOLS_GUIDANCE (plus TOOL_SEARCH_GUIDANCE with
 	// ranked search) and the "Shared MCP Types" MCP_TYPESCRIPT_PREAMBLE section here, even with no
