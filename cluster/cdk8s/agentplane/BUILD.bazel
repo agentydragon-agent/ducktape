@@ -503,6 +503,7 @@ py_library(
         "//agentplane/action_service:catalog",
         "//agentplane/action_service:settings",
         "//agentplane/action_service/orchestration_v1:binding",
+        "//agentplane/runner:harness",
         "//agentplane/workload_auth:audience",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",

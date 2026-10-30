@@ -38,7 +38,7 @@ type Harness string
 func (Harness) JSONSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{
 		Type: "string",
-		Enum: []any{runnerpb.Harness_HARNESS_CLAUDE.String(), runnerpb.Harness_HARNESS_CODEX.String()},
+		Enum: []any{runnerpb.Harness_HARNESS_CLAUDE.String(), runnerpb.Harness_HARNESS_CODEX.String(), runnerpb.Harness_HARNESS_CENTRAL_SAMPLER.String()},
 	}
 }
 
@@ -60,12 +60,17 @@ type OpenSessionArgs struct {
 	SetupScript *string     `json:"setup_script,omitempty" jsonschema_description:"Shell source run once before the harness starts." jsonschema:"maxLength=65536"`
 }
 
+type CentralSamplerConfig struct {
+	Service string `json:"service" jsonschema:"minLength=1" jsonschema_description:"A central sampler service name configured by the Session Dispatcher."`
+}
+
 type SessionSpec struct {
-	Harness         Harness `json:"harness"`
-	Model           string  `json:"model" jsonschema:"minLength=1"`
-	Cwd             string  "json:\"cwd\" jsonschema_description:\"The working directory; `{session_id}` in it becomes the Session's ID.\" jsonschema:\"minLength=1\""
-	ReasoningEffort string  `json:"reasoning_effort,omitempty" jsonschema:"minLength=1"`
-	Instructions    string  `json:"instructions,omitempty" jsonschema_description:"Standing instructions, fixed for the Session's life."`
+	CentralSampler  *CentralSamplerConfig `json:"central_sampler,omitempty" jsonschema_description:"Required for HARNESS_CENTRAL_SAMPLER; omit for native harnesses."`
+	Harness         Harness               `json:"harness"`
+	Model           string                `json:"model" jsonschema:"minLength=1"`
+	Cwd             string                "json:\"cwd\" jsonschema_description:\"The working directory; `{session_id}` in it becomes the Session's ID.\" jsonschema:\"minLength=1\""
+	ReasoningEffort string                `json:"reasoning_effort,omitempty" jsonschema:"minLength=1"`
+	Instructions    string                `json:"instructions,omitempty" jsonschema_description:"Standing instructions, fixed for the Session's life."`
 }
 
 type SubmitInputArgs struct {
