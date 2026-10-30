@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -65,20 +64,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     paths_cmd.add_argument("--release", required=True, help="release pkg name (a release.yml matrix row's pkg)")
     paths_cmd.add_argument("--skills-registry", type=Path, default=Path("skills/skills_registry.json"))
-    # Remove after the batch-fetch workflow reaches devel: trusted fork CI uses base-branch YAML.
-    commands.add_parser("nix-overrides", parents=[common], help="print pin and bb-out path as TSV")
     args = parser.parse_args(argv)
     merged = merge(read(invocation_id) for invocation_id in args.invocations.split(",") if invocation_id)
     if merged is None:
         raise SystemExit("--invocations is empty; the build step must expose its bazel_invocation_ids")
     by_label = merged.by_label()
-
-    if args.command == "nix-overrides":
-        sys.stdout.writelines(
-            f"{name}\t{BB_OUT_PREFIX + output.path}\n"
-            for name, output in nix_override_assets(args.artifact_targets, by_label)
-        )
-        return
 
     releases = [r for r in load_releases(args.artifact_targets, args.skills_registry) if r.pkg == args.release]
     if not releases:
