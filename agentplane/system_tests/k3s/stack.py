@@ -565,7 +565,7 @@ def running_stack(
         certificates.wait_for_issuance(k3s.kubectl, fixture.namespace, "cluster-internal-ca-bundle")
         timeline.mark("runner certificates issued and trust distributed")
         if guest_images:
-            # Both guest images are used only by Sandboxes the test creates after this stack is ready.
+            # Guest images are used only by Sandboxes the test creates after this stack is ready.
             k3s.import_images(guest_images, timeline)
             timeline.mark("images imported")
 

@@ -9,15 +9,19 @@ from typing import Any
 
 from opentelemetry import trace
 from pydantic import BaseModel
+from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import Client
 from agentplane.native.codex import wire
 from agentplane.native.codex.testing import frames, responses_sse
 from agentplane.proto import runner_pb2
 from agentplane.system_tests.agent import TURN_SECONDS, Agent, Turn
+from agentplane.system_tests.k3s.guest_logs import check_boot, systemd_supervision_passed
 from agentplane.system_tests.offered_models import models_offered_for
 from agentplane.system_tests.sandbox import VM_TEMPLATE, VM_WORKING_DIRECTORY, Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.vm_configuration import SUPERVISION_TEMPLATE
+from agentplane.system_tests.vm_supervision import session_setup_is_supervised
 from agentplane.system_tests.vm_tracing import traced_vm_scenario
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import ShellCall, Text
@@ -157,15 +161,23 @@ async def _command(
 
 
 async def _run_vm_sandbox_turn(
-    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
+    client: Client,
+    sandbox: Sandboxes,
+    harness: runner_pb2.Harness,
+    offered_model: str,
+    scripted: ScriptedUpstream,
+    template: str,
 ) -> None:
-    view = await sandbox(f"systest-vm-{harness}", template=VM_TEMPLATE)
+    view = await sandbox(f"systest-vm-{harness}", template=template)
     assert view.pod is not None
+    if template == SUPERVISION_TEMPLATE:
+        async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.1), reraise=True):
+            with attempt:
+                check_boot()
+                assert systemd_supervision_passed(view.pod.uid), "Missing this VM's supervisor check receipt"
     model = scripted.model(view.pod.name, harness)
     with tracer.start_as_current_span("vm.session.open", attributes={"harness": runner_pb2.Harness.Name(harness)}):
-        agent = await Agent.open(
-            client, sandbox=view.name, harness=harness, model=offered_model, cwd=VM_WORKING_DIRECTORY
-        )
+        agent = await session_setup_is_supervised(client, view.name, harness, offered_model)
     with tracer.start_as_current_span("vm.turn"):
         async with asyncio.TaskGroup() as turns:
             turn = turns.create_task(agent.run(PING))
@@ -288,11 +300,16 @@ async def vm_sandbox_scenarios(client: Client, sandbox: Sandboxes, scripted: Scr
     harnesses = [runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX]
     offered_models = await models_offered_for(client, harnesses)
     async with asyncio.TaskGroup() as scenarios:
-        for harness in harnesses:
+        # Only the Claude guest runs the private Go checks before starting Runner. Both use
+        # the ordinary guest image and then exercise setup and tools through the public API.
+        for harness, template in (
+            (runner_pb2.HARNESS_CLAUDE, SUPERVISION_TEMPLATE),
+            (runner_pb2.HARNESS_CODEX, VM_TEMPLATE),
+        ):
             name = f"vm-turn-{runner_pb2.Harness.Name(harness).lower()}"
             scenarios.create_task(
                 traced_vm_scenario(
-                    name, _run_vm_sandbox_turn(client, sandbox, harness, offered_models[harness], scripted)
+                    name, _run_vm_sandbox_turn(client, sandbox, harness, offered_models[harness], scripted, template)
                 )
             )
         scenarios.create_task(

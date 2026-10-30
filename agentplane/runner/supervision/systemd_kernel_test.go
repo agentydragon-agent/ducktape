@@ -8,9 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -26,11 +24,13 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// This target runs inside the actual systemd VM guest, before the real Runner.
+// This target runs before Runner in one ordinary VM guest. Session setup tests cover
+// workspace creation, credentials, kernel budgets and detached-child fencing through
+// the public protocol; these checks need private injection or direct supervisor access.
 // It is deliberately excluded from supervision_test: no fake manager establishes these claims.
 func TestSystemdKernelFixture(t *testing.T) {
 	t.Setenv("AGENTPLANE_PARENT_ONLY_SENTINEL", "must not reach native services")
-	if err := os.Remove("/state/runner-systemd-proof.json"); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove("/state/supervision-checks.json"); err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
 	config, sandboxUID := loadSystemdProofConfiguration(t)
@@ -96,91 +96,10 @@ func TestSystemdKernelFixture(t *testing.T) {
 		assertSystemdProofEmpty(t, ctx, conn, name)
 	})
 
-	t.Run("workspace_created_as_agent", func(t *testing.T) {
-		cwd := filepath.Join(dir, "nested", "workspace")
-		workspaceHelper, err := supervisor.NewProcess(ProcessConfig{
-			// Keep this private Runner CLI mode in sync with workspace.HelperMode.
-			Command: []string{"/run/agentplane/runner/bin/agentplane-runner", "--agentplane-runner-workspace", dir, "nested", "workspace"},
-			Dir:     dir,
-			Env:     map[string]string{},
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := workspaceHelper.Start(ctx); err != nil {
-			t.Fatal(err)
-		}
-		workspaceStdout, workspaceStderr := readProofStreams(workspaceHelper)
-		if err := workspaceHelper.CloseStdin(); err != nil {
-			t.Fatal(err)
-		}
-		workspaceCode, workspaceErr := workspaceHelper.Wait(ctx)
-		workspaceOutput, workspaceError := <-workspaceStdout, <-workspaceStderr
-		if workspaceErr != nil || workspaceCode != 0 {
-			t.Fatalf("workspace helper code=%d err=%v stdout=%q stderr=%q", workspaceCode, workspaceErr, workspaceOutput, workspaceError)
-		}
-
-		p := startSystemdProof(t, ctx, supervisor, cwd, "test -w .; printf writable")
-		stdout, stderr := readProofStreams(p)
-		if code, err := p.Wait(ctx); err != nil || code != 0 {
-			t.Fatalf("workspace access code=%d err=%v", code, err)
-		}
-		if text := <-stdout; text != "writable" {
-			t.Fatalf("workspace proof=%s", text)
-		}
-		<-stderr
-		for _, path := range []string{filepath.Join(dir, "nested"), cwd} {
-			info, err := os.Stat(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			owner, ok := info.Sys().(*syscall.Stat_t)
-			if !ok || owner.Uid != policy.AgentUID || owner.Gid != policy.AgentGID {
-				t.Fatalf("workspace directory %s owner=(%v,%v), want uid=%d gid=%d", path, owner, ok, policy.AgentUID, policy.AgentGID)
-			}
-		}
-	})
-	t.Run("streams_identity_and_resources", func(t *testing.T) {
+	t.Run("streams_and_environment", func(t *testing.T) {
 		p := startSystemdProof(t, ctx, supervisor, dir, "printf 'out:%s:%s:%s\\n' \"$(id -u)\" \"$(id -g)\" \"$PWD\"; printf 'err:%s\\n' \"$SENTINEL\" >&2; printf 'home:%s\\n' \"$HOME\"; test -z \"${AGENTPLANE_PARENT_ONLY_SENTINEL+x}\"; IFS= read -r line; printf 'input:%s\\n' \"$line\"")
 		stdout, stderr := readProofStreams(p)
 		unitName := systemdProofUnitName(t, p)
-		props, err := conn.GetUnitTypePropertiesContext(ctx, unitName, "Service")
-		if err != nil {
-			t.Fatal(err)
-		}
-		for name, want := range map[string]any{"MemoryMax": uint64(policy.ProcessLimits.MemoryMaxBytes), "MemorySwapMax": uint64(0), "TasksMax": uint64(policy.ProcessLimits.PidsMax), "CPUQuotaPerSecUSec": uint64(policy.ProcessLimits.CPUQuotaMicros) * 10, "OOMPolicy": "continue", "Slice": WorkloadSlice} {
-			if props[name] != want {
-				t.Fatalf("%s=%v want %v", name, props[name], want)
-			}
-		}
-
-		group, ok := props["ControlGroup"].(string)
-		if !ok || group == "" {
-			t.Fatal("native service has no cgroup")
-		}
-		assertKernelBudget(t, filepath.Join("/sys/fs/cgroup", group), policy.ProcessLimits)
-		resources := config.Environment.Resources
-		assertKernelBudget(t, "/sys/fs/cgroup/agentplane.slice", ResourceLimits{CPUQuotaMicros: resources.ServiceCPUQuotaMicros, MemoryMaxBytes: resources.ServiceMemoryMaxBytes, PidsMax: resources.ServicePidsMax})
-		high, err := os.ReadFile("/sys/fs/cgroup/agentplane.slice/memory.high")
-		if err != nil || strings.TrimSpace(string(high)) != strconv.FormatInt(resources.ServiceMemoryHighBytes, 10) {
-			t.Fatalf("parent memory.high=%q err=%v", high, err)
-		}
-		nativeStatus, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", p.PID()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		statusFields := map[string][]string{}
-		for _, line := range strings.Split(string(nativeStatus), "\n") {
-			name, value, found := strings.Cut(line, ":")
-			if found {
-				statusFields[name] = strings.Fields(value)
-			}
-		}
-		for name, want := range map[string]string{"NoNewPrivs": "1", "CapEff": "0000000000000000", "CapPrm": "0000000000000000", "CapAmb": "0000000000000000", "CapBnd": "0000000000000000"} {
-			if got := strings.Join(statusFields[name], " "); got != want {
-				t.Fatalf("native %s=%q want %q", name, got, want)
-			}
-		}
 		if err := p.WriteLine(ctx, "verbatim input"); err != nil {
 			t.Fatal(err)
 		}
@@ -221,24 +140,6 @@ func TestSystemdKernelFixture(t *testing.T) {
 			t.Fatalf("argv/shell stderr=%q", got)
 		}
 	})
-	t.Run("leader_exit_fences_detached_descendants", func(t *testing.T) {
-		p := startSystemdProof(t, ctx, supervisor, dir, "setsid /bin/sh -c 'trap \"\" TERM; while :; do sleep 1; done' & echo $!; exit 0")
-		stdout, stderr := readProofStreams(p)
-		if code, err := p.Wait(ctx); err != nil || code != 0 {
-			t.Fatalf("wait code=%d err=%v", code, err)
-		}
-		text := strings.TrimSpace(<-stdout)
-		<-stderr
-		pid, err := strconv.Atoi(text)
-		if err != nil {
-			t.Fatalf("child PID %q: %v", text, err)
-		}
-		if data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)); err == nil && !strings.Contains(string(data), ") Z ") {
-			t.Fatalf("detached child survived: %s", data)
-		}
-		assertSystemdProofEmpty(t, ctx, conn, systemdProofUnitName(t, p))
-	})
-
 	t.Run("invalid_launch_cannot_escape_fence", func(t *testing.T) {
 		p, err := supervisor.NewProcess(ProcessConfig{Command: []string{"/missing-agentplane-proof-binary"}, Dir: dir, Env: map[string]string{}})
 		if err != nil {
@@ -455,10 +356,10 @@ func TestSystemdKernelFixture(t *testing.T) {
 	if t.Failed() {
 		return
 	}
-	if err := os.WriteFile("/state/runner-systemd-proof.json", []byte("{\"real_systemd_supervision\":\"passed\"}\n"), 0644); err != nil {
+	if err := os.WriteFile("/state/supervision-checks.json", []byte("{\"real_systemd_supervision\":\"passed\"}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod("/state/runner-systemd-proof.json", 0644); err != nil {
+	if err := os.Chmod("/state/supervision-checks.json", 0644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -524,12 +425,8 @@ type systemdProofRunnerConfig struct {
 		AgentGID     uint32   `json:"agent_gid"`
 		BlockDevices []string `json:"block_devices"`
 		Resources    struct {
-			ServiceMemoryHighBytes int64          `json:"service_memory_high_bytes"`
-			ServiceMemoryMaxBytes  int64          `json:"service_memory_max_bytes"`
-			ServiceCPUQuotaMicros  int64          `json:"service_cpu_quota_micros"`
-			ServicePidsMax         int64          `json:"service_pids_max"`
-			Aggregate              ResourceLimits `json:"aggregate"`
-			Process                ResourceLimits `json:"process"`
+			Aggregate ResourceLimits `json:"aggregate"`
+			Process   ResourceLimits `json:"process"`
 		} `json:"resources"`
 	} `json:"environment"`
 }
@@ -579,17 +476,4 @@ func systemdErrorKind(err error) string {
 		return "dbus_error=" + remote.Name
 	}
 	return fmt.Sprintf("error_type=%T", err)
-}
-
-func assertKernelBudget(t *testing.T, group string, limits ResourceLimits) {
-	t.Helper()
-	for file, want := range map[string]string{"cpu.max": fmt.Sprintf("%d %d", limits.CPUQuotaMicros, CPUPeriodMicros), "memory.max": strconv.FormatInt(limits.MemoryMaxBytes, 10), "memory.swap.max": "0", "memory.oom.group": "0", "pids.max": strconv.FormatInt(limits.PidsMax, 10)} {
-		data, err := os.ReadFile(filepath.Join(group, file))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got := strings.TrimSpace(string(data)); got != want {
-			t.Fatalf("%s/%s=%q want %q", group, file, got, want)
-		}
-	}
 }

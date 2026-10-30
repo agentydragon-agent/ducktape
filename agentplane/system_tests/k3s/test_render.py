@@ -23,6 +23,7 @@ from agentplane.system_tests.k3s import fixture_chart, fixture_database, rendere
 from agentplane.system_tests.k3s.block_storage import STORAGE_CLASS
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
+from agentplane.system_tests.vm_configuration import SUPERVISION_KERNEL_ARG, SUPERVISION_TEMPLATE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.x.central_sampler.settings import Settings as CentralSamplerSettings
 from cluster.cdk8s.agentplane import central_sampler, history_service, llm_ingress, runner_gateway
@@ -56,8 +57,8 @@ def _filled_fixture() -> rendered_fixture.RenderedFixture:
     )
 
 
-def _filled_central_sampler_fixture(path: str) -> rendered_fixture.RenderedFixture:
-    cached = rendered_fixture.read(get_required_path(os.environ[path]))
+def _filled_vm_fixture() -> rendered_fixture.RenderedFixture:
+    cached = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
     return rendered_fixture.fill(
         cached,
         RuntimeInputs(
@@ -70,7 +71,7 @@ def _filled_central_sampler_fixture(path: str) -> rendered_fixture.RenderedFixtu
 
 def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     fixture = _filled_fixture()
-    assert not fixture.central_sampler
+    assert fixture.central_sampler
     assert "k3s-env-placeholder-" not in fixture.model_dump_json()
     docs = fixture.objects
     assert all(
@@ -403,6 +404,17 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
 
     vm_template = _resource(fixture.objects, "SandboxTemplate", "runner-vm")["spec"]
     vm_spec = vm_template["vm"]["template"]["spec"]
+    supervision = _resource(fixture.objects, "SandboxTemplate", SUPERVISION_TEMPLATE)["spec"]["vm"]["template"]["spec"]
+    ordinary_root = next(
+        volume["containerDisk"]["image"] for volume in vm_spec["volumes"] if volume["name"] == "rootdisk"
+    )
+    assert ordinary_root == "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset"
+    assert supervision["volumes"] == vm_spec["volumes"]
+    ordinary_boot = vm_spec["domain"]["firmware"]["kernelBoot"]
+    assert supervision["domain"]["firmware"]["kernelBoot"] == {
+        **ordinary_boot,
+        "kernelArgs": ordinary_boot["kernelArgs"] + " " + SUPERVISION_KERNEL_ARG,
+    }
     interface = next(item for item in vm_spec["domain"]["devices"]["interfaces"] if item["name"] == "default")
     assert {"port": 9090} in interface["ports"]
     config_map = _resource(fixture.objects, "ConfigMap", "runner-vm-config")
@@ -421,11 +433,7 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
 
 
 def test_central_sampler_fixtures_render_app_ingress_gateway_and_history_wiring() -> None:
-    for env_name_, vm in (
-        ("K3S_CENTRAL_SAMPLER_FIXTURE_RLOCATION", False),
-        ("K3S_CENTRAL_SAMPLER_VM_FIXTURE_RLOCATION", True),
-    ):
-        fixture = _filled_central_sampler_fixture(env_name_)
+    for fixture, vm in ((_filled_fixture(), False), (_filled_vm_fixture(), True)):
         assert fixture.central_sampler
         assert fixture.vm_sandboxes is vm
         docs = fixture.objects

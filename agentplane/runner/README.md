@@ -168,8 +168,9 @@ Codex router test drives parallel sessions through shared host, request, and thr
 journal suite (`//agentplane/runner/journal:journal_test`) also runs with the race detector;
 the runner suite covers process and Session integration. The VM fixture runs the separate
 pure-Go `//agentplane/runner/supervision:runner_systemd_fixture` test binary against its real systemd manager before starting
-Runner. It exercises streams and credentials, resource mapping, lost launch replies, Runner death,
-detached descendants and scoped startup fencing; VM system tests exercise actual tools and OOM.
+Runner. It exercises direct argv/stream semantics, lost launch replies, Runner death, stop status,
+reaper retries and scoped startup fencing. Ordinary VM Session setup checks workspace creation,
+credentials, resource mapping and detached descendants; VM tools cover execution and OOM.
 The production `//agentplane/runner/cmd:agentplane-runner` remains pure-Go.
 
 ### Native subagents

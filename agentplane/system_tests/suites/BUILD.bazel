@@ -67,10 +67,12 @@ k3s_suite(
         "//agentplane/proto:runner_pb2",
         "//agentplane/system_tests:cluster",
         "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests:executor",
         "//agentplane/system_tests:operator_login",
         "//agentplane/system_tests:sandbox",
         "//agentplane/system_tests:scripted_upstream",
         "//agentplane/system_tests/k3s:stack",
+        "//agentplane/system_tests/scenarios:central_sampler",
         "//agentplane/system_tests/scenarios:dcr",
         "//agentplane/system_tests/scenarios:mcp",
         "@pypi//httpx",
@@ -80,7 +82,7 @@ k3s_suite(
     ],
 )
 
-# The groups run sequentially, preserving the validated peak of three independent VM boots.
+# Credential/sampler and sandbox/OOM groups share one stack with at most three guests.
 k3s_suite(
     name = "test_vm",
     srcs = ["test_vm.py"],
@@ -91,59 +93,12 @@ k3s_suite(
         "//agentplane/app/testing:client",
         "//agentplane/system_tests:cluster",
         "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests:executor",
         "//agentplane/system_tests:sandbox",
         "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/system_tests/scenarios:central_sampler",
         "//agentplane/system_tests/scenarios:runner_credentials",
         "//agentplane/system_tests/scenarios:vm_sandbox",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-k3s_suite(
-    name = "test_vm_systemd",
-    srcs = ["test_vm_systemd.py"],
-    stack = "vm_systemd",
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests:sandbox",
-        "//agentplane/system_tests/scenarios:runner_systemd",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-k3s_suite(
-    name = "test_sampler_pod",
-    srcs = ["test_sampler_pod.py"],
-    stack = "sampler_pod",
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//agentplane/system_tests:cluster",
-        "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests:executor",
-        "//agentplane/system_tests:scripted_upstream",
-        "//agentplane/system_tests/scenarios:central_sampler",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-k3s_suite(
-    name = "test_sampler_vm",
-    srcs = ["test_sampler_vm.py"],
-    stack = "sampler_vm",
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//agentplane/system_tests:cluster",
-        "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests:executor",
-        "//agentplane/system_tests:scripted_upstream",
-        "//agentplane/system_tests/scenarios:central_sampler",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

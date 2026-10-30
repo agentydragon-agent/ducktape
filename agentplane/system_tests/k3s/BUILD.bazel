@@ -92,7 +92,7 @@ oci_layout_rloc(
 
 # Bazel-built service images, loaded into k3s's containerd.
 
-# Only central-sampler scenarios carry this layout in their runfiles.
+# MCP and VM suites also run their central-sampler scenario.
 oci_layout_rloc(
     name = "central_sampler_layout",
     testonly = True,
@@ -144,8 +144,6 @@ py_test(
     size = "medium",
     srcs = ["test_render.py"],
     data = [
-        ":rendered/central-sampler.json",
-        ":rendered/central-sampler-vm.json",
         ":rendered/local-model-mcp-fixtures.json",
         ":rendered/local-model-vm.json",
         "@nodejs_linux_amd64//:bin/node",
@@ -154,8 +152,6 @@ py_test(
         "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
         "K3S_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-mcp-fixtures.json)",
         "K3S_VM_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-vm.json)",
-        "K3S_CENTRAL_SAMPLER_FIXTURE_RLOCATION": "$(rlocationpath :rendered/central-sampler.json)",
-        "K3S_CENTRAL_SAMPLER_VM_FIXTURE_RLOCATION": "$(rlocationpath :rendered/central-sampler-vm.json)",
     },
     deps = [
         ":block_storage",
@@ -171,6 +167,7 @@ py_test(
         "//agentplane/runner:harness",
         "//agentplane/runner_gateway:settings",
         "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests:vm_configuration",
         "//agentplane/workload_auth:audience",
         "//agentplane/x/central_sampler:settings",
         "//cluster/cdk8s/agentplane:central_sampler",
@@ -257,12 +254,12 @@ py_library(
         "//agentplane/app:settings",
         "//agentplane/crds:egresscredential",
         "//agentplane/crds:policyset",
-        "//agentplane/runner:configuration",
         "//agentplane/runner:harness",
         "//agentplane/system_tests:launch_preset",
         "//agentplane/system_tests:probe_credential",
         "//agentplane/system_tests:runtime_grant",
         "//agentplane/system_tests:send_grant",
+        "//agentplane/system_tests:vm_configuration",
         "//agentplane/x/central_sampler:settings",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:secret_ref",
@@ -398,30 +395,6 @@ genrule(
     testonly = True,
     outs = ["rendered/local-model-vm.json"],
     cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=local-model-vm K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
-    tools = [
-        ":render_fixture_bin",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    visibility = ["//agentplane/system_tests:__subpackages__"],
-)
-
-genrule(
-    name = "render_central_sampler",
-    testonly = True,
-    outs = ["rendered/central-sampler.json"],
-    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=central-sampler K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
-    tools = [
-        ":render_fixture_bin",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    visibility = ["//agentplane/system_tests:__subpackages__"],
-)
-
-genrule(
-    name = "render_central_sampler_vm",
-    testonly = True,
-    outs = ["rendered/central-sampler-vm.json"],
-    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=central-sampler-vm K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
     tools = [
         ":render_fixture_bin",
         "@nodejs_linux_amd64//:bin/node",

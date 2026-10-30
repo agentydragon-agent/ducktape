@@ -128,7 +128,7 @@ Exact bootstrap and seal-before-stop ordering belongs in deterministic
 
 ## VM Sandboxes
 
-VM stacks, including `test_vm`, `test_vm_systemd`, `test_vm_manual` and `test_sampler_vm`
+VM stacks, `test_vm` and the opt-in `test_vm_manual`,
 ([system tests README](../README.md)), run on a stack rendered with VM Sandboxes
 (`rendered/local-model-vm.json`), so [`vm_sandboxes.py`](vm_sandboxes.py)
 installs production's KubeVirt release with `useEmulation` (QEMU TCG; the executor has no `/dev/kvm`)
@@ -146,15 +146,17 @@ The runner comes from the production runner disk, as in a Pod; both harnesses, G
 are pinned in the root disk. Runner uses systemd's private manager connection; a real system bus
 also exercises denial of unprivileged management requests.
 
-The dedicated CI target `//agentplane/system_tests/suites:test_vm_systemd` selects a guest root
-with `runner_systemd_fixture` and an entrypoint override. Before `exec`ing the production runner,
-it runs all subtests against the real manager. Its isolated `/state/.supervision-proof`
-exercises native process streams, limits, descendant fencing, uncertain launch outcomes and parent
-death. A failed proof prevents runner startup; its output is retained in the guest console. The
-outer test requires the completed success receipt as well as runner readiness. Other VM suites
-use a root disk without the proof binary or override and start the runner directly. Both variants
-share the kernel, production runner disk, systemd units and guest preparation. The proof target
-still uses the full k3s application stack.
+The Claude sandbox scenario uses `runner-vm-supervision`, which differs from `runner-vm` only by
+an explicit boot argument. Its ordinary guest root includes `runner_systemd_fixture` as test data;
+that one boot executes the remaining supervisor integration tests before starting production Runner.
+The checks retain direct argv/stream semantics, stale invocation fencing, uncertain launch outcomes,
+scoped startup fencing, parent death, stop status and reaper retries. They need private injection or
+direct supervisor access. A failure prevents Runner startup, and the scenario requires the completed
+success receipt from that guest's own console. No separate root image or extra VM is needed.
+
+Workspace ownership, native identity/security settings, systemd and kernel resource properties, and
+detached-child cleanup run through ordinary Session setup and retained History in both harness
+scenarios. The sampler boots alongside the two credential guests; the three sandbox/OOM guests follow.
 
 The guest loads the ACPI button/evdev drivers and runs BusyBox `acpid`. On a power-button event,
 the listener requests `systemctl poweroff`. Systemd stops the runner and its execution services,
