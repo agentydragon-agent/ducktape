@@ -653,7 +653,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		}
 	}
 	if call := pendingCall(conversation.Items); call != nil {
-		if !call.IsModelTool() {
+		if !call.IsModelTool(r.settings.Models[session.Model]) {
 			return "", &KnownFailureError{Evidence: map[string]any{"reason": "unsupported model tool", "call": call}}
 		}
 		if live == nil {
@@ -757,7 +757,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			}
 			return "", failure
 		}
-		if isCall && !call.IsModelTool() {
+		if isCall && !call.IsModelTool(r.settings.Models[session.Model]) {
 			failure := &KnownFailureError{Evidence: map[string]any{"reason": "unsupported model tool", "response": response.Audit(), "item": item}}
 			if err := r.store.Reject(ctx, owner, intentID, failure); err != nil {
 				return "", err

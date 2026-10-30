@@ -25,6 +25,7 @@ type ExecEncoding string
 
 const (
 	ExecEncodingFreeform ExecEncoding = "freeform"
+	ExecEncodingJSON     ExecEncoding = "json"
 )
 
 // ModelConfig contains the wire and tool-call encodings supported by one model route.
@@ -49,8 +50,8 @@ func (c ModelConfig) Validate() error {
 	if c.Responses.Dialect != ResponsesDialectLite {
 		return errors.New("responses.dialect must be lite")
 	}
-	if c.ExecEncoding != ExecEncodingFreeform {
-		return errors.New("exec_encoding must be freeform")
+	if c.ExecEncoding != ExecEncodingFreeform && c.ExecEncoding != ExecEncodingJSON {
+		return errors.New("exec_encoding must be freeform or json")
 	}
 	return nil
 }

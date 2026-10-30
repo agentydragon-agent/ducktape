@@ -128,9 +128,11 @@ type ResponsesToolCall struct {
 	Input  string            `json:"input"`
 }
 
-// IsModelTool reports whether the call names a model-facing tool with its declared kind: freeform
-// `exec` and function `wait`.
-func (call ResponsesToolCall) IsModelTool() bool {
+// IsModelTool checks the exact tool surface declared for this model route.
+func (call ResponsesToolCall) IsModelTool(config ModelConfig) bool {
+	if config.ExecEncoding == ExecEncodingJSON {
+		return call.Name == "exec" && call.Type == ResponsesItemFunctionCall
+	}
 	return call.Name == "exec" && call.Type == ResponsesItemCustomToolCall ||
 		call.Name == "wait" && call.Type == ResponsesItemFunctionCall
 }

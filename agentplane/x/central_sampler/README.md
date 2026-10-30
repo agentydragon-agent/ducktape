@@ -97,7 +97,7 @@ See the [v1 validation evidence](../../debug/central_sampler_v1.md) for results 
 The top-level `models` map keys model route IDs to an API style, Responses dialect, exec encoding
 and allowed reasoning efforts. Agentplane owns this compatibility policy; the shared model catalog
 holds no sampler-specific fields. This service implements `api: responses`, `responses.dialect: lite`
-and `exec_encoding: freeform`. Unsupported values are rejected.
+and `exec_encoding: freeform` or `json`. Unsupported values are rejected.
 
 The service uses one `llm_proxy_url` and credential source. Upstream routing belongs to the proxy.
 Sessions name only the sampler service. Model changes preserve API, dialect and exec encoding and
@@ -108,3 +108,8 @@ fixed while retained Sessions exist.
 Rollback: remove the app offerings and named central route, then disable the sampler's inbound
 allowlists. Preserve the sampler DB and History records. Reverting sampler code does not convert a
 central Session into a native harness Session.
+
+JSON exec exposes one function `exec`. Pass exactly one of `code` (execute JavaScript) or `cell_id`
+(resume a yielded cell), with optional `yield_time_ms` and `max_output_tokens`. `terminate` applies
+only to a yielded cell. Calls use the same host, nested tools, journal and recovery as freeform exec.
+JSON exec notifications become asynchronous developer messages identifying their originating call.

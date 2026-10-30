@@ -86,7 +86,7 @@ missing cell), unknown or `null` tool arguments are rejected, and audio truncati
 tokens from data URL size rather than decoded duration.
 
 A flat top-level `models` map allowlists model route IDs and per-model reasoning efforts. Each
-entry declares `api: responses`, `responses.dialect: lite` and `exec_encoding: freeform`; other
+entry declares `api: responses`, `responses.dialect: lite` and `exec_encoding: freeform` or `json`; other
 values are rejected. A single top-level `llm_proxy_url` and credential source configure the
 connection; upstream routing belongs to the proxy. Sessions select only the configured service.
 Model changes preserve API, dialect and exec encoding, and require the target to allow the current
@@ -234,3 +234,8 @@ Retained provider items use append-only `sampler_conversation_item` rows. The cu
 remains a replaceable JSON value so compaction can swap it in the same transaction as its command
 result. Appending a response writes only its new retained items instead of rewriting the full
 transcript.
+
+JSON exec exposes one function `exec`. Pass exactly one of `code` (execute JavaScript) or `cell_id`
+(resume a yielded cell), with optional `yield_time_ms` and `max_output_tokens`. `terminate` applies
+only to a yielded cell. Calls use the same host, nested tools, journal and recovery as freeform exec.
+JSON exec notifications become asynchronous developer messages identifying their originating call.
