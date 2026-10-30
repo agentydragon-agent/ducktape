@@ -74,6 +74,8 @@ def _reasoning_efforts(route: Route, models: HarnessRoutes) -> list[str]:
 
 
 def model_catalog(models: HarnessRoutes, *, central_sampler: CentralSamplerChoice | None = None) -> ModelCatalog:
+    if models.central_sampler and central_sampler is None:
+        raise ValueError("third-party coding models require a configured central_sampler")
     return ModelCatalog(
         models=[
             ModelOption(
@@ -86,8 +88,12 @@ def model_catalog(models: HarnessRoutes, *, central_sampler: CentralSamplerChoic
         central_sampler=central_sampler,
         harnesses={
             Harness.CLAUDE: [route.id for route in models.claude],
-            Harness.CODEX: [route.id for route in models.codex],
-            **({Harness.CENTRAL_SAMPLER: [route.id for route in models.codex]} if central_sampler is not None else {}),
+            Harness.CODEX: [route.id for route in models.wrapped_codex],
+            **(
+                {Harness.CENTRAL_SAMPLER: [route.id for route in models.central_sampler]}
+                if central_sampler is not None
+                else {}
+            ),
         },
     )
 

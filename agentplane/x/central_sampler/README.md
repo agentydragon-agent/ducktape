@@ -139,6 +139,12 @@ Standard requests send text-only function results as strings and multimodal resu
 arrays. Asynchronous `notify()` output becomes a developer message identifying its original call,
 so the public API receives only one tool result per call.
 
+Staging offers official OpenAI ChatGPT routes through wrapped Codex and third-party coding models
+through the central sampler with standard Responses and JSON exec. Adding a third-party route to
+Agentplane's coding-model selection automatically gives it that contract. The Haku preset uses
+the central sampler for Qwen; existing sessions keep their harness. Backend model contracts and
+Codex metadata remain available for existing sessions.
+
 Staging combines Agentplane-owned compatibility policy with shared model reasoning metadata.
 A model change within a Session must preserve API, dialect and exec encoding, and the target must
 allow the current reasoning effort. Treat a route's contract as fixed while its Sessions exist;

@@ -3358,19 +3358,7 @@ data:
           - chatgpt-sub/oai-responses/gpt-6-astra
           - chatgpt-sub/oai-responses/gpt-6-luna
           - chatgpt-sub/oai-responses/gpt-6.1-sol
-          - antigravity/ant-messages/claude-opus-4-6-thinking
-          - antigravity/ant-messages/claude-sonnet-4-6
-          - antigravity/ant-messages/gemini-3-flash
-          - antigravity/ant-messages/gemini-3.5-flash-lite
-          - antigravity/ant-messages/gemini-3.8-flash-high
-          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          - ollama/oai-chat/gpt-oss-20b-128k
-          - ollama/oai-chat/gpt-oss-120b-128k
-          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
         HARNESS_CENTRAL_SAMPLER:
-          - chatgpt-sub/oai-responses/gpt-6-astra
-          - chatgpt-sub/oai-responses/gpt-6-luna
-          - chatgpt-sub/oai-responses/gpt-6.1-sol
           - antigravity/ant-messages/claude-opus-4-6-thinking
           - antigravity/ant-messages/claude-sonnet-4-6
           - antigravity/ant-messages/gemini-3-flash
@@ -3412,7 +3400,7 @@ data:
           public-safe instructions.
       haku-codex:
         title: Haku
-        harness: HARNESS_CODEX
+        harness: HARNESS_CENTRAL_SAMPLER
         model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
         cwd: /state/workspaces/{session_id}/haku-state
         reasoning_effort: medium
@@ -6176,7 +6164,9 @@ data:
                 bootstrap: ""
               open_session:
                 spec:
-                  harness: HARNESS_CODEX
+                  harness: HARNESS_CENTRAL_SAMPLER
+                  central_sampler:
+                    service: central-sampler
                   model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
                   cwd: /state/workspaces/{session_id}/haku-state
                   reasoning_effort: medium

@@ -147,13 +147,13 @@ def config(
     #
     # Haku launches on the local Qwen3.8 route with the wider 256K window the runner is
     # configured for; the OpenAI-compatible wire is the one that carries reasoning effort.
-    # Agentplane's Codex picker offers only the wider 256K Qwen route.
+    # Agentplane offers Qwen through the central sampler with standard Responses and JSON exec.
     # TODO(#9121): consider switching Haku back to a Claude default after validating the
-    # Antigravity routes and their quotas in Agentplane. Existing Haku Threads stay on Codex
-    # either way: a Thread cannot move to a model with a different configured context window.
+    # Antigravity routes and their quotas in Agentplane. Existing Haku Threads retain
+    # their existing harness; this preset affects new sessions only.
     cfg.thread_presets[_THREAD_PRESET_HAKU_CODEX] = ThreadPreset(
         title="Haku",
-        harness=Harness.CODEX,
+        harness=Harness.CENTRAL_SAMPLER,
         model=OLLAMA_QWEN_IQ4XS_256K.openai.id,
         cwd="/state/workspaces/{session_id}/haku-state",
         reasoning_effort="medium",
