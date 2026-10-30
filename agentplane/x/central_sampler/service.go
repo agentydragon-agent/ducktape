@@ -21,7 +21,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 type Sampler struct {
@@ -101,9 +100,8 @@ func (s *Sampler) OpenSession(ctx context.Context, request *samplerpb.OpenSessio
 	if len(spec.GetInstructions()) > 1024*1024 || len(spec.GetCwd()) > 4096 || len(request.GetSetupScript()) > 65536 || spec.GetHarness() != runnerpb.Harness_HARNESS_CENTRAL_SAMPLER || spec.GetCentralSampler() == nil || spec.GetCentralSampler().GetService() != s.Settings.ServiceName || !strings.HasPrefix(spec.GetCwd(), "/") {
 		return invalid()
 	}
-	provider, ok := s.Settings.Providers[spec.GetCentralSampler().GetProvider()]
 	modelConfig, modelConfigured := s.Settings.Models[spec.GetModel()]
-	if !ok || !modelConfigured || modelConfig.Provider != spec.GetCentralSampler().GetProvider() || !slices.Contains(provider.ReasoningEfforts, spec.GetReasoningEffort()) {
+	if !modelConfigured || !slices.Contains(modelConfig.ReasoningEfforts, spec.GetReasoningEffort()) {
 		return invalid()
 	}
 	session, err := s.Store.OpenSession(ctx, request, principal.ServiceAccountUID)
@@ -129,44 +127,32 @@ func (s *Sampler) command(ctx context.Context, sessionID string, command *comman
 	if command.GetCommandId() == "" || len(command.GetCommandId()) > 128 {
 		return nil, status.Error(codes.InvalidArgument, "invalid sampler request")
 	}
-	session, err := s.Store.GetSession(ctx, sessionID, principal.ServiceAccountUID)
-	if err != nil {
-		return nil, samplerError(ctx, err)
-	}
-	configuration := &samplerpb.OpenSessionRequest{}
-	if err := proto.Unmarshal(session.Configuration, configuration); err != nil {
-		return nil, samplerError(ctx, err)
-	}
-	provider, ok := s.Settings.Providers[configuration.GetSpec().GetCentralSampler().GetProvider()]
-	if !ok {
-		return nil, status.Error(codes.FailedPrecondition, "session cannot apply this operation")
-	}
-	if model := command.GetChangeModel(); model != nil {
-		targetConfig, targetConfigured := s.Settings.Models[model.GetModel()]
-		if !targetConfigured || targetConfig.Provider != configuration.GetSpec().GetCentralSampler().GetProvider() {
-			return nil, status.Error(codes.InvalidArgument, "invalid sampler request")
-		}
-		currentConfig, currentConfigured := s.Settings.Models[session.Model]
-		if !currentConfigured || targetConfig != currentConfig {
-			return nil, status.Error(codes.FailedPrecondition, "model changes cannot change the session's API, dialect or exec encoding")
-		}
-	}
-	if effort := command.GetChangeReasoningEffort(); effort != nil && !slices.Contains(provider.ReasoningEfforts, effort.GetEffort()) {
-		return nil, status.Error(codes.InvalidArgument, "invalid sampler request")
-	}
-	if command.GetCompact() != nil {
-		modelConfig, configured := s.Settings.Models[session.Model]
-		if !configured {
-			return nil, status.Error(codes.FailedPrecondition, "session cannot apply this operation")
-		}
-		if modelConfig.Responses.Dialect == ResponsesDialectStandard {
-			return nil, status.Error(codes.FailedPrecondition, "manual compaction requires Responses lite mode")
-		}
-	}
 	if input := command.GetSubmitInput(); input != nil && (input.GetText() == "" || len(input.GetText()) > 1024*1024) {
 		return nil, status.Error(codes.InvalidArgument, "invalid sampler request")
 	}
-	entry, err := s.Store.Admit(ctx, sessionID, command, principal.ServiceAccountUID)
+	validate := func(session *Session) error {
+		currentConfig, ok := s.Settings.Models[session.Model]
+		if !ok {
+			return ErrPrecondition
+		}
+		if model := command.GetChangeModel(); model != nil {
+			targetConfig, targetConfigured := s.Settings.Models[model.GetModel()]
+			if !targetConfigured || !slices.Contains(targetConfig.ReasoningEfforts, session.Effort) {
+				return ErrInvalid
+			}
+			if targetConfig.API != currentConfig.API || targetConfig.Responses != currentConfig.Responses || targetConfig.ExecEncoding != currentConfig.ExecEncoding {
+				return ErrPrecondition
+			}
+		}
+		if effort := command.GetChangeReasoningEffort(); effort != nil && !slices.Contains(currentConfig.ReasoningEfforts, effort.GetEffort()) {
+			return ErrInvalid
+		}
+		if command.GetCompact() != nil && currentConfig.Responses.Dialect == ResponsesDialectStandard {
+			return ErrPrecondition
+		}
+		return nil
+	}
+	entry, err := s.Store.Admit(ctx, sessionID, command, principal.ServiceAccountUID, validate)
 	if err != nil {
 		return nil, samplerError(ctx, err)
 	}

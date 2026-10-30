@@ -60,7 +60,7 @@ from agentplane.system_tests import launch_preset, probe_credential, runtime_gra
 from agentplane.system_tests.k3s import block_storage, dex, fixture_database
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, Models, PublicLiteLLM
-from agentplane.x.central_sampler.settings import ModelConfig, Provider, ResponsesConfig
+from agentplane.x.central_sampler.settings import ModelConfig, ResponsesConfig
 from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.agentplane import (
     actions,
@@ -236,25 +236,20 @@ def environment(
         central_sampler_props = CentralSamplerProps(
             models={
                 GPT6_LUNA_RESPONSES.id: ModelConfig(
-                    provider="responses",
+                    reasoning_efforts={"", *GPT6_LUNA_RESPONSES.reasoning_efforts},
                     api="responses",
                     responses=ResponsesConfig(dialect="lite"),
                     exec_encoding="freeform",
                 )
             },
-            providers={
-                "responses": Provider(
-                    endpoint=f"{llm_ingress.proxied_url(NAMESPACE)}/v1/responses",
-                    credential_file=Path("/var/run/secrets/central-sampler/llm"),
-                    reasoning_efforts={"", *GPT6_LUNA_RESPONSES.reasoning_efforts},
-                )
-            },
+            llm_proxy_url=llm_ingress.proxied_url(NAMESPACE),
+            credential_file=Path("/var/run/secrets/central-sampler/llm"),
             max_live_sessions=2,
             turn_timeout_seconds=60,
             rpc_timeout_seconds=10,
             lease_seconds=60,
         )
-        central_sampler_choice = CentralSamplerChoice(service="central-sampler", provider="responses")
+        central_sampler_choice = CentralSamplerChoice(service="central-sampler")
     return Environment(
         namespace=NAMESPACE,
         description="Agentplane k3s fixture",

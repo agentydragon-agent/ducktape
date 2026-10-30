@@ -10,11 +10,11 @@ import (
 
 func fixtureSettings() Settings {
 	return Settings{
-		Models: map[string]ModelConfig{"test-model": {Provider: "responses", API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform}}, DatabaseURL: "postgresql://fixture.invalid/sampler", Listen: "127.0.0.1:0", ServiceName: "fixture", Providers: map[string]Provider{"responses": {Endpoint: "https://model.invalid/responses", Credential: "test-credential", ReasoningEfforts: []string{"", "high"}}}, Audience: "test-sampler", AllowedAccounts: []string{"test/client"}, CodeModeHost: "/fixture/host", ExecutorCodex: "/fixture/codex", Logs: "/fixture/logs", DirectExecutorURL: "ws://executor.invalid", MaxLiveSessions: 2, TurnTimeoutSeconds: 40, RPCTimeoutSeconds: 10, LeaseSeconds: 60,
+		Models: map[string]ModelConfig{"test-model": {API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform, ReasoningEfforts: []string{"", "high"}}}, DatabaseURL: "postgresql://fixture.invalid/sampler", Listen: "127.0.0.1:0", ServiceName: "fixture", LLMProxyURL: "https://model.invalid", Credential: "test-credential", Audience: "test-sampler", AllowedAccounts: []string{"test/client"}, CodeModeHost: "/fixture/host", ExecutorCodex: "/fixture/codex", Logs: "/fixture/logs", DirectExecutorURL: "ws://executor.invalid", MaxLiveSessions: 2, TurnTimeoutSeconds: 40, RPCTimeoutSeconds: 10, LeaseSeconds: 60,
 	}
 }
 
-func TestProviderRequiresExplicitSupportedModelConfiguration(t *testing.T) {
+func TestSettingsRequireExplicitSupportedModelConfiguration(t *testing.T) {
 	for name, config := range map[string]ModelConfig{
 		"missing api":                {Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform},
 		"unsupported api":            {API: "anthropic_messages", Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingJSON},
@@ -25,7 +25,7 @@ func TestProviderRequiresExplicitSupportedModelConfiguration(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			s := fixtureSettings()
-			config.Provider = "responses"
+			config.ReasoningEfforts = []string{"", "high"}
 			s.Models["test-model"] = config
 			if err := s.Validate(); err == nil {
 				t.Fatalf("accepted model configuration %+v", config)
@@ -45,24 +45,17 @@ func TestSettingsRejectPartialAndUnknownConfiguration(t *testing.T) {
 			s.GatewayTarget = "{host}:8080"
 			s.GatewayTokenFile = "/fixture/token"
 		},
-		"unknown model provider": func(s *Settings) {
+		"missing proxy URL": func(s *Settings) { s.LLMProxyURL = "" },
+		"no model efforts": func(s *Settings) {
 			config := s.Models["test-model"]
-			config.Provider = "missing"
+			config.ReasoningEfforts = nil
 			s.Models["test-model"] = config
 		},
-		"no models":       func(s *Settings) { s.Models = nil },
-		"zero capacity":   func(s *Settings) { s.MaxLiveSessions = 0 },
-		"invalid account": func(s *Settings) { s.AllowedAccounts = []string{"test/client/other"} },
-		"provider credential missing": func(s *Settings) {
-			provider := s.Providers["responses"]
-			provider.Credential = ""
-			s.Providers["responses"] = provider
-		},
-		"provider credentials duplicated": func(s *Settings) {
-			provider := s.Providers["responses"]
-			provider.CredentialFile = "/fixture/token"
-			s.Providers["responses"] = provider
-		},
+		"no models":              func(s *Settings) { s.Models = nil },
+		"zero capacity":          func(s *Settings) { s.MaxLiveSessions = 0 },
+		"invalid account":        func(s *Settings) { s.AllowedAccounts = []string{"test/client/other"} },
+		"credential missing":     func(s *Settings) { s.Credential = "" },
+		"credentials duplicated": func(s *Settings) { s.CredentialFile = "/fixture/token" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			s := fixtureSettings()
@@ -120,13 +113,13 @@ func TestLoadSettingsUsesDatabaseURLEnvironmentOverride(t *testing.T) {
 	}
 }
 
-func TestProviderReadsRotatingCredentialFile(t *testing.T) {
+func TestSettingsReadRotatingCredentialFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "token")
 	if err := os.WriteFile(path, []byte("first-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	provider := Provider{CredentialFile: path}
-	first, err := provider.ReadCredential()
+	settings := Settings{CredentialFile: path}
+	first, err := settings.ReadCredential()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +129,7 @@ func TestProviderReadsRotatingCredentialFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("second-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	second, err := provider.ReadCredential()
+	second, err := settings.ReadCredential()
 	if err != nil {
 		t.Fatal(err)
 	}

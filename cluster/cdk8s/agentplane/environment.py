@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from cdk8s import Duration
@@ -48,10 +49,11 @@ class LlmIngressProps:
 
 @dataclass(frozen=True)
 class CentralSamplerProps:
-    """The opt-in central code-mode service's provider routes and runtime limits."""
+    """The opt-in central code-mode service's model contracts and runtime limits."""
 
     models: Mapping[str, settings.ModelConfig]
-    providers: Mapping[str, settings.Provider]
+    llm_proxy_url: str
+    credential_file: Path
     max_live_sessions: int
     turn_timeout_seconds: int
     rpc_timeout_seconds: int

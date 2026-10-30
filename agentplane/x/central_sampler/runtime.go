@@ -321,14 +321,6 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 		if err != nil {
 			return activeCommand, err
 		}
-		configuration := &samplerpb.OpenSessionRequest{}
-		if err := proto.Unmarshal(session.Configuration, configuration); err != nil {
-			return activeCommand, err
-		}
-		provider, ok := r.settings.Providers[configuration.GetSpec().GetCentralSampler().GetProvider()]
-		if !ok {
-			return activeCommand, fmt.Errorf("configured provider %q is unavailable", configuration.GetSpec().GetCentralSampler().GetProvider())
-		}
 		payload := &commandpb.Command{}
 		if err := proto.Unmarshal(command.Payload, payload); err != nil {
 			return activeCommand, err
@@ -336,7 +328,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 		turnCtx, cancel := context.WithTimeout(ctx, time.Duration(r.settings.TurnTimeoutSeconds)*time.Second)
 		result := ""
 		if payload.GetCompact() != nil {
-			err = r.compact(turnCtx, owner, provider, session.Model)
+			err = r.compact(turnCtx, owner, session.Model)
 			result = "compact"
 		} else {
 			for {
@@ -358,7 +350,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 						}
 					}
 				}
-				result, err = r.controlledAdvance(turnCtx, sessionID, owner, live, client, provider, session)
+				result, err = r.controlledAdvance(turnCtx, sessionID, owner, live, client, session)
 				if err != nil || result == "done" || result == "interrupted" || result == "effects_unknown" {
 					break
 				}
@@ -496,7 +488,7 @@ func liveDone(live *liveHost) <-chan struct{} {
 	return live.code.Done()
 }
 
-func (r *Runtime) controlledAdvance(ctx context.Context, sessionID string, owner Owner, live *liveHost, client *http.Client, provider Provider, session *Session) (string, error) {
+func (r *Runtime) controlledAdvance(ctx context.Context, sessionID string, owner Owner, live *liveHost, client *http.Client, session *Session) (string, error) {
 	interrupts, err := r.store.PendingInterrupts(ctx, owner)
 	if err != nil {
 		return "", err
@@ -511,7 +503,7 @@ func (r *Runtime) controlledAdvance(ctx context.Context, sessionID string, owner
 	}
 	completed := make(chan advanceResult, 1)
 	go func() {
-		result, err := r.advance(advanceCtx, owner, live, client, provider, session)
+		result, err := r.advance(advanceCtx, owner, live, client, session)
 		completed <- advanceResult{result: result, err: err}
 	}()
 	ticker := time.NewTicker(50 * time.Millisecond)
@@ -637,7 +629,7 @@ func (r *Runtime) applyInterrupt(ctx context.Context, sessionID string, owner Ow
 	return status, nil
 }
 
-func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, client *http.Client, provider Provider, session *Session) (string, error) {
+func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, client *http.Client, session *Session) (string, error) {
 	conversation, err := r.store.Read(ctx, owner)
 	if err != nil {
 		return "", err
@@ -714,7 +706,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		}
 	}
 	if r.settings.AutoCompactTokens != nil && conversation.ContextTokens != nil && *conversation.ContextTokens >= *r.settings.AutoCompactTokens && len(state.Cells) == 0 {
-		if err := r.compact(ctx, owner, provider, session.Model); err != nil {
+		if err := r.compact(ctx, owner, session.Model); err != nil {
 			return "", err
 		}
 		return "compact", nil
@@ -740,7 +732,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		body.ClientMetadata = &ResponsesClientMetadata{SessionID: metadata.SessionID, ThreadID: metadata.ThreadID, TurnID: metadata.TurnID}
 	}
 	body.PromptCacheKey = metadata.SessionID
-	credential, err := provider.ReadCredential()
+	credential, err := r.settings.ReadCredential()
 	if err != nil {
 		return "", err
 	}
@@ -752,7 +744,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if err != nil {
 		return "", err
 	}
-	response, err := Sample(ctx, client, provider.Endpoint, credential, body, r.settings.Models[session.Model].Responses,
+	response, err := Sample(ctx, client, r.settings.LLMProxyURL, credential, body, r.settings.Models[session.Model].Responses,
 		&ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, headers, false)
 	if err != nil {
 		var known *KnownFailureError
@@ -787,7 +779,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	return "sample", nil
 }
 
-func (r *Runtime) compact(ctx context.Context, owner Owner, provider Provider, model string) error {
+func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error {
 	if r.settings.Models[model].Responses.Dialect != ResponsesDialectLite {
 		return &KnownFailureError{Evidence: map[string]any{"reason": "compaction requires a Responses Lite route; standard Responses compaction is not supported"}}
 	}
@@ -820,7 +812,7 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, provider Provider, m
 	body.ClientMetadata = &ResponsesClientMetadata{SessionID: metadata.SessionID, ThreadID: metadata.ThreadID, TurnID: metadata.TurnID}
 	body.PromptCacheKey = metadata.SessionID
 	body.Input = append(body.Input, ResponsesItem{Type: ResponsesItemCompactionTrigger})
-	credential, err := provider.ReadCredential()
+	credential, err := r.settings.ReadCredential()
 	if err != nil {
 		return err
 	}
@@ -833,7 +825,7 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, provider Provider, m
 	if err != nil {
 		return err
 	}
-	response, err := Sample(ctx, client, provider.Endpoint, credential, body, r.settings.Models[model].Responses,
+	response, err := Sample(ctx, client, r.settings.LLMProxyURL, credential, body, r.settings.Models[model].Responses,
 		&ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, headers, true)
 	if err != nil {
 		var known *KnownFailureError

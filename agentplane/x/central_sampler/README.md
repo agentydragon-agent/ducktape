@@ -34,10 +34,10 @@ own Pod, initialize its DB with an init container, and use projected service-acc
 Gateway and History. The service and its shared JavaScript host use the Pod container's aggregate
 CPU and memory limits.
 
-Server-owned configuration names the service, provider routes (endpoint, credential placeholder,
-model and reasoning-effort allowlists), TokenReview audience and allowed caller accounts,
-code-mode host binary, executor-side Codex path, logs, concurrency/deadlines and limits. Providers
-use exactly one of `credential` or `credential_file`; the service reads the file before each
+Server-owned configuration names the service, the LLM proxy base URL, credential source,
+model contracts and per-model reasoning-effort allowlists, TokenReview audience and allowed caller accounts,
+code-mode host binary, executor-side Codex path, logs, concurrency/deadlines and limits. The LLM proxy connection
+uses exactly one of `credential` or `credential_file`; the service reads the file before each
 request so projected service-account tokens can rotate. `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL`
 overrides `database_url` in the JSON settings, so database credentials can stay in a Secret-backed
 environment variable. Gateway mode requires `gateway_target` and a rotating projected
@@ -71,7 +71,7 @@ container limits stop meeting the production resource contract.
   empty settings preserve native operation and do not enable the new transport.
 - The sampler allows the Dispatcher account for admission. History explicitly allows the sampler
   account in `ingress.sampler_accounts`; it retains the distinct executor Sandbox identity.
-- The app's optional `model_catalog.central_sampler = {service, provider}` and
+- The app's optional `model_catalog.central_sampler = {service}` and
   `HARNESS_CENTRAL_SAMPLER` model list offer **Central sampler** alongside Codex and Claude. A caller
   cannot choose arbitrary service endpoints. A non-empty setup script runs once on the bound executor, in the resolved working directory,
   before sampling starts. Its stdout, stderr and terminal outcome are retained in History.
@@ -99,25 +99,27 @@ its own API-specific configuration alongside the shared exec encoding. Unsupport
 are rejected. Provider-native transcript and continuation handling still require that adapter;
 this configuration change does not implement cross-API session switching.
 
-The top-level `models` map keys model route IDs to a connection provider, API and tool encoding.
+The top-level `models` map keys model route IDs to an API, tool encoding and allowed reasoning efforts.
 Agentplane deployment configuration owns these compatibility choices; the shared model catalog
-holds no sampler-specific fields. Providers hold endpoint, credentials and allowed reasoning
-efforts; they do not contain models:
+holds no sampler-specific fields. The service uses one top-level proxy connection; upstream
+routing belongs to the LLM proxy:
 
 ```json
 {
+  "llm_proxy_url": "http://llm-proxy.invalid",
+  "credential_file": "/var/run/secrets/llm/token",
   "models": {
     "native-code-model": {
-      "provider": "llm-ingress",
       "api": "responses",
       "responses": { "dialect": "lite" },
-      "exec_encoding": "freeform"
+      "exec_encoding": "freeform",
+      "reasoning_efforts": ["", "high"]
     },
     "function-calling-model": {
-      "provider": "llm-ingress",
       "api": "responses",
       "responses": { "dialect": "standard" },
-      "exec_encoding": "json"
+      "exec_encoding": "json",
+      "reasoning_efforts": [""]
     }
   }
 }
@@ -137,8 +139,9 @@ Standard requests send text-only function results as strings and multimodal resu
 arrays. Asynchronous `notify()` output becomes a developer message identifying its original call,
 so the public API receives only one tool result per call.
 
-Staging generates these settings from the shared model route catalog. A model change within a
-Session must keep both encodings. Treat a route's contract as fixed while its Sessions exist;
+Staging combines Agentplane-owned compatibility policy with shared model reasoning metadata.
+A model change within a Session must preserve API, dialect and exec encoding, and the target must
+allow the current reasoning effort. Treat a route's contract as fixed while its Sessions exist;
 use a new route ID to change it. Standard routes reject manual compaction, and reaching the
 configured automatic compaction threshold fails the turn before any private compaction request.
 Portable compaction is not implemented. Provider compatibility still needs live validation;

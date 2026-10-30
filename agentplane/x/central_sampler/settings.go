@@ -11,13 +11,6 @@ import (
 	"strings"
 )
 
-type Provider struct {
-	Endpoint         string   `json:"endpoint"`
-	Credential       string   `json:"credential"`
-	CredentialFile   string   `json:"credential_file"`
-	ReasoningEfforts []string `json:"reasoning_efforts"`
-}
-
 type APIStyle string
 
 const APIStyleResponses APIStyle = "responses"
@@ -38,10 +31,10 @@ const (
 
 // ModelConfig contains the wire and tool-call encodings supported by one model route.
 type ModelConfig struct {
-	Provider     string          `json:"provider"`
-	API          APIStyle        `json:"api"`
-	Responses    ResponsesConfig `json:"responses"`
-	ExecEncoding ExecEncoding    `json:"exec_encoding"`
+	API              APIStyle        `json:"api"`
+	Responses        ResponsesConfig `json:"responses"`
+	ExecEncoding     ExecEncoding    `json:"exec_encoding"`
+	ReasoningEfforts []string        `json:"reasoning_efforts"`
 }
 
 type ResponsesConfig struct {
@@ -49,6 +42,9 @@ type ResponsesConfig struct {
 }
 
 func (c ModelConfig) Validate() error {
+	if len(c.ReasoningEfforts) == 0 {
+		return errors.New("model reasoning_efforts must not be empty")
+	}
 	if c.API != APIStyleResponses {
 		return errors.New("model api must be responses")
 	}
@@ -66,7 +62,9 @@ type Settings struct {
 	DatabaseURL        string                 `json:"database_url"`
 	Listen             string                 `json:"listen"`
 	ServiceName        string                 `json:"service_name"`
-	Providers          map[string]Provider    `json:"providers"`
+	LLMProxyURL        string                 `json:"llm_proxy_url"`
+	Credential         string                 `json:"credential"`
+	CredentialFile     string                 `json:"credential_file"`
 	Audience           string                 `json:"audience"`
 	AllowedAccounts    []string               `json:"allowed_accounts"`
 	CodeModeHost       string                 `json:"code_mode_host"`
@@ -130,20 +128,15 @@ func (s Settings) Validate() error {
 			return fmt.Errorf("%s is required", name)
 		}
 	}
-	if len(s.Models) == 0 || len(s.Providers) == 0 || len(s.AllowedAccounts) == 0 {
-		return errors.New("models, providers and allowed_accounts must not be empty")
+	if len(s.Models) == 0 || len(s.AllowedAccounts) == 0 {
+		return errors.New("models and allowed_accounts must not be empty")
 	}
-	for name, provider := range s.Providers {
-		if name == "" || provider.Endpoint == "" || (provider.Credential == "") == (provider.CredentialFile == "") || len(provider.ReasoningEfforts) == 0 {
-			return errors.New("provider endpoint, exactly one credential source, and reasoning_efforts are required")
-		}
+	if s.LLMProxyURL == "" || (s.Credential == "") == (s.CredentialFile == "") {
+		return errors.New("llm_proxy_url and exactly one credential source are required")
 	}
 	for model, config := range s.Models {
 		if model == "" {
 			return errors.New("model route must not be empty")
-		}
-		if _, ok := s.Providers[config.Provider]; !ok {
-			return fmt.Errorf("model %s references unknown provider %q", model, config.Provider)
 		}
 		if err := config.Validate(); err != nil {
 			return fmt.Errorf("model %s: %w", model, err)
@@ -178,17 +171,17 @@ func (s Settings) Validate() error {
 	return nil
 }
 
-func (p Provider) ReadCredential() (string, error) {
-	if p.CredentialFile == "" {
-		return p.Credential, nil
+func (s Settings) ReadCredential() (string, error) {
+	if s.CredentialFile == "" {
+		return s.Credential, nil
 	}
-	data, err := os.ReadFile(p.CredentialFile)
+	data, err := os.ReadFile(s.CredentialFile)
 	if err != nil {
-		return "", fmt.Errorf("read provider credential file: %w", err)
+		return "", fmt.Errorf("read LLM proxy credential file: %w", err)
 	}
 	credential := strings.TrimSpace(string(data))
 	if credential == "" {
-		return "", errors.New("provider credential file is empty")
+		return "", errors.New("LLM proxy credential file is empty")
 	}
 	return credential, nil
 }

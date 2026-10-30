@@ -22,11 +22,10 @@ class ModelOption(BaseModel):
 
 
 class CentralSamplerChoice(BaseModel):
-    """Browser-safe name and provider route; the Dispatcher owns network target authorization."""
+    """Browser-safe service name; the Dispatcher owns network target authorization."""
 
     model_config = ConfigDict(extra="forbid")
     service: str = Field(min_length=1)
-    provider: str = Field(min_length=1)
 
 
 class ModelCatalog(BaseModel):

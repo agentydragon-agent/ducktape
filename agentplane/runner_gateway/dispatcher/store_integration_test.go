@@ -1242,7 +1242,7 @@ func TestWorkerSerializesCommandsPerSession(t *testing.T) {
 func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+callerToken))
 	store := testStore(t, 3)
-	spec := &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, CentralSampler: &runnerpb.CentralSamplerConfig{Service: "central", Provider: "responses"}}
+	spec := &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, CentralSampler: &runnerpb.CentralSamplerConfig{Service: "central"}}
 	opening, err := store.OpenSession(ctx, "central-unready-session", "sandbox-api", sandboxUID, spec, nil, nil)
 	if err != nil {
 		t.Fatal(err)

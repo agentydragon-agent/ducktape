@@ -65,8 +65,8 @@ func ValidateRuntime(spec *runnerpb.SessionSpec, setup *string, targets map[stri
 		return nil
 	}
 	config := spec.GetCentralSampler()
-	if config.GetService() == "" || config.GetProvider() == "" {
-		return status.Error(codes.InvalidArgument, "central sampler service and provider are required")
+	if config.GetService() == "" {
+		return status.Error(codes.InvalidArgument, "central sampler service is required")
 	}
 	if _, enabled := targets[config.GetService()]; !enabled {
 		return status.Error(codes.FailedPrecondition, "central sampler service is not enabled")

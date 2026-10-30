@@ -32,7 +32,7 @@ from agentplane.llm_ingress.models import AttributionConfig, AttributionField, A
 from agentplane.runner.configuration import GuestResources, ResourceLimits
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
-from agentplane.x.central_sampler.settings import ModelConfig, Provider, ResponsesConfig
+from agentplane.x.central_sampler.settings import ModelConfig, ResponsesConfig
 from cluster.cdk8s import (
     agent_access_profiles,
     cilium,
@@ -116,11 +116,27 @@ _MCP_CLIENT_METADATA_URL = f"https://{_ACTIONS_HOSTNAME}/oauth/client-metadata.j
 
 # Agentplane sampler policy belongs here, separate from shared route facts.
 _LITE_FREEFORM = ModelConfig(
-    provider="responses", api="responses", responses=ResponsesConfig(dialect="lite"), exec_encoding="freeform"
+    reasoning_efforts={""}, api="responses", responses=ResponsesConfig(dialect="lite"), exec_encoding="freeform"
 )
 _STANDARD_JSON = ModelConfig(
-    provider="responses", api="responses", responses=ResponsesConfig(dialect="standard"), exec_encoding="json"
+    reasoning_efforts={""}, api="responses", responses=ResponsesConfig(dialect="standard"), exec_encoding="json"
 )
+
+
+_CENTRAL_SAMPLER_CONTRACTS = {
+    "chatgpt-sub/oai-responses/gpt-6-astra": _LITE_FREEFORM,
+    "chatgpt-sub/oai-responses/gpt-6-luna": _LITE_FREEFORM,
+    "chatgpt-sub/oai-responses/gpt-6.1-sol": _LITE_FREEFORM,
+    "antigravity/ant-messages/claude-opus-4-6-thinking": _STANDARD_JSON,
+    "antigravity/ant-messages/claude-sonnet-4-6": _STANDARD_JSON,
+    "antigravity/ant-messages/gemini-3-flash": _STANDARD_JSON,
+    "antigravity/ant-messages/gemini-3.5-flash-lite": _STANDARD_JSON,
+    "antigravity/ant-messages/gemini-3.8-flash-high": _STANDARD_JSON,
+    "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k": _STANDARD_JSON,
+    "ollama/oai-chat/gpt-oss-20b-128k": _STANDARD_JSON,
+    "ollama/oai-chat/gpt-oss-120b-128k": _STANDARD_JSON,
+    "ollama/oai-chat/gemma4-31b-it-q8_0-128k": _STANDARD_JSON,
+}
 
 
 # Separate harness and executor caps leave 1 GiB below the service high watermark.
@@ -391,35 +407,19 @@ ENV = Environment(
         namespace=STAGING_NAMESPACE,
         sandbox_template=POD_TEMPLATE,
         models=STAGING_APP_MODELS,
-        central_sampler=CentralSamplerChoice(service=central_sampler.NAME, provider="responses"),
+        central_sampler=CentralSamplerChoice(service=central_sampler.NAME),
         action_federation=_ACTION_FEDERATION,
         connection_service_url=AnyHttpUrl(_CONNECTION_SERVICE.url),
     ),
     central_sampler=CentralSamplerProps(
         models={
-            "chatgpt-sub/oai-responses/gpt-6-astra": _LITE_FREEFORM,
-            "chatgpt-sub/oai-responses/gpt-6-luna": _LITE_FREEFORM,
-            "chatgpt-sub/oai-responses/gpt-6.1-sol": _LITE_FREEFORM,
-            "antigravity/ant-messages/claude-opus-4-6-thinking": _STANDARD_JSON,
-            "antigravity/ant-messages/claude-sonnet-4-6": _STANDARD_JSON,
-            "antigravity/ant-messages/gemini-3-flash": _STANDARD_JSON,
-            "antigravity/ant-messages/gemini-3.5-flash-lite": _STANDARD_JSON,
-            "antigravity/ant-messages/gemini-3.8-flash-high": _STANDARD_JSON,
-            "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k": _STANDARD_JSON,
-            "ollama/oai-chat/gpt-oss-20b-128k": _STANDARD_JSON,
-            "ollama/oai-chat/gpt-oss-120b-128k": _STANDARD_JSON,
-            "ollama/oai-chat/gemma4-31b-it-q8_0-128k": _STANDARD_JSON,
-        },
-        providers={
-            "responses": Provider(
-                endpoint=f"{llm_ingress.service(STAGING_NAMESPACE).url}/v1/responses",
-                credential_file=Path("/var/run/secrets/central-sampler/llm"),
-                reasoning_efforts={
-                    "",
-                    *(effort for route in STAGING_APP_MODELS.codex for effort in route.reasoning_efforts),
-                },
+            route.id: _CENTRAL_SAMPLER_CONTRACTS[route.id].model_copy(
+                update={"reasoning_efforts": {"", *route.reasoning_efforts}}
             )
+            for route in STAGING_APP_MODELS.codex
         },
+        llm_proxy_url=llm_ingress.service(STAGING_NAMESPACE).url,
+        credential_file=Path("/var/run/secrets/central-sampler/llm"),
         max_live_sessions=32,
         turn_timeout_seconds=3600,
         rpc_timeout_seconds=30,

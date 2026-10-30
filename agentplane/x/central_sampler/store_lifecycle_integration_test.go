@@ -103,7 +103,7 @@ func TestBlockedReasonNamesUnresolvedIntentInGetSession(t *testing.T) {
 	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
 		CommandId: "turn",
 		Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}},
-	}, "fixture-account"); err != nil {
+	}, "fixture-account", nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {

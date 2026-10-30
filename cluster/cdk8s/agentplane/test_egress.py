@@ -200,7 +200,7 @@ def test_central_sampler_offers_the_codex_models(staging_manifests: list[dict[st
     config = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
     catalog = config["models"]
     assert catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"] == catalog["harnesses"]["HARNESS_CODEX"]
-    assert catalog["central_sampler"] == {"service": "central-sampler", "provider": "responses"}
+    assert catalog["central_sampler"] == {"service": "central-sampler"}
     sampler = json.loads(_by_name(staging_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
     assert set(sampler["models"]) == {route.id for route in STAGING_APP_MODELS.codex}
 

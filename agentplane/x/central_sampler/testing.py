@@ -19,7 +19,7 @@ from agentplane.native.testing.model_endpoint import ModelEndpoint, ModelExchang
 from agentplane.proto import runner_pb2, sandboxes_pb2
 from agentplane.testing.go_process import go_process
 from agentplane.x.central_sampler import sampler_pb2, sampler_pb2_grpc
-from agentplane.x.central_sampler.settings import ModelConfig, Provider, ResponsesConfig, Settings
+from agentplane.x.central_sampler.settings import ModelConfig, ResponsesConfig, Settings
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import listen_tcp
 
@@ -105,20 +105,17 @@ def settings(database_url: str, endpoint: str, executor_url: str, codex_binary: 
         database_url=database_url,
         listen="127.0.0.1:0",
         service_name="test-sampler",
-        providers={
-            "test-provider": Provider(
-                endpoint=endpoint + "/v1/responses", credential=SecretStr("test-key"), reasoning_efforts={"", "high"}
-            )
-        },
+        llm_proxy_url=endpoint,
+        credential=SecretStr("test-key"),
         models={
             "test-model": ModelConfig(
-                provider="test-provider",
+                reasoning_efforts={"", "high"},
                 api="responses",
                 responses=ResponsesConfig(dialect="lite"),
                 exec_encoding="freeform",
             ),
             "second-model": ModelConfig(
-                provider="test-provider",
+                reasoning_efforts={"", "high"},
                 api="responses",
                 responses=ResponsesConfig(dialect="lite"),
                 exec_encoding="freeform",
@@ -144,7 +141,7 @@ def open_request(cwd: Path) -> sampler_pb2.OpenSessionRequest:
             harness=runner_pb2.HARNESS_CENTRAL_SAMPLER,
             cwd=str(cwd),
             model="test-model",
-            central_sampler=runner_pb2.CentralSamplerConfig(service="test-sampler", provider="test-provider"),
+            central_sampler=runner_pb2.CentralSamplerConfig(service="test-sampler"),
         ),
         executor=sandboxes_pb2.SandboxDestination(
             owner=sandboxes_pb2.ServiceAccount(namespace="test", name="executor"),
@@ -173,9 +170,8 @@ async def go_sampler(config: Settings, kubeconfig: Path, directory: Path) -> Asy
         )
         values["listen"] = f"fd:{fd}"
         values["kubeconfig"] = str(kubeconfig)
-        for name, provider in config.providers.items():
-            if provider.credential is not None:
-                values["providers"][name]["credential"] = provider.credential.get_secret_value()
+        if config.credential is not None:
+            values["credential"] = config.credential.get_secret_value()
         config_path = directory / "sampler-config.json"
         config_path.write_text(json.dumps(values))
         migration = await asyncio.to_thread(

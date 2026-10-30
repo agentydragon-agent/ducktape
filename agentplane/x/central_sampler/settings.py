@@ -16,25 +16,10 @@ class ResponsesConfig(BaseModel):
 class ModelConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    provider: str
     api: Literal["responses"]
     responses: ResponsesConfig
     exec_encoding: Literal["freeform", "json"]
-
-
-class Provider(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    endpoint: str
-    credential: SecretStr | None = None
-    credential_file: Path | None = None
     reasoning_efforts: set[str] = Field(min_length=1)
-
-    @model_validator(mode="after")
-    def exactly_one_credential_source(self) -> Self:
-        if (self.credential is None) == (self.credential_file is None):
-            raise ValueError("configure exactly one of credential and credential_file")
-        return self
 
     @field_serializer("reasoning_efforts")
     def serialize_reasoning_efforts(self, value: set[str]) -> list[str]:
@@ -48,7 +33,9 @@ class Settings(BaseModel):
     database_url: str | None = None
     listen: str
     service_name: str
-    providers: dict[str, Provider] = Field(min_length=1)
+    llm_proxy_url: str
+    credential: SecretStr | None = None
+    credential_file: Path | None = None
     models: dict[str, ModelConfig] = Field(min_length=1)
 
     audience: str
@@ -69,10 +56,9 @@ class Settings(BaseModel):
     kubeconfig: Path | None = None
 
     @model_validator(mode="after")
-    def model_providers_exist(self) -> Self:
-        for route, config in self.models.items():
-            if not route or config.provider not in self.providers:
-                raise ValueError(f"model {route!r} references unknown provider {config.provider!r}")
+    def exactly_one_credential_source(self) -> Self:
+        if (self.credential is None) == (self.credential_file is None):
+            raise ValueError("configure exactly one of credential and credential_file")
         return self
 
     @field_serializer("allowed_accounts")

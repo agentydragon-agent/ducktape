@@ -4,7 +4,7 @@
 
 `Sampler` is a separate authenticated gRPC API. `OpenSession` binds a canonical public Session UUID
 to a central `SessionSpec`, caller ServiceAccount UID and fixed `SandboxDestination` plus expected
-incarnation UID. The named service/provider and model/effort must be server-configured. Every RPC
+incarnation UID. The named service and model/effort must be server-configured. Every RPC
 uses TokenReview and the allowed-account policy; Session UUID knowledge grants no authority.
 Reusing an identifier with a different payload conflicts. The integration app owns neither this
 admission nor the continuation database.
@@ -85,10 +85,11 @@ accepts only a live cell this Session recorded (rejected before dispatch rather 
 missing cell), unknown or `null` tool arguments are rejected, and audio truncation estimates
 tokens from data URL size rather than decoded duration.
 
-A flat top-level `models` map allowlists model route IDs. Each entry references a connection
-`provider`, declares `api: responses`, and sets independent `responses.dialect` (`lite` or
-`standard`) and `exec_encoding` (`freeform` or `json`) settings. Providers retain endpoint,
-credentials and reasoning efforts. Unknown providers, unsupported APIs and missing or unknown
+A flat top-level `models` map allowlists model route IDs. Each entry allows reasoning efforts,
+declares `api: responses`, and sets independent `responses.dialect` (`lite` or `standard`) and
+`exec_encoding` (`freeform` or `json`) settings. A single top-level `llm_proxy_url` and credential
+source configure the connection;
+upstream routing belongs to the proxy. Unsupported APIs and missing or unknown
 protocol settings are rejected. Only Responses is implemented; future adapters own their native
 wire and continuation formats. JSON encoding exposes a single
 function `exec`. Exactly one of `code` (execute JavaScript) or `cell_id` (resume a yielded cell)
@@ -96,8 +97,11 @@ is required; both accept optional `yield_time_ms` and `max_output_tokens`, and o
 variant accepts `terminate`. JSON source does not accept the native exec pragma. The adapter
 validates arguments before dispatch and uses the same host operations, journal and recovery
 rules as freeform calls. Calls are accepted only with their configured name and item type.
-Model changes cannot change provider, API, dialect or exec encoding within a Session. Route contracts must remain fixed
-for retained Sessions; changing a contract requires a new route ID.
+Model changes cannot change API, dialect or exec encoding within a Session. Route contracts must remain fixed
+for retained Sessions; changing a contract requires a new route ID. Model changes require the
+target to allow the current effort; effort changes must be allowed by the current model.
+Admission validates the projected model and effort after earlier queued commands under the
+Session transaction lock.
 
 Lite mode retains the Codex wire contract described below. Standard mode sends top-level `tools`,
 omits the Lite header, `additional_tools`, private client metadata and `reasoning.context`, and

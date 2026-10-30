@@ -10,11 +10,7 @@ def test_central_sampler_models_require_a_named_runtime() -> None:
     harnesses = {Harness.CLAUDE: [], Harness.CODEX: [], Harness.CENTRAL_SAMPLER: ["central"]}
     with pytest.raises(ValueError, match="central_sampler"):
         ModelCatalog(models=models, harnesses=harnesses)
-    catalog = ModelCatalog(
-        models=models,
-        harnesses=harnesses,
-        central_sampler=CentralSamplerChoice(service="central", provider="responses"),
-    )
+    catalog = ModelCatalog(models=models, harnesses=harnesses, central_sampler=CentralSamplerChoice(service="central"))
     assert catalog.central_sampler is not None
     assert catalog.central_sampler.service == "central"
 

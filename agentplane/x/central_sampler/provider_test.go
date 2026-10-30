@@ -57,7 +57,7 @@ func TestResponsesRequestUsesCodexToolsAndPreservesOpaqueContext(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"type":"reasoning","encrypted_content":"opaque","provider_sequence":9007199254740993}`), &item); err != nil {
 		t.Fatal(err)
 	}
-	body, err := RequestBody("fixture-model", "fixture-session", []ResponsesItem{item}, nil, nil, ModelConfig{API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform})
+	body, err := RequestBody("fixture-model", "fixture-session", []ResponsesItem{item}, nil, nil, ModelConfig{API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform, ReasoningEfforts: []string{"", "high"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
 	for _, mode := range []ResponsesDialect{ResponsesDialectStandard, ResponsesDialectLite} {
 		for _, encoding := range []ExecEncoding{ExecEncodingJSON, ExecEncodingFreeform} {
 			t.Run(string(mode)+"/"+string(encoding), func(t *testing.T) {
-				config := ModelConfig{API: APIStyleResponses, Responses: ResponsesConfig{Dialect: mode}, ExecEncoding: encoding}
+				config := ModelConfig{API: APIStyleResponses, Responses: ResponsesConfig{Dialect: mode}, ExecEncoding: encoding, ReasoningEfforts: []string{"", "high"}}
 				body, err := RequestBody("fixture", "session", nil, nil, nil, config)
 				if err != nil {
 					t.Fatal(err)
@@ -159,6 +159,9 @@ func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
 					}
 				}
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.URL.Path != "/v1/responses" {
+						t.Errorf("Responses request path: %q", r.URL.Path)
+					}
 					if got := r.Header.Get("x-openai-internal-codex-responses-lite"); (got == "true") != (mode == ResponsesDialectLite) {
 						t.Errorf("Lite header: %q", got)
 					}
@@ -180,7 +183,7 @@ func TestStandardResponsesSerializesTextAndAsyncNotifications(t *testing.T) {
 	items := []ResponsesItem{
 		{Type: ResponsesItemFunctionCall, Name: "exec", CallID: "call", Arguments: `{"code":"text(1)"}`}, output, notification,
 	}
-	body, err := RequestBody("fixture", "session", items, nil, nil, ModelConfig{API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectStandard}, ExecEncoding: ExecEncodingJSON})
+	body, err := RequestBody("fixture", "session", items, nil, nil, ModelConfig{API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectStandard}, ExecEncoding: ExecEncodingJSON, ReasoningEfforts: []string{"", "high"}})
 	if err != nil {
 		t.Fatal(err)
 	}
