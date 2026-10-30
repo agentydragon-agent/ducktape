@@ -661,7 +661,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		}
 	}
 	if call := pendingCall(conversation.Items); call != nil {
-		if !call.IsModelTool(provider.Models[session.Model]) {
+		if !call.IsModelTool(r.settings.Models[session.Model]) {
 			return "", &KnownFailureError{Evidence: map[string]any{"reason": "unsupported model tool", "call": call}}
 		}
 		if live == nil {
@@ -722,7 +722,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if conversation, err = r.store.RecordEnvironmentContext(ctx, owner); err != nil {
 		return "", err
 	}
-	body, err := RequestBody(session.Model, conversation.ID, conversation.Context(), conversation.Instructions, state, provider.Models[session.Model])
+	body, err := RequestBody(session.Model, conversation.ID, conversation.Context(), conversation.Instructions, state, r.settings.Models[session.Model])
 	if err != nil {
 		return "", err
 	}
@@ -772,7 +772,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			}
 			return "", failure
 		}
-		if isCall && !call.IsModelTool(provider.Models[session.Model]) {
+		if isCall && !call.IsModelTool(r.settings.Models[session.Model]) {
 			failure := &KnownFailureError{Evidence: map[string]any{"reason": "unsupported model tool", "response": response.Audit(), "item": item}}
 			if err := r.store.Reject(ctx, owner, intentID, failure); err != nil {
 				return "", err
@@ -788,7 +788,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 }
 
 func (r *Runtime) compact(ctx context.Context, owner Owner, provider Provider, model string) error {
-	if provider.Models[model].ResponsesMode != "lite" {
+	if r.settings.Models[model].Responses.Dialect != "lite" {
 		return &KnownFailureError{Evidence: map[string]any{"reason": "compaction requires a Responses Lite route; standard Responses compaction is not supported"}}
 	}
 	state, err := r.store.ExecutionState(ctx, owner)
@@ -809,7 +809,7 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, provider Provider, m
 	if err := checkPairs(original); err != nil {
 		return err
 	}
-	body, err := RequestBody(model, conversation.ID, original, conversation.Instructions, state, provider.Models[model])
+	body, err := RequestBody(model, conversation.ID, original, conversation.Instructions, state, r.settings.Models[model])
 	if err != nil {
 		return err
 	}

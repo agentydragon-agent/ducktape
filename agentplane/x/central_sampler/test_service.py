@@ -29,7 +29,7 @@ from agentplane.proto import event_pb2
 from agentplane.runner import runner_service_pb2
 from agentplane.testing.codex_fixtures import ExecutorServer
 from agentplane.x.central_sampler import sampler_pb2, sampler_pb2_grpc
-from agentplane.x.central_sampler.settings import ModelConfig
+from agentplane.x.central_sampler.settings import ModelConfig, ResponsesConfig
 from agentplane.x.central_sampler.testing import METADATA, Endpoint, open_request, service, settings
 from agentplane.x.central_sampler.testing_store import Store
 from util.testing.sqlalchemy_engines import postgres_async_engine
@@ -48,6 +48,44 @@ async def completed(
     finally:
         stream.cancel()
     raise AssertionError("event stream ended")
+
+
+async def test_flat_model_routes_enforce_provider_and_session_contract(
+    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+) -> None:
+    async with Endpoint() as endpoint:
+        config = settings(
+            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+        )
+        config.providers["other-provider"] = config.providers["test-provider"]
+        config.models["foreign-model"] = config.models["test-model"].model_copy(update={"provider": "other-provider"})
+        config.models["standard-model"] = ModelConfig(
+            provider="test-provider",
+            api="responses",
+            responses=ResponsesConfig(dialect="standard"),
+            exec_encoding="json",
+        )
+        async with service(config) as stub:
+            request = open_request(tmp_path)
+            request.spec.model = "foreign-model"
+            with pytest.raises(grpc.aio.AioRpcError) as rejected:
+                await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            assert rejected.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+            request.spec.model = "test-model"
+            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            for model, code in (
+                ("foreign-model", grpc.StatusCode.INVALID_ARGUMENT),
+                ("standard-model", grpc.StatusCode.FAILED_PRECONDITION),
+            ):
+                with pytest.raises(grpc.aio.AioRpcError) as rejected:
+                    await stub.ChangeModel(
+                        runner_service_pb2.ChangeModelRequest(
+                            session_id=request.session_id, command_id=model, model=model
+                        ),
+                        metadata=METADATA,
+                        timeout=10,
+                    )
+                assert rejected.value.code() == code
 
 
 async def test_session_store_survives_idle_leases_and_is_separate_between_sessions(
@@ -677,10 +715,18 @@ async def test_standard_json_exec_runs_shell_resumes_and_recovers(
         config = settings(
             database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
-        provider = config.providers["test-provider"].model_copy(
-            update={"models": {"test-model": ModelConfig(responses_mode="standard", exec_encoding="json")}}
+        config = config.model_copy(
+            update={
+                "models": {
+                    "test-model": ModelConfig(
+                        provider="test-provider",
+                        api="responses",
+                        responses=ResponsesConfig(dialect="standard"),
+                        exec_encoding="json",
+                    )
+                }
+            }
         )
-        config = config.model_copy(update={"providers": {"test-provider": provider}})
         Image.new("RGB", (1, 1), (255, 0, 0)).save(tmp_path / "small.png")
         request = open_request(tmp_path)
         request.spec.reasoning_effort = ""

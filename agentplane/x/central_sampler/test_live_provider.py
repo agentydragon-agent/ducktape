@@ -19,7 +19,7 @@ from pydantic import SecretStr
 from agentplane.proto import event_pb2
 from agentplane.runner import runner_service_pb2
 from agentplane.x.central_sampler import sampler_pb2, sampler_pb2_grpc
-from agentplane.x.central_sampler.settings import ModelConfig, Provider
+from agentplane.x.central_sampler.settings import ModelConfig, Provider, ResponsesConfig
 from agentplane.x.central_sampler.testing import METADATA, open_request, service, settings
 from agentplane.x.central_sampler.testing_store import IntentSnapshot, Store
 from util.testing.sqlalchemy_engines import postgres_async_engine
@@ -75,11 +75,18 @@ async def test_agent_runs_a_nested_command_and_continues(
     base = settings(database_url, "unused", executor_url, codex_binary, code_mode_host, undeclared_outputs_dir())
     config = base.model_copy(
         update={
+            "models": {
+                model: ModelConfig(
+                    provider="test-provider",
+                    api="responses",
+                    responses=ResponsesConfig(dialect="lite"),
+                    exec_encoding="freeform",
+                )
+            },
             "providers": {
                 "test-provider": Provider(
                     endpoint=os.environ["OPENAI_BASE_URL"].rstrip("/") + "/responses",
                     credential=SecretStr(os.environ["OPENAI_API_KEY"]),
-                    models={model: ModelConfig(responses_mode="lite", exec_encoding="freeform")},
                     reasoning_efforts={EFFORT},
                 )
             },

@@ -94,18 +94,34 @@ See the [v1 validation evidence](../../debug/central_sampler_v1.md) for results 
 
 ## Model contracts
 
-Each provider's `models` is a map from an allowed model route ID to its request and tool encodings:
+Only `api: responses` is implemented. A future API adapter (such as Anthropic Messages) can add
+its own API-specific configuration alongside the shared exec encoding. Unsupported API values
+are rejected. Provider-native transcript and continuation handling still require that adapter;
+this configuration change does not implement cross-API session switching.
+
+The top-level `models` map keys model route IDs to a connection provider, API and tool encoding.
+Providers hold endpoint, credentials and allowed reasoning efforts; they do not contain models:
 
 ```json
 {
   "models": {
-    "native-code-model": { "responses_mode": "lite", "exec_encoding": "freeform" },
-    "function-calling-model": { "responses_mode": "standard", "exec_encoding": "json" }
+    "native-code-model": {
+      "provider": "llm-ingress",
+      "api": "responses",
+      "responses": { "dialect": "lite" },
+      "exec_encoding": "freeform"
+    },
+    "function-calling-model": {
+      "provider": "llm-ingress",
+      "api": "responses",
+      "responses": { "dialect": "standard" },
+      "exec_encoding": "json"
+    }
   }
 }
 ```
 
-The two settings are independent; all four combinations are supported. `lite` uses Codex's
+`responses.dialect` and `exec_encoding` are independent; all four combinations are supported. `lite` uses Codex's
 Responses Lite header, `additional_tools` input item and all-turn reasoning context. `standard`
 declares top-level Responses `tools` and omits the private Lite header, reasoning context and
 client metadata. With no reasoning effort selected, standard requests omit reasoning configuration

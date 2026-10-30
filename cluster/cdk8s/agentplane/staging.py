@@ -32,7 +32,7 @@ from agentplane.llm_ingress.models import AttributionConfig, AttributionField, A
 from agentplane.runner.configuration import GuestResources, ResourceLimits
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
-from agentplane.x.central_sampler.settings import ModelConfig, Provider
+from agentplane.x.central_sampler.settings import ModelConfig, Provider, ResponsesConfig
 from cluster.cdk8s import (
     agent_access_profiles,
     cilium,
@@ -118,7 +118,12 @@ _MCP_CLIENT_METADATA_URL = f"https://{_ACTIONS_HOSTNAME}/oauth/client-metadata.j
 def _central_sampler_model_config(route: Route) -> ModelConfig:
     if route.responses_mode is None or route.exec_encoding is None:
         raise ValueError(f"central sampler route {route.id} lacks Responses or exec compatibility metadata")
-    return ModelConfig(responses_mode=route.responses_mode, exec_encoding=route.exec_encoding)
+    return ModelConfig(
+        provider="responses",
+        api="responses",
+        responses=ResponsesConfig(dialect=route.responses_mode),
+        exec_encoding=route.exec_encoding,
+    )
 
 
 # Separate harness and executor caps leave 1 GiB below the service high watermark.
@@ -394,11 +399,11 @@ ENV = Environment(
         connection_service_url=AnyHttpUrl(_CONNECTION_SERVICE.url),
     ),
     central_sampler=CentralSamplerProps(
+        models={route.id: _central_sampler_model_config(route) for route in STAGING_APP_MODELS.codex},
         providers={
             "responses": Provider(
                 endpoint=f"{llm_ingress.service(STAGING_NAMESPACE).url}/v1/responses",
                 credential_file=Path("/var/run/secrets/central-sampler/llm"),
-                models={route.id: _central_sampler_model_config(route) for route in STAGING_APP_MODELS.codex},
                 reasoning_efforts={
                     "",
                     *(effort for route in STAGING_APP_MODELS.codex for effort in route.reasoning_efforts),

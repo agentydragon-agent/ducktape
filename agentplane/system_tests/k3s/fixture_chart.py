@@ -60,7 +60,7 @@ from agentplane.system_tests import launch_preset, probe_credential, runtime_gra
 from agentplane.system_tests.k3s import block_storage, dex, fixture_database
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, Models, PublicLiteLLM
-from agentplane.x.central_sampler.settings import ModelConfig, Provider
+from agentplane.x.central_sampler.settings import ModelConfig, Provider, ResponsesConfig
 from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.agentplane import (
     actions,
@@ -119,7 +119,12 @@ SESSION_DISPATCHER = "session-dispatcher"
 def _central_sampler_model_config(route: Route) -> ModelConfig:
     if route.responses_mode is None or route.exec_encoding is None:
         raise ValueError(f"central sampler route {route.id} lacks Responses or exec compatibility metadata")
-    return ModelConfig(responses_mode=route.responses_mode, exec_encoding=route.exec_encoding)
+    return ModelConfig(
+        provider="responses",
+        api="responses",
+        responses=ResponsesConfig(dialect=route.responses_mode),
+        exec_encoding=route.exec_encoding,
+    )
 
 
 # The fixture's one Pod execution environment. Nothing outside the fixture names it -- no live Sandbox
@@ -240,11 +245,11 @@ def environment(
     central_sampler_choice = None
     if central_sampler:
         central_sampler_props = CentralSamplerProps(
+            models={GPT6_LUNA_RESPONSES.id: _central_sampler_model_config(GPT6_LUNA_RESPONSES)},
             providers={
                 "responses": Provider(
                     endpoint=f"{llm_ingress.proxied_url(NAMESPACE)}/v1/responses",
                     credential_file=Path("/var/run/secrets/central-sampler/llm"),
-                    models={GPT6_LUNA_RESPONSES.id: _central_sampler_model_config(GPT6_LUNA_RESPONSES)},
                     reasoning_efforts={"", *GPT6_LUNA_RESPONSES.reasoning_efforts},
                 )
             },

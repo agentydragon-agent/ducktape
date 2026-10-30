@@ -2846,56 +2846,6 @@ data:
         "responses": {
           "endpoint": "http://llm-ingress.agentplane-staging.svc:8080/v1/responses",
           "credential_file": "/var/run/secrets/central-sampler/llm",
-          "models": {
-            "chatgpt-sub/oai-responses/gpt-6-astra": {
-              "responses_mode": "lite",
-              "exec_encoding": "freeform"
-            },
-            "chatgpt-sub/oai-responses/gpt-6-luna": {
-              "responses_mode": "lite",
-              "exec_encoding": "freeform"
-            },
-            "chatgpt-sub/oai-responses/gpt-6.1-sol": {
-              "responses_mode": "lite",
-              "exec_encoding": "freeform"
-            },
-            "antigravity/ant-messages/claude-opus-4-6-thinking": {
-              "responses_mode": "standard",
-              "exec_encoding": "json"
-            },
-            "antigravity/ant-messages/claude-sonnet-4-6": {
-              "responses_mode": "standard",
-              "exec_encoding": "json"
-            },
-            "antigravity/ant-messages/gemini-3-flash": {
-              "responses_mode": "standard",
-              "exec_encoding": "json"
-            },
-            "antigravity/ant-messages/gemini-3.5-flash-lite": {
-              "responses_mode": "standard",
-              "exec_encoding": "json"
-            },
-            "antigravity/ant-messages/gemini-3.8-flash-high": {
-              "responses_mode": "standard",
-              "exec_encoding": "json"
-            },
-            "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k": {
-              "responses_mode": "standard",
-              "exec_encoding": "json"
-            },
-            "ollama/oai-chat/gpt-oss-20b-128k": {
-              "responses_mode": "standard",
-              "exec_encoding": "json"
-            },
-            "ollama/oai-chat/gpt-oss-120b-128k": {
-              "responses_mode": "standard",
-              "exec_encoding": "json"
-            },
-            "ollama/oai-chat/gemma4-31b-it-q8_0-128k": {
-              "responses_mode": "standard",
-              "exec_encoding": "json"
-            }
-          },
           "reasoning_efforts": [
             "",
             "high",
@@ -2905,6 +2855,104 @@ data:
             "minimal",
             "xhigh"
           ]
+        }
+      },
+      "models": {
+        "chatgpt-sub/oai-responses/gpt-6-astra": {
+          "provider": "responses",
+          "api": "responses",
+          "responses": {
+            "dialect": "lite"
+          },
+          "exec_encoding": "freeform"
+        },
+        "chatgpt-sub/oai-responses/gpt-6-luna": {
+          "provider": "responses",
+          "api": "responses",
+          "responses": {
+            "dialect": "lite"
+          },
+          "exec_encoding": "freeform"
+        },
+        "chatgpt-sub/oai-responses/gpt-6.1-sol": {
+          "provider": "responses",
+          "api": "responses",
+          "responses": {
+            "dialect": "lite"
+          },
+          "exec_encoding": "freeform"
+        },
+        "antigravity/ant-messages/claude-opus-4-6-thinking": {
+          "provider": "responses",
+          "api": "responses",
+          "responses": {
+            "dialect": "standard"
+          },
+          "exec_encoding": "json"
+        },
+        "antigravity/ant-messages/claude-sonnet-4-6": {
+          "provider": "responses",
+          "api": "responses",
+          "responses": {
+            "dialect": "standard"
+          },
+          "exec_encoding": "json"
+        },
+        "antigravity/ant-messages/gemini-3-flash": {
+          "provider": "responses",
+          "api": "responses",
+          "responses": {
+            "dialect": "standard"
+          },
+          "exec_encoding": "json"
+        },
+        "antigravity/ant-messages/gemini-3.5-flash-lite": {
+          "provider": "responses",
+          "api": "responses",
+          "responses": {
+            "dialect": "standard"
+          },
+          "exec_encoding": "json"
+        },
+        "antigravity/ant-messages/gemini-3.8-flash-high": {
+          "provider": "responses",
+          "api": "responses",
+          "responses": {
+            "dialect": "standard"
+          },
+          "exec_encoding": "json"
+        },
+        "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k": {
+          "provider": "responses",
+          "api": "responses",
+          "responses": {
+            "dialect": "standard"
+          },
+          "exec_encoding": "json"
+        },
+        "ollama/oai-chat/gpt-oss-20b-128k": {
+          "provider": "responses",
+          "api": "responses",
+          "responses": {
+            "dialect": "standard"
+          },
+          "exec_encoding": "json"
+        },
+        "ollama/oai-chat/gpt-oss-120b-128k": {
+          "provider": "responses",
+          "api": "responses",
+          "responses": {
+            "dialect": "standard"
+          },
+          "exec_encoding": "json"
+        },
+        "ollama/oai-chat/gemma4-31b-it-q8_0-128k": {
+          "provider": "responses",
+          "api": "responses",
+          "responses": {
+            "dialect": "standard"
+          },
+          "exec_encoding": "json"
         }
       },
       "audience": "central-sampler",

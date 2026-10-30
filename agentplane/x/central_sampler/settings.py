@@ -7,10 +7,18 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_serializer, 
 from pydantic_settings import SettingsConfigDict
 
 
+class ResponsesConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dialect: Literal["lite", "standard"]
+
+
 class ModelConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    responses_mode: Literal["lite", "standard"]
+    provider: str
+    api: Literal["responses"]
+    responses: ResponsesConfig
     exec_encoding: Literal["freeform", "json"]
 
 
@@ -20,7 +28,6 @@ class Provider(BaseModel):
     endpoint: str
     credential: SecretStr | None = None
     credential_file: Path | None = None
-    models: dict[str, ModelConfig] = Field(min_length=1)
     reasoning_efforts: set[str] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -42,6 +49,8 @@ class Settings(BaseModel):
     listen: str
     service_name: str
     providers: dict[str, Provider] = Field(min_length=1)
+    models: dict[str, ModelConfig] = Field(min_length=1)
+
     audience: str
     allowed_accounts: set[str] = Field(min_length=1)
     code_mode_host: Path
@@ -58,6 +67,13 @@ class Settings(BaseModel):
     lease_seconds: int = Field(gt=30)
     auto_compact_tokens: int | None = Field(default=None, gt=0)
     kubeconfig: Path | None = None
+
+    @model_validator(mode="after")
+    def model_providers_exist(self) -> Self:
+        for route, config in self.models.items():
+            if not route or config.provider not in self.providers:
+                raise ValueError(f"model {route!r} references unknown provider {config.provider!r}")
+        return self
 
     @field_serializer("allowed_accounts")
     def serialize_allowed_accounts(self, value: set[str]) -> list[str]:

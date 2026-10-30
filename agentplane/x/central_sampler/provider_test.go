@@ -57,7 +57,7 @@ func TestResponsesRequestUsesCodexToolsAndPreservesOpaqueContext(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"type":"reasoning","encrypted_content":"opaque","provider_sequence":9007199254740993}`), &item); err != nil {
 		t.Fatal(err)
 	}
-	body, err := RequestBody("fixture-model", "fixture-session", []ResponsesItem{item}, nil, nil, ModelConfig{ResponsesMode: "lite", ExecEncoding: "freeform"})
+	body, err := RequestBody("fixture-model", "fixture-session", []ResponsesItem{item}, nil, nil, ModelConfig{API: "responses", Responses: ResponsesConfig{Dialect: "lite"}, ExecEncoding: "freeform"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
 	for _, mode := range []string{"standard", "lite"} {
 		for _, encoding := range []string{"json", "freeform"} {
 			t.Run(mode+"/"+encoding, func(t *testing.T) {
-				config := ModelConfig{ResponsesMode: mode, ExecEncoding: encoding}
+				config := ModelConfig{API: "responses", Responses: ResponsesConfig{Dialect: mode}, ExecEncoding: encoding}
 				body, err := RequestBody("fixture", "session", nil, nil, nil, config)
 				if err != nil {
 					t.Fatal(err)
@@ -172,7 +172,7 @@ func TestStandardResponsesSerializesTextAndAsyncNotifications(t *testing.T) {
 	notification := ResponsesItem{Type: ResponsesItemCustomToolOutput, CallID: "call", Output: []ResponsesContentPart{{Type: "input_text", Text: "later"}}}
 	body, err := RequestBody("fixture", "session", []ResponsesItem{
 		{Type: ResponsesItemFunctionCall, Name: "exec", CallID: "call", Arguments: `{"code":"text(1)"}`}, output, notification,
-	}, nil, nil, ModelConfig{ResponsesMode: "standard", ExecEncoding: "json"})
+	}, nil, nil, ModelConfig{API: "responses", Responses: ResponsesConfig{Dialect: "standard"}, ExecEncoding: "json"})
 	if err != nil {
 		t.Fatal(err)
 	}

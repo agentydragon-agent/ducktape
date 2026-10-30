@@ -12,40 +12,59 @@ import (
 )
 
 type Provider struct {
-	Endpoint         string                 `json:"endpoint"`
-	Credential       string                 `json:"credential"`
-	CredentialFile   string                 `json:"credential_file"`
-	Models           map[string]ModelConfig `json:"models"`
-	ReasoningEfforts []string               `json:"reasoning_efforts"`
+	Endpoint         string   `json:"endpoint"`
+	Credential       string   `json:"credential"`
+	CredentialFile   string   `json:"credential_file"`
+	ReasoningEfforts []string `json:"reasoning_efforts"`
 }
 
 // ModelConfig contains the wire and tool-call encodings supported by one model route.
 type ModelConfig struct {
-	ResponsesMode string `json:"responses_mode"`
-	ExecEncoding  string `json:"exec_encoding"`
+	Provider     string          `json:"provider"`
+	API          string          `json:"api"`
+	Responses    ResponsesConfig `json:"responses"`
+	ExecEncoding string          `json:"exec_encoding"`
+}
+
+type ResponsesConfig struct {
+	Dialect string `json:"dialect"`
+}
+
+func (c ModelConfig) Validate() error {
+	if c.API != "responses" {
+		return errors.New("model api must be responses")
+	}
+	if c.Responses.Dialect != "lite" && c.Responses.Dialect != "standard" {
+		return errors.New("responses.dialect must be lite or standard")
+	}
+	if c.ExecEncoding != "freeform" && c.ExecEncoding != "json" {
+		return errors.New("exec_encoding must be freeform or json")
+	}
+	return nil
 }
 
 type Settings struct {
-	DatabaseURL        string              `json:"database_url"`
-	Listen             string              `json:"listen"`
-	ServiceName        string              `json:"service_name"`
-	Providers          map[string]Provider `json:"providers"`
-	Audience           string              `json:"audience"`
-	AllowedAccounts    []string            `json:"allowed_accounts"`
-	CodeModeHost       string              `json:"code_mode_host"`
-	ExecutorCodex      string              `json:"executor_codex"`
-	Logs               string              `json:"logs"`
-	HistoryTarget      string              `json:"history_target"`
-	HistoryTokenFile   string              `json:"history_token_file"`
-	GatewayTarget      string              `json:"gateway_target"`
-	GatewayTokenFile   string              `json:"gateway_token_file"`
-	DirectExecutorURL  string              `json:"direct_executor_url"`
-	MaxLiveSessions    int                 `json:"max_live_sessions"`
-	TurnTimeoutSeconds int                 `json:"turn_timeout_seconds"`
-	RPCTimeoutSeconds  int                 `json:"rpc_timeout_seconds"`
-	LeaseSeconds       int                 `json:"lease_seconds"`
-	AutoCompactTokens  *int                `json:"auto_compact_tokens"`
-	Kubeconfig         string              `json:"kubeconfig"`
+	Models             map[string]ModelConfig `json:"models"`
+	DatabaseURL        string                 `json:"database_url"`
+	Listen             string                 `json:"listen"`
+	ServiceName        string                 `json:"service_name"`
+	Providers          map[string]Provider    `json:"providers"`
+	Audience           string                 `json:"audience"`
+	AllowedAccounts    []string               `json:"allowed_accounts"`
+	CodeModeHost       string                 `json:"code_mode_host"`
+	ExecutorCodex      string                 `json:"executor_codex"`
+	Logs               string                 `json:"logs"`
+	HistoryTarget      string                 `json:"history_target"`
+	HistoryTokenFile   string                 `json:"history_token_file"`
+	GatewayTarget      string                 `json:"gateway_target"`
+	GatewayTokenFile   string                 `json:"gateway_token_file"`
+	DirectExecutorURL  string                 `json:"direct_executor_url"`
+	MaxLiveSessions    int                    `json:"max_live_sessions"`
+	TurnTimeoutSeconds int                    `json:"turn_timeout_seconds"`
+	RPCTimeoutSeconds  int                    `json:"rpc_timeout_seconds"`
+	LeaseSeconds       int                    `json:"lease_seconds"`
+	AutoCompactTokens  *int                   `json:"auto_compact_tokens"`
+	Kubeconfig         string                 `json:"kubeconfig"`
 }
 
 func LoadSettings(path string) (Settings, error) {
@@ -93,17 +112,23 @@ func (s Settings) Validate() error {
 			return fmt.Errorf("%s is required", name)
 		}
 	}
-	if len(s.Providers) == 0 || len(s.AllowedAccounts) == 0 {
-		return errors.New("providers and allowed_accounts must not be empty")
+	if len(s.Models) == 0 || len(s.Providers) == 0 || len(s.AllowedAccounts) == 0 {
+		return errors.New("models, providers and allowed_accounts must not be empty")
 	}
 	for name, provider := range s.Providers {
-		if name == "" || provider.Endpoint == "" || (provider.Credential == "") == (provider.CredentialFile == "") || len(provider.Models) == 0 || len(provider.ReasoningEfforts) == 0 {
-			return errors.New("provider endpoint, exactly one credential source, models and reasoning_efforts are required")
+		if name == "" || provider.Endpoint == "" || (provider.Credential == "") == (provider.CredentialFile == "") || len(provider.ReasoningEfforts) == 0 {
+			return errors.New("provider endpoint, exactly one credential source, and reasoning_efforts are required")
 		}
-		for model, config := range provider.Models {
-			if model == "" || (config.ResponsesMode != "lite" && config.ResponsesMode != "standard") || (config.ExecEncoding != "freeform" && config.ExecEncoding != "json") {
-				return errors.New("provider models require responses_mode lite or standard and exec_encoding freeform or json")
-			}
+	}
+	for model, config := range s.Models {
+		if model == "" {
+			return errors.New("model route must not be empty")
+		}
+		if _, ok := s.Providers[config.Provider]; !ok {
+			return fmt.Errorf("model %s references unknown provider %q", model, config.Provider)
+		}
+		if err := config.Validate(); err != nil {
+			return fmt.Errorf("model %s: %w", model, err)
 		}
 	}
 	for _, account := range s.AllowedAccounts {

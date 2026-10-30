@@ -19,7 +19,7 @@ from agentplane.native.testing.model_endpoint import ModelEndpoint, ModelExchang
 from agentplane.proto import runner_pb2, sandboxes_pb2
 from agentplane.testing.go_process import go_process
 from agentplane.x.central_sampler import sampler_pb2, sampler_pb2_grpc
-from agentplane.x.central_sampler.settings import ModelConfig, Provider, Settings
+from agentplane.x.central_sampler.settings import ModelConfig, Provider, ResponsesConfig, Settings
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import listen_tcp
 
@@ -107,14 +107,22 @@ def settings(database_url: str, endpoint: str, executor_url: str, codex_binary: 
         service_name="test-sampler",
         providers={
             "test-provider": Provider(
-                endpoint=endpoint + "/v1/responses",
-                credential=SecretStr("test-key"),
-                models={
-                    "test-model": ModelConfig(responses_mode="lite", exec_encoding="freeform"),
-                    "second-model": ModelConfig(responses_mode="lite", exec_encoding="freeform"),
-                },
-                reasoning_efforts={"", "high"},
+                endpoint=endpoint + "/v1/responses", credential=SecretStr("test-key"), reasoning_efforts={"", "high"}
             )
+        },
+        models={
+            "test-model": ModelConfig(
+                provider="test-provider",
+                api="responses",
+                responses=ResponsesConfig(dialect="lite"),
+                exec_encoding="freeform",
+            ),
+            "second-model": ModelConfig(
+                provider="test-provider",
+                api="responses",
+                responses=ResponsesConfig(dialect="lite"),
+                exec_encoding="freeform",
+            ),
         },
         audience="sampler-test",
         allowed_accounts={"test/client"},

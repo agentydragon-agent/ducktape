@@ -85,14 +85,18 @@ accepts only a live cell this Session recorded (rejected before dispatch rather 
 missing cell), unknown or `null` tool arguments are rejected, and audio truncation estimates
 tokens from data URL size rather than decoded duration.
 
-Each provider allowlists model route IDs with explicit, independent `responses_mode` (`lite` or
-`standard`) and `exec_encoding` (`freeform` or `json`) settings. JSON encoding exposes a single
+A flat top-level `models` map allowlists model route IDs. Each entry references a connection
+`provider`, declares `api: responses`, and sets independent `responses.dialect` (`lite` or
+`standard`) and `exec_encoding` (`freeform` or `json`) settings. Providers retain endpoint,
+credentials and reasoning efforts. Unknown providers, unsupported APIs and missing or unknown
+protocol settings are rejected. Only Responses is implemented; future adapters own their native
+wire and continuation formats. JSON encoding exposes a single
 function `exec`. Exactly one of `code` (execute JavaScript) or `cell_id` (resume a yielded cell)
 is required; both accept optional `yield_time_ms` and `max_output_tokens`, and only the resume
 variant accepts `terminate`. JSON source does not accept the native exec pragma. The adapter
 validates arguments before dispatch and uses the same host operations, journal and recovery
 rules as freeform calls. Calls are accepted only with their configured name and item type.
-Model changes cannot change either encoding within a Session. Route contracts must remain fixed
+Model changes cannot change provider, API, dialect or exec encoding within a Session. Route contracts must remain fixed
 for retained Sessions; changing a contract requires a new route ID.
 
 Lite mode retains the Codex wire contract described below. Standard mode sends top-level `tools`,

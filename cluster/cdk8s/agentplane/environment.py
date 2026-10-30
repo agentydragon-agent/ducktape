@@ -21,7 +21,7 @@ from agentplane.app.settings import AppSettingsConfig
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
 from agentplane.runner.configuration import GuestResources
 from agentplane.subjects import ServiceAccountRef
-from agentplane.x.central_sampler.settings import Provider
+from agentplane.x.central_sampler import settings
 from model_catalog.catalog import Route
 
 
@@ -50,7 +50,8 @@ class LlmIngressProps:
 class CentralSamplerProps:
     """The opt-in central code-mode service's provider routes and runtime limits."""
 
-    providers: Mapping[str, Provider]
+    models: Mapping[str, settings.ModelConfig]
+    providers: Mapping[str, settings.Provider]
     max_live_sessions: int
     turn_timeout_seconds: int
     rpc_timeout_seconds: int

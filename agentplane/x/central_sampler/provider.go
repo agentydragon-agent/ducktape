@@ -57,8 +57,8 @@ func toolDefinitions() []ResponsesCodeToolDefinition {
 }
 
 func RequestBody(model, conversationID string, items []ResponsesItem, instructions *string, executionState *ExecutionState, config ModelConfig) (ResponsesRequest, error) {
-	if (config.ResponsesMode != "lite" && config.ResponsesMode != "standard") || (config.ExecEncoding != "freeform" && config.ExecEncoding != "json") {
-		return ResponsesRequest{}, errors.New("model route has no valid Responses and exec encoding configuration")
+	if err := config.Validate(); err != nil {
+		return ResponsesRequest{}, err
 	}
 	description, err := execToolDescription(toolDefinitions())
 	if err != nil {
@@ -73,7 +73,7 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 	if config.ExecEncoding == "json" {
 		tools = []ResponsesAdditionalTool{jsonExecToolDefinition(description)}
 	}
-	if config.ResponsesMode == "standard" || config.ExecEncoding == "json" {
+	if config.Responses.Dialect == "standard" || config.ExecEncoding == "json" {
 		for index := range tools {
 			tools[index].Description = strings.ReplaceAll(tools[index].Description,
 				"immediately injects an extra `custom_tool_call_output` for the current `exec` call",
@@ -81,7 +81,7 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 		}
 	}
 	var input []ResponsesItem
-	if config.ResponsesMode == "lite" {
+	if config.Responses.Dialect == "lite" {
 		input = append(input, ResponsesItem{Type: ResponsesItemAdditionalTools, Role: "developer", Tools: tools})
 	}
 	if instructions != nil && *instructions != "" {
@@ -118,9 +118,9 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 	input = append(input, items...)
 	body := ResponsesRequest{
 		Model: model, Instructions: baseInstructions, Input: input, Stream: true, Store: false,
-		PromptCacheKey: conversationID, ResponsesMode: config.ResponsesMode, ExecEncoding: config.ExecEncoding,
+		PromptCacheKey: conversationID, ResponsesMode: config.Responses.Dialect, ExecEncoding: config.ExecEncoding,
 	}
-	if config.ResponsesMode == "lite" {
+	if config.Responses.Dialect == "lite" {
 		body.Reasoning = &ResponsesReasoningConfig{Summary: codexReasoningSummary, Context: "all_turns"}
 		body.Include = []string{"reasoning.encrypted_content"}
 		body.ClientMetadata = &ResponsesClientMetadata{SessionID: conversationID, ThreadID: conversationID, TurnID: conversationID}

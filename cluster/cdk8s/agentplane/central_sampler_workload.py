@@ -76,6 +76,7 @@ class CentralSampler(Construct):
             listen=f"0.0.0.0:{self.service.pod_port}",
             service_name=central_sampler.NAME,
             providers=dict(props.providers),
+            models=dict(props.models),
             audience=central_sampler.TOKEN_AUDIENCE,
             allowed_accounts={f"{namespace}/{runner_gateway.NAME}"},
             code_mode_host=Path("/usr/local/bin/codex-code-mode-host"),
