@@ -146,16 +146,17 @@ The runner comes from the production runner disk, as in a Pod; both harnesses, G
 are pinned in the root disk. Runner uses systemd's private manager connection; a real system bus
 also exercises denial of unprivileged management requests.
 
-The `test_vm` suite also boots `runner-vm-systemd-proof`, a separate SandboxTemplate selecting a
-guest root with `runner_systemd_fixture` and an entrypoint override. Before `exec`ing the production runner,
-it runs all subtests against the real manager. Its isolated `/state/.supervision-proof`
-exercises native process streams, limits, descendant fencing, uncertain launch outcomes and parent
-death. A failed proof prevents runner startup; its output is retained in the guest console. The
-outer test requires the completed success receipt as well as runner readiness. Ordinary VM
-Sandboxes use `runner-vm`, with a root disk without the proof binary or override, and start the
-runner directly. Both roots have distinct imported image names and coexist in the shared cluster.
-They share the kernel, production runner disk, systemd units and guest preparation. The sampler boots
-alongside the two credential guests; the three sandbox/OOM guests and the proof case follow.
+The Claude sandbox scenario uses `runner-vm-supervision`, which differs from `runner-vm` only by
+an explicit boot argument. Its ordinary guest root includes `runner_systemd_fixture` as test data;
+that one boot executes the remaining supervisor integration tests before starting production Runner.
+The checks retain direct argv/stream semantics, stale invocation fencing, uncertain launch outcomes,
+scoped startup fencing, parent death, stop status and reaper retries. They need private injection or
+direct supervisor access. A failure prevents Runner startup, and the scenario requires the completed
+success receipt from that guest's own console. No separate root image or extra VM is needed.
+
+Workspace ownership, native identity/security settings, systemd and kernel resource properties, and
+detached-child cleanup run through ordinary Session setup and retained History in both harness
+scenarios. The sampler boots alongside the two credential guests; the three sandbox/OOM guests follow.
 
 The guest loads the ACPI button/evdev drivers and runs BusyBox `acpid`. On a power-button event,
 the listener requests `systemctl poweroff`. Systemd stops the runner and its execution services,

@@ -48,7 +48,6 @@ def k3s_suite(name, srcs, deps, stack, tags = []):
         guests = [
             "//agentplane/system_tests/k3s/guest:vm_guest_boot_layout",
             "//agentplane/system_tests/k3s/guest:vm_guest_root_layout",
-            "//agentplane/system_tests/k3s/guest:vm_guest_systemd_proof_root_layout",
         ]
         data += K3S_VM_DATA + guests
         env |= K3S_VM_ENV | {"K3S_GUEST_IMAGE_LAYOUTS": " ".join(["$(rlocationpath " + image + ")" for image in guests])}

@@ -401,3 +401,32 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "session_setup",
+    srcs = ["session_setup.py"],
+    deps = [
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:runner_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "vm_configuration",
+    srcs = ["vm_configuration.py"],
+    deps = ["//agentplane/runner:configuration"],
+)
+
+py_library(
+    name = "vm_supervision",
+    srcs = ["vm_supervision.py"],
+    deps = [
+        ":agent",
+        ":session_setup",
+        ":vm_configuration",
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:runner_pb2",
+        "@pypi//protobuf",
+    ],
+)

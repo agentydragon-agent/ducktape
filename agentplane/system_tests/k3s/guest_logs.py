@@ -40,9 +40,12 @@ def check_boot() -> None:
             raise GuestBootError(f"Guest supervision proof failed; see retained console {path}")
 
 
-def systemd_proof_passed() -> bool:
-    """Whether a retained console contains the real-manager proof's completed success receipt."""
-    return any(_has_payload(path, SUPERVISION_PASSED) for path in Path(os.environ[CONSOLES_ENV]).glob("*/*.cri.log"))
+def systemd_supervision_passed(incarnation_uid: str) -> bool:
+    """Require the selected VM's receipt, even when several guests boot concurrently."""
+    return any(
+        _has_payload(path, SUPERVISION_PASSED)
+        for path in Path(os.environ[CONSOLES_ENV]).glob(f"*_{incarnation_uid}/*.cri.log")
+    )
 
 
 def _copy(log_root: Path, scopes: dict[str, Path], stop: threading.Event) -> None:

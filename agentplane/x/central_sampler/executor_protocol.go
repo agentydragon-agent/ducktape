@@ -129,6 +129,10 @@ func (r executorReadResult) output() []byte {
 
 func (r executorReadResult) uncertain() bool { return r.Failure != nil || r.Closed && !r.Exited }
 
+// Process exit can arrive before the stdout/stderr readers finish. An empty page
+// is terminal only once those streams have closed and all retained chunks were read.
+func (r executorReadResult) drained() bool { return r.Exited && r.Closed && len(r.Chunks) == 0 }
+
 type executorWrite struct {
 	ProcessID string `json:"processId"`
 	Chunk     []byte `json:"chunk"`

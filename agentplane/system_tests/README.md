@@ -15,7 +15,7 @@ The session-scoped `deployment` fixture exposes its cluster handle, app URL, tok
 | `//agentplane/system_tests/suites:test_pod`        | egress, messaging, presets, session instructions, suspend/resume, thread stream, Pod credentials and storage |
 | `//agentplane/system_tests/suites:test_dispatcher` | Dispatcher queue, wake and replica behavior                                                                  |
 | `//agentplane/system_tests/suites:test_mcp`        | MCP integration, dynamic client registration and Pod central sampler                                         |
-| `//agentplane/system_tests/suites:test_vm`         | VM Sandbox behavior, runner credentials, systemd proof and VM central sampler                                |
+| `//agentplane/system_tests/suites:test_vm`         | VM Sandbox behavior, runner credentials, systemd supervision and VM central sampler                          |
 
 The shared stack cuts setup and image-import work, while each target now has a coarser cache key: a
 changed scenario reruns its suite. Scenario modules live in [`scenarios/`](scenarios/) as ordinary
@@ -46,10 +46,12 @@ Deployment and deletes a recorded Pod while checking controller behavior.
 ([VM Sandboxes](k3s/README.md#vm-sandboxes)). It starts three VM Sandboxes concurrently: one
 scripted turn per harness through the launcher's egress relay, plus Codex tool OOM containment and
 its successful follow-up command with the same Runner and app-server. Its credential group also
-boots the VM central sampler alongside the two credential guests. A final case boots the systemd
-proof guest. All seven Sandboxes boot independently; at most three guests run at once. The
-proof uses `runner-vm-systemd-proof`, whose root image carries the native supervision subtests; the
-other guests use `runner-vm`. `test_vm_manual` covers
+boots the VM central sampler alongside the two credential guests. All six Sandboxes boot
+independently; at most three guests run at once. Each harness scenario checks workspace ownership,
+streams, identity, security settings, resource budgets and detached-child cleanup through ordinary
+Session setup. The Claude guest uses `runner-vm-supervision`, selecting the remaining private Go
+supervisor checks before Runner starts, on the same root image as every other guest. There is no
+additional supervision VM or root image. `test_vm_manual` covers
 VM workspace ownership, suspend/resume and storage by hand. `test_real_model`
 runs the real-model egress and session-instruction cases with the BuildBuddy live-test key
 ([Real model on k3s](#real-model-on-k3s)). Two other checks need what only a deployment has and run

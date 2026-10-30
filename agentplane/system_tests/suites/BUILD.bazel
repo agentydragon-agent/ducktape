@@ -82,7 +82,7 @@ k3s_suite(
     ],
 )
 
-# Credential/sampler, sandbox/OOM, and proof groups share one stack with at most three guests.
+# Credential/sampler and sandbox/OOM groups share one stack with at most three guests.
 k3s_suite(
     name = "test_vm",
     srcs = ["test_vm.py"],
@@ -98,7 +98,6 @@ k3s_suite(
         "//agentplane/system_tests:scripted_upstream",
         "//agentplane/system_tests/scenarios:central_sampler",
         "//agentplane/system_tests/scenarios:runner_credentials",
-        "//agentplane/system_tests/scenarios:runner_systemd",
         "//agentplane/system_tests/scenarios:vm_sandbox",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

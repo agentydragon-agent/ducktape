@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"sync"
 	"testing"
 	"time"
 
@@ -67,6 +68,98 @@ type recoverySocket struct {
 func (s *recoverySocket) Send(_ context.Context, b []byte) error  { return s.send(b) }
 func (s *recoverySocket) Receive(context.Context) ([]byte, error) { return s.receive() }
 func (*recoverySocket) Close(context.Context) error               { return nil }
+
+func TestExecutorDrainsOutputThatArrivesAfterExit(t *testing.T) {
+	for _, operation := range []string{"setup", "command", "reconcile"} {
+		t.Run(operation, func(t *testing.T) {
+			store := newTestStore(t)
+			session := openSessionForStore(t, store, "")
+			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reads := 0
+			var reply []byte
+			socket := &recoverySocket{
+				send: func(b []byte) error {
+					var request executorRequest[json.RawMessage]
+					if err := json.Unmarshal(b, &request); err != nil {
+						t.Fatal(err)
+					}
+					var result any
+					switch request.Method {
+					case "process/start":
+						var start executorStart
+						if err := json.Unmarshal(request.Params, &start); err != nil {
+							t.Fatal(err)
+						}
+						result = executorStarted{ProcessID: start.ProcessID}
+					case "process/read":
+						var read executorRead
+						if err := json.Unmarshal(request.Params, &read); err != nil {
+							t.Fatal(err)
+						}
+						if reads == 0 && read.AfterSeq != nil || reads > 0 && (read.AfterSeq == nil || *read.AfterSeq != uint64(reads)) {
+							t.Fatalf("read %d cursor=%v", reads, read.AfterSeq)
+						}
+						page := executorReadResult{Chunks: []executorChunk{}, Exited: true, ExitCode: ptrInt(23), NextSeq: uint64(reads + 2)}
+						switch reads {
+						case 0: // The process exited; its stdout reader has not published output yet.
+						case 1:
+							page.Chunks = []executorChunk{{Seq: 2, Stream: "stdout", Chunk: []byte("late stdout\n")}}
+							page.Closed = true
+						case 2:
+							page.Closed = true
+						default:
+							t.Fatal("read after terminal empty page")
+						}
+						reads++
+						result = page
+					default:
+						t.Fatalf("unexpected method %s", request.Method)
+					}
+					reply, _ = json.Marshal(map[string]any{"id": request.ID, "result": result})
+					return nil
+				},
+				receive: func() ([]byte, error) { return reply, nil },
+			}
+			e := &Executor{store: store, owner: owner, socket: socket, lifetime: t.Context(), cwd: "/tmp", processLocks: map[string]*sync.Mutex{}}
+			var output string
+			var code int
+			if operation == "setup" {
+				code, err = e.Setup(t.Context(), "printf 'late stdout\\n'; exit 23", func(stream string, b []byte) error {
+					if stream != "stdout" {
+						t.Fatalf("unexpected stream %s", stream)
+					}
+					output += string(b)
+					return nil
+				})
+			} else {
+				if err := store.RegisterProcess(t.Context(), owner, "late-output", false); err != nil {
+					t.Fatal(err)
+				}
+				if err := store.ProcessResult(t.Context(), owner, "late-output", nil, "running", nil, false); err != nil {
+					t.Fatal(err)
+				}
+				if operation == "reconcile" {
+					for range 3 {
+						if _, err := e.ReconcileProcesses(t.Context(), time.Second); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				var observed *processObservation
+				observed, err = e.readProcess(t.Context(), "late-output", 1000)
+				if err == nil {
+					output, code = string(observed.output.retained()), *observed.exitCode
+				}
+			}
+			if err != nil || code != 23 || output != "late stdout\n" || reads != 3 {
+				t.Fatalf("exit=%d output=%q reads=%d error=%v", code, output, reads, err)
+			}
+		})
+	}
+}
 
 func TestExecutorResumesOnlyObservationAfterTransportLoss(t *testing.T) {
 	for _, method := range []string{"process/read", "process/start", "process/write"} {

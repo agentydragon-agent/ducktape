@@ -54,10 +54,9 @@ from trust_manager_crds.io.cert_manager.trust import (
 from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.settings import AppSettingsConfig, FrontendConfig, LangfuseSearchSettings, TraceSearchSettings
-from agentplane.runner.configuration import GuestResources, ResourceLimits
 from agentplane.runner.harness import Harness
 from agentplane.subjects import ServiceAccountRef
-from agentplane.system_tests import launch_preset, probe_credential, runtime_grant, send_grant
+from agentplane.system_tests import launch_preset, probe_credential, runtime_grant, send_grant, vm_configuration
 from agentplane.system_tests.k3s import block_storage, dex, fixture_database
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, Models, PublicLiteLLM
@@ -144,45 +143,6 @@ _VM_GUEST_BOOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-boot
 _VM_GUEST_ROOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset"
 # The serial guest/initramfs_init mounts as the root.
 _VM_GUEST_ROOT_SERIAL = "guest-root"
-_MIB = 1024 * 1024
-# The test guest gets a smaller work budget than staging while keeping enough room for the
-# harnesses exercised by the VM system tests.
-_TEST_VM_RESOURCES = GuestResources(
-    guest_memory_bytes=1536 * _MIB,
-    guest_vcpu_count=1,
-    os_reserve_bytes=256 * _MIB,
-    service_memory_high_bytes=1024 * _MIB,
-    service_memory_max_bytes=1280 * _MIB,
-    service_cpu_quota_micros=100_000,
-    service_pids_max=1024,
-    aggregate=ResourceLimits(
-        cpu_quota_micros=100_000,
-        memory_max_bytes=768 * _MIB,
-        pids_max=768,
-        read_bps=50 * _MIB,
-        write_bps=20 * _MIB,
-        read_iops=1000,
-        write_iops=500,
-    ),
-    process=ResourceLimits(
-        cpu_quota_micros=100_000,
-        memory_max_bytes=512 * _MIB,
-        pids_max=512,
-        read_bps=50 * _MIB,
-        write_bps=20 * _MIB,
-        read_iops=1000,
-        write_iops=500,
-    ),
-    executor=ResourceLimits(
-        cpu_quota_micros=100_000,
-        memory_max_bytes=256 * _MIB,
-        pids_max=128,
-        read_bps=50 * _MIB,
-        write_bps=20 * _MIB,
-        read_iops=1000,
-        write_iops=500,
-    ),
-)
 # What the app offers when LLM ingress forwards to the scenario's scripted model. Scenarios take each harness's
 # first model; a ChatGPT route puts Codex in code mode.
 _LOCAL_MODEL_MODELS = HarnessRoutes(claude=(OLLAMA_QWEN_IQ4XS_128K.native,), codex=(GPT6_LUNA_RESPONSES,))
@@ -323,7 +283,7 @@ def environment(
             hostname=None,
         ),
         vm_sandboxes=vm_sandboxes,
-        vm_resources=_TEST_VM_RESOURCES if vm_sandboxes else None,
+        vm_resources=vm_configuration.RESOURCES if vm_sandboxes else None,
         vm_console_autologin=True,
         wake_caller_accounts=frozenset(
             {
@@ -786,15 +746,14 @@ def _boot_test_guest(objects: list[dict[str, Any]]) -> None:
     root["serial"] = _VM_GUEST_ROOT_SERIAL
     volume = one(volume for volume in spec["volumes"] if volume["name"] == root["name"])
     volume["containerDisk"]["image"] = _VM_GUEST_ROOT_IMAGE
-    proof = deepcopy(template)
-    proof["metadata"]["name"] = "runner-vm-systemd-proof"
-    proof_volume = one(
-        volume for volume in proof["spec"]["vm"]["template"]["spec"]["volumes"] if volume["name"] == root["name"]
+    # Run the private supervisor checks once, in an existing harness VM. Both templates use
+    # the same guest root; the boot argument selects the fixture executable before Runner starts.
+    supervision = deepcopy(template)
+    supervision["metadata"]["name"] = vm_configuration.SUPERVISION_TEMPLATE
+    supervision["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"] += (
+        " " + vm_configuration.SUPERVISION_KERNEL_ARG
     )
-    proof_volume["containerDisk"]["image"] = (
-        "git.allegedly.works/ducktape-ci/agentplane-vm-guest-systemd-proof-root:unset"
-    )
-    objects.append(proof)
+    objects.append(supervision)
 
 
 def _litellm_url(models: Models) -> str:

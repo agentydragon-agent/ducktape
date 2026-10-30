@@ -12,7 +12,7 @@ from agentplane.app.testing.client import Client
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.sandbox import Sandboxes
-from agentplane.system_tests.scenarios import central_sampler, runner_credentials, runner_systemd, vm_sandbox
+from agentplane.system_tests.scenarios import central_sampler, runner_credentials, vm_sandbox
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 
 pytestmark = pytest.mark.vm_sandboxes
@@ -45,10 +45,6 @@ async def test_vm_credentials_and_central_sampler(
 @pytest.mark.scripted_model
 async def test_vm_sandbox_scenarios(client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream) -> None:
     await vm_sandbox.vm_sandbox_scenarios(client, sandbox, scripted)
-
-
-async def test_real_systemd_supervision(sandbox: Sandboxes) -> None:
-    await runner_systemd.real_systemd_supervision(sandbox)
 
 
 if __name__ == "__main__":

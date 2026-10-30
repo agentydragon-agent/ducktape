@@ -1,6 +1,12 @@
 #!/usr/bin/busybox sh
 set -eu
 
+# The suite selects this on one existing VM boot. Keep private supervisor fault injection out
+# of Runner's public protocol, and avoid an additional guest image or VM just to run it.
+case " $(cat /proc/cmdline) " in
+    *" agentplane.supervision-checks=1 "*) /usr/sbin/agentplane-supervision-check ;;
+esac
+
 # KubeVirt's virtiofs Secret mount cannot set a file mode. The production guest protects it with a
 # root-only parent; prove the native-agent account (uid 107) cannot read the runner's private key.
 test -r /run/agentplane/runner-tls/tls.key

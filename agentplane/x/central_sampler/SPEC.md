@@ -170,6 +170,8 @@ A submitted input is effected in History when it is confirmed and retained in th
 a later turn failure may still leave `GetCommand` as `FAILED` or `UNKNOWN`. The failure settles the turn
 without changing that confirmed input outcome, while queued commands follow the existing failure policy.
 
+Process exit can precede stdout/stderr closure. Setup, tool reads and idle reconciliation retain the
+process until `process/read` reports closed streams and an empty output page, preserving late output.
 Idle owners independently read process output and reconcile exit in bounded pages. Observed exit
 releases driver/host capacity without a model poll. Unread output per handle remains in PostgreSQL as
 upstream's 1 MiB head and tail with an omission count, and can be consumed by an empty `write_stdin`,

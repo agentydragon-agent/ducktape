@@ -641,7 +641,7 @@ func (e *Executor) Setup(ctx context.Context, script string, output func(string,
 			_ = e.store.ProcessResult(ctx, e.owner, processID, after, "unknown", nil, false)
 			return 0, fmt.Errorf("setup process outcome unknown: %v", result.Failure)
 		}
-		if result.Exited && len(chunks) == 0 {
+		if result.drained() {
 			exitCode := result.ExitCode
 			if exitCode == nil {
 				return 0, errors.New("setup process exited without an exit code")
@@ -772,7 +772,7 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 			_ = e.store.ProcessResult(ctx, e.owner, processID, after, "unknown", nil, false)
 			return nil, fmt.Errorf("remote process outcome unknown: %v", result.Failure)
 		}
-		if result.Exited && len(result.Chunks) == 0 {
+		if result.drained() {
 			if err := e.store.ProcessResult(ctx, e.owner, processID, after, "exited", result.ExitCode, true); err != nil {
 				return nil, err
 			}
@@ -833,7 +833,7 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 				seq = uint64(afterValue - 1)
 			}
 			exitCode := result.ExitCode
-			if err := e.store.RetainProcessOutput(ctx, e.owner, row.ID, seq, output, result.Exited && len(chunks) == 0, exitCode); err != nil {
+			if err := e.store.RetainProcessOutput(ctx, e.owner, row.ID, seq, output, result.drained(), exitCode); err != nil {
 				lock.Unlock()
 				return progressed, err
 			}
