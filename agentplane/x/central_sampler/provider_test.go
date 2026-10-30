@@ -117,3 +117,32 @@ func TestResponsesItemRetainsImageAndAudioContent(t *testing.T) {
 		}
 	}
 }
+
+func TestJSONExecQueuesAsyncNotifications(t *testing.T) {
+	call := ResponsesToolCall{Type: ResponsesItemFunctionCall, Name: "exec", CallID: "call"}
+	output := call.OutputItem([]ResponsesContentPart{{Type: "input_text", Text: "result"}})
+	notification := ResponsesItem{Type: ResponsesItemCustomToolOutput, CallID: "call", Output: []ResponsesContentPart{{Type: "input_text", Text: "later"}}}
+	items := []ResponsesItem{
+		{Type: ResponsesItemFunctionCall, Name: "exec", CallID: "call", Arguments: `{"code":"text(1)"}`}, output, notification,
+	}
+	body, err := RequestBody("fixture", "session", items, nil, nil, ModelConfig{API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingJSON, ReasoningEfforts: []string{"", "high"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encodedBytes, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded := string(encodedBytes)
+	for _, expected := range []string{`"text":"result"`, `"role":"developer"`, `Asynchronous output from exec call call:\nlater`} {
+		if !strings.Contains(encoded, expected) {
+			t.Fatalf("missing %s in %s", expected, encoded)
+		}
+	}
+	if strings.Contains(encoded, "custom_tool_call_output") {
+		t.Fatal("standard notification became a duplicate tool output")
+	}
+	if items[2].Type != ResponsesItemCustomToolOutput {
+		t.Fatal("request encoding mutated durable context")
+	}
+}

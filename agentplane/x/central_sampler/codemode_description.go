@@ -90,6 +90,25 @@ func execToolDescription(definitions []ResponsesCodeToolDefinition) (string, err
 	return strings.Join(sections, "\n\n"), nil
 }
 
+func jsonExecToolDefinition(description string) ResponsesAdditionalTool {
+	description = strings.ReplaceAll(description,
+		"- Accepts raw JavaScript source text, not JSON, quoted strings, or markdown code fences.",
+		"- Pass JavaScript source in the JSON code field.")
+	description = strings.ReplaceAll(description,
+		"- You may optionally start the tool input with a first-line pragma like `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`.\n",
+		"")
+	description += "\n\nTo resume a yielded cell, call exec with cell_id instead of code. " +
+		"Use yield_time_ms (default 10000), max_output_tokens (default 10000), and optionally terminate: true. " +
+		"Resume only after exec reports Script running with cell ID. Each resume returns new output or completion. " +
+		"For a new cell, pass code and optional yield_time_ms (default 30000) and max_output_tokens (default 10000). " +
+		"Pass exactly one of code or cell_id; terminate is only valid with cell_id."
+	strict := false
+	return ResponsesAdditionalTool{
+		Type: "function", Name: "exec", Description: description, Strict: &strict,
+		Parameters: json.RawMessage(`{"type":"object","properties":{"code":{"type":"string"},"cell_id":{"type":"string"},"yield_time_ms":{"type":"integer","minimum":0},"max_output_tokens":{"type":"integer","minimum":0},"terminate":{"type":"boolean"}},"additionalProperties":false}`),
+	}
+}
+
 // Codex rust-v0.162.1 core/src/tools/code_mode/wait_spec.rs create_wait_tool.
 func waitToolDescription() string {
 	return "Waits on a yielded `exec` cell and returns new output or completion.\n" + strings.TrimSpace(waitDescriptionTemplate)

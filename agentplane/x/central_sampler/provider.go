@@ -65,13 +65,23 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 		return ResponsesRequest{}, err
 	}
 	strict := false
-	input := []ResponsesItem{{
-		Type: ResponsesItemAdditionalTools, Role: "developer", Tools: []ResponsesAdditionalTool{
-			// Codex rust-v0.162.1 core/src/tools/code_mode/execute_spec.rs create_code_mode_tool.
-			{Type: "custom", Name: "exec", Description: description, Format: &ResponsesToolFormat{Type: "grammar", Syntax: "lark", Definition: execFreeformGrammar}},
-			{Type: "function", Name: "wait", Description: waitToolDescription(), Strict: &strict, Parameters: waitToolParameters()},
-		},
-	}}
+	tools := []ResponsesAdditionalTool{
+		// Codex rust-v0.162.1 core/src/tools/code_mode/execute_spec.rs create_code_mode_tool.
+		{Type: "custom", Name: "exec", Description: description, Format: &ResponsesToolFormat{Type: "grammar", Syntax: "lark", Definition: execFreeformGrammar}},
+		{Type: "function", Name: "wait", Description: waitToolDescription(), Strict: &strict, Parameters: waitToolParameters()},
+	}
+	if config.ExecEncoding == ExecEncodingJSON {
+		tools = []ResponsesAdditionalTool{jsonExecToolDefinition(description)}
+	}
+	if config.ExecEncoding == ExecEncodingJSON {
+		for index := range tools {
+			tools[index].Description = strings.ReplaceAll(tools[index].Description,
+				"immediately injects an extra `custom_tool_call_output` for the current `exec` call",
+				"queues an asynchronous developer message identifying the current `exec` call")
+		}
+	}
+	input := make([]ResponsesItem, 0, len(items)+3)
+	input = append(input, ResponsesItem{Type: ResponsesItemAdditionalTools, Role: "developer", Tools: tools})
 	if instructions != nil && *instructions != "" {
 		item, err := newResponsesMessage("developer", *instructions)
 		if err != nil {
@@ -103,13 +113,48 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 		}
 		input = append(input, item)
 	}
-	input = append(input, items...)
-	return ResponsesRequest{
+	adapted, err := buildResponsesInput(items, config)
+	if err != nil {
+		return ResponsesRequest{}, err
+	}
+	input = append(input, adapted...)
+	body := ResponsesRequest{
 		Model: model, Instructions: baseInstructions, Input: input, Stream: true, Store: false,
-		Reasoning: ResponsesReasoningConfig{Summary: codexReasoningSummary, Context: "all_turns"},
-		Include:   []string{"reasoning.encrypted_content"}, PromptCacheKey: conversationID,
-		ClientMetadata: ResponsesClientMetadata{SessionID: conversationID, ThreadID: conversationID, TurnID: conversationID},
-	}, nil
+		PromptCacheKey: conversationID,
+	}
+	body.Reasoning = ResponsesReasoningConfig{Summary: codexReasoningSummary, Context: "all_turns"}
+	body.Include = []string{"reasoning.encrypted_content"}
+	body.ClientMetadata = ResponsesClientMetadata{SessionID: conversationID, ThreadID: conversationID, TurnID: conversationID}
+
+	return body, nil
+}
+
+// buildResponsesInput adapts durable observations before the wire request is serialized.
+// It retains native items and converts JSON exec notifications into developer messages.
+func buildResponsesInput(items []ResponsesItem, config ModelConfig) ([]ResponsesItem, error) {
+	input := make([]ResponsesItem, 0, len(items))
+	answered := map[string]bool{}
+	adaptNotifications := config.ExecEncoding == ExecEncodingJSON
+	for _, item := range items {
+		if adaptNotifications && item.IsToolOutput() {
+			if answered[item.CallID] {
+				texts := make([]string, 0, len(item.Output))
+				for _, part := range item.Output {
+					texts = append(texts, part.Text)
+				}
+				message, err := newResponsesMessage("developer", "Asynchronous output from exec call "+item.CallID+":\n"+strings.Join(texts, "\n"))
+				if err != nil {
+					return nil, err
+				}
+				input = append(input, message)
+				continue
+			}
+			answered[item.CallID] = true
+		}
+
+		input = append(input, item)
+	}
+	return input, nil
 }
 
 type ResponsesExecutionState struct {
