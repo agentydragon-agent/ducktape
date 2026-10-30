@@ -158,7 +158,8 @@ success receipt from that guest's own console. No separate root image or extra V
 
 Workspace ownership, native identity/security settings, systemd and kernel resource properties, and
 detached-child cleanup run through ordinary Session setup and retained History in both harness
-scenarios. The sampler boots alongside the two credential guests; the three sandbox/OOM guests follow.
+scenarios. The sampler, two credential guests and three sandbox/OOM guests boot together. The suite
+requests an 8-unit worker so the guests and k3s services fit without waiting for another group to exit.
 
 The guest loads the ACPI button/evdev drivers and runs BusyBox `acpid`. On a power-button event,
 the listener requests `systemctl poweroff`. Systemd stops the runner and its execution services,

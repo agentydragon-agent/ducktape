@@ -51,15 +51,15 @@ The Dispatcher suite remains separate because replica coverage changes the share
 Deployment and deletes a recorded Pod while checking controller behavior.
 
 `test_vm` runs on a stack with KubeVirt emulating the guest CPU and the k3s test guest
-([VM Sandboxes](k3s/README.md#vm-sandboxes)). It starts three VM Sandboxes concurrently: one
+([VM Sandboxes](k3s/README.md#vm-sandboxes)). It starts six VM Sandboxes concurrently: one
 scripted turn per harness through the launcher's egress relay, plus Codex tool OOM containment and
-its successful follow-up command with the same Runner and app-server. Its credential group also
-boots the VM central sampler alongside the two credential guests. All six Sandboxes boot
-independently; at most three guests run at once. Each harness scenario checks workspace ownership,
+its successful follow-up command with the same Runner and app-server, two credential guests,
+and the VM central sampler. All six Sandboxes boot independently on an 8-unit executor with
+room for their 1.5 GiB guest allocations and the k3s services. Each harness scenario checks workspace ownership,
 streams, identity, security settings, resource budgets and detached-child cleanup through ordinary
 Session setup. Each concurrent VM scenario scopes its own client and Sandboxes, captures diagnostics
-before deletion, and starts cleanup when its assertions finish, overlapping its peers. Both groups
-await all cleanup before advancing or stopping the shared stack; peer cancellation also waits for
+before deletion, and starts cleanup when its assertions finish, overlapping its peers. The suite
+awaits all cleanup before stopping the shared stack; peer cancellation also waits for
 teardown. The scripted server remains shared and routes by Pod identity.
 The Claude guest uses `runner-vm-supervision`, selecting the remaining private Go
 supervisor checks before Runner starts, on the same root image as every other guest. There is no
