@@ -2,4 +2,4 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/website
-    newTag: devel-20261030075109-16f4e3a # {"$imagepolicy": "flux-system:website:tag"}
+    newTag: devel-20261030080650-b8e3a17 # {"$imagepolicy": "flux-system:website:tag"}
