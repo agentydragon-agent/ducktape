@@ -185,7 +185,10 @@ runs:
         fi
         BB_IMAGE_ARGS=(--container_image="docker://${RUNNER_CONTAINER_IMAGE}")
 
+        # Share bbr's clocksource workaround for restored Firecracker guests.
+        run_under=$(jq -er '.runner_exec_properties["run-under"]' devinfra/bbr.json)
         RUNNER_EXEC_PROPS=(
+          --runner_exec_properties=run-under="$run_under"
           --runner_exec_properties=EstimatedFreeDiskBytes="$INPUT_DISK_BYTES"
           --runner_exec_properties=EstimatedComputeUnits="$INPUT_COMPUTE_UNITS"
           --runner_exec_properties=workload-isolation-type=firecracker

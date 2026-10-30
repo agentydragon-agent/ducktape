@@ -83,8 +83,76 @@ A separate reproduction crashed Bazel after the pnpm error at
 `CollectLocalResourceUsage.stop` (Bazel 9.2.0, line 212):
 [invocation](https://app.buildbuddy.io/invocation/9629e343-037a-4522-87b0-8e095786fa60).
 That assertion checks for a repeated stop, unlike the earlier profiler
-incident's `TimeSeries.toDoubleArray` duration bounds. A shared clock cause
-has not been established. Empty stderr and status 134 alone do not establish
-where or why the abort originated.
+incident's `TimeSeries.toDoubleArray` duration bounds. At that stage, a shared clock cause had not been established. Empty stderr
+and status 134 alone did not establish where or why the abort originated.
 
-No runtime source workaround was applied during this investigation.
+## Clock defect and Node abort reproduced
+
+Following the snapshot ancestry found a successful build at snapshot 2374
+and a profiler crash at snapshot 2375:
+[outer invocation](https://app.buildbuddy.io/invocation/92ae949e-fd15-4087-9da4-67df4d7e1c00).
+That build logged `Invalid duration: start=58297809, end=58297794` before
+crashing in `CollectLocalResourceUsage.stop`. The next saved task reported
+the pnpm 134 error. Replaying these older snapshots did not reproduce every
+historical failure; scheduling and the host used for restore vary.
+
+The failed snapshot has the same defect reported in
+[BuildBuddy issue 13988](https://github.com/buildbuddy-io/buildbuddy/issues/13988):
+its `tsc` clocksource disagrees between vCPUs. Pinning a process to each vCPU
+in turn produced 2,000 backward `CLOCK_MONOTONIC` reads, with a worst step
+of 7.2 ms:
+[invocation](https://app.buildbuddy.io/invocation/33137aef-0843-4284-9a2a-3673cadd7681).
+Another restore had nearly 480 ms of skew. Switching that isolated VM to
+`kvm-clock` removed all backward reads in the same probe:
+[invocation](https://app.buildbuddy.io/invocation/db9338d1-c7c1-47d7-9f17-c45b9fc1ca44).
+
+A minimal Node 22.22.2 timer program then reproduced the native abort. Start
+Node on the faster vCPU, wait for its readiness output, and move it to the
+slower vCPU while scheduling timers. With approximately 239 ms of skew, it
+terminated with SIGABRT (shell status 134):
+
+```text
+uint64_t node::Environment::GetNowUint64() at ../src/env.cc:1610
+Assertion failed: (now) >= (timer_base())
+node::timers::BindingData::SlowGetLibuvNow
+```
+
+After switching the same VM to `kvm-clock`, the identical migration and
+Node program exited 0:
+[invocation with both runs](https://app.buildbuddy.io/invocation/5c06b26b-ba61-410c-8928-51b4ed7b71ae).
+This reproduces a clock-induced abort in the exact Node version used by
+pnpm on the affected snapshot. The historical pnpm invocation did not retain
+a native stack, so that exact stack cannot be recovered from its empty log.
+
+## Why the pnpm error had empty stderr
+
+A separate minimal module extension executed a shell that printed
+`ABORT_SENTINEL` to stderr and sent itself SIGABRT. With `quiet = False`,
+the sentinel appeared in the console, but the returned execution result was
+`rc=134 stdout="" stderr=""`:
+[invocation](https://app.buildbuddy.io/invocation/6c8b5570-ccba-4a8d-b011-504360fd5d80).
+Bazel 9.2.0's
+[StarlarkExecutionResult](https://github.com/bazelbuild/bazel/blob/9.2.0/src/main/java/com/google/devtools/build/lib/bazel/repository/starlark/StarlarkExecutionResult.java)
+uses the command result's streams on abnormal termination instead of the
+recorder used for ordinary exits. This loses captured output in this case.
+With the npm extension's default `quiet = True`, the native assertion is
+therefore absent from both the console and the returned stderr.
+
+## Workaround
+
+`devinfra/bbr.json` configures BuildBuddy's `run-under` wrapper to select
+`kvm-clock` before starting the hosted runner. The GitHub `bb-remote` action
+reads the same property, covering publication and Bazel CI as well as `bbr`
+and arbitrary remote scripts. This runs before a restored Bazel JVM resumes
+work; changing the platform property also creates a new snapshot namespace,
+leaving behind the retained extension failure.
+
+The wrapper was tested against the immutable failed snapshot. Its command
+observed `kvm-clock` from the start and recorded zero backward reads:
+[invocation](https://app.buildbuddy.io/invocation/c31c381c-a17e-48ac-b905-56cf836201f4).
+Remove this workaround when the upstream snapshot clock defect is fixed and
+restored guests have been validated. It does not repair Firecracker's
+per-vCPU TSC state.
+
+The focused `//devinfra:test_bbr` check passed through the new wrapper:
+[invocation](https://app.buildbuddy.io/invocation/bc492f6d-dba9-4c88-b486-29556cba5c0d).
