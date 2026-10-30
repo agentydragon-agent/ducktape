@@ -7,22 +7,21 @@ once at the fixture boundary and default to staging.
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator, Iterator, Sequence
+from collections.abc import AsyncIterator, Iterator
+from functools import partial
 from pathlib import Path
 from typing import cast
-from uuid import UUID
 
 import pytest
 from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
-from agentplane.app.testing.models import NewSandbox, SandboxView
 from agentplane.proto import runner_pb2
-from agentplane.system_tests import native_artifacts, scripted_upstream
+from agentplane.system_tests import native_artifacts, scenario, scripted_upstream
 from agentplane.system_tests.cluster import AGENT_SERVICE_ACCOUNT, AUDIENCE, Cluster, mint_token
 from agentplane.system_tests.offered_models import models_offered_for
 from agentplane.system_tests.ollama_warmup import warm_ollama
-from agentplane.system_tests.sandbox import POD_TEMPLATE, Sandboxes, suspend_and_delete, wait_until_running
+from agentplane.system_tests.sandbox import Sandboxes, sandbox_scope
 from agentplane.system_tests.vm_tracing import tracer
 from util.net import Listener
 from util.testing.otel_tracing import configure_tracing
@@ -124,6 +123,14 @@ async def scripted(scripted_listener: Listener) -> AsyncIterator[scripted_upstre
 
 
 @pytest.fixture
+def scenario_resources(
+    cluster: Cluster, base_url: str, token: str, phase_tracer: trace.Tracer
+) -> scenario.ScenarioResources:
+    """Each use owns its client and guests; the deployment and scripted server stay shared."""
+    return partial(scenario.open_resources, cluster, base_url, token, phase_tracer)
+
+
+@pytest.fixture
 async def sandbox(cluster: Cluster, client: Client, phase_tracer: trace.Tracer) -> AsyncIterator[Sandboxes]:
     """Creates sandboxes and deletes every one it created, whatever the test did.
 
@@ -131,42 +138,8 @@ async def sandbox(cluster: Cluster, client: Client, phase_tracer: trace.Tracer) 
     fails the teardown rather than being swallowed: a leaked one holds a PVC and a node slot. A run
     killed outright still leaks — see the sweeper entry in this package's README.
     """
-    created: list[tuple[str, UUID]] = []
-
-    async def create(
-        name: str,
-        *,
-        template: str | None = None,
-        policies: list[str] | None = None,
-        preset: str | None = None,
-        bootstrap: str = "",
-        inbox_tags: Sequence[str] = (),
-    ) -> SandboxView:
-        if template is None:
-            template = POD_TEMPLATE
-        with phase_tracer.start_as_current_span(
-            "vm.sandbox.create", attributes={"sandbox.name": name, "sandbox.template": template}
-        ):
-            view = await client.create_sandbox(
-                NewSandbox(
-                    name=name,
-                    template=template,
-                    preset=preset,
-                    policy_sets=policies or [],
-                    inbox_tags=list(inbox_tags),
-                    bootstrap=bootstrap,
-                )
-            )
-        created.append((view.name, view.uid))
-        with phase_tracer.start_as_current_span(
-            "vm.sandbox.ready", attributes={"sandbox.name": view.name, "sandbox.uid": str(view.uid)}
-        ):
-            return await wait_until_running(client, view.name)
-
-    yield create
-
-    for name, uid in created:
-        await suspend_and_delete(cluster, client, name, uid)
+    async with sandbox_scope(cluster, client, phase_tracer) as create:
+        yield create
 
 
 @pytest.fixture(scope="session")

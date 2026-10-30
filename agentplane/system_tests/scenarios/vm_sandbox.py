@@ -17,12 +17,10 @@ from agentplane.native.codex.testing import frames, responses_sse
 from agentplane.proto import runner_pb2
 from agentplane.system_tests.agent import TURN_SECONDS, Agent, Turn
 from agentplane.system_tests.k3s.guest_logs import check_boot, systemd_supervision_passed
-from agentplane.system_tests.offered_models import models_offered_for
 from agentplane.system_tests.sandbox import VM_TEMPLATE, VM_WORKING_DIRECTORY, Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.vm_configuration import SUPERVISION_TEMPLATE
 from agentplane.system_tests.vm_supervision import session_setup_is_supervised
-from agentplane.system_tests.vm_tracing import traced_vm_scenario
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import ShellCall, Text
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -160,7 +158,7 @@ async def _command(
         return turn.result(), executed
 
 
-async def _run_vm_sandbox_turn(
+async def vm_sandbox_turn(
     client: Client,
     sandbox: Sandboxes,
     harness: runner_pb2.Harness,
@@ -210,9 +208,7 @@ async def _run_vm_sandbox_turn(
         assert "PING" in turn.result().answer, turn.result().transcript
 
 
-async def _run_codex_tool_oom(
-    client: Client, sandbox: Sandboxes, offered_model: str, scripted: ScriptedUpstream
-) -> None:
+async def codex_tool_oom(client: Client, sandbox: Sandboxes, offered_model: str, scripted: ScriptedUpstream) -> None:
     view = await sandbox("systest-vm-codex-oom", template=VM_TEMPLATE)
     assert view.pod is not None
     model = scripted.model(view.pod.name, runner_pb2.HARNESS_CODEX)
@@ -292,32 +288,6 @@ async def _run_codex_tool_oom(
         evidence["passed"] = True
     finally:
         (undeclared_outputs_dir() / "vm-codex-oom.json").write_text(json.dumps(evidence, indent=2) + "\n")
-
-
-async def vm_sandbox_scenarios(client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream) -> None:
-    # pytest-asyncio runs parametrized cases sequentially. Schedule these explicitly so all three
-    # independent VM boots overlap while sharing one k3s stack and Pod-routed scripted server.
-    harnesses = [runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX]
-    offered_models = await models_offered_for(client, harnesses)
-    async with asyncio.TaskGroup() as scenarios:
-        # Only the Claude guest runs the private Go checks before starting Runner. Both use
-        # the ordinary guest image and then exercise setup and tools through the public API.
-        for harness, template in (
-            (runner_pb2.HARNESS_CLAUDE, SUPERVISION_TEMPLATE),
-            (runner_pb2.HARNESS_CODEX, VM_TEMPLATE),
-        ):
-            name = f"vm-turn-{runner_pb2.Harness.Name(harness).lower()}"
-            scenarios.create_task(
-                traced_vm_scenario(
-                    name, _run_vm_sandbox_turn(client, sandbox, harness, offered_models[harness], scripted, template)
-                )
-            )
-        scenarios.create_task(
-            traced_vm_scenario(
-                "codex-tool-oom",
-                _run_codex_tool_oom(client, sandbox, offered_models[runner_pb2.HARNESS_CODEX], scripted),
-            )
-        )
 
 
 # gazelle:include_dep @pypi//protobuf
