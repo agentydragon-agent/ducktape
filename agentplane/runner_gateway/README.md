@@ -2,8 +2,7 @@
 
 The Runner Gateway combines durable Session Dispatcher admission and delivery with a
 Sandbox-fenced Runner proxy. The Gateway dials each Runner's native gRPC server on private port
-`9090`. Its public `listen_address` serves Dispatcher, Runner proxy and optional
-ExecutorGateway with the existing
+`9090`. Its public `listen_address` serves Dispatcher and proxies for the Runner and optional Executor services with the existing
 caller authorization. The Sandbox Controller owns `Sandbox.status`.
 
 Cluster and k3s Gateways and Runners use certificates from cert-manager and roots distributed by
@@ -99,10 +98,16 @@ to this target; wrapped native Sessions continue through ProxyRunner. Central co
 executor readiness/wake checks after open.
 The existing Sandbox UID/incarnation binding is fixed; v1 requires the bound Sandbox object.
 
-The separate, default-empty `executor_callers` policy enables `ExecutorGateway.Connect` for trusted
-samplers. It relays pinned Codex exec-server frames over the Runner's authenticated
-`RunnerExec.Connect` stream to a configured loopback executor, with UID/incarnation fencing and
-bounded flow control. It does
-not interpret or replay tools. Active executor relays participate in Runner activity and quiesce.
+The separate, default-empty `executor_callers` policy enables typed `Executor` RPCs for
+trusted samplers. The Gateway checks destination and incarnation, then forwards process and file
+operations to the Runner's authenticated `Executor` service using the same
+[sandbox-owned contract](../executor/executor.proto). The Runner alone translates the
+local Codex JSON-RPC protocol. A server-streaming `OpenSession` owns each adapter connection and
+returns native-frame evidence; execution operations use unary RPCs with that session ID. Closing
+the stream releases the adapter connection and detaches the native Codex session. Codex's
+30-second resume grace period ends by expiring the session and terminating its remaining processes.
+The Gateway adds no persistence or operation
+receipts and never replays mutations. Open execution sessions participate in Runner activity and
+quiesce.
 The Dispatcher is absent from this tool path. See the
 [central sampler contract](../x/central_sampler/SPEC.md).

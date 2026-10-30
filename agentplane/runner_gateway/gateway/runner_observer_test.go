@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -9,12 +8,11 @@ import (
 	"testing"
 	"time"
 
+	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
-	runnerexecpb "github.com/agentydragon/ducktape/agentplane/runner/runner_execpb"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
-	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
 	"github.com/agentydragon/ducktape/agentplane/runner_transport"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
@@ -24,6 +22,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -89,7 +88,7 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 	server := grpc.NewServer(grpc.Creds(creds))
 	runner := &observedRunner{bootID: "test-runner-boot"}
 	runnerservicepb.RegisterRunnerServer(server, runner)
-	runnerexecpb.RegisterRunnerExecServer(server, &echoForwardExecutor{})
+	executorpb.RegisterExecutorServer(server, &echoForwardExecutor{})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	destination.target = listener.Addr().String()
@@ -123,7 +122,7 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 		t.Fatal(err)
 	}
 	publicServer := grpc.NewServer()
-	g.RegisterExecutorGateway(publicServer)
+	g.RegisterExecutor(publicServer)
 	go func() { _ = publicServer.Serve(publicListener) }()
 	t.Cleanup(publicServer.Stop)
 	publicConn, err := grpc.NewClient(publicListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -133,32 +132,46 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 	defer publicConn.Close()
 	execCtx, stopExec := context.WithTimeout(metadata.NewOutgoingContext(t.Context(), metadata.Pairs("authorization", "Bearer "+f.executorToken)), 5*time.Second)
 	defer stopExec()
-	exec, err := executorpb.NewExecutorGatewayClient(publicConn).Connect(execCtx)
+	exec, err := executorpb.NewExecutorClient(publicConn).OpenSession(execCtx, &executorpb.OpenSessionRequest{
+		Scope: &executorpb.ExecutionScope{
+			Destination: &sandboxespb.SandboxDestination{
+				Sandbox: f.sandbox.Name, SandboxUid: string(f.sandbox.UID),
+				Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
+			},
+			ExpectedIncarnationUid: string(f.pod.UID), SessionId: "test-runner-exec-session",
+		},
+		RequestId: "open-session-request",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := exec.Send(&executorpb.ExecutorFrame{Frame: &executorpb.ExecutorFrame_Open{Open: &executorpb.ExecutorOpen{
-		Destination: &sandboxespb.SandboxDestination{
-			Sandbox: f.sandbox.Name, SandboxUid: string(f.sandbox.UID),
-			Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
+	opened, err := exec.Recv()
+	if err != nil || opened.GetStatus().GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED || opened.GetExecutionSessionId() != "forwarded-session" {
+		t.Fatalf("Runner execution session was not forwarded: %v %v", opened, err)
+	}
+	if len(opened.GetNativeFrames()) != 1 || string(opened.GetNativeFrames()[0].GetPayload()) != `{"id":"1","result":{}}` {
+		t.Fatalf("Gateway changed execution evidence: %v", opened.GetNativeFrames())
+	}
+	quiescing := f.sandbox.DeepCopy()
+	quiescing.Status.OperatingMode = sandboxapi.OperatingModeSuspended
+	meta.SetStatusCondition(&quiescing.Status.Conditions, metav1.Condition{
+		Type: sandboxapi.ConditionRunning, Status: metav1.ConditionTrue, Reason: phaseQuiescing,
+	})
+	if err := f.objects.Status().Update(t.Context(), quiescing); err != nil {
+		t.Fatal(err)
+	}
+	started, err := executorpb.NewExecutorClient(publicConn).StartProcess(execCtx, &executorpb.StartProcessRequest{
+		Scope: &executorpb.ExecutionScope{
+			Destination: &sandboxespb.SandboxDestination{
+				Sandbox: f.sandbox.Name, SandboxUid: string(f.sandbox.UID),
+				Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
+			},
+			ExpectedIncarnationUid: string(f.pod.UID), SessionId: "test-runner-exec-session",
 		},
-		ExpectedIncarnationUid: string(f.pod.UID), SessionId: "test-runner-exec-session",
-	}}}); err != nil {
-		t.Fatal(err)
-	}
-	ready, err := exec.Recv()
-	if err != nil || !ready.GetReady().GetAccepted() {
-		t.Fatalf("Runner executor was not ready: %v %v", ready, err)
-	}
-	payload := []byte{0, 1, 2, 255}
-	if err := exec.Send(&executorpb.ExecutorFrame{Frame: &executorpb.ExecutorFrame_Message{Message: &executorpb.ExecutorMessage{
-		Opcode: executorpb.ExecutorMessage_OPCODE_BINARY, Payload: payload,
-	}}}); err != nil {
-		t.Fatal(err)
-	}
-	echo, err := exec.Recv()
-	if err != nil || !bytes.Equal(echo.GetMessage().GetPayload(), payload) {
-		t.Fatalf("Runner executor changed the message: %v %v", echo, err)
+		ExecutionSessionId: opened.GetExecutionSessionId(), RequestId: "start-after-quiesce", ProcessId: "proc-1",
+	})
+	if err != nil || started.GetStatus().GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
+		t.Fatalf("existing-session unary call during quiescing = %v, %v", started, err)
 	}
 	stopExec()
 	lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(t.Context(), testSandbox+sandboxlease.RunnerLeaseSuffix, metav1.GetOptions{})
@@ -184,33 +197,36 @@ func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
 }
 
 type echoForwardExecutor struct {
-	runnerexecpb.UnimplementedRunnerExecServer
+	executorpb.UnimplementedExecutorServer
 }
 
-func (*echoForwardExecutor) Connect(stream grpc.BidiStreamingServer[executorpb.ExecutorFrame, executorpb.ExecutorFrame]) error {
-	first, err := stream.Recv()
-	if err != nil {
-		return err
-	}
-	if first.GetOpen() == nil {
-		return status.Error(codes.InvalidArgument, "expected a private executor open")
-	}
+func (*echoForwardExecutor) OpenSession(_ *executorpb.OpenSessionRequest, stream grpc.ServerStreamingServer[executorpb.OpenSessionResponse]) error {
 	md, _ := metadata.FromIncomingContext(stream.Context())
-	if len(md.Get("agentplane-runner-boot-id")) != 1 {
+	if len(md.Get("agentplane-runner-boot-id")) != 1 || len(md.Get("agentplane-sandbox-uid")) != 1 ||
+		len(md.Get("agentplane-incarnation-uid")) != 1 || len(md.Get("agentplane-connection-epoch")) != 1 {
 		return status.Error(codes.PermissionDenied, "missing executor fence")
 	}
-	if err := stream.Send(&executorpb.ExecutorFrame{Frame: &executorpb.ExecutorFrame_Ready{Ready: &executorpb.ExecutorReady{Accepted: true}}}); err != nil {
+	if err := stream.Send(&executorpb.OpenSessionResponse{
+		Status:             &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_COMPLETED},
+		ExecutionSessionId: "forwarded-session",
+		NativeFrames:       []*executorpb.ExecutionNativeFrame{{Direction: "inbound", Payload: []byte(`{"id":"1","result":{}}`)}},
+	}); err != nil {
 		return err
 	}
-	for {
-		frame, err := stream.Recv()
-		if err != nil {
-			return err
-		}
-		if err := stream.Send(frame); err != nil {
-			return err
-		}
+	<-stream.Context().Done()
+	return stream.Context().Err()
+}
+
+func (*echoForwardExecutor) StartProcess(ctx context.Context, request *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	if len(md.Get("agentplane-runner-boot-id")) != 1 || len(md.Get("agentplane-sandbox-uid")) != 1 ||
+		len(md.Get("agentplane-incarnation-uid")) != 1 || len(md.Get("agentplane-connection-epoch")) != 1 {
+		return nil, status.Error(codes.PermissionDenied, "missing executor fence")
 	}
+	return &executorpb.StartProcessResponse{
+		Status:    &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_COMPLETED},
+		ProcessId: request.GetProcessId(),
+	}, nil
 }
 
 func TestRunnerCertificateCannotFollowReplacementCredentials(t *testing.T) {

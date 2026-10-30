@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
+	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
-	runner_execpb "github.com/agentydragon/ducktape/agentplane/runner/runner_execpb"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	runnertransport "github.com/agentydragon/ducktape/agentplane/runner_transport"
 	"google.golang.org/grpc"
@@ -64,6 +64,10 @@ func (e *Epoch) Context() context.Context { return e.watch.ctx }
 
 func (e *Epoch) Number() uint64 { return e.watch.epoch }
 
+func (e *Epoch) SandboxUID() string { return e.watch.sandboxUID }
+
+func (e *Epoch) IncarnationUID() string { return e.watch.incarnationUID }
+
 type Server struct {
 	runnerservicepb.RunnerServer
 
@@ -82,7 +86,7 @@ func New(config Config, backend runnerservicepb.RunnerServer) *Server {
 
 // Listen opens the configured authenticated control listener and registers the
 // Runner, executor stream, and standard gRPC health services.
-func (s *Server) Listen(executor runner_execpb.RunnerExecServer) (net.Listener, *grpc.Server, error) {
+func (s *Server) Listen(executor executorpb.ExecutorServer) (net.Listener, *grpc.Server, error) {
 	credentials, err := s.config.Security.ServerCredentials(runnertransport.GatewayURI)
 	if err != nil {
 		return nil, nil, err
@@ -106,10 +110,10 @@ func (s *Server) Listen(executor runner_execpb.RunnerExecServer) (net.Listener, 
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus(runnerservicepb.Runner_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
-	healthServer.SetServingStatus(runner_execpb.RunnerExec_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus(executorpb.Executor_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(server, healthServer)
 	runnerservicepb.RegisterRunnerServer(server, s)
-	runner_execpb.RegisterRunnerExecServer(server, executor)
+	executorpb.RegisterExecutorServer(server, executor)
 	return listener, server, nil
 }
 
@@ -203,11 +207,30 @@ func (s *Server) Authorize(ctx context.Context) (*Epoch, error) {
 
 // Validate rejects an authorization after its state watch has been superseded.
 func (s *Server) Validate(epoch *Epoch) error {
-	if epoch == nil || epoch.server != s || epoch.watch == nil {
-		return status.Error(codes.Aborted, "executor stream belongs to a stale connection epoch")
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.validateLocked(epoch)
+}
+
+// Admit keeps the authorized epoch current until the short admission callback finishes. A newer
+// Gateway observer cannot replace the watch between validation and publication of admitted work.
+func (s *Server) Admit(ctx context.Context, admit func(*Epoch) error) error {
+	epoch, err := s.Authorize(ctx)
+	if err != nil {
+		return err
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if err := s.validateLocked(epoch); err != nil {
+		return status.Error(codes.Unavailable, "Runner control call is outside the current connection epoch")
+	}
+	return admit(epoch)
+}
+
+func (s *Server) validateLocked(epoch *Epoch) error {
+	if epoch == nil || epoch.server != s || epoch.watch == nil {
+		return status.Error(codes.Aborted, "executor stream belongs to a stale connection epoch")
+	}
 	if s.watch != epoch.watch || !epoch.watch.ready || epoch.watch.ctx.Err() != nil {
 		return status.Error(codes.Aborted, "executor stream belongs to a stale connection epoch")
 	}

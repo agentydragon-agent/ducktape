@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	executorpb "github.com/agentydragon/ducktape/agentplane/executor/executorpb"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
-	executor_gatewaypb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
 	"github.com/agentydragon/ducktape/agentplane/runner_transport"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
@@ -28,8 +28,8 @@ type Config struct {
 	HolderIP                 string
 	ProxyPort                int32
 	ControlTiming            ControlTiming
-	// ExecutorCallers enables the opt-in raw executor WebSocket stream independently from the
-	// Runner proxy's caller allowlist. An empty set leaves the public RPC unregistered.
+	// ExecutorCallers enables the typed execution API independently from the Runner proxy's
+	// caller allowlist. An empty set leaves the public service unregistered.
 	ExecutorCallers []auth.Account
 }
 
@@ -146,13 +146,13 @@ func (g *Gateway) RegisterProxy(server *grpc.Server) {
 	runnerservicepb.RegisterRunnerServer(server, &runnerProxy{gateway: g})
 }
 
-// RegisterExecutorGateway enables the central executor path only when its own caller allowlist is
+// RegisterExecutor enables the typed execution path only when its own caller allowlist is
 // configured. Existing Gateway deployments therefore keep the RPC absent by default.
-func (g *Gateway) RegisterExecutorGateway(server *grpc.Server) {
+func (g *Gateway) RegisterExecutor(server *grpc.Server) {
 	if len(g.executorCallers) == 0 {
 		return
 	}
-	executor_gatewaypb.RegisterExecutorGatewayServer(server, &executorGatewayServer{gateway: g})
+	executorpb.RegisterExecutorServer(server, &executorServer{gateway: g})
 }
 
 // WatchConnectionLeases must sync before the public gRPC services start accepting requests.

@@ -164,14 +164,14 @@ budget remains authoritative across all of its native services.
   fence and to answer a later claim.
 - Code-mode workers, MCP helpers and external daemons are outside the executor budget in the pinned
   Codex release. Details and configuration: [Codex executor isolation](docs/codex_executor.md).
-- Central sampler executor channels wait for controller-owned readiness and retries within the
-  Gateway's readiness deadline. Closing a channel cancels its pending readiness wait or connection
+- Central sampler execution sessions wait for controller-owned readiness and retries within the
+  Gateway's readiness deadline. Closing the session stream cancels its pending readiness wait or connection
   attempt without blocking the Runner control stream. A refused launch or terminal fencing failure
   rejects readiness; it never enables local execution.
 
 ## Runner control
 
-- Runner listens on `control.listen_address` and the Gateway dials its `Runner` and `RunnerExec`
+- Runner listens on `control.listen_address` and the Gateway dials its `Runner` and `Executor`
   services with matching explicit security settings. Cluster and k3s deployments use mTLS. The Runner certificate URI binds the Sandbox namespace, Sandbox UID and credential ID;
   the Gateway presents `spiffe://agentplane/runner-gateway`. Runner control has no bearer credential.
   Explicit insecure mode skips certificate authentication while retaining all Sandbox, incarnation,
@@ -186,13 +186,22 @@ budget remains authoritative across all of its native services.
   accepting the replacement Runner boot.
   Cancelling or superseding the watch changes observer readiness but does not cancel already
   admitted durable work.
-- Every unary call and direct executor stream is fenced with the Sandbox UID, incarnation
+- Every unary call and execution-session stream is fenced with the Sandbox UID, incarnation
   UID, Runner boot ID and connection epoch. A stale epoch cannot authorize a call or clear a newer
   observer's readiness. Calls with stale boot or observer metadata fail before admission with
   `UNAVAILABLE`, allowing queued commands to retry through the current observer without marking
-  the whole workload incarnation as refusing work. `RunnerExec.Connect` carries one executor relay per stream and applies the
-  per-Runner stream and message limits. Executor output waits for bounded send capacity while the stream is active;
-  a brief output burst does not close the stream. Closing one stream leaves other executor relays running.
+  the whole workload incarnation as refusing work. `Executor.OpenSession` holds one local Codex
+  connection per server stream, with typed unary process and file RPCs bound to its session ID.
+  Each Runner retains the old relay's budget of eight open or opening adapter connections;
+  this is an Agentplane resource guard, not a Codex session limit. Native frames are bounded to 1 MiB;
+  notifications wait for bounded send capacity, so a brief output burst does not close the session.
+  JSON-RPC initialization, framing and notifications stay in the Runner adapter. Native frames
+  return as evidence for the sampler's existing journal; the adapter adds no persistence or
+  operation receipts. Request IDs correlate calls without promising deduplication. Lost replies
+  remain outcome-unknown, and mutations are never automatically replayed. Closing one stream
+  releases its connection and detaches its native session. Codex 0.162.1 allows resume for
+  30 seconds before expiring that session and terminating its remaining processes. Other
+  sessions are unaffected. See the sandbox-owned [Executor API](../executor/README.md).
 - `OpenSession` answers with the session's `Attached` snapshot: the spec, setup and harness states,
   `last_cursor`, and the active turn id as of that position. `GetStatus` returns one snapshot with a
   runner boot UUID, each harness process (its per-spawn UUID and the Sessions it hosts), session
