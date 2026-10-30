@@ -109,57 +109,8 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
-      # The remote build only needs bb; use the same pin and checksum as Bazel CI.
-      - name: Install pinned BuildBuddy CLI
-        run: |
-          python3 devinfra/ci/install_bb.py --pins nix/artifact-pins.json \
-            --destination "$RUNNER_TEMP/buildbuddy-cli/bin/bb"
-          echo "$RUNNER_TEMP/buildbuddy-cli/bin" >> "$GITHUB_PATH"
-
-      # Derive the Bazel target list + nix package list from the SSOT.
-      # A release is in-gate when its `nixPackage: true`; every pin in an
-      # in-gate release gets its target built and its output overridden.
-      # Non-wheel binaries (bbapi, claude-hook, debundle, skills) go
-      # through mkBinaryArtifact whose nix build is a trivial install/
-      # autoPatchelfHook — bazel-ci already rebuilds them, so the PR gate
-      # skips them to keep wall-time bounded.
-      - name: Compute build inputs
-        id: inputs
-        shell: bash
-        run: |
-          set -euo pipefail
-          spec=devinfra/ci/artifact_targets.json
-          bazel_targets=$(jq -r '
-            . as $doc |
-            [$doc.pins | to_entries[] |
-               select($doc.releases[.value.release].nixPackage) |
-               .value.target] | join(" ")
-          ' "$spec")
-          nix_checks=$(jq -r '
-            [.releases | to_entries[] |
-               select(.value.nixPackage) |
-               ".#checks.x86_64-linux.artifact-\(.key)"] | join(" ")
-          ' "$spec")
-          echo "bazel_targets=$bazel_targets" >> "$GITHUB_OUTPUT"
-          echo "nix_checks=$nix_checks" >> "$GITHUB_OUTPUT"
-
-      # `bb remote build`'s post-run download returns an arbitrary subset of a
-      # large request, so "Fetch artifacts" below retrieves every required output
-      # from this invocation's event stream. Its own role keeps the id apart from
-      # bazel-ci's when trusted-fork-pr-ci.yml calls both in one run.
-      - name: Choose artifact build invocation
-        id: invocation
-        run: |
-          invocation_id="$(python3 devinfra/ci/invocation_ids.py \
-            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --role nix-wheel-build)"
-          echo "id=$invocation_id" >> "$GITHUB_OUTPUT"
-
-      # run_from_commit: actions/checkout in PR mode doesn't fetch a local
-      # `devel` ref, so bb remote's default base-branch patch sync fails with
-      # `git rev-parse devel: exit status 128`. On pull_request events,
-      # github.sha is the synthetic merge commit, keeping the remote build on
-      # the same base+PR tree as the GitHub runner. Same rationale as
-      # bazel-ci.yml.
+      # Keep the generated-policy checks parallel with artifact checks. The
+      # latter use the verified checkout's local action and helper layout.
       - parallel:
           - name: Check generated command policies
             run: |
@@ -168,81 +119,7 @@ jobs:
                 .#checks.x86_64-linux.codex-execpolicy-evaluation \
                 .#checks.x86_64-linux.gemini-cli-integration
 
-          - name: Build artifacts from source
-            uses: ./.github/actions/bb-remote
+          - name: Check source artifacts
+            uses: ./.github/actions/nix-wheel-check
             with:
-              args: build --invocation_id=${{ steps.invocation.outputs.id }} ${{ steps.inputs.outputs.bazel_targets }}
-              linkage_roles: nix-wheel-build
-              bazel_invocation_ids: ${{ steps.invocation.outputs.id }}
-              # Rotate away from the exhausted workspace while retaining warm
-              # runner reuse for subsequent artifact builds.
-              runner_recycling_key: ducktape-nix-wheel-v2
-              run_from_commit: ${{ steps.source.outputs.sha }}
-
-      - name: Fetch artifacts
-        env:
-          INVOCATIONS: ${{ steps.invocation.outputs.id }}
-        run: |
-          set -euo pipefail
-          overrides_file="$RUNNER_TEMP/nix-wheel-artifact-overrides.tsv"
-          python3 -m devinfra.ci.release_assets nix-overrides \
-            --invocations "$INVOCATIONS" > "$overrides_file"
-          mapfile -t outputs < <(cut -f2 "$overrides_file")
-          python3 -m devinfra.ci.fetch_build_outputs --invocations "$INVOCATIONS" "${outputs[@]}"
-
-      # Emit the JSON blob flake.nix's artifacts logic consumes. Every pin
-      # in an in-gate release gets an override entry (including every asset in
-      # a multi-asset release). The TSV was resolved from the build's stream,
-      # then the fetch step materialized those files from CAS.
-      - name: Assemble artifact overrides
-        id: overrides
-        shell: bash
-        run: |
-          set -euo pipefail
-          json='{}'
-          while IFS=$'\t' read -r pin rel; do
-            if [[ ! -f "$rel" ]]; then
-              echo "::error::missing artifact for pin '$pin' at $rel"
-              exit 1
-            fi
-            abs=$(readlink -f "$rel")
-            json=$(jq -c --arg k "$pin" --arg v "$abs" '. + {($k): $v}' <<<"$json")
-          done < "$RUNNER_TEMP/nix-wheel-artifact-overrides.tsv"
-          {
-            echo 'overrides<<EOF'
-            echo "$json"
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
-
-      # Upload every path this run adds to the store as soon as it lands, so a
-      # cold rebuild that times out or fails still leaves its finished paths in
-      # Attic for the next run. Fork revisions (pull_request_target, via
-      # trusted-fork-pr-ci.yml) never write to the shared cache.
-      - name: Start incremental Attic upload
-        if: github.event_name != 'pull_request_target'
-        run: |
-          nix profile install nixpkgs#attic-client
-          attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
-          nohup attic watch-store ducktape:main > "$RUNNER_TEMP/attic-watch-store.log" 2>&1 &
-
-      # Each marker depends on the complete source-built package and its checks.
-      # Cache hits need only the marker; misses build the package as before.
-      # --impure is required for the getEnv artifact override read.
-      - name: Nix build + imports check
-        env:
-          DUCKTAPE_ARTIFACT_OVERRIDES: ${{ steps.overrides.outputs.overrides }}
-        run: |
-          nix build --impure --no-link --print-out-paths \
-            ${{ steps.inputs.outputs.nix_checks }} > "$RUNNER_TEMP/artifact-check-paths"
-          cat "$RUNNER_TEMP/artifact-check-paths"
-
-      # Publish the source-override results: ordinary pinned-artifact builds can
-      # have different store paths even when they contain the same wheel bytes.
-      # The watcher may still be uploading; this push covers the markers' full
-      # closures before the job ends.
-      - name: Cache source artifact checks in Attic
-        if: github.event_name != 'pull_request_target'
-        run: |
-          mapfile -t checks < "$RUNNER_TEMP/artifact-check-paths"
-          test "${#checks[@]}" -gt 0
-          attic push ducktape:main "${checks[@]}"
+              source_commit: ${{ steps.source.outputs.sha }}

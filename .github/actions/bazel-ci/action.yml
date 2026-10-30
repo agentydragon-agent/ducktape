@@ -1,0 +1,148 @@
+name: Bazel CI from checked-out source
+description: Run the checkout's BuildBuddy launcher and publish its test/build linkage.
+inputs:
+  source_commit:
+    description: Verified source revision to build.
+    required: true
+  pr_head_sha:
+    description: Expected PR head revision.
+    default: ""
+  pr_base_sha:
+    description: Event-time PR base revision for drift diagnostics.
+    default: ""
+  rbe_container_image:
+    description: Optional RBE container image override.
+    default: ""
+outputs:
+  bazel_invocation_ids:
+    description: Publication invocations, present only if the remote command succeeds.
+    value: ${{ steps.bb-remote.outputs.bazel_invocation_ids && steps.invocation-ids.outputs.publication || '' }}
+  test_invocation_id:
+    description: Deterministic test invocation ID.
+    value: ${{ steps.invocation-ids.outputs.test }}
+runs:
+  using: composite
+  steps:
+    # The launcher helpers use stdlib Python; only bb needs installing here.
+    # Use the same artifact and checksum as the Nix package.
+    - name: Install pinned BuildBuddy CLI
+      shell: bash
+      run: |
+        python3 devinfra/ci/install_bb.py --pins nix/artifact-pins.json \
+          --destination "$RUNNER_TEMP/buildbuddy-cli/bin/bb"
+        echo "$RUNNER_TEMP/buildbuddy-cli/bin" >> "$GITHUB_PATH"
+
+    # Combined test + build in one bb-remote `--script` invocation:
+    # - Saves one Firecracker VM allocation per CI run.
+    # - Avoids `bb remote build`'s post-run `downloadOutputs` path, which
+    #   currently fails with "Exhausted all peers" — see
+    #   devinfra/debug/bb_remote_peers_exhausted.md.
+    # `&&` matches the previous step ordering: build runs only if test passed.
+    #
+    # run_from_commit: have the runner check out the exact commit instead of mirroring the
+    # PR as a patchset (base=devel + diff). The CI checkout is a clean commit (no
+    # uncommitted changes for the patch path to drop), so checking it out skips patch sync
+    # entirely — no patchset to generate, transfer, or apply. On pull_request
+    # events, github.sha is GitHub's synthetic refs/pull/<n>/merge commit, so Bazel evaluates
+    # and tests the PR combined with its event-time base instead of the isolated PR head.
+    # GitHub serves that commit by exact SHA even though it is not an origin branch. On
+    # push/dispatch, github.sha is the pushed/dispatched commit. See
+    # devinfra/docs/bb_remote_internals.md §"Git state synchronization"
+    # ("--run_from_commit disables patches").
+    # Bazel names its invocations from the run's identity rather than CI discovering
+    # them afterwards, so a consumer can find them even when this run is cancelled
+    # mid-flight. See devinfra/ci/invocation_ids.py.
+    - name: Derive BuildBuddy invocation IDs
+      id: invocation-ids
+      shell: bash
+      run: |
+        publication_ids=""
+        for role in test build race; do
+          id=$(python3 devinfra/ci/invocation_ids.py \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --role "$role")
+          echo "$role=$id" >> "$GITHUB_OUTPUT"
+          if [[ "$role" == test || "$role" == build ]]; then
+            publication_ids="${publication_ids:+$publication_ids,}$id"
+          fi
+        done
+        echo "publication=$publication_ids" >> "$GITHUB_OUTPUT"
+
+    # Commit statuses update before the reusable Test & Build job finishes, so
+    # the PR check surface can link directly to the deterministic test invocation.
+    # Same-repository PRs use their head SHA so GitHub includes the status in
+    # the PR rollup. A trusted-fork token can only write in the base repo, so
+    # those runs attach it to the tested merge commit instead.
+    - name: Start live BuildBuddy test status
+      id: live-test-status
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        STATUS_SHA: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.sha || inputs.source_commit || github.sha }}
+        TEST_INVOCATION_ID: ${{ steps.invocation-ids.outputs.test }}
+        LIVE_TEST_STATE_FILE: ${{ runner.temp }}/buildbuddy-test-${{ github.run_id }}-${{ github.run_attempt }}.json
+        LIVE_TEST_PID_FILE: ${{ runner.temp }}/buildbuddy-test-${{ github.run_id }}-${{ github.run_attempt }}.pid
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::notice::BuildBuddy test invocation: https://app.buildbuddy.io/invocation/$TEST_INVOCATION_ID"
+        python3 devinfra/ci/buildbuddy_test_status.py pending \
+          --invocation-id "$TEST_INVOCATION_ID" --sha "$STATUS_SHA" \
+          --state-file "$LIVE_TEST_STATE_FILE"
+        setsid python3 devinfra/ci/buildbuddy_test_status.py watch \
+          --invocation-id "$TEST_INVOCATION_ID" --sha "$STATUS_SHA" \
+          --state-file "$LIVE_TEST_STATE_FILE" \
+          >"$RUNNER_TEMP/buildbuddy-test-watcher.log" 2>&1 < /dev/null &
+        echo "$!" > "$LIVE_TEST_PID_FILE"
+
+    - name: Test + Build + lint
+      id: bb-remote
+      uses: ./.github/actions/bb-remote
+      with:
+        rbe_container_image: ${{ inputs.rbe_container_image }}
+        # The full devel //... sweep configured 265k targets before Bazel's
+        # 8 GiB heap exhausted a 4-unit (~10 GiB RAM) runner.  Use the
+        # 8-unit (~20 GiB RAM) shape for the analysis-heavy sweep; recycling
+        # and the 100 GiB disk request remain enabled.
+        compute_units: 8
+        # Start a fresh recyclable runner/snapshot namespace after Bazel's
+        # profiler crashed while reporting regressed elapsed time.
+        runner_recycling_key: ducktape-bazel-ci-v4
+        run_from_commit: ${{ inputs.source_commit }}
+        linkage_roles: test,build,race
+        bazel_invocation_ids: ${{ steps.invocation-ids.outputs.test }},${{ steps.invocation-ids.outputs.build }},${{ steps.invocation-ids.outputs.race }}
+        # The build itself lives in devinfra/ci/bazel_ci.py — see that file's header for
+        # why it runs on the BuildBuddy runner VM rather than the GitHub Actions runner.
+        # The VM has the repo checked
+        # out but NOT the GitHub Actions environment, so every value it needs is
+        # forwarded explicitly below rather than being ambient.
+        env_overrides: |
+          GITHUB_EVENT_NAME=${{ github.event_name }}
+          PR_HEAD_SHA=${{ inputs.pr_head_sha || github.event.pull_request.head.sha }}
+          PR_BASE_SHA=${{ inputs.pr_base_sha || github.event.pull_request.base.sha }}
+          TEST_INVOCATION_ID=${{ steps.invocation-ids.outputs.test }}
+          BUILD_INVOCATION_ID=${{ steps.invocation-ids.outputs.build }}
+          RACE_INVOCATION_ID=${{ steps.invocation-ids.outputs.race }}
+        script: python3 devinfra/ci/bazel_ci.py
+
+    - name: Finish live BuildBuddy test status
+      if: always() && steps.live-test-status.outcome != 'skipped'
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        STATUS_SHA: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.sha || inputs.source_commit || github.sha }}
+        TEST_INVOCATION_ID: ${{ steps.invocation-ids.outputs.test }}
+        REMOTE_OUTCOME: ${{ steps.bb-remote.outcome }}
+        LIVE_TEST_STATE_FILE: ${{ runner.temp }}/buildbuddy-test-${{ github.run_id }}-${{ github.run_attempt }}.json
+        LIVE_TEST_PID_FILE: ${{ runner.temp }}/buildbuddy-test-${{ github.run_id }}-${{ github.run_attempt }}.pid
+      shell: bash
+      run: |
+        python3 devinfra/ci/buildbuddy_test_status.py finish \
+          --invocation-id "$TEST_INVOCATION_ID" --sha "$STATUS_SHA" \
+          --state-file "$LIVE_TEST_STATE_FILE" --pid-file "$LIVE_TEST_PID_FILE" \
+          --remote-outcome "${REMOTE_OUTCOME:-cancelled}"
+
+    - name: Upload BuildBuddy linkage
+      if: always() && steps.bb-remote.outputs.linkage_json_path != ''
+      uses: actions/upload-artifact@v7
+      with:
+        name: bazel-ci-linkage-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ steps.bb-remote.outputs.linkage_json_path }}
+        if-no-files-found: warn

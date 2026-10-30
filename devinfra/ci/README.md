@@ -2,6 +2,17 @@
 
 CI-side utilities and configuration.
 
+## Source layout and trusted fork CI
+
+The reusable workflows retain checkout, trust gating, and source verification.
+Their build steps live in local composite actions
+<../../.github/actions/bazel-ci/action.yml> and
+<../../.github/actions/nix-wheel-check/action.yml>. These actions load from the
+verified source checkout. A fork PR can therefore move helpers and update its
+action together, even though `pull_request_target` loads workflows from `devel`.
+Keep checkout-dependent helper paths in those actions rather than the reusable
+workflows.
+
 ## PR visual review
 
 The publisher moved with its code to <../pr_visuals/README.md>.
