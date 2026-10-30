@@ -112,7 +112,7 @@ jobs:
       # The remote build only needs bb; use the same pin and checksum as Bazel CI.
       - name: Install pinned BuildBuddy CLI
         run: |
-          python3 devinfra/ci/install_bb.py --pins nix/artifact-pins.json \
+          python3 devinfra/buildbuddy/ci/install_bb.py --pins nix/artifact-pins.json \
             --destination "$RUNNER_TEMP/buildbuddy-cli/bin/bb"
           echo "$RUNNER_TEMP/buildbuddy-cli/bin" >> "$GITHUB_PATH"
 
@@ -150,7 +150,7 @@ jobs:
       - name: Choose artifact build invocation
         id: invocation
         run: |
-          invocation_id="$(python3 devinfra/ci/invocation_ids.py \
+          invocation_id="$(python3 devinfra/buildbuddy/ci/invocation_ids.py \
             --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --role nix-wheel-build)"
           echo "id=$invocation_id" >> "$GITHUB_OUTPUT"
 
@@ -188,7 +188,7 @@ jobs:
           python3 -m devinfra.ci.release_assets nix-overrides \
             --invocations "$INVOCATIONS" > "$overrides_file"
           mapfile -t outputs < <(cut -f2 "$overrides_file")
-          python3 -m devinfra.ci.fetch_build_outputs --invocations "$INVOCATIONS" "${outputs[@]}"
+          python3 -m devinfra.buildbuddy.ci.fetch_build_outputs --invocations "$INVOCATIONS" "${outputs[@]}"
 
       # Emit the JSON blob flake.nix's artifacts logic consumes. Every pin
       # in an in-gate release gets an override entry (including every asset in

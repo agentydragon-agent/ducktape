@@ -73,9 +73,9 @@ py_library(
     ],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":bes",
         ":publication_test_verdicts",
         ":release_content_hash",
+        "//devinfra/buildbuddy/ci:bes",
     ],
 )
 
@@ -84,16 +84,8 @@ py_library(
     srcs = ["publication_test_verdicts.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":bes",
-        ":invocation_ids",
-    ],
-)
-
-py_library(
-    name = "fetch_build_outputs",
-    srcs = ["fetch_build_outputs.py"],
-    deps = [
-        ":bes",
+        "//devinfra/buildbuddy/ci:bes",
+        "//devinfra/buildbuddy/ci:invocation_ids",
     ],
 )
 
@@ -106,26 +98,14 @@ py_library(
     ],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":bes",
         ":plan_releases",
+        "//devinfra/buildbuddy/ci:bes",
     ],
-)
-
-py_library(
-    name = "bes",
-    srcs = ["bes.py"],
-    visibility = ["//:__subpackages__"],
 )
 
 py_library(
     name = "release_content_hash",
     srcs = ["release_content_hash.py"],
-    visibility = ["//:__subpackages__"],
-)
-
-py_library(
-    name = "bb_runner_probe",
-    srcs = ["bb_runner_probe.py"],
     visibility = ["//:__subpackages__"],
 )
 
@@ -149,21 +129,14 @@ py_library(
 )
 
 py_library(
-    name = "collect_bazel_ci_profiles",
-    srcs = ["collect_bazel_ci_profiles.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [":invocation_ids"],
-)
-
-py_library(
     name = "plan_image_pushes",
     srcs = ["plan_image_pushes.py"],
     data = ["image_targets.json"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":bes",
         ":image_registry",
         ":publication_test_verdicts",
+        "//devinfra/buildbuddy/ci:bes",
         "//util:crane",
     ],
 )
@@ -176,12 +149,6 @@ py_library(
 )
 
 py_library(
-    name = "nix_runner_image",
-    srcs = ["nix_runner_image.py"],
-    visibility = ["//:__subpackages__"],
-)
-
-py_library(
     name = "push_image",
     srcs = ["push_image.py"],
     visibility = ["//:__subpackages__"],
@@ -189,41 +156,6 @@ py_library(
         ":image_registry",
         "//util:crane",
     ],
-)
-
-py_library(
-    name = "invocation_ids",
-    srcs = ["invocation_ids.py"],
-    imports = ["../.."],
-    visibility = ["//:__subpackages__"],
-)
-
-py_library(
-    name = "buildbuddy_test_status",
-    srcs = ["buildbuddy_test_status.py"],
-    visibility = ["//:__subpackages__"],
-)
-
-py_test(
-    name = "test_buildbuddy_test_status",
-    srcs = ["test_buildbuddy_test_status.py"],
-    deps = [
-        ":buildbuddy_test_status",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "install_bb",
-    srcs = ["install_bb.py"],
-    visibility = ["//:__subpackages__"],
-)
-
-py_library(
-    name = "emit_bb_remote_linkage",
-    srcs = ["emit_bb_remote_linkage.py"],
-    visibility = ["//:__subpackages__"],
 )
 
 # === Binaries ===
@@ -241,12 +173,6 @@ py_binary(
 )
 
 py_binary(
-    name = "bb_runner_probe_bin",
-    main_module = "devinfra.ci.bb_runner_probe",
-    deps = [":bb_runner_probe"],
-)
-
-py_binary(
     name = "bazel_ci_bin",
     main_module = "devinfra.ci.bazel_ci",
     deps = [":bazel_ci"],
@@ -256,24 +182,6 @@ py_binary(
     name = "pr_mergeability_bin",
     main_module = "devinfra.ci.pr_mergeability",
     deps = [":pr_mergeability"],
-)
-
-py_binary(
-    name = "collect_bazel_ci_profiles_bin",
-    main_module = "devinfra.ci.collect_bazel_ci_profiles",
-    deps = [":collect_bazel_ci_profiles"],
-)
-
-py_binary(
-    name = "emit_bb_remote_linkage_bin",
-    main_module = "devinfra.ci.emit_bb_remote_linkage",
-    deps = [":emit_bb_remote_linkage"],
-)
-
-py_binary(
-    name = "buildbuddy_test_status_bin",
-    main_module = "devinfra.ci.buildbuddy_test_status",
-    deps = [":buildbuddy_test_status"],
 )
 
 py_test(
@@ -298,8 +206,8 @@ py_test(
     name = "test_plan_releases",
     srcs = ["test_plan_releases.py"],
     deps = [
-        ":bes",
         ":plan_releases",
+        "//devinfra/buildbuddy/ci:bes",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -309,19 +217,9 @@ py_test(
     name = "test_release_assets",
     srcs = ["test_release_assets.py"],
     deps = [
-        ":bes",
         ":plan_releases",
         ":release_assets",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_bes",
-    srcs = ["test_bes.py"],
-    deps = [
-        ":bes",
+        "//devinfra/buildbuddy/ci:bes",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -333,15 +231,6 @@ py_test(
     deps = [
         ":release_content_hash",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_bb_runner_probe",
-    srcs = ["test_bb_runner_probe.py"],
-    deps = [
-        ":bb_runner_probe",
         "@pypi//pytest_bazel",
     ],
 )
@@ -374,21 +263,12 @@ py_test(
 )
 
 py_test(
-    name = "test_collect_bazel_ci_profiles",
-    srcs = ["test_collect_bazel_ci_profiles.py"],
-    deps = [
-        ":collect_bazel_ci_profiles",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_plan_image_pushes",
     srcs = ["test_plan_image_pushes.py"],
     deps = [
-        ":bes",
         ":image_registry",
         ":plan_image_pushes",
+        "//devinfra/buildbuddy/ci:bes",
         "//util:crane",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -399,9 +279,9 @@ py_test(
     name = "test_publication_test_verdicts",
     srcs = ["test_publication_test_verdicts.py"],
     deps = [
-        ":bes",
-        ":invocation_ids",
         ":publication_test_verdicts",
+        "//devinfra/buildbuddy/ci:bes",
+        "//devinfra/buildbuddy/ci:invocation_ids",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -412,16 +292,6 @@ py_test(
     srcs = ["test_image_registry.py"],
     deps = [
         ":image_registry",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_nix_runner_image",
-    srcs = ["test_nix_runner_image.py"],
-    deps = [
-        ":nix_runner_image",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -439,68 +309,12 @@ py_test(
 )
 
 py_test(
-    name = "test_invocation_ids",
-    srcs = ["test_invocation_ids.py"],
-    deps = [
-        ":invocation_ids",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_install_bb",
-    srcs = ["test_install_bb.py"],
-    deps = [
-        ":install_bb",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_emit_bb_remote_linkage",
-    srcs = ["test_emit_bb_remote_linkage.py"],
-    deps = [
-        ":emit_bb_remote_linkage",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_precommit_file_selection",
     srcs = ["test_precommit_file_selection.py"],
     deps = [
         ":pr_mergeability",
         ":precommit_file_selection",
         "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_bb_remote_log",
-    srcs = ["test_bb_remote_log.py"],
-    data = [
-        "bb_remote_log.sh",
-        "cancel_bb_invocations.py",
-    ],
-    deps = [
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "cancel_bb_invocations",
-    srcs = ["cancel_bb_invocations.py"],
-)
-
-py_test(
-    name = "test_cancel_bb_invocations",
-    srcs = ["test_cancel_bb_invocations.py"],
-    deps = [
-        ":cancel_bb_invocations",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from devinfra.ci.bes import Output
+from devinfra.buildbuddy.ci.bes import Output
 from devinfra.ci.plan_releases import Release
 from devinfra.ci.release_assets import nix_override_rows, release_paths, resolve_asset
 

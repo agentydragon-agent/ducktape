@@ -11,7 +11,7 @@
 #             (e.g. args="build //..."). Triggers `bb`'s post-run
 #             `downloadOutputs` path for `build` and local `run` commands,
 #             which currently fails with "Exhausted all peers" — see
-#             devinfra/debug/bb_remote_peers_exhausted.md.
+#             devinfra/buildbuddy/debug/bb_remote_peers_exhausted.md.
 # - `script`: `bb remote --script="<script>"`. Runs an arbitrary shell
 #             script on the runner VM. Prefer this for combined Bazel
 #             invocations and any workload that doesn't need build outputs
@@ -100,7 +100,7 @@ inputs:
       and skips workspace patch sync entirely. Only safe when the workspace is a clean
       checkout of that commit (the patch path's "drops uncommitted changes" caveat
       doesn't apply). See .github/workflows/bazel-ci.yml and
-      devinfra/docs/bb_remote_internals.md.
+      devinfra/buildbuddy/docs/remote.md.
     required: false
     default: ""
 
@@ -229,12 +229,12 @@ runs:
 
         set +e
         # Source in this step's shell: GitHub sends cancellation to that process.
-        source devinfra/ci/bb_remote_log.sh "$LOG_PATH" "${BB_REMOTE_COMMAND[@]}"
+        source devinfra/buildbuddy/ci/remote_log.sh "$LOG_PATH" "${BB_REMOTE_COMMAND[@]}"
         BB_REMOTE_STATUS=$?
         set -e
 
         LINKAGE_STATUS=0
-        python3 devinfra/ci/emit_bb_remote_linkage.py \
+        python3 devinfra/buildbuddy/ci/emit_remote_linkage.py \
           --log "$LOG_PATH" \
           --out "$LINKAGE_JSON_PATH" \
           --roles "$INPUT_LINKAGE_ROLES" \

@@ -31,7 +31,7 @@ from more_itertools import one
 from pydantic import BaseModel, Field
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
-from devinfra.ci.invocation_ids import invocation_id
+from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.artifacts import ListedArtifact, Runner, list_ci_artifacts
 from devinfra.pr_visuals.check_run import upsert_check_run
 from devinfra.pr_visuals.pull_request import find_reviewable_pull_request
@@ -253,7 +253,7 @@ def _read(request: urllib.request.Request) -> bytes:
 def find_test_invocations(*, run_id: str, run_attempt: str, commit_sha: str, api_key: str, fetch: Fetcher) -> list[str]:
     """Where this commit's test artifacts are, by commit if BuildBuddy knows, else by run.
 
-    The by-run derivation (devinfra/ci/invocation_ids.py) is what makes a *cancelled*
+    The by-run derivation (devinfra/buildbuddy/ci/invocation_ids.py) is what makes a *cancelled*
     run addressable, and it is the only handle on a PR run, which records the merge SHA
     and so cannot be found by head SHA. It is the fallback rather than the primary
     because it names the run that triggered this publish, which is frequently not the

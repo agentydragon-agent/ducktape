@@ -15,7 +15,7 @@ import pytest_bazel
 from botocore.exceptions import ClientError
 from PIL import Image
 
-from devinfra.ci.invocation_ids import invocation_id
+from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.publisher import (
     COMMENT_BUDGET,
     COMMENT_MARKER,

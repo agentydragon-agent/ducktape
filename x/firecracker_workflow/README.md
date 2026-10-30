@@ -97,7 +97,7 @@ bb ssh mybox hostname          # single command
   cache, output base) survives across builds
 
 ```bash
-bbr build //devinfra/buildbuddy_cli:bbapi
+bbr build //devinfra/buildbuddy/bbapi:bbapi
 ```
 
 ### Snapshot recycling — how it works
@@ -172,7 +172,7 @@ recycling; `runner-recycling-key` is optional and only matters if you want execu
 
 ### Observed build times
 
-Three consecutive `bbr build //devinfra/buildbuddy_cli:bbapi` with
+Three consecutive `bbr build //devinfra/buildbuddy/bbapi:bbapi` with
 `remote-snapshot-save-policy=always`:
 
 | Build | Snapshot state        | Bazel elapsed | Packages loaded      |
@@ -232,7 +232,7 @@ fc_exec() {
 fc_exec bash -c 'uname -a && df -h / && curl -s ifconfig.me'
 fc_exec bash -c '
   git clone --depth=1 https://github.com/agentydragon/ducktape /workspace/repo
-  cd /workspace/repo && bazelisk build //devinfra/buildbuddy_cli:bbapi
+  cd /workspace/repo && bazelisk build //devinfra/buildbuddy/bbapi:bbapi
 '
 ```
 
@@ -254,7 +254,7 @@ export BUILDBUDDY_API_KEY=$(sops -d --extract '["stringData"]["api-key"]' \
 ## Invocation IDs
 
 `bbr` produces two invocation IDs
-([details](../../devinfra/docs/bb_remote_internals.md)):
+([details](../../devinfra/buildbuddy/docs/remote.md)):
 
 ```bash
 # Inner (Bazel RBE build) — minted and printed by bbr ("bbr: invocation <id>");

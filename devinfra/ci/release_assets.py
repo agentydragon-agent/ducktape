@@ -13,7 +13,7 @@ import sys
 from collections.abc import Mapping
 from pathlib import Path
 
-from devinfra.ci.bes import Output, artifact_output, merge, read
+from devinfra.buildbuddy.ci.bes import Output, artifact_output, merge, read
 from devinfra.ci.plan_releases import Release, load_releases
 
 #: `bb remote build` materializes an output the stream reports at `path` here.

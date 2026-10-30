@@ -1,7 +1,7 @@
 """BuildBuddy proto definitions (subset for bbapi CLI).
 
 Fetched from github.com/buildbuddy-io/buildbuddy at a pinned commit.
-Only the protos needed by //devinfra/buildbuddy_cli are compiled here.
+Only the protos needed by //devinfra/buildbuddy/bbapi are compiled here.
 """
 
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")

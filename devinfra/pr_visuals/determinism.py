@@ -142,7 +142,7 @@ def run_once(targets: list[str], *, bbr: Path, run: Runner) -> Execution:
     """One full, uncached execution of `targets`, retaining its invocation and exit status.
 
     The ID is minted here and handed to the run rather than read back out of it: `bbr` honours
-    an explicit `--invocation_id` (devinfra/bbr.py), so the run's identity is known by
+    an explicit `--invocation_id` (devinfra/buildbuddy/bbr.py), so the run's identity is known by
     construction, and what it did is then read from BuildBuddy instead of from its console.
 
     `--nocache_test_results` prevents Bazel from reusing a prior test result and marks its

@@ -13,8 +13,8 @@ from collections import Counter, defaultdict
 from collections.abc import Mapping
 from pathlib import Path
 
-from devinfra.ci.bes import Invocation, TestSummary
-from devinfra.ci.invocation_ids import invocation_id
+from devinfra.buildbuddy.ci.bes import Invocation, TestSummary
+from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 
 _LABEL = re.compile(r"//[^:\s]+:[^:\s]+\Z")
 _RBE_PIN_ERRORS = (OSError, ValueError, KeyError, TypeError)

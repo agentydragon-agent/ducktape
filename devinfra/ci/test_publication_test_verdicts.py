@@ -1,8 +1,8 @@
 import pytest
 import pytest_bazel
 
-from devinfra.ci.bes import Invocation, TestSummary
-from devinfra.ci.invocation_ids import invocation_id
+from devinfra.buildbuddy.ci.bes import Invocation, TestSummary
+from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.ci.publication_test_verdicts import recorded_test_failures, selector_already_failed
 
 RUN_ID = "4077673030700"

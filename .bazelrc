@@ -131,7 +131,7 @@ common:ci --config=quiet
 common:ci --announce_rc
 # Remote retry policy history. Bazel's default is 5. #12468 set 0 because a
 # retry resubmitted actions after the outer runner was cancelled (a fresh Execute
-# 105 ms after the CANCELLED result; devinfra/debug/ci_remote_cancellation/
+# 105 ms after the CANCELLED result; devinfra/buildbuddy/debug/ci_remote_cancellation/
 # rpc_retry_trace.md), so superseded runs kept burning executor time. Zero also
 # disables recovery from transient executor errors: the 2026-10-29 ci-reports
 # window had 16 of 225 PR and 2 of 66 devel test invocations fail on gRPC

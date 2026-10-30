@@ -3,7 +3,7 @@
 This directory contains a unified Codex Cloud setup/maintenance script for this monorepo,
 modeled after the Claude web setup goals:
 
-- bootstrap from monorepo source-of-truth scripts (`devinfra/setup_buildbuddy.sh`)
+- bootstrap from monorepo source-of-truth scripts (`devinfra/buildbuddy/setup.sh`)
 - optionally install Nix + `.#devtools` for tool parity with local workflows
 - support SOPS via `SOPS_AGE_KEY` injected through Codex environment config
 
@@ -56,7 +56,7 @@ session and recommend `~/.bashrc` for persistence into the agent phase.
 3. Installs the repo `.#devtools` profile.
 4. Installs repo pre-commit Git hooks (`pre-commit install --install-hooks`).
 5. Persists nix profile sourcing in `~/.bashrc`, prepends Nix profile bins on `PATH` (so Nix-provided tooling like Prettier wins over user-level installs), and ensures `~/.bash_profile` sources `~/.bashrc`.
-6. Decrypts BuildBuddy API key from SOPS (when possible) and runs `devinfra/setup_buildbuddy.sh`.
+6. Decrypts BuildBuddy API key from SOPS (when possible) and runs `devinfra/buildbuddy/setup.sh`.
 7. Configures BuildBuddy remote selection:
    - uses `origin` when it already points directly to GitHub
    - falls back to `github-no-proxy` when `origin` is proxied/non-GitHub
@@ -130,7 +130,7 @@ SOPS_AGE_KEY="$SOPS_AGE_KEY" bbr test //path/to:target
 # Multiple vars, single invocation
 BUILDBUDDY_API_KEY="$BUILDBUDDY_API_KEY" \
 BBR_BAZELRC="$HOME/.config/bazel/bbr.bazelrc" \
-bbr build //devinfra:bbr
+bbr build //devinfra/buildbuddy:bbr
 
 # Wrapper script pattern
 cat > /tmp/run-with-env.sh <<'EOF'

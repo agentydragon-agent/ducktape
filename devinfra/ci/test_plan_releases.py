@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from devinfra.ci.bes import Output
+from devinfra.buildbuddy.ci.bes import Output
 from devinfra.ci.plan_releases import (
     Release,
     content_hash,

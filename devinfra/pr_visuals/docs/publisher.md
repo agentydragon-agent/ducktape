@@ -9,7 +9,7 @@ The publisher asks BuildBuddy which CI test invocation the **commit** has, prefe
 the `//...` devel sweep — a commit can have both a sweep and an affected-set run, and
 only the sweep carries visual manifests, so the run that triggered the publish is
 often not the one that ran the tests. Fallback: IDs derived from the run's identity
-(<../../ci/invocation_ids.py>), the only handle on a PR run (which records the merge
+(<../../buildbuddy/ci/invocation_ids.py>), the only handle on a PR run (which records the merge
 SHA, not the head SHA) or a run cancelled before Bazel started.
 
 **Gotcha: artifacts come from the CAS, not `bbapi artifact download`.** That command

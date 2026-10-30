@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-from devinfra.ci import invocation_ids
+from devinfra.buildbuddy.ci import invocation_ids
 from devinfra.pr_visuals import publisher
 from devinfra.pr_visuals.publisher import DownloadedVisualTest, build_bundle
 from util import visual_diff, visual_review

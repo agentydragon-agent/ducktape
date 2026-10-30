@@ -43,7 +43,7 @@ import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
-from devinfra.ci.bes import BuildBuddyError, Invocation, Output, fetch_blob, merge, read
+from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, fetch_blob, merge, read
 from devinfra.ci.image_registry import DIGEST_SUFFIX, Registry, registry_digest, repo_for
 from devinfra.ci.publication_test_verdicts import (
     effective_rbe_image,
