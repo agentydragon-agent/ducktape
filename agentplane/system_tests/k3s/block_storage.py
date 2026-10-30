@@ -1,4 +1,4 @@
-"""Scoped loop-backed static Block PVs for the VM acceptance stack.
+"""Demand-driven loop-backed Block PVs for the VM acceptance stack.
 
 The RBE action exposes loop devices but does not carry losetup. The fixture owns sparse backing files
 and the loop fds it attaches, so teardown can detach only those devices after k3s removes its Pods.
@@ -6,22 +6,27 @@ and the loop fds it attaches, so teardown can detach only those devices after k3
 
 from __future__ import annotations
 
+import asyncio
 import errno
 import fcntl
 import os
 import stat
 import struct
+import threading
 import time
+from collections.abc import Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from uuid import uuid4
+
+from kubernetes_asyncio import client as k8s
+
+from agentplane.system_tests.cluster import Cluster
 
 STORAGE_CLASS = "agentplane-test-loop-block"
 CLAIM_CAPACITY = "10Gi"
 _CLAIM_CAPACITY_BYTES = 10 * 1024**3
-# The VM suite creates one workspace per harness plus the Codex OOM workspace. Retained static PVs
-# stay Released after their claim is deleted and cannot bind another test's fresh claim.
-_PV_COUNT = 3
 
 _LOOP_CTL_GET_FREE = 0x4C82
 _LOOP_SET_FD = 0x4C00
@@ -118,66 +123,118 @@ class _LoopDevice:
 
 
 class BlockStorage:
-    """A single-node pool for VM workspace claims in one disposable k3s stack."""
+    """Workspace volumes owned until k3s stops, including volumes of deleted claims."""
 
     def __init__(self, work: Path) -> None:
         self.work = work / "raw-block"
-        self.suffix = uuid4().hex[:10]
         self.devices: list[_LoopDevice] = []
         self.closed = False
 
-    def prepare(self) -> list[dict[str, object]]:
-        """Create sparse 10 GiB files, attach only those files, and return static PV objects."""
-        if self.devices:
-            raise RuntimeError("raw block storage was already prepared")
+    def __enter__(self) -> BlockStorage:
         self.work.mkdir()
-        for index in range(_PV_COUNT):
-            backing_file = self.work / f"workspace-{index}.img"
-            with backing_file.open("xb") as backing:
-                backing.truncate(_CLAIM_CAPACITY_BYTES)
-            device = _LoopDevice.attach(backing_file)
-            self.devices.append(device)
-            device.enable_autoclear()
-        return self.objects(node_name="env")
+        return self
 
-    def objects(self, *, node_name: str) -> list[dict[str, object]]:
-        if len(self.devices) != _PV_COUNT:
-            raise RuntimeError("raw block storage must be prepared before creating PVs")
-        storage_class: dict[str, object] = {
-            "apiVersion": "storage.k8s.io/v1",
-            "kind": "StorageClass",
-            "metadata": {"name": STORAGE_CLASS},
-            "provisioner": "kubernetes.io/no-provisioner",
-            "volumeBindingMode": "WaitForFirstConsumer",
-        }
-        persistent_volumes: list[dict[str, object]] = [
-            {
-                "apiVersion": "v1",
-                "kind": "PersistentVolume",
-                "metadata": {"name": f"agentplane-{self.suffix}-block-{index}"},
-                "spec": {
-                    "capacity": {"storage": CLAIM_CAPACITY},
-                    "volumeMode": "Block",
-                    "accessModes": ["ReadWriteOnce"],
-                    "persistentVolumeReclaimPolicy": "Retain",
-                    "storageClassName": STORAGE_CLASS,
-                    "local": {"path": str(device.path)},
-                    "nodeAffinity": {
-                        "required": {
-                            "nodeSelectorTerms": [
-                                {
-                                    "matchExpressions": [
-                                        {"key": "kubernetes.io/hostname", "operator": "In", "values": [node_name]}
+    def __exit__(self, *_: object) -> None:
+        self.close()
+
+    @contextmanager
+    def provisioning(self, cluster: Cluster, *, node_name: str) -> Iterator[None]:
+        # Session fixtures outlive pytest's per-test event loops. Own this worker's loop so
+        # provisioning continues during setup, between cases, and through Sandbox cleanup.
+        stopped = threading.Event()
+        ready: Future[None] = Future()
+        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="workspace-provisioner") as executor:
+            worker = executor.submit(lambda: asyncio.run(self._serve(cluster, node_name, stopped, ready)))
+            try:
+                ready.result(timeout=15)
+                yield
+            finally:
+                stopped.set()
+                worker.result()
+
+    async def _serve(self, cluster: Cluster, node_name: str, stopped: threading.Event, ready: Future[None]) -> None:
+        try:
+            async with cluster.api_client() as api:
+                await k8s.StorageV1Api(api).create_storage_class(
+                    k8s.V1StorageClass(
+                        metadata=k8s.V1ObjectMeta(name=STORAGE_CLASS),
+                        provisioner="kubernetes.io/no-provisioner",
+                        volume_binding_mode="WaitForFirstConsumer",
+                    ),
+                    _request_timeout=10,
+                )
+                core = k8s.CoreV1Api(api)
+                provisioned: set[str] = set()
+                while not stopped.is_set():
+                    # The disposable namespace has only a handful of claims. Relisting also
+                    # handles claim replacement without watch reconnect/resourceVersion state.
+                    claims = await core.list_namespaced_persistent_volume_claim(cluster.namespace, _request_timeout=10)
+                    for claim in claims.items:
+                        if (
+                            claim.spec.storage_class_name != STORAGE_CLASS
+                            or claim.spec.volume_name
+                            or claim.metadata.deletion_timestamp is not None
+                            or claim.metadata.uid in provisioned
+                        ):
+                            continue
+                        await self._provision(core, claim, node_name=node_name)
+                        provisioned.add(claim.metadata.uid)
+                    if not ready.done():
+                        ready.set_result(None)
+                    await asyncio.sleep(0.25)
+        except BaseException as error:
+            if not ready.done():
+                ready.set_exception(error)
+            raise
+
+    async def _provision(self, core: k8s.CoreV1Api, claim: k8s.V1PersistentVolumeClaim, *, node_name: str) -> None:
+        if (
+            claim.spec.volume_mode != "Block"
+            or claim.spec.access_modes != ["ReadWriteOnce"]
+            or claim.spec.resources.requests["storage"] != CLAIM_CAPACITY
+        ):
+            raise ValueError(f"unsupported workspace claim: {claim.metadata.namespace}/{claim.metadata.name}")
+        backing_file = self.work / f"{claim.metadata.uid}.img"
+        with backing_file.open("xb") as backing:
+            backing.truncate(_CLAIM_CAPACITY_BYTES)
+        device = _LoopDevice.attach(backing_file)
+        self.devices.append(device)
+        device.enable_autoclear()
+        await core.create_persistent_volume(
+            k8s.V1PersistentVolume(
+                metadata=k8s.V1ObjectMeta(name=f"agentplane-block-{claim.metadata.uid}"),
+                spec=k8s.V1PersistentVolumeSpec(
+                    capacity={"storage": CLAIM_CAPACITY},
+                    volume_mode="Block",
+                    access_modes=["ReadWriteOnce"],
+                    persistent_volume_reclaim_policy="Retain",
+                    storage_class_name=STORAGE_CLASS,
+                    local=k8s.V1LocalVolumeSource(path=str(device.path)),
+                    # Bind to the UID: deleting and recreating a claim must never reuse its data.
+                    claim_ref=k8s.V1ObjectReference(
+                        api_version="v1",
+                        kind="PersistentVolumeClaim",
+                        name=claim.metadata.name,
+                        namespace=claim.metadata.namespace,
+                        uid=claim.metadata.uid,
+                    ),
+                    node_affinity=k8s.V1VolumeNodeAffinity(
+                        required=k8s.V1NodeSelector(
+                            node_selector_terms=[
+                                k8s.V1NodeSelectorTerm(
+                                    match_expressions=[
+                                        k8s.V1NodeSelectorRequirement(
+                                            key="kubernetes.io/hostname", operator="In", values=[node_name]
+                                        )
                                     ]
-                                }
+                                )
                             ]
-                        }
-                    },
-                },
-            }
-            for index, device in enumerate(self.devices)
-        ]
-        return [storage_class, *persistent_volumes]
+                        )
+                    ),
+                ),
+            ),
+            _request_timeout=10,
+        )
 
     def close(self) -> None:
         if self.closed:

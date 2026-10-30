@@ -20,8 +20,6 @@ import shlex
 from typing import Any
 from uuid import UUID, uuid4
 
-import pytest
-import pytest_bazel
 from google.protobuf.json_format import ParseDict
 from google.protobuf.message import Message
 from more_itertools import one
@@ -32,11 +30,10 @@ from agentplane.notification_service import notifications_pb2
 from agentplane.proto import runner_pb2
 from agentplane.system_tests import send_grant
 from agentplane.system_tests.agent import Agent
-from agentplane.system_tests.conftest import Sandboxes, namespace
+from agentplane.system_tests.cluster import Cluster
+from agentplane.system_tests.sandbox import Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
-
-# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 
 BODY = "Test message: the change is ready for review."
 # What a notice's user message starts with, before its JSON (agentplane/notification_service/store/notices.go).
@@ -88,9 +85,13 @@ async def _follow(agent: Agent, model: ScriptedModel[Any], message_id: str) -> n
     return _parsed(turn.tool_outputs[-1], notifications_pb2.Message())
 
 
-@pytest.mark.scripted_model
-async def test_an_agent_messages_another_which_reads_and_acknowledges_it(
-    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
+async def an_agent_messages_another_which_reads_and_acknowledges_it(
+    cluster: Cluster,
+    client: Client,
+    sandbox: Sandboxes,
+    harness: runner_pb2.Harness,
+    offered_model: str,
+    scripted: ScriptedUpstream,
 ) -> None:
     async with asyncio.TaskGroup() as starting:
         recipient_started = starting.create_task(
@@ -106,7 +107,7 @@ async def test_an_agent_messages_another_which_reads_and_acknowledges_it(
     sender_agent = await Agent.open(client, sandbox=sender.name, harness=harness, model=offered_model)
 
     send = (
-        f"agentplane --json notifications send {namespace()}/{recipient.name} {recipient_agent.thread_id}"
+        f"agentplane --json notifications send {cluster.namespace}/{recipient.name} {recipient_agent.thread_id}"
         f" --uid {recipient.uid} --key test-message-1 --body {shlex.quote(BODY)}"
     )
     sending = await sender_agent.run_shell(sender_model, send)
@@ -149,5 +150,5 @@ async def test_an_agent_messages_another_which_reads_and_acknowledges_it(
     assert followed.acknowledged, f"the recipient acknowledged its inbox through the message: {followed}"
 
 
-if __name__ == "__main__":
-    pytest_bazel.main()
+# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# gazelle:include_dep @pypi//protobuf

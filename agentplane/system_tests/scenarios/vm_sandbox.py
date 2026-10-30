@@ -7,8 +7,6 @@ import json
 import re
 from typing import Any
 
-import pytest
-import pytest_bazel
 from opentelemetry import trace
 from pydantic import BaseModel
 
@@ -17,14 +15,10 @@ from agentplane.native.codex import wire
 from agentplane.native.codex.testing import frames, responses_sse
 from agentplane.proto import runner_pb2
 from agentplane.system_tests.agent import TURN_SECONDS, Agent, Turn
-from agentplane.system_tests.conftest import (
-    VM_TEMPLATE,
-    VM_WORKING_DIRECTORY,
-    Sandboxes,
-    models_offered_for,
-    traced_vm_scenario,
-)
+from agentplane.system_tests.offered_models import models_offered_for
+from agentplane.system_tests.sandbox import VM_TEMPLATE, VM_WORKING_DIRECTORY, Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.vm_tracing import traced_vm_scenario
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import ShellCall, Text
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -288,9 +282,7 @@ async def _run_codex_tool_oom(
         (undeclared_outputs_dir() / "vm-codex-oom.json").write_text(json.dumps(evidence, indent=2) + "\n")
 
 
-@pytest.mark.vm_sandboxes
-@pytest.mark.scripted_model
-async def test_vm_sandbox_scenarios(client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream) -> None:
+async def vm_sandbox_scenarios(client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream) -> None:
     # pytest-asyncio runs parametrized cases sequentially. Schedule these explicitly so all three
     # independent VM boots overlap while sharing one k3s stack and Pod-routed scripted server.
     harnesses = [runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX]
@@ -311,5 +303,4 @@ async def test_vm_sandbox_scenarios(client: Client, sandbox: Sandboxes, scripted
         )
 
 
-if __name__ == "__main__":
-    pytest_bazel.main()
+# gazelle:include_dep @pypi//protobuf

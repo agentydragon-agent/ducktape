@@ -7,9 +7,6 @@ import asyncio
 import time
 from uuid import uuid4
 
-import pytest
-import pytest_bazel
-
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
@@ -17,17 +14,14 @@ from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests import launch_preset
 from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, Agent
-from agentplane.system_tests.conftest import SANDBOX_READY_SECONDS, Sandboxes, wait_until_running
+from agentplane.system_tests.sandbox import SANDBOX_READY_SECONDS, Sandboxes, wait_until_running
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import ShellCall, Text
-
-# The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 
 INSTRUCTIONS = "Test instructions that override the preset's for this session."
 
 
-@pytest.mark.scripted_model
-async def test_a_preset_launches_an_initialized_editable_codex_thread(
+async def a_preset_launches_an_initialized_editable_codex_thread(
     client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
 ) -> None:
     configured = {preset.name: preset for preset in await client.presets()}
@@ -126,5 +120,5 @@ async def test_a_preset_launches_an_initialized_editable_codex_thread(
     assert local.model == local_model
 
 
-if __name__ == "__main__":
-    pytest_bazel.main()
+# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# gazelle:include_dep @pypi//protobuf

@@ -7,14 +7,12 @@ import json
 import shlex
 from uuid import UUID, uuid4
 
-import pytest
-import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
-from agentplane.system_tests.conftest import VM_TEMPLATE, Sandboxes
+from agentplane.system_tests.sandbox import VM_TEMPLATE, Sandboxes
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 WORKSPACE_ROOT = "/state/workspaces"
@@ -59,8 +57,7 @@ async def _run_setup(
     raise AssertionError(f"setup for Session {session_id} emitted no finished event")
 
 
-@pytest.mark.vm_sandboxes
-async def test_fresh_vm_session_workspace_is_created_for_harness_identity(client: Client, sandbox: Sandboxes) -> None:
+async def fresh_vm_session_workspace_is_created_for_harness_identity(client: Client, sandbox: Sandboxes) -> None:
     """Check absence before opening, then use the ordinary Session setup and Git paths."""
     view = await sandbox(f"systest-vm-workspace-{uuid4().hex[:10]}", template=VM_TEMPLATE)
     harness = runner_pb2.HARNESS_CODEX
@@ -149,5 +146,4 @@ async def test_fresh_vm_session_workspace_is_created_for_harness_identity(client
     output_path.write_text(json.dumps(evidence, indent=2) + "\n")
 
 
-if __name__ == "__main__":
-    pytest_bazel.main()
+# gazelle:include_dep @pypi//protobuf

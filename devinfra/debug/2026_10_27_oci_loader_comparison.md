@@ -195,7 +195,8 @@ thousands of actions overlap. The two arms share 1,523 observed TestRunner
 labels, but their action populations are not identical. B's input transfer
 also includes changed graph/runfiles and worker/cache state; it cannot be
 attributed to the importer. A's Bazel critical path is 98.9% one unrelated
-639.94s `//agentplane/system_tests:test_vm_sandbox_vm` test action. Its
+639.94s `//agentplane/system_tests:test_vm_sandbox_vm` test action (the historical target name;
+the current VM suite is `//agentplane/system_tests/suites:test_vm`). Its
 profile and execution metadata are attached to the BuildBuddy invocation.
 
 A's first remote-run attempt lost its BuildBuddy log stream after about

@@ -2,13 +2,14 @@
 
 import asyncio
 import json
+from collections.abc import Callable
 from contextlib import aclosing
+from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
 import grpc
 import pytest
-import pytest_bazel
 
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service import history_service_pb2
@@ -22,8 +23,8 @@ from agentplane.system_tests.central_sampler import (
     capture_sampler_diagnostics,
     central_stack,
 )
-from agentplane.system_tests.cluster import kubectl
-from agentplane.system_tests.conftest import POD_TEMPLATE, VM_TEMPLATE, VM_WORKING_DIRECTORY
+from agentplane.system_tests.cluster import Cluster
+from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Reasoning, ShellCall, Text
@@ -31,8 +32,45 @@ from agentplane.x.central_sampler import sampler_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
+def _verify_pod_executor(output: str) -> None:
+    assert "prepared-on-executor\n" in output
+    assert "tool-on-executor\n" in output
+    assert "CENTRAL_EXECUTOR_OK\n" in output
+
+
+def _verify_vm_executor(output: str) -> dict[str, str | int]:
+    assert "prepared-on-executor\n" in output
+    assert "VM_PID1 systemd\n" in output
+    assert "VM_EXECUTOR_UID 107\n" in output
+    (cgroup_line,) = [line for line in output.splitlines() if line.startswith("VM_EXECUTOR_CGROUP ")]
+    executor_cgroup = cgroup_line.removeprefix("VM_EXECUTOR_CGROUP ")
+    assert executor_cgroup.startswith("/agentplane.slice/agentplane-executors.slice/agentplane-native-"), (
+        executor_cgroup
+    )
+    assert executor_cgroup.count("/") == 3, executor_cgroup
+    assert executor_cgroup.endswith(".service"), executor_cgroup
+    return {"pid1": "systemd", "uid": 107, "executor_cgroup": executor_cgroup}
+
+
+@dataclass(frozen=True)
+class ExecutionProbe:
+    command_prefix: str
+    verify: Callable[[str], dict[str, str | int] | None]
+
+
+POD_EXECUTION = ExecutionProbe(command_prefix="", verify=_verify_pod_executor)
+VM_EXECUTION = ExecutionProbe(
+    command_prefix=(
+        "printf 'VM_PID1 %s\\n' \"$(cat /proc/1/comm)\"; "
+        "printf 'VM_EXECUTOR_UID %s\\n' \"$(id -u)\"; "
+        "printf 'VM_EXECUTOR_CGROUP %s\\n' \"$(awk -F: '$1 == 0 {print $3}' /proc/self/cgroup)\"; "
+    ),
+    verify=_verify_vm_executor,
+)
+
+
 async def _capture_session_diagnostics(
-    deployed: CentralStack, session_id: str, command_id: str, admission: str, *, phase: str
+    cluster: Cluster, deployed: CentralStack, session_id: str, command_id: str, admission: str, *, phase: str
 ) -> None:
     """Retain sampler, History, Sandbox, and full event evidence for a Session."""
     diagnostic: dict[str, object] = {
@@ -42,7 +80,7 @@ async def _capture_session_diagnostics(
         "dispatcher_admission": admission,
     }
     try:
-        pod_artifacts = await capture_sampler_diagnostics()
+        pod_artifacts = await capture_sampler_diagnostics(cluster)
         diagnostic["sampler_pod_artifacts"] = str(pod_artifacts.relative_to(undeclared_outputs_dir()))
     except Exception as error:
         diagnostic["sampler_pod_artifacts_error"] = repr(error)
@@ -74,7 +112,7 @@ async def _capture_session_diagnostics(
     except Exception as error:
         diagnostic["history_events_error"] = repr(error)
     try:
-        sandbox_state = json.loads(await kubectl("get", "sandbox", deployed.sandbox, "-o", "json"))
+        sandbox_state = json.loads(await cluster.kubectl("get", "sandbox", deployed.sandbox, "-o", "json"))
         diagnostic["sandbox"] = {
             "name": sandbox_state["metadata"]["name"],
             "uid": sandbox_state["metadata"]["uid"],
@@ -83,19 +121,19 @@ async def _capture_session_diagnostics(
     except Exception as error:
         diagnostic["sandbox_error"] = repr(error)
     try:
-        runner_lease = await kubectl("get", "lease", f"{deployed.sandbox}-runner", "-o", "json")
+        runner_lease = await cluster.kubectl("get", "lease", f"{deployed.sandbox}-runner", "-o", "json")
         diagnostic["runner_lease"] = json.loads(runner_lease)
     except Exception as error:
         diagnostic["runner_lease_error"] = repr(error)
     try:
         diagnostic["cluster_services_endpoints_pods"] = json.loads(
-            await kubectl("get", "services,endpointslices,pods", "-o", "json")
+            await cluster.kubectl("get", "services,endpointslices,pods", "-o", "json")
         )
     except Exception as error:
         diagnostic["cluster_services_endpoints_pods_error"] = repr(error)
     for component in ("runner-gateway", "history-service"):
         try:
-            diagnostic[f"{component}_logs"] = await kubectl(
+            diagnostic[f"{component}_logs"] = await cluster.kubectl(
                 "logs", f"deployment/{component}", "--all-containers", "--tail=100", "--since=10m"
             )
         except Exception as error:
@@ -146,9 +184,9 @@ async def _wait_for_execution_progress(deployed: CentralStack, session_id: str, 
         events.cancel()
 
 
-async def _sampler_code_mode_host_pid(deployed: CentralStack) -> tuple[Path, str]:
+async def _sampler_code_mode_host_pid(cluster: Cluster, deployed: CentralStack) -> tuple[Path, str]:
     """Read the shared host PID through the sampler Pod's existing diagnostic EmptyDir."""
-    pod = json.loads(await kubectl("get", "pod", deployed.sampler_pod_name, "-o", "json"))
+    pod = json.loads(await cluster.kubectl("get", "pod", deployed.sampler_pod_name, "-o", "json"))
     pod_uid = pod["metadata"]["uid"]
     pid_file = Path(f"/var/lib/kubelet/pods/{pod_uid}/volumes/kubernetes.io~empty-dir/logs/code-mode-host.pid")
     pid = await asyncio.to_thread(pid_file.read_text)
@@ -180,15 +218,16 @@ async def _wait_for_turn_status(
         events.cancel()
 
 
-async def _central_sampler_scenario(tmp_path: Path, scripted: ScriptedUpstream, *, template: str, cwd: str) -> None:
+async def dispatcher_central_setup_tool_and_retained_answer(
+    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream, executor: Executor, execution_probe: ExecutionProbe
+) -> None:
+    template, cwd = executor.template, executor.cwd
     session_id, command_id = str(uuid4()), str(uuid4())
     interrupted_session_id, interrupted_command_id = str(uuid4()), str(uuid4())
     prompt = "Read the setup marker and report the result."
     reasoning = "I will read the marker created during setup."
     answer = "The executor returned prepared-on-executor."
-    is_vm = template == VM_TEMPLATE
-    vm_execution: dict[str, str | int] | None = None
-    async with central_stack(tmp_path, template=template) as deployed:
+    async with central_stack(cluster, tmp_path, template=template) as deployed:
         model = scripted.model(deployed.sampler_pod_name, runner_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
         session_spec = runner_pb2.SessionSpec(
@@ -246,7 +285,7 @@ async def _central_sampler_scenario(tmp_path: Path, scripted: ScriptedUpstream, 
                 ).events
             )
         await _wait_for_execution_progress(deployed, interrupted_session_id, "cell", "live")
-        host_pid_file, host_pid = await _sampler_code_mode_host_pid(deployed)
+        host_pid_file, host_pid = await _sampler_code_mode_host_pid(cluster, deployed)
         # A yielded cell returns control to sampling. Hold that continuation explicitly so
         # B's request is the next scripted exchange and A remains active until interruption.
         continuation = await model.request()
@@ -307,24 +346,18 @@ async def _central_sampler_scenario(tmp_path: Path, scripted: ScriptedUpstream, 
             request = await model.request()
         except Exception:
             await _capture_session_diagnostics(
-                deployed, session_id, command_id, admission, phase="setup_or_initial_model_request"
+                cluster, deployed, session_id, command_id, admission, phase="setup_or_initial_model_request"
             )
             raise
         assert request.model == MODEL
         assert request.native.client_metadata.session_id == session_id
         assert prompt in request.user_texts
         tool_command = (
-            "set -eu; sleep 10; cat prepared.txt; printf 'tool-on-executor\\n' | tee result.txt; "
+            "set -eu; sleep 10; "
+            + execution_probe.command_prefix
+            + "cat prepared.txt; printf 'tool-on-executor\\n' | tee result.txt; "
             "printf 'CENTRAL_EXECUTOR_OK\\n'"
         )
-        if is_vm:
-            tool_command = (
-                "set -eu; sleep 10; printf 'VM_PID1 %s\\n' \"$(cat /proc/1/comm)\"; "
-                "printf 'VM_EXECUTOR_UID %s\\n' \"$(id -u)\"; "
-                "printf 'VM_EXECUTOR_CGROUP %s\\n' \"$(awk -F: '$1 == 0 {print $3}' /proc/self/cgroup)\"; "
-                "cat prepared.txt; printf 'tool-on-executor\\n' | tee result.txt; "
-                "printf 'CENTRAL_EXECUTOR_OK\\n'"
-            )
         try:
             await model.reply(request, Reasoning(reasoning), ShellCall("read-prepared-marker", tool_command))
             # Require the executor process to be running before interrupting Session A; B's shell
@@ -351,28 +384,13 @@ async def _central_sampler_scenario(tmp_path: Path, scripted: ScriptedUpstream, 
             (tool_output,) = request.tool_outputs
             output = "\n".join(tool_output.blocks)
             assert "CENTRAL_EXECUTOR_OK" in output
-            if is_vm:
-                assert "prepared-on-executor\n" in output
-                assert "VM_PID1 systemd\n" in output
-                assert "VM_EXECUTOR_UID 107\n" in output
-                (cgroup_line,) = [line for line in output.splitlines() if line.startswith("VM_EXECUTOR_CGROUP ")]
-                executor_cgroup = cgroup_line.removeprefix("VM_EXECUTOR_CGROUP ")
-                assert executor_cgroup.startswith("/agentplane.slice/agentplane-executors.slice/agentplane-native-"), (
-                    executor_cgroup
-                )
-                assert executor_cgroup.count("/") == 3, executor_cgroup
-                assert executor_cgroup.endswith(".service"), executor_cgroup
-                vm_execution = {"pid1": "systemd", "uid": 107, "executor_cgroup": executor_cgroup}
-            else:
-                assert "prepared-on-executor\n" in output
-                assert "tool-on-executor\n" in output
-                assert "CENTRAL_EXECUTOR_OK\n" in output
+            vm_execution = execution_probe.verify(output)
             assert any(item.encrypted_content for item in request.native.reasoning)
             await model.reply(request, Text(answer))
         except Exception as error:
             try:
                 await _capture_session_diagnostics(
-                    deployed, session_id, command_id, admission, phase="tool_result_model_request"
+                    cluster, deployed, session_id, command_id, admission, phase="tool_result_model_request"
                 )
             except Exception as diagnostic_error:
                 error.add_note(f"Could not capture central sampler diagnostics: {diagnostic_error!r}")
@@ -422,7 +440,7 @@ async def _central_sampler_scenario(tmp_path: Path, scripted: ScriptedUpstream, 
         setup_stdout = b"".join(entry.event.setup_output.stdout for entry in retained.entries)
         if setup_stdout != b"setup-on-executor\n":
             await _capture_session_diagnostics(
-                deployed, session_id, command_id, admission, phase="setup_stdout_assertion"
+                cluster, deployed, session_id, command_id, admission, phase="setup_stdout_assertion"
             )
         assert setup_stdout == b"setup-on-executor\n"
         completed = [entry for entry in retained.entries if entry.event.HasField("item_completed")]
@@ -484,29 +502,5 @@ async def _central_sampler_scenario(tmp_path: Path, scripted: ScriptedUpstream, 
             + "\n"
         )
 
-
-@pytest.mark.scripted_model
-@pytest.mark.timeout(600)
-async def test_dispatcher_central_setup_tool_and_retained_answer(
-    k3s_deployment: None, tmp_path: Path, scripted: ScriptedUpstream
-) -> None:
-    del k3s_deployment  # This scenario is only valid on its own disposable stack, never against staging.
-    await _central_sampler_scenario(
-        tmp_path, scripted, template=POD_TEMPLATE, cwd="/state/workspaces/central-acceptance"
-    )
-
-
-@pytest.mark.vm_sandboxes
-@pytest.mark.scripted_model
-@pytest.mark.timeout(600)
-async def test_dispatcher_central_setup_tool_and_retained_answer_vm(
-    k3s_deployment: None, tmp_path: Path, scripted: ScriptedUpstream
-) -> None:
-    del k3s_deployment  # This scenario is only valid on its own disposable stack, never against staging.
-    await _central_sampler_scenario(tmp_path, scripted, template=VM_TEMPLATE, cwd=VM_WORKING_DIRECTORY)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 # gazelle:include_dep @pypi//protobuf

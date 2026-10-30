@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import os
 import sqlite3
 import sys
 import tarfile
@@ -15,7 +14,6 @@ from uuid import UUID, uuid4
 
 import grpc
 import pytest
-import pytest_bazel
 import yaml
 from kubernetes_asyncio import client as k8s, watch as k8s_watch
 
@@ -25,8 +23,8 @@ from agentplane.proto import runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.cleanup_diagnostics import capture_without_masking, cleanup_without_masking
-from agentplane.system_tests.cluster import api_client, kubectl
-from agentplane.system_tests.conftest import POD_TEMPLATE, namespace
+from agentplane.system_tests.cluster import Cluster
+from agentplane.system_tests.sandbox import POD_TEMPLATE
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -53,16 +51,18 @@ class DispatchFailedError(RuntimeError):
     pass
 
 
-async def _delete_pod(name: str, uid: str) -> None:
-    await _delete("pod", name, uid)
+async def _delete_pod(cluster: Cluster, name: str, uid: str) -> None:
+    await _delete(cluster, "pod", name, uid)
 
 
-async def _bound_caller(service_account: str) -> tuple[Caller, str, str]:
-    pods = json.loads(await kubectl("get", "pods", "-l", f"app.kubernetes.io/name={service_account}", "-o", "json"))
+async def _bound_caller(cluster: Cluster, service_account: str) -> tuple[Caller, str, str]:
+    pods = json.loads(
+        await cluster.kubectl("get", "pods", "-l", f"app.kubernetes.io/name={service_account}", "-o", "json")
+    )
     pod = next(item for item in pods["items"] if not item["metadata"].get("deletionTimestamp"))
     name = pod["metadata"]["name"]
     uid = pod["metadata"]["uid"]
-    token = await kubectl(
+    token = await cluster.kubectl(
         "create",
         "token",
         service_account,
@@ -75,20 +75,22 @@ async def _bound_caller(service_account: str) -> tuple[Caller, str, str]:
     return Caller(token), name, uid
 
 
-async def _delete(kind: str, name: str, uid: str) -> None:
-    async with api_client() as api:
+async def _delete(cluster: Cluster, kind: str, name: str, uid: str) -> None:
+    async with cluster.api_client() as api:
         options = k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=uid))
         if kind == "pod":
-            await k8s.CoreV1Api(api).delete_namespaced_pod(name, namespace(), body=options)
+            await k8s.CoreV1Api(api).delete_namespaced_pod(name, cluster.namespace, body=options)
         else:
             await k8s.CustomObjectsApi(api).delete_namespaced_custom_object(
-                GROUP, VERSION, namespace(), "sandboxes", name, body=options
+                GROUP, VERSION, cluster.namespace, "sandboxes", name, body=options
             )
-    await kubectl("wait", f"{kind}/{name}", "--for=delete", "--timeout=120s")
+    await cluster.kubectl("wait", f"{kind}/{name}", "--for=delete", "--timeout=120s")
 
 
-async def _container_mount_sources(name: str, artifact_dir: Path) -> dict[str, Path]:
-    pod = json.loads(await kubectl("get", "pod", name, "-o", "json"))
+async def _container_mount_sources(
+    crictl_command: tuple[str, ...], cluster: Cluster, name: str, artifact_dir: Path
+) -> dict[str, Path]:
+    pod = json.loads(await cluster.kubectl("get", "pod", name, "-o", "json"))
     statuses = pod.get("status", {}).get("containerStatuses", [])
     runner = next((status for status in statuses if status.get("name") == "runner"), None)
     if runner is None or not runner.get("containerID"):
@@ -97,8 +99,7 @@ async def _container_mount_sources(name: str, artifact_dir: Path) -> dict[str, P
     crictl_config = artifact_dir / "crictl.yaml"
     crictl_config.write_text("runtime-endpoint: unix:///run/k3s/containerd/containerd.sock\ntimeout: 30\n")
     process = await asyncio.create_subprocess_exec(
-        str(get_required_path(os.environ["K3S_BINARY_RLOCATION"])),
-        "crictl",
+        *crictl_command,
         "--config",
         str(crictl_config),
         "inspect",
@@ -134,6 +135,8 @@ async def _container_mount_sources(name: str, artifact_dir: Path) -> dict[str, P
 
 
 async def _archive_runner_data(
+    crictl_command: tuple[str, ...],
+    cluster: Cluster,
     name: str,
     session_ids: list[str],
     artifact_dir: Path,
@@ -141,7 +144,7 @@ async def _archive_runner_data(
     mount_sources: dict[str, Path] | None = None,
     extra_backups: tuple[tuple[str, Path], ...] = (),
 ) -> dict[str, Any]:
-    sources = mount_sources or await _container_mount_sources(name, artifact_dir)
+    sources = mount_sources or await _container_mount_sources(crictl_command, cluster, name, artifact_dir)
     archive = artifact_dir / "runner-data.tar"
     partial_archive = artifact_dir / "runner-data.tar.partial"
     journal_dir = artifact_dir / "consistent-journals"
@@ -176,9 +179,10 @@ async def _archive_runner_data(
         )
         + "\n"
     )
+    # A separate process lets timeout/cancellation stop SQLite backup and filesystem traversal
+    # before cleanup removes their sources; cancelling a worker thread would leave them running.
     process = await asyncio.create_subprocess_exec(
-        sys.executable,
-        str(Path(__file__).with_name("runner_data_archive.py")),
+        str(get_required_path("_main/agentplane/system_tests/runner_data_archive_bin")),
         str(plan_path),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -207,7 +211,9 @@ async def _archive_runner_data(
     return manifest
 
 
-async def _capture_cleanup_diagnostics(name: str, session_ids: list[str], command_ids: list[str]) -> None:
+async def _capture_cleanup_diagnostics(
+    crictl_command: tuple[str, ...], cluster: Cluster, name: str, session_ids: list[str], command_ids: list[str]
+) -> None:
     capture_id = uuid4().hex
     artifact_dir = undeclared_outputs_dir() / f"dispatcher-cleanup-{name}-{capture_id}"
     artifact_dir.mkdir(parents=True)
@@ -241,7 +247,7 @@ async def _capture_cleanup_diagnostics(name: str, session_ids: list[str], comman
     async def capture(key: str, args: tuple[str, ...]) -> None:
         try:
             async with asyncio.timeout(CLEANUP_DIAGNOSTICS_SECONDS):
-                value = await kubectl(*args)
+                value = await cluster.kubectl(*args)
             try:
                 diagnostics[key] = json.loads(value)
             except json.JSONDecodeError:
@@ -254,15 +260,25 @@ async def _capture_cleanup_diagnostics(name: str, session_ids: list[str], comman
     await asyncio.gather(*(capture(key, args) for key, args in commands.items()))
     persist()
     try:
-        diagnostics["runner_data"] = await _archive_runner_data(name, session_ids, artifact_dir)
+        diagnostics["runner_data"] = await _archive_runner_data(
+            crictl_command, cluster, name, session_ids, artifact_dir
+        )
     except Exception as error:
         diagnostics["runner_data_error"] = f"{type(error).__name__}: {error}"
     persist()
 
 
-async def _cleanup_sandbox(name: str, uid: str, *, session_ids: list[str], command_ids: list[str]) -> None:
+async def _cleanup_sandbox(
+    crictl_command: tuple[str, ...],
+    cluster: Cluster,
+    name: str,
+    uid: str,
+    *,
+    session_ids: list[str],
+    command_ids: list[str],
+) -> None:
     try:
-        await kubectl(
+        await cluster.kubectl(
             "patch",
             "sandbox.agentplane.allegedly.works",
             name,
@@ -270,31 +286,31 @@ async def _cleanup_sandbox(name: str, uid: str, *, session_ids: list[str], comma
             "-p",
             json.dumps({"metadata": {"uid": uid}, "spec": {"running": False}}),
         )
-        await kubectl(
+        await cluster.kubectl(
             "wait",
             f"sandbox.agentplane.allegedly.works/{name}",
             "--for=jsonpath={.status.operatingMode}=Suspended",
             "--timeout=300s",
         )
-        await kubectl(
+        await cluster.kubectl(
             "wait",
             f"sandbox.agentplane.allegedly.works/{name}",
             '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
             "--timeout=300s",
         )
-        await _delete("sandbox.agentplane.allegedly.works", name, uid)
+        await _delete(cluster, "sandbox.agentplane.allegedly.works", name, uid)
     except Exception as error:
-        await capture_without_masking(error, lambda: _capture_cleanup_diagnostics(name, session_ids, command_ids))
+        await capture_without_masking(
+            error, lambda: _capture_cleanup_diagnostics(crictl_command, cluster, name, session_ids, command_ids)
+        )
         raise
 
 
 @asynccontextmanager
-async def _forward(resource: str = f"service/{SERVICE}") -> AsyncIterator[str]:
+async def _forward(cluster: Cluster, resource: str = f"service/{SERVICE}") -> AsyncIterator[str]:
     port = pick_free_port()
     process = await asyncio.create_subprocess_exec(
-        "kubectl",
-        "-n",
-        namespace(),
+        *cluster.command(),
         "port-forward",
         resource,
         f"{port}:8080",
@@ -341,17 +357,17 @@ async def _dispatch_until(
 
 @asynccontextmanager
 async def _replace_owner_with_peer(
-    sandbox_uid: str, deployment_uid: str, evidence: dict[str, object]
+    cluster: Cluster, sandbox_uid: str, deployment_uid: str, evidence: dict[str, object]
 ) -> AsyncIterator[str]:
-    pods = json.loads(await kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json"))
+    pods = json.loads(await cluster.kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json"))
     (original,) = pods["items"]
     lease_name = f"dispatcher-{UUID(sandbox_uid).hex}"
-    lease = json.loads(await kubectl("get", "lease", lease_name, "-o", "json"))
+    lease = json.loads(await cluster.kubectl("get", "lease", lease_name, "-o", "json"))
     holder = lease["spec"]["holderIdentity"]
     scaled_generation: int | None = None
     try:
         patched = json.loads(
-            await kubectl(
+            await cluster.kubectl(
                 "patch",
                 "deployment",
                 WORKLOAD,
@@ -369,18 +385,20 @@ async def _replace_owner_with_peer(
             )
         )
         scaled_generation = patched["metadata"]["generation"]
-        await kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
-        pods = json.loads(await kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json"))
+        await cluster.kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
+        pods = json.loads(
+            await cluster.kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json")
+        )
         (peer,) = [item for item in pods["items"] if item["metadata"]["uid"] != original["metadata"]["uid"]]
-        await _delete_pod(original["metadata"]["name"], original["metadata"]["uid"])
-        async with api_client() as api, k8s_watch.Watch() as watch:
+        await _delete_pod(cluster, original["metadata"]["name"], original["metadata"]["uid"])
+        async with cluster.api_client() as api, k8s_watch.Watch() as watch:
             coordination = k8s.CoordinationV1Api(api)
-            current = await coordination.read_namespaced_lease(lease_name, namespace())
+            current = await coordination.read_namespaced_lease(lease_name, cluster.namespace)
             if current.spec.holder_identity == holder:
                 async with asyncio.timeout(BOUND_SECONDS):
                     async for event in watch.stream(
                         coordination.list_namespaced_lease,
-                        namespace(),
+                        cluster.namespace,
                         field_selector=f"metadata.name={lease_name}",
                         resource_version=current.metadata.resource_version,
                     ):
@@ -395,27 +413,27 @@ async def _replace_owner_with_peer(
         yield peer["metadata"]["name"]
     finally:
         if scaled_generation is not None:
-            current = json.loads(await kubectl("get", "deployment", WORKLOAD, "-o", "json"))
+            current = json.loads(await cluster.kubectl("get", "deployment", WORKLOAD, "-o", "json"))
             # Do not overwrite a concurrent operator or GitOps rollout.
             if current["metadata"]["uid"] == deployment_uid and current["metadata"]["generation"] == scaled_generation:
-                await kubectl(
+                await cluster.kubectl(
                     "scale",
                     f"deployment/{WORKLOAD}",
                     "--current-replicas=2",
                     "--replicas=1",
                     f"--resource-version={current['metadata']['resourceVersion']}",
                 )
-                await kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
+                await cluster.kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
 
 
-@pytest.mark.timeout(600)
-@pytest.mark.parametrize("replica_failover", [False, True], ids=["queue", "replicas"])
-async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission(replica_failover: bool) -> None:
-    deployment = json.loads(await kubectl("get", "deployment", WORKLOAD, "-o", "json"))
+async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
+    crictl_command: tuple[str, ...], cluster: Cluster, replica_failover: bool
+) -> None:
+    deployment = json.loads(await cluster.kubectl("get", "deployment", WORKLOAD, "-o", "json"))
     assert deployment["status"].get("readyReplicas") == 1, "the Dispatcher is not Ready"
     assert deployment["spec"]["replicas"] == 1
     image = deployment["spec"]["template"]["spec"]["containers"][0]["image"]
-    app_config = json.loads(await kubectl("get", "configmap", "app-config", "-o", "json"))
+    app_config = json.loads(await cluster.kubectl("get", "configmap", "app-config", "-o", "json"))
     policies = yaml.safe_load(app_config["data"]["config.yaml"])["default_policy_sets"]
     assert isinstance(policies, list)
     assert policies
@@ -423,7 +441,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
     suffix = uuid4().hex[:8]
     sandbox, session, command = (f"systest-dispatch-{suffix}", str(uuid4()), str(uuid4()))
     evidence: dict[str, object] = {
-        "namespace": namespace(),
+        "namespace": cluster.namespace,
         "image": image,
         "sandbox": sandbox,
         "session": session,
@@ -436,9 +454,9 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
     async with AsyncExitStack() as stack:
         # TokenReview needs a bound workload identity, not an app HTTP session. Reuse an
         # existing app Pod as the token's binding object; this probe creates no caller Pods.
-        authentication, caller, _caller_uid = await _bound_caller("app")
+        authentication, caller, _caller_uid = await _bound_caller(cluster, "app")
         created = json.loads(
-            await kubectl(
+            await cluster.kubectl(
                 "create",
                 "-f",
                 "-",
@@ -447,7 +465,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
                 body={
                     "apiVersion": SANDBOX_API_VERSION,
                     "kind": "Sandbox",
-                    "metadata": {"name": sandbox, "namespace": namespace()},
+                    "metadata": {"name": sandbox, "namespace": cluster.namespace},
                     "spec": {"template": POD_TEMPLATE, "running": False, "policySets": policies},
                 },
             )
@@ -460,9 +478,12 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
             if not cleaned:
                 if isinstance(error, Exception):
                     await capture_without_masking(
-                        error, lambda: _capture_cleanup_diagnostics(sandbox, [session], [command])
+                        error,
+                        lambda: _capture_cleanup_diagnostics(crictl_command, cluster, sandbox, [session], [command]),
                     )
-                await _cleanup_sandbox(sandbox, uid, session_ids=[session], command_ids=[command])
+                await _cleanup_sandbox(
+                    crictl_command, cluster, sandbox, uid, session_ids=[session], command_ids=[command]
+                )
 
         async def cleanup_on_exit(
             _exception_type: type[BaseException] | None, error: BaseException | None, _traceback: object
@@ -471,13 +492,13 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
             return False
 
         stack.push_async_exit(cleanup_on_exit)
-        await kubectl(
+        await cluster.kubectl(
             "wait",
             f"sandbox.agentplane.allegedly.works/{sandbox}",
             '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
             "--timeout=300s",
         )
-        target = await stack.enter_async_context(_forward())
+        target = await stack.enter_async_context(_forward(cluster))
         channel = await stack.enter_async_context(dial(target))
         stub: Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
         with pytest.raises(grpc.aio.AioRpcError) as unauthenticated:
@@ -495,11 +516,11 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
             stub, authentication, session, lambda row: row.reason == "wake_on_send_disabled"
         )
         assert waiting.sandbox_uid == uid
-        waiting_sandbox = json.loads(await kubectl("get", "sandbox", sandbox, "-o", "json"))
+        waiting_sandbox = json.loads(await cluster.kubectl("get", "sandbox", sandbox, "-o", "json"))
         assert waiting_sandbox["spec"].get("running") is False
         assert waiting_sandbox["spec"].get("wakeGeneration", 0) == 0
         evidence["waiting_reason"] = waiting.reason
-        caller_view = json.loads(await kubectl("get", "pod", caller, "-o", "json"))
+        caller_view = json.loads(await cluster.kubectl("get", "pod", caller, "-o", "json"))
         evidence["caller_phase"] = caller_view.get("status", {}).get("phase")
         path.write_text(json.dumps(evidence, indent=2) + "\n")
         if replica_failover:
@@ -507,9 +528,9 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
             # Killing that known owner, then watching through the surviving peer, exercises
             # lease expiry and durable queue recovery without the app HTTP service.
             peer = await stack.enter_async_context(
-                _replace_owner_with_peer(uid, deployment["metadata"]["uid"], evidence)
+                _replace_owner_with_peer(cluster, uid, deployment["metadata"]["uid"], evidence)
             )
-            peer_target = await stack.enter_async_context(_forward(f"pod/{peer}"))
+            peer_target = await stack.enter_async_context(_forward(cluster, f"pod/{peer}"))
             peer_channel = await stack.enter_async_context(dial(peer_target))
             stub = session_dispatcher_pb2_grpc.SessionDispatcherStub(peer_channel)
             retained = await stub.GetDispatch(
@@ -535,7 +556,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
             timeout=15,
         )
         assert opened.opening.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
-        await kubectl(
+        await cluster.kubectl(
             "patch",
             "sandbox.agentplane.allegedly.works",
             sandbox,
@@ -569,7 +590,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
         )
         assert opening.opening.state == pb.DELIVERY_STATE_RUNNER_ADMITTED
         if replica_failover:
-            await kubectl(
+            await cluster.kubectl(
                 "patch",
                 "sandbox.agentplane.allegedly.works",
                 sandbox,
@@ -577,7 +598,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
                 "-p",
                 json.dumps({"metadata": {"uid": uid}, "spec": {"running": False}}),
             )
-            await kubectl(
+            await cluster.kubectl(
                 "wait",
                 f"sandbox.agentplane.allegedly.works/{sandbox}",
                 '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
@@ -598,13 +619,15 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
                 metadata=authentication.metadata,
                 timeout=15,
             )
-            await kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
-            pods = json.loads(await kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json"))
+            await cluster.kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
+            pods = json.loads(
+                await cluster.kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json")
+            )
             live = [item for item in pods["items"] if not item["metadata"].get("deletionTimestamp")]
             assert len(live) == 2
             streams = []
             for replica in live:
-                target = await stack.enter_async_context(_forward(f"pod/{replica['metadata']['name']}"))
+                target = await stack.enter_async_context(_forward(cluster, f"pod/{replica['metadata']['name']}"))
                 channel = await stack.enter_async_context(dial(target))
                 reader = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
                 stream = reader.WatchDispatches(
@@ -618,7 +641,9 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
                 assert first.dispatch.command_id == deletion_command
                 assert first.dispatch.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
                 streams.append(stream)
-            await _cleanup_sandbox(sandbox, uid, session_ids=cleanup_sessions, command_ids=cleanup_commands)
+            await _cleanup_sandbox(
+                crictl_command, cluster, sandbox, uid, session_ids=cleanup_sessions, command_ids=cleanup_commands
+            )
             cleaned = True
             for stream in streams:
                 while True:
@@ -644,11 +669,12 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
     path.write_text(json.dumps(evidence, indent=2) + "\n")
 
 
-@pytest.mark.timeout(600)
-async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notification_sends() -> None:
+async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notification_sends(
+    crictl_command: tuple[str, ...], cluster: Cluster
+) -> None:
     deployments: dict[str, object] = {}
     for name in (WORKLOAD, "sandbox-controller", "app", "notifications"):
-        deployment = json.loads(await kubectl("get", "deployment", name, "-o", "json"))
+        deployment = json.loads(await cluster.kubectl("get", "deployment", name, "-o", "json"))
         assert deployment["status"].get("readyReplicas") == deployment["spec"]["replicas"], f"{name} is not Ready"
         deployments[name] = {
             "images": {
@@ -660,26 +686,26 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
                 for container in deployment["spec"]["template"]["spec"].get("initContainers", [])
             },
         }
-    gateway_config = json.loads(await kubectl("get", "configmap", f"{WORKLOAD}-settings", "-o", "json"))
+    gateway_config = json.loads(await cluster.kubectl("get", "configmap", f"{WORKLOAD}-settings", "-o", "json"))
     gateway_settings = yaml.safe_load(gateway_config["data"]["settings.yaml"])
     expected_wake_callers = [
-        {"namespace": namespace(), "name": "app"},
-        {"namespace": namespace(), "name": "notifications"},
+        {"namespace": cluster.namespace, "name": "app"},
+        {"namespace": cluster.namespace, "name": "notifications"},
         # The k3s fixture offers the orchestration_v1 group, whose sends wake Sandboxes too.
-        {"namespace": namespace(), "name": "actions"},
+        {"namespace": cluster.namespace, "name": "actions"},
     ]
     accounts = {f"{account['namespace']}/{account['name']}" for account in expected_wake_callers}
     assert set(gateway_settings["dispatcher_callers"]) == accounts
     assert set(gateway_settings["wake_callers"]) == accounts
 
-    service_config = json.loads(await kubectl("get", "configmap", "app-config", "-o", "json"))
+    service_config = json.loads(await cluster.kubectl("get", "configmap", "app-config", "-o", "json"))
     policies = yaml.safe_load(service_config["data"]["config.yaml"])["default_policy_sets"]
     assert isinstance(policies, list)
     assert policies
     suffix = uuid4().hex[:8]
     sandbox, session, command = (f"systest-wake-{suffix}", str(uuid4()), str(uuid4()))
     evidence: dict[str, object] = {
-        "namespace": namespace(),
+        "namespace": cluster.namespace,
         "images": deployments,
         "sandbox": sandbox,
         "session": session,
@@ -691,7 +717,7 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
     path = undeclared_outputs_dir() / "dispatcher-wake.json"
     path.write_text(json.dumps(evidence, indent=2) + "\n")
     created = json.loads(
-        await kubectl(
+        await cluster.kubectl(
             "create",
             "-f",
             "-",
@@ -700,7 +726,7 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
             body={
                 "apiVersion": SANDBOX_API_VERSION,
                 "kind": "Sandbox",
-                "metadata": {"name": sandbox, "namespace": namespace()},
+                "metadata": {"name": sandbox, "namespace": cluster.namespace},
                 "spec": {"template": POD_TEMPLATE, "running": False, "wakeOnSend": True, "policySets": policies},
             },
         )
@@ -714,29 +740,31 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
         if not cleaned:
             if isinstance(error, Exception):
                 await capture_without_masking(
-                    error, lambda: _capture_cleanup_diagnostics(sandbox, [session], [command])
+                    error, lambda: _capture_cleanup_diagnostics(crictl_command, cluster, sandbox, [session], [command])
                 )
-            await _cleanup_sandbox(sandbox, uid, session_ids=[session], command_ids=[command])
+            await _cleanup_sandbox(crictl_command, cluster, sandbox, uid, session_ids=[session], command_ids=[command])
             cleaned = True
 
     try:
-        await kubectl(
+        await cluster.kubectl(
             "wait",
             f"sandbox.agentplane.allegedly.works/{sandbox}",
             '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
             "--timeout=300s",
         )
-        stopped = json.loads(await kubectl("get", "sandbox", sandbox, "-o", "json"))
+        stopped = json.loads(await cluster.kubectl("get", "sandbox", sandbox, "-o", "json"))
         initial_incarnation = stopped.get("status", {}).get("incarnation", {}).get("uid")
         evidence["initial_incarnation"] = initial_incarnation
-        app_authentication, app_pod, app_pod_uid = await _bound_caller("app")
-        notification_authentication, notification_pod, notification_pod_uid = await _bound_caller("notifications")
+        app_authentication, app_pod, app_pod_uid = await _bound_caller(cluster, "app")
+        notification_authentication, notification_pod, notification_pod_uid = await _bound_caller(
+            cluster, "notifications"
+        )
         evidence["caller_pods"] = {
             "app": {"name": app_pod, "uid": app_pod_uid},
             "notifications": {"name": notification_pod, "uid": notification_pod_uid},
         }
         path.write_text(json.dumps(evidence, indent=2) + "\n")
-        async with _forward() as target:
+        async with _forward(cluster) as target:
             channel = dial(target)
             try:
                 stub: Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
@@ -770,25 +798,25 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
                 )
                 assert opened.opening.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
                 assert queued.dispatch.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
-                await kubectl(
+                await cluster.kubectl(
                     "wait",
                     f"sandbox.agentplane.allegedly.works/{sandbox}",
                     "--for=jsonpath={.spec.wakeGeneration}=1",
                     "--timeout=120s",
                 )
-                waking = json.loads(await kubectl("get", "sandbox", sandbox, "-o", "json"))
+                waking = json.loads(await cluster.kubectl("get", "sandbox", sandbox, "-o", "json"))
                 assert waking["spec"]["running"] is True
                 assert waking["spec"]["wakeGeneration"] == 1
                 evidence["wake_generation"] = waking["spec"]["wakeGeneration"]
                 path.write_text(json.dumps(evidence, indent=2) + "\n")
 
-                await kubectl(
+                await cluster.kubectl(
                     "wait",
                     f"sandbox.agentplane.allegedly.works/{sandbox}",
                     "--for=condition=Ready=True",
                     "--timeout=300s",
                 )
-                ready = json.loads(await kubectl("get", "sandbox", sandbox, "-o", "json"))
+                ready = json.loads(await cluster.kubectl("get", "sandbox", sandbox, "-o", "json"))
                 ready_incarnation = ready.get("status", {}).get("incarnation", {}).get("uid")
                 assert ready_incarnation
                 assert ready_incarnation != initial_incarnation
@@ -822,7 +850,7 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
                 capture_id = uuid4().hex
                 archive_dir = undeclared_outputs_dir() / f"dispatcher-data-proof-{sandbox}-{capture_id}"
                 archive_dir.mkdir(parents=True)
-                mount_sources = await _container_mount_sources(sandbox, archive_dir)
+                mount_sources = await _container_mount_sources(crictl_command, cluster, sandbox, archive_dir)
                 state_session = mount_sources["/state"] / "sessions" / session
                 early_payload = f"EARLY_ARCHIVE_PAYLOAD_{sandbox}".encode()
                 late_payload = f"LATE_ARCHIVE_PAYLOAD_{sandbox}".encode()
@@ -847,6 +875,8 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
                     wal_before = await asyncio.to_thread(wal_file.stat)
                     assert wal_before.st_size > 32
                     archive_manifest = await _archive_runner_data(
+                        crictl_command,
+                        cluster,
                         sandbox,
                         [session],
                         archive_dir,
@@ -925,5 +955,4 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
     path.write_text(json.dumps(evidence, indent=2) + "\n")
 
 
-if __name__ == "__main__":
-    pytest_bazel.main()
+# gazelle:include_dep @pypi//protobuf

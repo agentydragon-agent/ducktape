@@ -4,6 +4,10 @@ Measurements behind the stack's setup choices, for the work on k3s system test l
 measurements (Python services, image splits, import profiles before 2026-10-21) are in
 [the README as of `7fd9f16f7d`](https://github.com/agentydragon/ducktape/blob/7fd9f16f7d/agentplane/x/k3s_env/README.md).
 
+This is historical measurement data. Target names and invocation identities below are preserved as
+recorded before scenarios were grouped into suites; current targets are listed in the
+[system tests README](../../README.md).
+
 ## VM stack timings, 2026-10-21
 
 Booting, suspending and resuming one VM Sandbox with those images imported
@@ -195,3 +199,23 @@ in `stack.py`:
 
 What is left of that phase is mostly the services' readiness probes: a 3 s initial delay and a
 10 s period, so a service that is not ready at its first probe waits 10 s more.
+
+## Shared suites, 2026-10-30
+
+An uncached run of the original 16 targets at `40834883`
+([`303b29db`](https://app.buildbuddy.io/invocation/303b29db-ab30-4858-88fc-f42bb22ddaa9))
+and an uncached run of the seven shared suites at `340372b6`
+([`520cadd0`](https://app.buildbuddy.io/invocation/520cadd0-f4cb-4000-a8bb-951027d2af8e))
+passed every target. Durations come from Bazel `TestResult` events, including fixture setup and teardown.
+These are single samples, with no test-result cache hits; they do not measure full CI wall time.
+
+| Metric                         | Original targets | Shared suites | Change |
+| ------------------------------ | ---------------: | ------------: | -----: |
+| Sum of test execution, seconds |         3503.193 |      2977.788 | −15.0% |
+| Longest test, seconds          |          520.977 |       670.706 | +28.7% |
+| Bazel elapsed, seconds         |          621.070 |       678.909 |  +9.3% |
+
+Sharing reduced aggregate execution but increased the longest target. The candidate's longest target
+was `test_pod`; its messaging cases took 239 s for Claude and 90 s for Codex, including the target's
+first stack setup. `test_mcp` took 584 s, with its first case including 280 s of stack setup. Further
+latency work should measure these cases and suite balance separately from aggregate setup savings.

@@ -30,7 +30,7 @@ genrule(
     outs = ["cert-manager.yaml"],
     cmd = "cp $(location @cert_manager_v1_21_2_release//file) $@",
     visibility = [
-        "//agentplane/system_tests:__pkg__",
+        "//agentplane/system_tests:__subpackages__",
         "//agentplane/system_tests/k3s:__pkg__",
     ],
 )
@@ -53,7 +53,7 @@ $(location @helm_3_20_2_linux_amd64//:helm) template trust-manager "$${chart_dir
 """,
     tools = ["@helm_3_20_2_linux_amd64//:helm"],
     visibility = [
-        "//agentplane/system_tests:__pkg__",
+        "//agentplane/system_tests:__subpackages__",
         "//agentplane/system_tests/k3s:__pkg__",
     ],
 )

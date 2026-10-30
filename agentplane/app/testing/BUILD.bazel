@@ -186,7 +186,7 @@ py_library(
     name = "client",
     srcs = ["client.py"],
     visibility = [
-        "//agentplane/system_tests:__pkg__",
+        "//agentplane/system_tests:__subpackages__",
         "//agentplane/system_tests/k3s:__pkg__",
     ],
     deps = [
@@ -287,7 +287,7 @@ py_library(
     srcs = ["models.py"],
     visibility = [
         "//agentplane/app:__pkg__",
-        "//agentplane/system_tests:__pkg__",
+        "//agentplane/system_tests:__subpackages__",
     ],
     deps = [
         "//agentplane:policy_sets",

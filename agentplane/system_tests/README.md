@@ -6,42 +6,77 @@ cross-component behavior and durable system evidence. They are not unit tests wi
 they are the checks that the deployed system does what <../egress/SPEC.md> says it does and that a
 session's standing instructions reach the model that serves it.
 
-A scenario declared with `system_test(k3s = ...)` ([`defs.bzl`](defs.bzl)) runs as `<scenario>`: one
-RBE action that starts its own [k3s stack](k3s/README.md) and publishes it through
-`AGENTPLANE_SYSTEM_TEST_{URL,TOKEN,NAMESPACE,SERVICE_ACCOUNT}`
-([`system_test_target.py`](k3s/system_test_target.py)), so it needs no cluster credentials
-and runs in PR CI whenever its inputs change. That stack runs no VM Sandboxes; it deselects cases
-marked `vm_sandboxes`. `system_test(vm_sandboxes = ...)` runs those cases, and only those, as
-`<scenario>_vm`, on a stack with KubeVirt emulating the guest CPU and the k3s test guest
-([VM Sandboxes](k3s/README.md#vm-sandboxes)). PR CI runs only what a VM alone exercises:
-`test_vm_sandbox_vm` starts three VM Sandboxes concurrently in one stack: one scripted turn per
-harness through the launcher's egress relay, plus Codex tool OOM containment and its successful
-follow-up command with the same Runner and app-server. The turns verify real systemd PID 1, service
-containment and unprivileged manager access denial. `test_runner_credentials_vm` concurrently
-authenticates Claude and Codex sessions in separate VM Sandboxes. `test_runner_systemd_vm` boots one VM with
-`vm_systemd_proof = True` and gates all native supervision subtests against its real manager,
-covering lost launch replies, detached children, Runner death and startup fencing. Ordinary VM
-guests omit that proof binary and startup override.
-`system_test(real_model = True)` runs the `real_model` cases as `<scenario>_real_model`
-([Real model on k3s](#real-model-on-k3s)). Two checks need what only a deployment has and run against
-staging by hand ([Running live](#running-live)).
+The seven CI suites each start one [disposable k3s stack](k3s/README.md) in an RBE action.
+The session-scoped `deployment` fixture exposes its cluster handle, app URL, token, and MCP access
+([`system_test_target.py`](k3s/system_test_target.py)). Compatible scenarios share a stack:
 
-The model backend is the target's too (`AGENTPLANE_SYSTEM_TEST_MODEL_BACKEND`). The `_real_model` stack
+| Target                                                                                                  | Scenarios                                                                                                    |
+| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `//agentplane/system_tests/suites:test_pod`                                                             | egress, messaging, presets, session instructions, suspend/resume, thread stream, Pod credentials and storage |
+| `//agentplane/system_tests/suites:test_dispatcher`                                                      | Dispatcher queue, wake and replica behavior                                                                  |
+| `//agentplane/system_tests/suites:test_mcp`                                                             | MCP integration and dynamic client registration                                                              |
+| `//agentplane/system_tests/suites:test_vm`                                                              | VM Sandbox behavior and VM runner credentials                                                                |
+| `//agentplane/system_tests/suites:test_vm_systemd`                                                      | VM systemd supervision proof                                                                                 |
+| `//agentplane/system_tests/suites:test_sampler_pod`, `//agentplane/system_tests/suites:test_sampler_vm` | Central sampler through Pod and VM Sandboxes                                                                 |
+
+The shared stack cuts setup and image-import work, while each target now has a coarser cache key: a
+changed scenario reruns its suite. Scenario modules live in [`scenarios/`](scenarios/) as ordinary
+libraries. Entry points in `suites/test_*.py` contain ordinary pytest tests, marks, and
+parametrization. Each test passes its fixture values explicitly to a plain scenario function.
+Gazelle derives Python dependencies; `k3s_suite` supplies stack artifacts and execution settings.
+
+The session-scoped `deployment` fixture yields the running stack. Suite client fixtures depend on
+it directly, and executor fixtures declare the suite's SandboxTemplate and working directory.
+Storage layouts and sampler execution probes remain owned by their respective
+scenario modules. VM probes retain the systemd, UID, and cgroup assertions. VM test markers enable
+tracing and diagnostics; they do not select deployment configuration.
+
+The build supplies complete service and guest image lists. The pytest adapter resolves these and
+the rendered deployment once into `StackInputs`; stack startup does not discover image layouts by
+scanning runfiles. Kubernetes helpers take an explicit `Cluster` containing the kubeconfig, namespace,
+and kubectl command. Only the live-test fixture reads ambient deployment settings.
+Per-test fixtures create and clean up their own Sandboxes and resources. A host-side provisioner
+allocates a fresh loop-backed volume for each VM workspace claim UID, retaining it until stack teardown.
+Suites do not declare volume counts; deleting and recreating a claim never reuses its workspace data.
+
+The Dispatcher suite remains separate because replica coverage changes the shared Runner Gateway
+Deployment and deletes a recorded Pod while checking controller behavior.
+
+`test_vm` runs on a stack with KubeVirt emulating the guest CPU and the k3s test guest
+([VM Sandboxes](k3s/README.md#vm-sandboxes)). It starts three VM Sandboxes concurrently: one
+scripted turn per harness through the launcher's egress relay, plus Codex tool OOM containment and
+its successful follow-up command with the same Runner and app-server. `test_vm_systemd` boots the
+proof guest and gates native supervision subtests against its real manager. `test_vm_manual` covers
+VM workspace ownership, suspend/resume and storage by hand. `test_real_model`
+runs the real-model egress and session-instruction cases with the BuildBuddy live-test key
+([Real model on k3s](#real-model-on-k3s)). Two other checks need what only a deployment has and run
+against staging by hand ([Running live](#running-live)).
+
+The rendered stack selects the model backend. The `test_real_model` stack
 and a deployment serve a real model. On the other stacks, LLM ingress forwards to the scenario itself, which plays the model
 ([`scripted_upstream.py`](scripted_upstream.py)): the `scripted` fixture hands a scenario the
 `ScriptedModel` of its own Sandbox's Pod, and the scenario answers each request and asserts what
-the harness sent. A case marked `real_model` or `scripted_model` runs only where that backend is;
-only cases whose evidence is what a model does are `real_model`. Codex is offered a ChatGPT route there
+the harness sent. Suites explicitly select their cases; a case marked `real_model` or
+`scripted_model` fails setup if its stack serves the other backend. Only cases whose evidence
+is what a model does are `real_model`. Codex is offered a ChatGPT route there
 too, so it runs in code mode, which the scripted model answers.
 Every request the scripted model receives is kept in the target's `test.outputs/scripted_upstream/`.
 
 ```bash
-bbr test //agentplane/system_tests:test_dispatcher //agentplane/system_tests:test_storage //agentplane/system_tests:test_session_instructions
+bbr test \
+  //agentplane/system_tests/suites:test_pod \
+  //agentplane/system_tests/suites:test_dispatcher \
+  //agentplane/system_tests/suites:test_mcp \
+  //agentplane/system_tests/suites:test_vm \
+  //agentplane/system_tests/suites:test_vm_systemd \
+  //agentplane/system_tests/suites:test_sampler_pod \
+  //agentplane/system_tests/suites:test_sampler_vm
 ```
 
 Fast offline driver tests cover login choreography (`test_operator_login`), startup retries and
-terminal-turn handling (`test_agent`). They create no Sandbox and do not prove that a deployed IdP,
-Agentplane, or harness is reachable. Operator login is setup for the MCP scenario.
+terminal-turn handling (`test_agent`). They remain standalone tests, create no Sandbox and do not
+prove that a deployed IdP, Agentplane, or harness is reachable. Operator login is setup for the MCP
+scenario.
 
 The lower-level `//agentplane/runner:test_pid1_container` runs the direct PID1 and subprocess Pod backends
 as real container PID 1. It checks native exit, TERM, abrupt PID1 death, escaped descendants and
@@ -57,7 +92,7 @@ prompts, tool output or native frames, or automatically resend the admitted inpu
 
 The general egress and instruction scenarios run on **both harnesses**. The runner protocol is the
 same for Claude and Codex, so one parametrized harness case covers both; `offered_model` asks the deployment
-which models it offers for that harness rather than hardcoding one. `test_launch_presets` instead exercises a Codex launch preset's
+which models it offers for that harness rather than hardcoding one. The presets scenario instead exercises a Codex launch preset's
 defaults, Sandbox binding, bootstrap marker, inherited fields, and local override, with the scripted
 model only. The k3s fixture configures that preset (`launch_preset.py`) in place of the deployment's.
 Initial session Open uses a 120-second retry budget for HTTP 503, retaining the same session id;
@@ -65,7 +100,7 @@ refusals and other server failures are not startup readiness signals.
 
 ## Thread stream
 
-`test_thread_stream` is a browser's view of a Thread with the scripted model: every tab follows one
+The `thread_stream` scenario is a browser's view of a Thread with the scripted model: every tab follows one
 archived log by event id, a reconnect resumes after its `Last-Event-ID`, a command id answers only
 the command it first named, and turns nobody watches are archived, a failed one included, with the
 next input its own turn.
@@ -86,7 +121,7 @@ node ID and covers function-scoped fixtures, scenario execution, diagnostics and
 k3s startup remains in `k3s-timeline.jsonl`; it is session setup, outside these per-case traces.
 
 The spans separate Sandbox create acknowledgement from waiting for Ready, session opening, and
-scenario execution. `test_vm_sandbox_vm` also separates the scripted turn and each OOM command
+scenario execution. `test_vm` also separates the scripted turn and each OOM command
 (`memory-before`, `tool-oom`, `memory-after`); each grouped Sandbox scenario has its own `vm.scenario`
 span so their overlap is visible. Cleanup events distinguish suspend acknowledgement,
 observed effective suspension, delete acknowledgement, and observed deletion. Nested spans overlap;
@@ -100,43 +135,44 @@ added to the trace attributes.
 
 ## VM workspace ownership
 
-`test_vm_workspace_ownership` creates one uniquely named VM Sandbox and
+The `vm_workspace_ownership` scenario creates one uniquely named VM Sandbox and
 opens two Codex Sessions without sending a model turn. The first setup checks that the
 second Session's workspace path is absent; the second exercises normal runner setup, checks UID/GID
 107 ownership, then runs `git init` and `git rev-parse` with global and system Git config disabled.
 Fixture teardown suspends and deletes only the Sandbox created by that invocation.
-`test_vm_workspace_ownership_vm` runs it on a stack of its own; it is `manual`:
+`test_vm_manual` runs it on a stack of its own and is `manual`:
 
 ```bash
-bbr test //agentplane/system_tests:test_vm_workspace_ownership_vm
+bbr test //agentplane/system_tests/suites:test_vm_manual
 ```
 
 The result is written to the target's `test.outputs/vm-workspace-ownership.json`.
 
 ## Workspace storage layout
 
-`test_storage` is a model-free fixture for the
+The `storage` scenario is a model-free fixture for the
 built-in Pod `DirectoryTree` and VM `BlockFilesystem`/ext4 workspace paths. The VM workspace uses
-the k3s stack's static loop-backed raw block class while VM state remains on local-path filesystem
+the k3s stack's loop-backed raw block class while VM state remains on local-path filesystem
 storage. It checks Sandbox-owned PVC identity, `Block` volume mode and layout records, marker bytes
 across suspend/resume, refusal of an incompatible claim before workload start, and retained data
 after VM replacement. It creates only its own
 Sandbox, template and workload, then removes them through UID-preconditioned lifecycle operations.
-It refuses a stack that already has Sandboxes. `test_storage` and `test_storage_vm` (`manual`) run the
-Pod and VM cases on stacks of their own:
+It refuses a stack that already has Sandboxes. `test_pod` runs its Pod case as part of the shared CI
+stack; `test_vm_manual` runs the VM case on its own stack:
 
 ```bash
-bbr test //agentplane/system_tests:test_storage //agentplane/system_tests:test_storage_vm
+bbr test //agentplane/system_tests/suites:test_vm_manual
 ```
 
-The targets write `test.outputs/storage-{pod-directory,vm-raw}.json`. `test_suspend_resume_vm` uses
+The suite writes `test.outputs/storage-{pod-directory,vm-raw}.json`. The VM suspend/resume case in
+`test_vm_manual` uses
 the same block-backed VM fixture while verifying the runner's persisted native sessions across the
 launcher replacement.
 
 ## Suspend and resume
 
-`test_suspend_resume` and `test_suspend_resume_vm` test two Threads (Claude and Codex) in one
-Sandbox with the scripted model, a Pod Sandbox and a VM Sandbox respectively. Each suspends until the
+The `suspend_resume` scenario tests two Threads (Claude and Codex) in one Sandbox with the scripted
+model. `test_pod` runs the Pod case; `test_vm_manual` runs the VM case. Each suspends until the
 old Pod or launcher is gone, then resumes the original Threads by sending their next input.
 Each case verifies all Sandbox-owned state and workspace PVC UIDs and bound PVs survive, the
 incarnation changes, the sealed archived history remains byte-for-byte unchanged, and one
@@ -158,7 +194,7 @@ command checkpoint or interrupted setup; deterministic coverage for those bounda
 
 ## Agent messaging
 
-`test_agent_messaging` has one agent message another, each in its own Sandbox, on each harness. The
+The `messaging` scenario has one agent message another, each in its own Sandbox, on each harness. The
 sender holds the fixture's [`send_grant`](send_grant.py) PolicySet, a `session_inbox_access` rule to an
 inbox tag the recipient carries, and runs `agentplane notifications send`; the recipient reads and
 acknowledges its inbox when the platform's notice starts its turn. It asserts the entry's authenticated
@@ -176,7 +212,7 @@ runner admission after an explicit start. It uses a fixture Sandbox and the stac
 identity for TokenReview; it does not call app HTTP or run a model turn. One case alone:
 
 ```bash
-bbr test //agentplane/system_tests:test_dispatcher --test_arg=-k --test_arg=queue
+bbr test //agentplane/system_tests/suites:test_dispatcher --test_arg=-k --test_arg=queue
 ```
 
 The `replicas` case covers replica takeover and deletion broadcast. It queues a setting change in a
@@ -205,7 +241,7 @@ distinct wake generations per authenticated caller per rolling minute.
 
 ## Central sampler
 
-`test_central_sampler` and `test_central_sampler_vm` run the same scripted scenario on disposable
+`test_sampler_pod` and `test_sampler_vm` run the same scripted scenario on disposable
 k3s stacks, using a Pod and a VM Sandbox respectively. Each submits a central Session and user input
 through the deployed Dispatcher, runs setup and a model-requested shell command through the
 Sandbox's holding Gateway and pinned exec-server, then verifies the reasoning, final answer, setup
@@ -227,19 +263,19 @@ state, init/service logs, and shared-host logs are retained in test outputs. The
 execution/History summary is written to `test.outputs/central-sampler-k3s.json`.
 
 ```bash
-bbr test //agentplane/system_tests:test_central_sampler
-bbr test //agentplane/system_tests:test_central_sampler_vm
+bbr test //agentplane/system_tests/suites:test_sampler_pod
+bbr test //agentplane/system_tests/suites:test_sampler_vm
 ```
 
 ## MCP integration
 
-`test_mcp` and `test_dcr` run on a stack with Dex, the standalone MCP edge, `mcp-everything` and the
-Dex-backed OAuth MCP fixture (`system_test(mcp_fixtures = True)`), configured under test-only names
-([`mcp_servers.py`](mcp_servers.py)). `test_dcr` checks deployed discovery and public-client registration
-using plain HTTP; `//agentplane/mcp_edge/authserver:sdk_dcr_test` owns the real Python SDK contract
-against production handlers and PostgreSQL ([`dcr.md`](dcr.md)). `test_mcp` exercises Actions calling
-its upstream MCP fixtures. In
-`test_mcp` the scripted model runs one
+`test_mcp` runs the MCP integration and dynamic client registration scenarios on a stack with Dex,
+the standalone MCP edge, `mcp-everything` and the Dex-backed OAuth MCP fixture
+(`test_mcp` uses the MCP fixture stack), configured under test-only names
+([`mcp_servers.py`](mcp_servers.py)). The DCR scenario checks deployed discovery and public-client
+registration using plain HTTP; `//agentplane/mcp_edge/authserver:sdk_dcr_test` owns the real Python
+SDK contract against production handlers and PostgreSQL ([`dcr.md`](dcr.md)). The MCP scenario
+exercises Actions calling its upstream MCP fixtures. In that scenario the scripted model runs one
 `agentplane --json actions …` command per turn, on each harness, and the scenario reads the printed
 receipt back from what the harness sent the model.
 
@@ -271,8 +307,8 @@ receipt back from what the harness sent the model.
   wait for the operator, who denies them. The launcher grant auto-approves a read of a Session from
   another Sandbox, and the executor refuses that mismatch.
 
-These cases read only the operator Secret the k3s target publishes (`AGENTPLANE_OPERATOR_SECRET_PATH`)
-via `kubectl get --raw`, with a kubeconfig naming the k3s fixture's apiserver. No pre-issued cookie is
+These cases receive the operator Secret name from `deployment.mcp_fixtures` and read only that Secret
+via `kubectl get --raw`, using the explicit cluster handle naming the k3s fixture's apiserver. No pre-issued cookie is
 used. A missing Secret or malformed Secret data fails **BLOCKED**, without printing kubectl output or
 decoded values.
 
@@ -302,20 +338,20 @@ Malformed or unexpected responses fail without exposing their contents.
 
 ## Real model on k3s
 
-A `_real_model` target starts the k3s stack with LLM ingress forwarding to the public LiteLLM. The
+`test_real_model` starts the k3s stack with LLM ingress forwarding to the public LiteLLM. The
 app offers Haiku to Claude Code and luna to Codex, both on the lane of the BuildBuddy live-test key,
 which BuildBuddy decrypts into that test action alone as `OPENAI_API_KEY`
 (`test.env-secrets`, as for `live_openai_py_test`). It is tagged `live_openai_api`: PR CI builds it and
 skips it, and `--config=live-openai` runs it:
 
 ```bash
-bbr test --config=live-openai //agentplane/system_tests:test_egress_real_model
+bbr test --config=live-openai //agentplane/system_tests/suites:test_real_model
 ```
 
 That target runs the egress probe, whose evidence is what a real model works out. The probe's
 Sandbox discovers and presents the fixture's own credential ([`probe_credential.py`](probe_credential.py)),
 a token for a ServiceAccount holding no RBAC, which the Kubernetes API names back only if the proxy
-substituted it. `test_egress` runs the other egress cases with the scripted model: the model call goes
+substituted it. The egress scenario in `test_pod` runs the other egress cases with the scripted model: the model call goes
 through the proxy, and a PolicySet bound to a running Sandbox takes effect. The latter binds the
 fixture's own PolicySet ([`runtime_grant.py`](runtime_grant.py)), not one a deployment's Sandboxes use.
 
@@ -424,7 +460,7 @@ should show no `systest-*`.
 
 ## What it costs
 
-A `_real_model` target runs a few turns on the BuildBuddy live-test key (Haiku and luna) on a stack of
+`test_real_model` runs a few turns on the BuildBuddy live-test key (Haiku and luna) on a stack of
 its own, so a run is minutes and a few cents. A live check's Sandboxes are suspended and deleted in
 fixture teardown, including after a failure; a teardown that cannot delete one fails loudly, because a
 leaked sandbox holds a PVC and a node slot in staging.
@@ -459,7 +495,7 @@ This suite exists because the last gap of that shape — a runner that dropped t
 variables, so every call bypassed the proxy and hung with an empty history — sat behind a fully green
 unit suite until someone drove the deployed app by hand.
 
-The real-model case of `test_session_instructions` is the one scenario that cannot follow the rule:
+The real-model case of the session-instructions scenario is the one scenario that cannot follow the rule:
 whether a model obeys the instruction is what it tests, so the model's reply is its evidence. Its
 answer to that is a marker token no model emits on its own plus a control session, opened with no
 instructions on the same sandbox and given the same prompt, that must not produce it. Its scripted

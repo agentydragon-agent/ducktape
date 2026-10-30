@@ -1,0 +1,301 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+# gazelle:resolve py agentplane.x.central_sampler.sampler_pb2 //agentplane/x/central_sampler:sampler_pb2
+
+package(
+    default_testonly = True,
+    default_visibility = [
+        "//agentplane/system_tests:__pkg__",
+        "//agentplane/system_tests/suites:__pkg__",
+    ],
+)
+
+py_library(
+    name = "agent_messaging",
+    srcs = ["agent_messaging.py"],
+    deps = [
+        "//agentplane/app/testing:client",
+        "//agentplane/notification_service:notifications_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/system_tests:agent",
+        "//agentplane/system_tests:cluster",
+        "//agentplane/system_tests:sandbox",
+        "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/system_tests:send_grant",
+        "//agentplane/testing:scripted_model",
+        "@pypi//more_itertools",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "central_sampler",
+    srcs = ["central_sampler.py"],
+    deps = [
+        "//agentplane/grpc:calls",
+        "//agentplane/history_service:history_service_pb2",
+        "//agentplane/native/codex/testing:responses_sse",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/system_tests:central_sampler",
+        "//agentplane/system_tests:cluster",
+        "//agentplane/system_tests:executor",
+        "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/testing:codex_model",
+        "//agentplane/testing:scripted_model",
+        "//agentplane/x/central_sampler:sampler_pb2",
+        "//util/testing:undeclared_outputs",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "dcr",
+    srcs = ["dcr.py"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "dispatcher",
+    srcs = ["dispatcher.py"],
+    data = ["//agentplane/system_tests:runner_data_archive_bin"],
+    deps = [
+        "//agentplane:crd_group",
+        "//agentplane:sandbox_resource",
+        "//agentplane/grpc:calls",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc",
+        "//agentplane/system_tests:cleanup_diagnostics",
+        "//agentplane/system_tests:cluster",
+        "//agentplane/system_tests:sandbox",
+        "//util:net",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "egress",
+    srcs = ["egress.py"],
+    deps = [
+        "//agentplane:crd_group",
+        "//agentplane:sandbox_resource",
+        "//agentplane/app/testing:client",
+        "//agentplane/app/testing:models",
+        "//agentplane/egress:decisions",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/system_tests:agent",
+        "//agentplane/system_tests:cluster",
+        "//agentplane/system_tests:probe_credential",
+        "//agentplane/system_tests:runtime_grant",
+        "//agentplane/system_tests:sandbox",
+        "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/testing:scripted_model",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "launch_presets",
+    srcs = ["launch_presets.py"],
+    deps = [
+        "//agentplane:sandbox_resource",
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner:harness",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/system_tests:agent",
+        "//agentplane/system_tests:launch_preset",
+        "//agentplane/system_tests:sandbox",
+        "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/testing:scripted_model",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "mcp",
+    srcs = ["mcp.py"],
+    deps = [
+        "//agentplane:crd_group",
+        "//agentplane:policy_sets",
+        "//agentplane/action_service:action_service_pb2",
+        "//agentplane/action_service:operator_action_service_pb2",
+        "//agentplane/action_service/policies:resources",
+        "//agentplane/app/testing:client",
+        "//agentplane/app/testing:models",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/system_tests:agent",
+        "//agentplane/system_tests:cluster",
+        "//agentplane/system_tests:mcp_servers",
+        "//agentplane/system_tests:operator_login",
+        "//agentplane/system_tests:sandbox",
+        "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/testing:scripted_model",
+        "@pypi//httpx",
+        "@pypi//more_itertools",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "runner_credentials",
+    srcs = ["runner_credentials.py"],
+    deps = [
+        "//agentplane:sandbox_resource",
+        "//agentplane/app/testing:client",
+        "//agentplane/app/testing:models",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/system_tests:agent",
+        "//agentplane/system_tests:cluster",
+        "//agentplane/system_tests:offered_models",
+        "//agentplane/system_tests:sandbox",
+        "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/system_tests:vm_tracing",
+        "//agentplane/testing:scripted_model",
+        "@pypi//protobuf",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "runner_systemd",
+    srcs = ["runner_systemd.py"],
+    deps = [
+        "//agentplane/system_tests:sandbox",
+        "//agentplane/system_tests/k3s:guest_logs",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "session_instructions",
+    srcs = ["session_instructions.py"],
+    deps = [
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/system_tests:agent",
+        "//agentplane/system_tests:sandbox",
+        "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/testing:scripted_model",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "storage",
+    srcs = ["storage.py"],
+    deps = [
+        "//agentplane:crd_group",
+        "//agentplane:sandbox_resource",
+        "//agentplane/app/testing:client",
+        "//agentplane/system_tests:cluster",
+        "//agentplane/system_tests:executor",
+        "//agentplane/system_tests/k3s:block_storage",
+        "//agentplane/system_tests/k3s:guest_logs",
+        "//util/testing:undeclared_outputs",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "suspend_resume",
+    srcs = ["suspend_resume.py"],
+    deps = [
+        "//agentplane:sandbox_resource",
+        "//agentplane/app/testing:client",
+        "//agentplane/app/testing:models",
+        "//agentplane/native/codex/testing:responses_sse",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner:harness",
+        "//agentplane/system_tests:agent",
+        "//agentplane/system_tests:cluster",
+        "//agentplane/system_tests:executor",
+        "//agentplane/system_tests:sandbox",
+        "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/testing:codex_model",
+        "//agentplane/testing:scripted_model",
+        "//util/testing:undeclared_outputs",
+        "@pypi//protobuf",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "thread_stream",
+    srcs = ["thread_stream.py"],
+    deps = [
+        "//agentplane/app/testing:client",
+        "//agentplane/app/testing:models",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/system_tests:agent",
+        "//agentplane/system_tests:sandbox",
+        "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/testing:scripted_model",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "vm_sandbox",
+    srcs = ["vm_sandbox.py"],
+    deps = [
+        "//agentplane/app/testing:client",
+        "//agentplane/native/codex:wire",
+        "//agentplane/native/codex/testing:frames",
+        "//agentplane/native/codex/testing:responses_sse",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/system_tests:agent",
+        "//agentplane/system_tests:offered_models",
+        "//agentplane/system_tests:sandbox",
+        "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/system_tests:vm_tracing",
+        "//agentplane/testing:codex_model",
+        "//agentplane/testing:scripted_model",
+        "//util/testing:undeclared_outputs",
+        "@pypi//opentelemetry_api",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "vm_workspace_ownership",
+    srcs = ["vm_workspace_ownership.py"],
+    deps = [
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner:harness",
+        "//agentplane/system_tests:sandbox",
+        "//util/testing:undeclared_outputs",
+        "@pypi//protobuf",
+    ],
+)

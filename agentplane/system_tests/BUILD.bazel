@@ -1,24 +1,6 @@
-load("//agentplane/system_tests:defs.bzl", "system_test")
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # gazelle:resolve py agentplane.x.central_sampler.sampler_pb2_grpc //agentplane/x/central_sampler:sampler_pb2_grpc
-# gazelle:resolve py agentplane.system_tests.test_runner_credentials :test_runner_credentials_lib
-# gazelle:exclude test_central_sampler.py
-# gazelle:exclude test_agent_messaging.py
-# gazelle:exclude test_dcr.py
-# gazelle:exclude test_dispatcher.py
-# gazelle:exclude runner_data_archive.py
-# gazelle:exclude test_egress.py
-# gazelle:exclude test_launch_presets.py
-# gazelle:exclude test_mcp.py
-# gazelle:exclude test_session_instructions.py
-# gazelle:exclude test_storage.py
-# gazelle:exclude test_suspend_resume.py
-# gazelle:exclude test_thread_stream.py
-# gazelle:exclude test_runner_systemd.py
-# gazelle:exclude test_runner_credentials.py
-# gazelle:exclude test_vm_sandbox.py
-# gazelle:exclude test_vm_workspace_ownership.py
 
 package(
     default_testonly = True,
@@ -46,260 +28,21 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":cluster",
         ":native_artifacts",
+        ":offered_models",
         ":ollama_warmup",
+        ":sandbox",
         ":scripted_upstream",
-        "//agentplane:crd_group",
-        "//agentplane:sandbox_resource",
+        ":vm_tracing",
         "//agentplane/app/testing:client",
         "//agentplane/app/testing:models",
         "//agentplane/proto:runner_pb2",
-        "//agentplane/runner:harness",
         "//util:net",
         "//util/testing:otel_tracing",
-        "//util/testing:undeclared_outputs",
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//tenacity",
-    ],
-)
-
-# The probe runs a real model turn (`_real_model`); the other cases run scripted.
-system_test(
-    name = "test_egress",
-    srcs = ["test_egress.py"],
-    k3s = "scripted",
-    real_model = True,
-    deps = [
-        ":agent",
-        ":conftest",
-        ":probe_credential",
-        ":runtime_grant",
-        ":scripted_upstream",
-        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
-        "//agentplane:crd_group",
-        "//agentplane:sandbox_resource",
-        "//agentplane/app/testing:client",
-        "//agentplane/app/testing:models",
-        "//agentplane/egress:decisions",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/testing:scripted_model",
-        "@pypi//protobuf",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//tenacity",
-    ],
-)
-
-system_test(
-    name = "test_agent_messaging",
-    srcs = ["test_agent_messaging.py"],
-    k3s = "scripted",
-    deps = [
-        ":agent",
-        ":conftest",
-        ":scripted_upstream",
-        ":send_grant",
-        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
-        "//agentplane/app/testing:client",
-        "//agentplane/notification_service:notifications_pb2",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/testing:scripted_model",
-        "@pypi//more_itertools",
-        "@pypi//protobuf",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-system_test(
-    name = "test_launch_presets",
-    srcs = ["test_launch_presets.py"],
-    k3s = "scripted",
-    deps = [
-        ":agent",
-        ":conftest",
-        ":launch_preset",
-        ":scripted_upstream",
-        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
-        "//agentplane:sandbox_resource",
-        "//agentplane/app/testing:client",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/runner:harness",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
-        "//agentplane/testing:scripted_model",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-# One sandbox and two turns per harness.
-system_test(
-    name = "test_session_instructions",
-    srcs = ["test_session_instructions.py"],
-    k3s = "scripted",
-    real_model = True,
-    deps = [
-        ":agent",
-        ":conftest",
-        ":scripted_upstream",
-        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
-        "//agentplane/app/testing:client",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/testing:scripted_model",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-# One VM Sandbox and one scripted turn per harness: guest bring-up, and model traffic through the
-# launcher's egress relay. A Codex-only case exceeds the executor's memory limit and verifies
-# tool failure, Runner/app-server survival, and a successful follow-up on the same Session.
-system_test(
-    name = "test_vm_sandbox",
-    srcs = ["test_vm_sandbox.py"],
-    vm_sandboxes = "ci",
-    deps = [
-        ":agent",
-        ":conftest",
-        ":scripted_upstream",
-        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
-        "//agentplane/app/testing:client",
-        "//agentplane/native/codex:wire",
-        "//agentplane/native/codex/testing:frames",
-        "//agentplane/native/codex/testing:responses_sse",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/testing:codex_model",
-        "//agentplane/testing:scripted_model",
-        "//util/testing:undeclared_outputs",
-        "@pypi//opentelemetry_api",
-        "@pypi//protobuf",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-# All kernel/systemd supervision subtests run once in a real VM, before Runner startup.
-system_test(
-    name = "test_runner_systemd",
-    srcs = ["test_runner_systemd.py"],
-    vm_sandboxes = "ci",
-    vm_systemd_proof = True,
-    deps = [
-        ":conftest",
-        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
-        "//agentplane/system_tests/k3s:guest_logs",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//tenacity",
-    ],
-)
-
-# One VM Sandbox and two model-free Codex setup Sessions. The second opens a fresh workspace, then Git
-# init/rev-parse verifies the normal runner path used the harness UID/GID.
-system_test(
-    name = "test_vm_workspace_ownership",
-    srcs = ["test_vm_workspace_ownership.py"],
-    vm_sandboxes = "manual",
-    deps = [
-        ":conftest",
-        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
-        "//agentplane/app/testing:client",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/runner:harness",
-        "//util/testing:undeclared_outputs",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-# Two Threads, one per harness, share a fixture Sandbox so a single Pod (or VM launcher) replacement
-# exercises both native stores; the old Pod is gone before the same Sandbox resumes.
-system_test(
-    name = "test_suspend_resume",
-    srcs = ["test_suspend_resume.py"],
-    k3s = "scripted",
-    vm_sandboxes = "manual",
-    deps = [
-        ":agent",
-        ":conftest",
-        ":scripted_upstream",
-        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
-        "//agentplane:sandbox_resource",
-        "//agentplane/app/testing:client",
-        "//agentplane/app/testing:models",
-        "//agentplane/native/codex/testing:responses_sse",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/runner:harness",
-        "//agentplane/testing:codex_model",
-        "//agentplane/testing:scripted_model",
-        "//util/testing:undeclared_outputs",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//tenacity",
-    ],
-)
-
-# A browser's view of a Thread: two Sandboxes and four turns per harness.
-system_test(
-    name = "test_thread_stream",
-    srcs = ["test_thread_stream.py"],
-    k3s = "scripted",
-    deps = [
-        ":agent",
-        ":conftest",
-        ":scripted_upstream",
-        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
-        "//agentplane/app/testing:client",
-        "//agentplane/app/testing:models",
-        "//agentplane/proto:command_pb2",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
-        "//agentplane/testing:scripted_model",
-        "@pypi//httpx",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//tenacity",
-    ],
-)
-
-# Exercise real cert-manager issuance and reissuance, runner mTLS sessions on Pods and VMs, and
-# verify a replacement Pod resumes its native context and retains Thread history.
-system_test(
-    name = "test_runner_credentials",
-    srcs = ["test_runner_credentials.py"],
-    k3s = "scripted",
-    vm_sandboxes = "ci",
-    deps = [
-        ":agent",
-        ":cluster",
-        ":conftest",
-        ":scripted_upstream",
-        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
-        "//agentplane:sandbox_resource",
-        "//agentplane/app/testing:client",
-        "//agentplane/app/testing:models",
-        "//agentplane/proto:command_pb2",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:event_pb2",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
-        "//agentplane/testing:scripted_model",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//tenacity",
     ],
 )
 
@@ -321,6 +64,7 @@ py_test(
         ":agent",
         ":conftest",
         ":ollama_catalog",
+        ":sandbox",
         "//:conftest",
         "//agentplane/app:model_catalog",
         "//agentplane/app/testing:client",
@@ -355,6 +99,7 @@ py_test(
     deps = [
         ":agent",
         ":conftest",
+        ":sandbox",
         "//:conftest",
         "//agentplane/app/testing:client",
         "//agentplane/app/testing:models",
@@ -373,36 +118,6 @@ py_test(
     ],
 )
 
-system_test(
-    name = "test_mcp",
-    srcs = ["test_mcp.py"],
-    k3s = "scripted",
-    mcp_fixtures = True,
-    deps = [
-        ":agent",
-        ":conftest",
-        ":mcp_servers",
-        ":operator_login",
-        ":scripted_upstream",
-        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
-        "//agentplane:crd_group",
-        "//agentplane:policy_sets",
-        "//agentplane/action_service:action_service_pb2",
-        "//agentplane/action_service:operator_action_service_pb2",
-        "//agentplane/action_service/policies:resources",
-        "//agentplane/app/testing:client",
-        "//agentplane/app/testing:models",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/testing:scripted_model",
-        "@pypi//httpx",
-        "@pypi//more_itertools",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//tenacity",
-    ],
-)
-
 py_library(
     name = "mcp_servers",
     srcs = ["mcp_servers.py"],
@@ -413,6 +128,7 @@ py_library(
     testonly = True,
     srcs = ["operator_login.py"],
     deps = [
+        ":cluster",
         "//agentplane/app:oidc",
         "@pypi//beautifulsoup4",
         "@pypi//httpx",
@@ -427,26 +143,13 @@ py_test(
     name = "test_operator_login",
     srcs = ["test_operator_login.py"],
     deps = [
+        ":cluster",
         ":conftest",
         ":operator_login",
         "//:conftest",
         "//agentplane/app:oidc",
         "@pypi//httpx",
         "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-system_test(
-    name = "test_dcr",
-    srcs = ["test_dcr.py"],
-    k3s = "model_free",
-    mcp_fixtures = True,
-    deps = [
-        ":conftest",
-        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
-        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -461,15 +164,13 @@ py_test(
         ":agent",
         ":conftest",
         "//:conftest",
-        "//agentplane:sandbox_resource",
         "//agentplane/app/testing:client",
-        "//agentplane/app/testing:models",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
-        "//agentplane/system_tests:test_runner_credentials_lib",
+        "//agentplane/system_tests/scenarios:runner_credentials",
         "//agentplane/testing:scripted_model",
         "@pypi//httpx",
         "@pypi//protobuf",
@@ -527,38 +228,6 @@ py_test(
     ],
 )
 
-system_test(
-    name = "test_dispatcher",
-    srcs = [
-        "runner_data_archive.py",
-        "test_dispatcher.py",
-    ],
-    # Opens Codex Sessions, so its runner image carries the harnesses: `model_free` has none, and
-    # every activation there fails in the executor companion instead of on the runner path.
-    k3s = "scripted",
-    deps = [
-        ":cleanup_diagnostics",
-        ":cluster",
-        ":conftest",
-        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
-        "//agentplane:crd_group",
-        "//agentplane:sandbox_resource",
-        "//agentplane/grpc:calls",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc",
-        "//util:net",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
-        "@pypi//grpcio",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
 py_library(
     name = "cleanup_diagnostics",
     srcs = ["cleanup_diagnostics.py"],
@@ -576,37 +245,11 @@ py_test(
     ],
 )
 
-# Two bounded fresh fixtures; the VM case exercises guest boot and normal stop/start.
-system_test(
-    name = "test_storage",
-    srcs = ["test_storage.py"],
-    k3s = "model_free",
-    vm_sandboxes = "manual",
-    deps = [
-        ":cluster",
-        ":conftest",
-        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
-        "//agentplane:crd_group",
-        "//agentplane:sandbox_resource",
-        "//agentplane/app/testing:client",
-        "//agentplane/system_tests/k3s:block_storage",
-        "//agentplane/system_tests/k3s:guest_logs",
-        "//util/testing:undeclared_outputs",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
 py_library(
     name = "cluster",
     testonly = True,
     srcs = ["cluster.py"],
-    deps = [
-        ":conftest",
-        "@pypi//kubernetes_asyncio",
-    ],
+    deps = ["@pypi//kubernetes_asyncio"],
 )
 
 py_library(
@@ -673,43 +316,12 @@ py_library(
     ],
 )
 
-system_test(
-    name = "test_central_sampler",
-    srcs = ["test_central_sampler.py"],
-    central_sampler = True,
-    k3s = "scripted",
-    vm_sandboxes = "ci",
-    deps = [
-        ":central_sampler",
-        ":cluster",
-        ":conftest",
-        ":scripted_upstream",
-        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
-        "//agentplane/grpc:calls",
-        "//agentplane/history_service:history_service_pb2",
-        "//agentplane/native/codex/testing:responses_sse",
-        "//agentplane/proto:event_pb2",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
-        "//agentplane/system_tests/k3s:stack",
-        "//agentplane/testing:codex_model",
-        "//agentplane/testing:scripted_model",
-        "//agentplane/x/central_sampler:sampler_pb2",
-        "//util/testing:undeclared_outputs",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_library(
     name = "central_sampler",
     srcs = ["central_sampler.py"],
     data = ["//agentplane/system_tests/k3s:central_sampler_layout"],
     deps = [
         ":cluster",
-        ":conftest",
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
         "//agentplane/grpc:calls",
@@ -722,5 +334,70 @@ py_library(
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "runner_data_archive",
+    srcs = ["runner_data_archive.py"],
+)
+
+py_binary(
+    name = "runner_data_archive_bin",
+    main_module = "agentplane.system_tests.runner_data_archive",
+    deps = [":runner_data_archive"],
+)
+
+py_library(
+    name = "executor",
+    srcs = ["executor.py"],
+)
+
+py_library(
+    name = "offered_models",
+    srcs = ["offered_models.py"],
+    deps = [
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner:harness",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "sandbox",
+    srcs = ["sandbox.py"],
+    deps = [
+        ":cluster",
+        ":vm_tracing",
+        "//agentplane:crd_group",
+        "//agentplane:sandbox_resource",
+        "//agentplane/app/testing:client",
+        "//agentplane/app/testing:models",
+        "//util/testing:undeclared_outputs",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "vm_tracing",
+    srcs = ["vm_tracing.py"],
+    deps = ["@pypi//opentelemetry_api"],
+)
+
+py_test(
+    name = "test_sandbox",
+    srcs = ["test_sandbox.py"],
+    deps = [
+        ":cluster",
+        ":conftest",
+        ":sandbox",
+        "//:conftest",
+        "//agentplane:sandbox_resource",
+        "//agentplane/app/testing:client",
+        "//agentplane/app/testing:models",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

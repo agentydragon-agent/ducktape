@@ -252,14 +252,14 @@ oci_layout_rloc(
     name = "vm_guest_boot_layout",
     testonly = True,
     image = ":boot_image",
-    visibility = ["//agentplane/system_tests:__pkg__"],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
 )
 
 oci_layout_rloc(
     name = "vm_guest_root_layout",
     testonly = True,
     image = ":root_image",
-    visibility = ["//agentplane/system_tests:__pkg__"],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
 )
 
 # The real-manager proof has its own CI action. Ordinary VM guests carry neither its binary nor
@@ -331,5 +331,5 @@ oci_layout_rloc(
     name = "systemd_proof/vm_guest_root_layout",
     testonly = True,
     image = ":systemd_proof_root_image",
-    visibility = ["//agentplane/system_tests:__pkg__"],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
 )

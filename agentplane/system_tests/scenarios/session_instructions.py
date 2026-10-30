@@ -18,18 +18,12 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-import pytest_bazel
-
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.system_tests.agent import Agent
-from agentplane.system_tests.conftest import Sandboxes
+from agentplane.system_tests.sandbox import Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import Text
-
-# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
-
 
 # Not a word, not a plausible identifier, and in no harness's vocabulary: a model reaches for it
 # only because it was told to. It appears nowhere in the prompt, so the instruction is the only
@@ -46,8 +40,7 @@ INSTRUCTIONS = (
 PROMPT = "In one short sentence, say what a checksum is. Do not use any tool."
 
 
-@pytest.mark.real_model
-async def test_the_model_obeys_the_standing_instruction_its_session_was_opened_with(
+async def the_model_obeys_the_standing_instruction_its_session_was_opened_with(
     client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, model: str
 ) -> None:
     """The instruction reaches the model, and the marker is the model's own doing rather than its
@@ -73,8 +66,7 @@ async def test_the_model_obeys_the_standing_instruction_its_session_was_opened_w
     )
 
 
-@pytest.mark.scripted_model
-async def test_the_standing_instruction_reaches_the_model_and_only_in_its_own_session(
+async def the_standing_instruction_reaches_the_model_and_only_in_its_own_session(
     client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
 ) -> None:
     """Two sessions on one sandbox, as in the real-model scenario: what each sends the model shows
@@ -102,5 +94,5 @@ async def test_the_standing_instruction_reaches_the_model_and_only_in_its_own_se
         await model.reply(request, Text("A checksum detects corrupted data."))
 
 
-if __name__ == "__main__":
-    pytest_bazel.main()
+# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# gazelle:include_dep @pypi//protobuf

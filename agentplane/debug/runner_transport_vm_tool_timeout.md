@@ -16,7 +16,7 @@ Both Pod modes and the reverse VM case passed.
   passed both VM cases, with different workload IDs and zero failures or skips.
   No runtime behavior, assertions or timeouts changed.
 
-`test_central_sampler.py` now captures sampler state, retained History, Sandbox/Lease state
+[The central sampler scenario](../system_tests/scenarios/central_sampler.py) now captures sampler state, retained History, Sandbox/Lease state
 and bounded control-service logs if the tool-result model request fails. The original
 failure remains unexplained; the passing rerun does not establish a runtime fix.
 
