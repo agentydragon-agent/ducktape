@@ -84,7 +84,7 @@ of both owned invocations. Its eventual physical stop was not measured.
 
 Environment: source `aa9196b606ac8f6b60474d114f0fe3c8a00f0bc9`, pinned CLI
 5.0.466, Bazel 9.2.0, outer runner properties/image from
-[bbr.json](../../bbr.json), and action image
+[.bbrc](../../../.bbrc), and action image
 `ghcr.io/agentydragon/rbe-container-image@sha256:478978590586fa9688ed0b5d8b02c7c8534ed80824b72d27e1c51e9fe53df207`.
 Hosted server/executor revisions and lease configuration are unknown.
 

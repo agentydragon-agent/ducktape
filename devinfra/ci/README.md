@@ -84,9 +84,10 @@ Changing either asset changes the release identity and publishes both assets.
 ## Bootstrap dependencies
 
 The shared [Bazel action](../../.github/actions/bb-remote/action.yml) invokes
-`bb remote` directly and selects runner/action images from `devinfra/image_pins.json`.
+`bb remote` directly. Runner defaults (including its image) come from the repo
+`.bbrc`; the action image comes from `devinfra/image_pins.json`.
 Keep that bootstrap command independent of the standalone `bbr` wheel when
 changing CI prerequisites: an older pinned wheel cannot supply a newly added
 entry point. The wheel pin is in
 [`nix/artifact-pins.json`](../../nix/artifact-pins.json); interactive
-[`bbr`](../bbr.py) reads its repository defaults from `devinfra/bbr.json`.
+[`bbr`](../bbr.py) delegates repository defaults to the same native `.bbrc`.

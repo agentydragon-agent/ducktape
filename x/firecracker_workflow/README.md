@@ -91,7 +91,7 @@ bb ssh mybox hostname          # single command
 `bbr` wraps `bb remote` and is the recommended way to run Bazel from Claude Code web. It:
 
 - Auto-syncs local git diffs as patches (no `git push` needed for uncommitted changes)
-- Uses the custom `buildbuddy-remote-runner` Ubuntu image (configured in `devinfra/bbr.json`)
+- Uses the custom `buildbuddy-remote-runner` Ubuntu image (configured in `.bbrc`)
 - Mints and prints the Bazel invocation ID (`--invocation-id-file=PATH` records it)
 - Supports **Firecracker snapshot recycling** — the running Bazel server (JVM, analysis
   cache, output base) survives across builds
@@ -142,7 +142,7 @@ Snapshot behavior is controlled by two `runner_exec_properties`:
 branch, and always on the default branch. Subsequent runs on the same branch read the existing
 snapshot but don't write a new one.
 
-**This repo uses `always` + `newest` as the default** (set in `devinfra/bbr.json`):
+**This repo uses `always` + `newest` as the default** (set in `.bbrc`):
 
 ```json
 {
@@ -155,7 +155,7 @@ snapshot but don't write a new one.
 ```
 
 `bbr` picks these up automatically. The same properties are applied to CI via
-`.github/actions/bb-remote/action.yml`. No `BBR_REMOTE_ARGS` override is needed.
+`.github/actions/bb-remote/action.yml`. No additional remote-flag override is needed.
 
 With the default policy, back-to-back builds frequently cold-start due to a snapshot
 serialization race (snapshot not yet written before the next build starts) or landing on a
@@ -297,12 +297,12 @@ Tools (default image):  git 2.7.4, bazelisk, java, curl — no rsync, no bb bina
 
 ## Summary: State Persistence by Access Method
 
-| Method                                    | State preserved                    | Works from Claude Code web     | Notes                                                                    |
-| ----------------------------------------- | ---------------------------------- | ------------------------------ | ------------------------------------------------------------------------ |
-| `bb box` + `bb ssh`                       | Full persistent process            | **No** — WireGuard/UDP blocked | Works from regular dev machine                                           |
-| `bbr` (repo default: `always` + `newest`) | Full VM memory (Bazel server warm) | **Yes**                        | Build 3 showed 0 packages loaded, 0.652s; default in `devinfra/bbr.json` |
-| `bbr` with default BB policy              | Maybe warm, maybe cold             | Yes                            | Race condition / different executor → often cold                         |
-| `bb execute`                              | None                               | Yes                            | Fresh VM every call; `preserve-workspace` ineffective on BB Cloud        |
+| Method                                    | State preserved                    | Works from Claude Code web     | Notes                                                             |
+| ----------------------------------------- | ---------------------------------- | ------------------------------ | ----------------------------------------------------------------- |
+| `bb box` + `bb ssh`                       | Full persistent process            | **No** — WireGuard/UDP blocked | Works from regular dev machine                                    |
+| `bbr` (repo default: `always` + `newest`) | Full VM memory (Bazel server warm) | **Yes**                        | Build 3 showed 0 packages loaded, 0.652s; default in `.bbrc`      |
+| `bbr` with default BB policy              | Maybe warm, maybe cold             | Yes                            | Race condition / different executor → often cold                  |
+| `bb execute`                              | None                               | Yes                            | Fresh VM every call; `preserve-workspace` ineffective on BB Cloud |
 
 `boot_id` is **not** a reliable indicator of snapshot reuse — it always changes on Firecracker
 snapshot restore by design (entropy regeneration per clone). Use Bazel analysis time and

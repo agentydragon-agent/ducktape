@@ -347,7 +347,7 @@ rec {
 
   bbr = mkWheel {
     pname = "bbr";
-    description = "bb remote wrapper with repo-level config from devinfra/bbr.json";
+    description = "bb remote wrapper with session metadata and invocation tracking";
     mainProgram = "bbr";
     importsCheck = [ "devinfra.bbr" ];
     propagatedBuildInputs = with python314Packages; [ pygit2 ];

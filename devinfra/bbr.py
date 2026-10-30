@@ -1,18 +1,15 @@
-"""bbr: wrapper around `bb remote` with configurable defaults.
+"""bbr: bb remote with session metadata and invocation tracking.
 
-Reads repo-level config from devinfra/bbr.json, session-level bazel flags
-from $BBR_BAZELRC, and ad-hoc `bb remote` flags from $BBR_REMOTE_ARGS.
+Leaves runner defaults to bb's native .bbrc and forwards session-level Bazel
+flags from $BBR_BAZELRC.
 See devinfra/docs/bb_remote_internals.md for how bb remote works under the hood.
 """
 
-import json
 import os
-import shlex
 import shutil
 import subprocess
 import sys
 import uuid
-from dataclasses import dataclass, field
 from pathlib import Path
 
 import pygit2
@@ -47,28 +44,6 @@ _BAZEL_COMMANDS = {
     "version",
     # keep-sorted end
 }
-
-
-@dataclass
-class RepoConfig:
-    """Repo-level bbr configuration from devinfra/bbr.json."""
-
-    runner_exec_properties: dict[str, str] = field(default_factory=dict)
-    container_image: str | None = None
-    bazel_args: list[str] = field(default_factory=list)
-
-
-def _read_repo_config(repo_root: Path) -> RepoConfig:
-    """Read devinfra/bbr.json. Returns defaults if file is missing."""
-    config_path = repo_root / "devinfra" / "bbr.json"
-    if not config_path.exists():
-        return RepoConfig()
-    data = json.loads(config_path.read_text())
-    return RepoConfig(
-        runner_exec_properties=data.get("runner_exec_properties", {}),
-        container_image=data.get("container_image"),
-        bazel_args=data.get("bazel_args", []),
-    )
 
 
 def _find_bb() -> str:
@@ -140,11 +115,6 @@ def check_base_branch_freshness(repo: pygit2.Repository) -> str | None:
     )
 
 
-def _env_args(var: str) -> list[str]:
-    """Parse space-separated args from an env var."""
-    return shlex.split(os.environ.get(var, ""))
-
-
 def _bazelrc_args() -> list[str]:
     """Read bazel flags from $BBR_BAZELRC file.
 
@@ -189,25 +159,18 @@ def _explicit_invocation_id(command_options: list[str]) -> str | None:
     return found
 
 
-def build_command(repo: pygit2.Repository, user_args: list[str]) -> tuple[list[str], str | None]:
+def build_command(user_args: list[str]) -> tuple[list[str], str | None]:
     """Assemble the full bb remote command line; returns it with this run's invocation ID.
 
     Argument layout:
-      bb remote [bb-remote-flags] [BBR_REMOTE_ARGS] <verb> [--invocation_id] [repo bazel_args] [session bazelrc] [user flags+targets]
+      bb remote [startup/remote flags] <verb> [--invocation_id] [session bazelrc] [user flags+targets]
 
     bbr mints the invocation ID and passes it into the remote Bazel command, so
     the ID it reports is this run's by construction. Reading it back from bb's
     --invocation_id_file is unsound: concurrent bbr runs sharing that path
     cross-attribute each other's runs (bb_remote_internals.md § Invocation IDs).
     """
-    repo_root = Path(repo.workdir)
-    config = _read_repo_config(repo_root)
     bb = _find_bb()
-
-    runner_props = [f"--runner_exec_properties={k}={v}" for k, v in config.runner_exec_properties.items()]
-    container_flag = (
-        [f"--container_image=docker://{config.container_image}"] if config.container_image is not None else []
-    )
 
     # Split user_args at the bazel verb into startup options (before verb)
     # and command options (after verb).
@@ -220,7 +183,7 @@ def build_command(repo: pygit2.Repository, user_args: list[str]) -> tuple[list[s
         invocation_id = explicit_id or str(uuid.uuid4())
         invocation_id_flag = [] if explicit_id else [f"--invocation_id={invocation_id}"]
     else:
-        # No bazel verb (e.g. --script via BBR_REMOTE_ARGS): no Bazel command
+        # No bazel verb (e.g. --script): no Bazel command
         # line to attach --invocation_id to, so no ID is minted or reported.
         startup_options = user_args
         verb = None
@@ -231,13 +194,9 @@ def build_command(repo: pygit2.Repository, user_args: list[str]) -> tuple[list[s
     cmd = [
         bb,
         "remote",
-        *runner_props,
-        *container_flag,
-        *_env_args("BBR_REMOTE_ARGS"),
         *startup_options,
         *([verb] if verb else []),
         *invocation_id_flag,
-        *config.bazel_args,
         *_bazelrc_args(),
         *command_options,
     ]
@@ -272,25 +231,22 @@ def _extract_invocation_id_file(args: list[str]) -> tuple[list[str], Path | None
 
 
 _HELP = """\
-bbr — wrapper around `bb remote` with layered configuration.
+bbr — bb remote with session metadata, invocation tracking, and a Git-base check.
 
-Usage: bbr [--dry-run] [--invocation-id-file=PATH] [--help] <bazel-verb> [flags...] [targets...]
+Usage: bbr [--help] [--dry-run] [--invocation-id-file=PATH] [remote flags...] <bazel-verb> [flags...] [targets...]
 
-Configuration layers (last-wins for Bazel flags):
-  Repo      devinfra/bbr.json          runner properties, container image, bazel_args
-  Session   $BBR_BAZELRC file          --build_metadata (ROLE, session TAGS)
-  Ad-hoc    $BBR_REMOTE_ARGS env var   extra `bb remote` flags (before verb)
-  CLI       user args                  flags and targets (override everything)
+Runner defaults come from bb's native .bbrc files; pass remote flags before
+the Bazel verb to override them. Bazel defaults come from the
+runner's .bazelrc. $BBR_BAZELRC supplies session metadata before user arguments.
 
 Flags:
-  --dry-run                  Print the assembled command without executing
+  --dry-run                  Print the forwarded command without expanding .bbrc
   --invocation-id-file=PATH  Write the run's invocation ID to PATH before the run
   --help                     Show this help
 
 Environment variables:
   BBR_BAZELRC       Path to a bazelrc-format file with Bazel flags to forward.
                     Lines are parsed as "<command> <flag>" (prefix stripped).
-  BBR_REMOTE_ARGS   Space-separated `bb remote` flags injected before the verb.
   BBR_BUILDBUDDY_API_KEY_FILE  Optional mounted key file, passed to bb for real runs only.
   BBR_ALLOW_STALE_BASE  Run even when the likely diff base looks stale (bbr
                     normally refuses — see bb_remote_internals.md).
@@ -298,7 +254,7 @@ Environment variables:
 Examples:
   bbr test //foo:bar                          # basic test
   bbr build //foo --config=nolint             # user override
-  BBR_REMOTE_ARGS="--timeout=600" bbr test    # ad-hoc `bb remote` flag
+  bbr --timeout=10m test //foo:bar             # override a bb remote option
 """
 
 
@@ -319,7 +275,7 @@ def main() -> None:
         print(message, file=sys.stderr)
         if not os.environ.get("BBR_ALLOW_STALE_BASE"):
             sys.exit(1)
-    cmd, invocation_id = build_command(repo, args)
+    cmd, invocation_id = build_command(args)
     if invocation_id is None and invocation_id_file is not None:
         print("bbr: --invocation-id-file: no bazel verb, so no invocation ID to record", file=sys.stderr)
         sys.exit(1)
