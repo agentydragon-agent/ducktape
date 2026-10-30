@@ -128,7 +128,7 @@ Exact bootstrap and seal-before-stop ordering belongs in deterministic
 
 ## VM Sandboxes
 
-VM stacks, including `test_vm`, `test_vm_systemd`, `test_vm_manual` and `test_sampler_vm`
+VM stacks, `test_vm` and the opt-in `test_vm_manual`,
 ([system tests README](../README.md)), run on a stack rendered with VM Sandboxes
 (`rendered/local-model-vm.json`), so [`vm_sandboxes.py`](vm_sandboxes.py)
 installs production's KubeVirt release with `useEmulation` (QEMU TCG; the executor has no `/dev/kvm`)
@@ -146,15 +146,16 @@ The runner comes from the production runner disk, as in a Pod; both harnesses, G
 are pinned in the root disk. Runner uses systemd's private manager connection; a real system bus
 also exercises denial of unprivileged management requests.
 
-The dedicated CI target `//agentplane/system_tests/suites:test_vm_systemd` selects a guest root
-with `runner_systemd_fixture` and an entrypoint override. Before `exec`ing the production runner,
+The `test_vm` suite also boots `runner-vm-systemd-proof`, a separate SandboxTemplate selecting a
+guest root with `runner_systemd_fixture` and an entrypoint override. Before `exec`ing the production runner,
 it runs all subtests against the real manager. Its isolated `/state/.supervision-proof`
 exercises native process streams, limits, descendant fencing, uncertain launch outcomes and parent
 death. A failed proof prevents runner startup; its output is retained in the guest console. The
-outer test requires the completed success receipt as well as runner readiness. Other VM suites
-use a root disk without the proof binary or override and start the runner directly. Both variants
-share the kernel, production runner disk, systemd units and guest preparation. The proof target
-still uses the full k3s application stack.
+outer test requires the completed success receipt as well as runner readiness. Ordinary VM
+Sandboxes use `runner-vm`, with a root disk without the proof binary or override, and start the
+runner directly. Both roots have distinct imported image names and coexist in the shared cluster.
+They share the kernel, production runner disk, systemd units and guest preparation. The sampler boots
+alongside the two credential guests; the three sandbox/OOM guests and the proof case follow.
 
 The guest loads the ACPI button/evdev drivers and runs BusyBox `acpid`. On a power-button event,
 the listener requests `systemctl poweroff`. Systemd stops the runner and its execution services,

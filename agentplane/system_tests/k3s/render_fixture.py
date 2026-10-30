@@ -27,8 +27,6 @@ from agentplane.system_tests.k3s.rendered_fixture import (
 class FixtureVariant(StrEnum):
     LOCAL_MODEL = "local-model"
     LOCAL_MODEL_VM = "local-model-vm"
-    CENTRAL_SAMPLER = "central-sampler"
-    CENTRAL_SAMPLER_VM = "central-sampler-vm"
     PUBLIC_LITELLM = "public-litellm"
 
 
@@ -75,10 +73,6 @@ def render_variant(output: Path, variant: FixtureVariant) -> None:
         case FixtureVariant.LOCAL_MODEL:
             _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False)
         case FixtureVariant.LOCAL_MODEL_VM:
-            _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=True)
-        case FixtureVariant.CENTRAL_SAMPLER:
-            _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False, central_sampler=True)
-        case FixtureVariant.CENTRAL_SAMPLER_VM:
             _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=True, central_sampler=True)
         case FixtureVariant.PUBLIC_LITELLM:
             _render(output, variant, Backend.PUBLIC_LITELLM, vm_sandboxes=False)

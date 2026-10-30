@@ -27,6 +27,7 @@ def render(output: Path) -> None:
     fixture = RenderedFixture(
         backend=Backend.LOCAL_MODEL,
         vm_sandboxes=False,
+        central_sampler=True,
         namespace=NAMESPACE,
         app_origin=mcp.app_origin,
         browser_services=[

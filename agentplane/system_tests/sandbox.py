@@ -21,6 +21,7 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 POD_TEMPLATE = "runner"
 VM_TEMPLATE = "runner-vm"
+VM_SYSTEMD_PROOF_TEMPLATE = "runner-vm-systemd-proof"
 VM_WORKING_DIRECTORY = "/state/workspaces/accept"
 SANDBOX_READY_SECONDS = 300.0
 Sandboxes = Callable[..., Coroutine[Any, Any, SandboxView]]

@@ -12,8 +12,7 @@ _MCP_LAYOUTS = [
     "//agentplane/system_tests/k3s:mcp_fixtures/oauth_fixture_layout",
 ]
 _VM_FIXTURE = "//agentplane/system_tests/k3s:rendered/local-model-vm.json"
-_SAMPLER_FIXTURE = "//agentplane/system_tests/k3s:rendered/central-sampler.json"
-_SAMPLER_VM_FIXTURE = "//agentplane/system_tests/k3s:rendered/central-sampler-vm.json"
+_SAMPLER_LAYOUT = "//agentplane/system_tests/k3s:central_sampler_layout"
 _REAL_MODEL_FIXTURE = "//agentplane/system_tests/k3s:rendered/public-litellm.json"
 _CERT_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:cert_manager_install_yaml"
 _TRUST_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml"
@@ -21,13 +20,10 @@ _TRUST_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:trust_manager_instal
 # Each preset explicitly owns the environment its selected scenarios need. Dispatcher failover
 # uses the pod preset in a dedicated suite because it mutates shared controller Deployments.
 _STACKS = {
-    "pod": struct(fixture = _FIXTURE, vm = False, proof = False, real_model = False, images = [_HARNESSES_LAYOUT]),
-    "mcp": struct(fixture = _MCP_FIXTURE, vm = False, proof = False, real_model = False, images = [_HARNESSES_LAYOUT] + _MCP_LAYOUTS),
-    "vm": struct(fixture = _VM_FIXTURE, vm = True, proof = False, real_model = False, images = []),
-    "vm_systemd": struct(fixture = _VM_FIXTURE, vm = True, proof = True, real_model = False, images = []),
-    "sampler_pod": struct(fixture = _SAMPLER_FIXTURE, vm = False, proof = False, real_model = False, images = [_HARNESSES_LAYOUT, "//agentplane/system_tests/k3s:central_sampler_layout"]),
-    "sampler_vm": struct(fixture = _SAMPLER_VM_FIXTURE, vm = True, proof = False, real_model = False, images = ["//agentplane/system_tests/k3s:central_sampler_layout"]),
-    "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, proof = False, real_model = True, images = [_HARNESSES_LAYOUT]),
+    "pod": struct(fixture = _FIXTURE, vm = False, real_model = False, images = [_HARNESSES_LAYOUT]),
+    "mcp": struct(fixture = _MCP_FIXTURE, vm = False, real_model = False, images = [_HARNESSES_LAYOUT, _SAMPLER_LAYOUT] + _MCP_LAYOUTS),
+    "vm": struct(fixture = _VM_FIXTURE, vm = True, real_model = False, images = [_SAMPLER_LAYOUT]),
+    "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, real_model = True, images = [_HARNESSES_LAYOUT]),
 }
 
 def k3s_suite(name, srcs, deps, stack, tags = []):
@@ -49,9 +45,13 @@ def k3s_suite(name, srcs, deps, stack, tags = []):
     properties = {}
     suite_tags = K3S_TAGS + tags
     if config.vm:
-        root = "//agentplane/system_tests/k3s/guest:" + ("systemd_proof/" if config.proof else "") + "vm_guest_root_layout"
-        data += K3S_VM_DATA + [root]
-        env |= K3S_VM_ENV | {"K3S_GUEST_IMAGE_LAYOUTS": " ".join(["$(rlocationpath " + image + ")" for image in ["//agentplane/system_tests/k3s/guest:vm_guest_boot_layout", root]])}
+        guests = [
+            "//agentplane/system_tests/k3s/guest:vm_guest_boot_layout",
+            "//agentplane/system_tests/k3s/guest:vm_guest_root_layout",
+            "//agentplane/system_tests/k3s/guest:vm_guest_systemd_proof_root_layout",
+        ]
+        data += K3S_VM_DATA + guests
+        env |= K3S_VM_ENV | {"K3S_GUEST_IMAGE_LAYOUTS": " ".join(["$(rlocationpath " + image + ")" for image in guests])}
 
         # VM layers stay on disk; Pod runners use a different tmpfs image store.
         properties["test.runner-recycling-key"] = "k3s-vm"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
 
 import httpx
 import pytest
@@ -13,6 +14,7 @@ import pytest_bazel
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.system_tests.cluster import Cluster
+from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.k3s.stack import Stack
 from agentplane.system_tests.operator_login import (
     LoginBlockedError,
@@ -23,7 +25,7 @@ from agentplane.system_tests.operator_login import (
     verify_action_federation,
 )
 from agentplane.system_tests.sandbox import Sandboxes
-from agentplane.system_tests.scenarios import dcr, mcp
+from agentplane.system_tests.scenarios import central_sampler, dcr, mcp
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 
 
@@ -151,6 +153,20 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
 ) -> None:
     await mcp.policy_binding_auto_approves_the_bound_sandbox(
         operator_bff, client, sandbox, harness, offered_model, scripted, policy_objects
+    )
+
+
+@pytest.mark.scripted_model
+@pytest.mark.timeout(600)
+async def test_dispatcher_central_setup_tool_and_retained_answer(
+    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream
+) -> None:
+    await central_sampler.dispatcher_central_setup_tool_and_retained_answer(
+        cluster,
+        tmp_path,
+        scripted,
+        Executor(template="runner", cwd="/state/workspaces/central-acceptance"),
+        central_sampler.POD_EXECUTION,
     )
 
 

@@ -262,8 +262,8 @@ oci_layout_rloc(
     visibility = ["//agentplane/system_tests:__subpackages__"],
 )
 
-# The real-manager proof has its own CI action. Ordinary VM guests carry neither its binary nor
-# its startup override, so edits to the proof do not invalidate their guest root disk.
+# Ordinary VM guests carry neither the real-manager proof binary nor its startup override.
+# A second SandboxTemplate boots the proof root in the same k3s stack.
 pkg_files(
     name = "systemd_proof_start_file",
     srcs = ["runner_systemd_proof"],
@@ -326,9 +326,9 @@ oci_image(
     user = "107:107",
 )
 
-# Keep the basename (and therefore the imported image tag) identical to the ordinary guest's.
+# Distinct image names let both guest roots coexist in one containerd image store.
 oci_layout_rloc(
-    name = "systemd_proof/vm_guest_root_layout",
+    name = "vm_guest_systemd_proof_root_layout",
     testonly = True,
     image = ":systemd_proof_root_image",
     visibility = ["//agentplane/system_tests:__subpackages__"],

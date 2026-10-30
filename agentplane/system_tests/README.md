@@ -6,18 +6,16 @@ cross-component behavior and durable system evidence. They are not unit tests wi
 they are the checks that the deployed system does what <../egress/SPEC.md> says it does and that a
 session's standing instructions reach the model that serves it.
 
-The seven CI suites each start one [disposable k3s stack](k3s/README.md) in an RBE action.
+The four CI suites each start one [disposable k3s stack](k3s/README.md) in an RBE action.
 The session-scoped `deployment` fixture exposes its cluster handle, app URL, token, and MCP access
 ([`system_test_target.py`](k3s/system_test_target.py)). Compatible scenarios share a stack:
 
-| Target                                                                                                  | Scenarios                                                                                                    |
-| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `//agentplane/system_tests/suites:test_pod`                                                             | egress, messaging, presets, session instructions, suspend/resume, thread stream, Pod credentials and storage |
-| `//agentplane/system_tests/suites:test_dispatcher`                                                      | Dispatcher queue, wake and replica behavior                                                                  |
-| `//agentplane/system_tests/suites:test_mcp`                                                             | MCP integration and dynamic client registration                                                              |
-| `//agentplane/system_tests/suites:test_vm`                                                              | VM Sandbox behavior and VM runner credentials                                                                |
-| `//agentplane/system_tests/suites:test_vm_systemd`                                                      | VM systemd supervision proof                                                                                 |
-| `//agentplane/system_tests/suites:test_sampler_pod`, `//agentplane/system_tests/suites:test_sampler_vm` | Central sampler through Pod and VM Sandboxes                                                                 |
+| Target                                             | Scenarios                                                                                                    |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `//agentplane/system_tests/suites:test_pod`        | egress, messaging, presets, session instructions, suspend/resume, thread stream, Pod credentials and storage |
+| `//agentplane/system_tests/suites:test_dispatcher` | Dispatcher queue, wake and replica behavior                                                                  |
+| `//agentplane/system_tests/suites:test_mcp`        | MCP integration, dynamic client registration and Pod central sampler                                         |
+| `//agentplane/system_tests/suites:test_vm`         | VM Sandbox behavior, runner credentials, systemd proof and VM central sampler                                |
 
 The shared stack cuts setup and image-import work, while each target now has a coarser cache key: a
 changed scenario reruns its suite. Scenario modules live in [`scenarios/`](scenarios/) as ordinary
@@ -39,14 +37,19 @@ Per-test fixtures create and clean up their own Sandboxes and resources. A host-
 allocates a fresh loop-backed volume for each VM workspace claim UID, retaining it until stack teardown.
 Suites do not declare volume counts; deleting and recreating a claim never reuses its workspace data.
 
+Pod and MCP suites remain separate so their larger scenario sets can run on different workers.
+The sampler shares MCP's stack rather than paying for another k3s startup.
 The Dispatcher suite remains separate because replica coverage changes the shared Runner Gateway
 Deployment and deletes a recorded Pod while checking controller behavior.
 
 `test_vm` runs on a stack with KubeVirt emulating the guest CPU and the k3s test guest
 ([VM Sandboxes](k3s/README.md#vm-sandboxes)). It starts three VM Sandboxes concurrently: one
 scripted turn per harness through the launcher's egress relay, plus Codex tool OOM containment and
-its successful follow-up command with the same Runner and app-server. `test_vm_systemd` boots the
-proof guest and gates native supervision subtests against its real manager. `test_vm_manual` covers
+its successful follow-up command with the same Runner and app-server. Its credential group also
+boots the VM central sampler alongside the two credential guests. A final case boots the systemd
+proof guest. All seven Sandboxes boot independently; at most three guests run at once. The
+proof uses `runner-vm-systemd-proof`, whose root image carries the native supervision subtests; the
+other guests use `runner-vm`. `test_vm_manual` covers
 VM workspace ownership, suspend/resume and storage by hand. `test_real_model`
 runs the real-model egress and session-instruction cases with the BuildBuddy live-test key
 ([Real model on k3s](#real-model-on-k3s)). Two other checks need what only a deployment has and run
@@ -67,10 +70,7 @@ bbr test \
   //agentplane/system_tests/suites:test_pod \
   //agentplane/system_tests/suites:test_dispatcher \
   //agentplane/system_tests/suites:test_mcp \
-  //agentplane/system_tests/suites:test_vm \
-  //agentplane/system_tests/suites:test_vm_systemd \
-  //agentplane/system_tests/suites:test_sampler_pod \
-  //agentplane/system_tests/suites:test_sampler_vm
+  //agentplane/system_tests/suites:test_vm
 ```
 
 Fast offline driver tests cover login choreography (`test_operator_login`), startup retries and
@@ -241,8 +241,8 @@ distinct wake generations per authenticated caller per rolling minute.
 
 ## Central sampler
 
-`test_sampler_pod` and `test_sampler_vm` run the same scripted scenario on disposable
-k3s stacks, using a Pod and a VM Sandbox respectively. Each submits a central Session and user input
+`test_mcp` and `test_vm` each run the central sampler scenario on their existing stack,
+using a fresh Pod and VM Sandbox respectively. Each submits a central Session and user input
 through the deployed Dispatcher, runs setup and a model-requested shell command through the
 Sandbox's holding Gateway and pinned exec-server, then verifies the reasoning, final answer, setup
 output, and command evidence retained by authenticated History ingress. The VM tool also checks the
@@ -263,8 +263,8 @@ state, init/service logs, and shared-host logs are retained in test outputs. The
 execution/History summary is written to `test.outputs/central-sampler-k3s.json`.
 
 ```bash
-bbr test //agentplane/system_tests/suites:test_sampler_pod
-bbr test //agentplane/system_tests/suites:test_sampler_vm
+bbr test //agentplane/system_tests/suites:test_mcp --test_arg=-k --test_arg=central_setup
+bbr test //agentplane/system_tests/suites:test_vm --test_arg=-k --test_arg=central_setup
 ```
 
 ## MCP integration

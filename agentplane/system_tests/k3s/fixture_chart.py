@@ -11,6 +11,7 @@ and standalone edge use loopback HTTP origins for OAuth callbacks, served by por
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -785,6 +786,15 @@ def _boot_test_guest(objects: list[dict[str, Any]]) -> None:
     root["serial"] = _VM_GUEST_ROOT_SERIAL
     volume = one(volume for volume in spec["volumes"] if volume["name"] == root["name"])
     volume["containerDisk"]["image"] = _VM_GUEST_ROOT_IMAGE
+    proof = deepcopy(template)
+    proof["metadata"]["name"] = "runner-vm-systemd-proof"
+    proof_volume = one(
+        volume for volume in proof["spec"]["vm"]["template"]["spec"]["volumes"] if volume["name"] == root["name"]
+    )
+    proof_volume["containerDisk"]["image"] = (
+        "git.allegedly.works/ducktape-ci/agentplane-vm-guest-systemd-proof-root:unset"
+    )
+    objects.append(proof)
 
 
 def _litellm_url(models: Models) -> str:
