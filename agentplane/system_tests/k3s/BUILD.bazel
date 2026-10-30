@@ -254,6 +254,7 @@ py_library(
         "//agentplane/app:settings",
         "//agentplane/crds:egresscredential",
         "//agentplane/crds:policyset",
+        "//agentplane/notification_service:settings",
         "//agentplane/runner:harness",
         "//agentplane/system_tests:launch_preset",
         "//agentplane/system_tests:probe_credential",

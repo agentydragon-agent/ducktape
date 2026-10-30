@@ -54,6 +54,7 @@ from trust_manager_crds.io.cert_manager.trust import (
 from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.settings import AppSettingsConfig, FrontendConfig, LangfuseSearchSettings, TraceSearchSettings
+from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.runner.harness import Harness
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests import launch_preset, probe_credential, runtime_grant, send_grant, vm_configuration
@@ -217,6 +218,9 @@ def environment(
         namespace=NAMESPACE,
         description="Agentplane k3s fixture",
         replicas=_ONE_REPLICA,
+        # These scenarios check delivery and acknowledgement; worker integration tests cover
+        # debounce deadlines. Keep batching enabled without a minute-long wait per notice.
+        notifications_debounce=NoticeDebounceSettings(quiet_seconds=1, max_wait_seconds=2),
         app_config=AppSettingsConfig(
             models=catalog,
             default_policy_sets=set(egress.DEFAULT_POLICIES),
