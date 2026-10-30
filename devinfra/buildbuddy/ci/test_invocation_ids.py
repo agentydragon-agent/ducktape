@@ -1,6 +1,28 @@
+from pathlib import Path
+
 import pytest_bazel
 
-from devinfra.buildbuddy.ci.invocation_ids import invocation_id
+from devinfra.buildbuddy.ci.invocation_ids import invocation_id, write_bazel_ci_outputs
+
+
+def parse_github_outputs(contents: str) -> dict[str, str]:
+    lines = iter(contents.splitlines())
+    outputs: dict[str, str] = {}
+    for line in lines:
+        if "<<" not in line:
+            key, value = line.split("=", 1)
+            outputs[key] = value
+            continue
+        key, delimiter = line.split("<<", 1)
+        value_lines: list[str] = []
+        for value_line in lines:
+            if value_line == delimiter:
+                break
+            value_lines.append(value_line)
+        else:
+            raise AssertionError(f"unterminated GitHub output {key!r}")
+        outputs[key] = "\n".join(value_lines)
+    return outputs
 
 
 def test_the_derivation_is_a_function_of_the_run_alone() -> None:
@@ -41,6 +63,32 @@ def test_bazel_accepts_the_shape() -> None:
     result = invocation_id(run_id="33060467222", attempt="1", role="test")
     assert result.version == 5
     assert len(str(result)) == 36
+
+
+def test_bazel_ci_outputs_keep_allocated_ids_aligned_across_consumers(tmp_path: Path) -> None:
+    github_output = tmp_path / "github-output"
+    write_bazel_ci_outputs(github_output, run_id="33060467222", attempt="1")
+    outputs = parse_github_outputs(github_output.read_text())
+    role_ids = {role: outputs[role] for role in ("test", "build", "race")}
+
+    assert role_ids == {
+        role: str(invocation_id(run_id="33060467222", attempt="1", role=role)) for role in ("test", "build", "race")
+    }
+    assert outputs["linkage_roles"].split(",") == ["test", "build", "race"]
+    all_ids = outputs["all_invocation_ids"].split(",")
+    assert all_ids == [role_ids[role] for role in ("test", "build", "race")]
+    assert list(zip(outputs["linkage_roles"].split(","), all_ids, strict=True)) == [
+        ("test", role_ids["test"]),
+        ("build", role_ids["build"]),
+        ("race", role_ids["race"]),
+    ]
+    assert outputs["publication"].split(",") == [role_ids["test"], role_ids["build"]]
+    assert role_ids["race"] not in outputs["publication"].split(",")
+    assert outputs["env_overrides"].splitlines() == [
+        f"TEST_INVOCATION_ID={role_ids['test']}",
+        f"BUILD_INVOCATION_ID={role_ids['build']}",
+        f"RACE_INVOCATION_ID={role_ids['race']}",
+    ]
 
 
 if __name__ == "__main__":
