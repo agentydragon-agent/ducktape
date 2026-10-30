@@ -761,6 +761,10 @@ pub struct SelectorOutcomeReport {
 pub struct SelectorValidationCounts {
     pub checked: usize,
     pub matched: usize,
+    /// Author premises (`commuting_statements` entries) the graph build
+    /// rejected; any fails `success`. Not reported: `spec validate` lists
+    /// the typed diagnostics themselves beside the selector outcomes.
+    pub rejected_premises: usize,
 }
 
 impl SelectorValidationCounts {
@@ -772,6 +776,7 @@ impl SelectorValidationCounts {
     pub fn extend(&mut self, other: Self) {
         self.checked += other.checked;
         self.matched += other.matched;
+        self.rejected_premises += other.rejected_premises;
     }
 }
 
@@ -795,6 +800,7 @@ impl SelectorOutcomeReport {
         let validation = self.validation?;
         Some(SelectorValidationSummary {
             success: validation.checked == validation.matched
+                && validation.rejected_premises == 0
                 && self
                     .outcomes
                     .iter()
