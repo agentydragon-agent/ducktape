@@ -219,7 +219,7 @@ async function render(
       const catalog = testModelCatalog(claudePaused ? [] : models, claudePaused ? models : codexModels);
       if (centralSamplerEnabled) {
         catalog.harnesses.HARNESS_CENTRAL_SAMPLER = ["test-model"];
-        catalog.central_sampler = { service: "test-central", provider: "responses" };
+        catalog.central_sampler = { service: "test-central" };
       }
       return Promise.resolve(Response.json(catalog));
     }
@@ -1146,6 +1146,6 @@ it("launches a configured central sampler while preserving the native offerings"
   await submitNewThread();
   const body = await postedBody(sessions);
   expect(body.spec.harness).toBe("HARNESS_CENTRAL_SAMPLER");
-  expect(body.spec.centralSampler).toEqual({ service: "test-central", provider: "responses" });
+  expect(body.spec.centralSampler).toEqual({ service: "test-central" });
   expect(body.setup_script).toBe("echo executor-setup");
 });

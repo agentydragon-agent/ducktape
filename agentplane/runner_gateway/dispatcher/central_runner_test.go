@@ -74,7 +74,7 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 		t.Fatal(err)
 	}
 	native := &nativeFixture{}
-	spec := &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, CentralSampler: &runnerpb.CentralSamplerConfig{Service: "central", Provider: "responses"}}
+	spec := &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, CentralSampler: &runnerpb.CentralSamplerConfig{Service: "central"}}
 	sandbox := SandboxSnapshot{Name: "executor", Namespace: "test", UID: "sandbox-uid", Incarnation: "pod-uid", Blocker: "sandbox_not_ready"}
 	runner := &RoutingRunner{Native: native, Store: openingFixture{&Opening{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Spec: spec}}, Targets: map[string]CentralTarget{"central": {Target: listener.Addr().String(), TokenFile: tokenFile}}, Timeout: time.Second}
 	setup := "printf 'executor setup\\n'"

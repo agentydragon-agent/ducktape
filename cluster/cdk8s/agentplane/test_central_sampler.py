@@ -76,12 +76,11 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert "database_url" not in config
     assert config["service_name"] == central_sampler.NAME
     assert config["audience"] == central_sampler.TOKEN_AUDIENCE
-    provider = config["providers"]["responses"]
     props = staging.ENV.central_sampler
     assert props is not None
-    assert provider["endpoint"] == props.providers["responses"].endpoint
-    assert provider["credential_file"] == "/var/run/secrets/central-sampler/llm"
-    assert "credential" not in provider
+    assert config["llm_proxy_url"] == props.llm_proxy_url
+    assert config["credential_file"] == "/var/run/secrets/central-sampler/llm"
+    assert "credential" not in config
 
     gateway = yaml.safe_load(
         _resource(staging_manifests, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]

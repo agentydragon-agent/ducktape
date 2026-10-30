@@ -74,8 +74,7 @@ func (ModelCatalog) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.
 }
 
 type CentralSamplerChoice struct {
-	Service  string `mapstructure:"service" json:"service" minLength:"1"`
-	Provider string `mapstructure:"provider" json:"provider" minLength:"1"`
+	Service string `mapstructure:"service" json:"service" minLength:"1"`
 }
 
 type ModelOption struct {
@@ -679,8 +678,8 @@ func validateCatalog(catalog ModelCatalog, threadPresets map[string]ThreadPreset
 	if !hasClaude || !hasCodex {
 		return errors.New("models.harnesses must configure both native harnesses: HARNESS_CLAUDE and HARNESS_CODEX")
 	}
-	if choice := catalog.CentralSampler; choice != nil && (choice.Service == "" || choice.Provider == "") {
-		return errors.New("models.central_sampler requires non-empty service and provider")
+	if choice := catalog.CentralSampler; choice != nil && choice.Service == "" {
+		return errors.New("models.central_sampler requires non-empty service")
 	}
 	if len(catalog.Harnesses["HARNESS_CENTRAL_SAMPLER"]) > 0 && catalog.CentralSampler == nil {
 		return errors.New("central code-mode models require models.central_sampler")

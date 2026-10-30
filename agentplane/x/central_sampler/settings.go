@@ -11,35 +11,74 @@ import (
 	"strings"
 )
 
-type Provider struct {
-	Endpoint         string   `json:"endpoint"`
-	Credential       string   `json:"credential"`
-	CredentialFile   string   `json:"credential_file"`
-	Models           []string `json:"models"`
-	ReasoningEfforts []string `json:"reasoning_efforts"`
+type APIStyle string
+
+const APIStyleResponses APIStyle = "responses"
+
+type ResponsesDialect string
+
+const (
+	ResponsesDialectLite ResponsesDialect = "lite"
+)
+
+type ExecEncoding string
+
+const (
+	ExecEncodingFreeform ExecEncoding = "freeform"
+)
+
+// ModelConfig contains the wire and tool-call encodings supported by one model route.
+type ModelConfig struct {
+	API              APIStyle        `json:"api"`
+	Responses        ResponsesConfig `json:"responses"`
+	ExecEncoding     ExecEncoding    `json:"exec_encoding"`
+	ReasoningEfforts []string        `json:"reasoning_efforts"`
+}
+
+type ResponsesConfig struct {
+	Dialect ResponsesDialect `json:"dialect"`
+}
+
+func (c ModelConfig) Validate() error {
+	if len(c.ReasoningEfforts) == 0 {
+		return errors.New("model reasoning_efforts must not be empty")
+	}
+	if c.API != APIStyleResponses {
+		return errors.New("model api must be responses")
+	}
+	if c.Responses.Dialect != ResponsesDialectLite {
+		return errors.New("responses.dialect must be lite")
+	}
+	if c.ExecEncoding != ExecEncodingFreeform {
+		return errors.New("exec_encoding must be freeform")
+	}
+	return nil
 }
 
 type Settings struct {
-	DatabaseURL        string              `json:"database_url"`
-	Listen             string              `json:"listen"`
-	ServiceName        string              `json:"service_name"`
-	Providers          map[string]Provider `json:"providers"`
-	Audience           string              `json:"audience"`
-	AllowedAccounts    []string            `json:"allowed_accounts"`
-	CodeModeHost       string              `json:"code_mode_host"`
-	ExecutorCodex      string              `json:"executor_codex"`
-	Logs               string              `json:"logs"`
-	HistoryTarget      string              `json:"history_target"`
-	HistoryTokenFile   string              `json:"history_token_file"`
-	GatewayTarget      string              `json:"gateway_target"`
-	GatewayTokenFile   string              `json:"gateway_token_file"`
-	DirectExecutorURL  string              `json:"direct_executor_url"`
-	MaxLiveSessions    int                 `json:"max_live_sessions"`
-	TurnTimeoutSeconds int                 `json:"turn_timeout_seconds"`
-	RPCTimeoutSeconds  int                 `json:"rpc_timeout_seconds"`
-	LeaseSeconds       int                 `json:"lease_seconds"`
-	AutoCompactTokens  *int                `json:"auto_compact_tokens"`
-	Kubeconfig         string              `json:"kubeconfig"`
+	Models             map[string]ModelConfig `json:"models"`
+	DatabaseURL        string                 `json:"database_url"`
+	Listen             string                 `json:"listen"`
+	ServiceName        string                 `json:"service_name"`
+	LLMProxyURL        string                 `json:"llm_proxy_url"`
+	Credential         string                 `json:"credential"`
+	CredentialFile     string                 `json:"credential_file"`
+	Audience           string                 `json:"audience"`
+	AllowedAccounts    []string               `json:"allowed_accounts"`
+	CodeModeHost       string                 `json:"code_mode_host"`
+	ExecutorCodex      string                 `json:"executor_codex"`
+	Logs               string                 `json:"logs"`
+	HistoryTarget      string                 `json:"history_target"`
+	HistoryTokenFile   string                 `json:"history_token_file"`
+	GatewayTarget      string                 `json:"gateway_target"`
+	GatewayTokenFile   string                 `json:"gateway_token_file"`
+	DirectExecutorURL  string                 `json:"direct_executor_url"`
+	MaxLiveSessions    int                    `json:"max_live_sessions"`
+	TurnTimeoutSeconds int                    `json:"turn_timeout_seconds"`
+	RPCTimeoutSeconds  int                    `json:"rpc_timeout_seconds"`
+	LeaseSeconds       int                    `json:"lease_seconds"`
+	AutoCompactTokens  *int                   `json:"auto_compact_tokens"`
+	Kubeconfig         string                 `json:"kubeconfig"`
 }
 
 func LoadSettings(path string) (Settings, error) {
@@ -87,12 +126,18 @@ func (s Settings) Validate() error {
 			return fmt.Errorf("%s is required", name)
 		}
 	}
-	if len(s.Providers) == 0 || len(s.AllowedAccounts) == 0 {
-		return errors.New("providers and allowed_accounts must not be empty")
+	if len(s.Models) == 0 || len(s.AllowedAccounts) == 0 {
+		return errors.New("models and allowed_accounts must not be empty")
 	}
-	for name, provider := range s.Providers {
-		if name == "" || provider.Endpoint == "" || (provider.Credential == "") == (provider.CredentialFile == "") || len(provider.Models) == 0 || len(provider.ReasoningEfforts) == 0 {
-			return errors.New("provider endpoint, exactly one credential source, models and reasoning_efforts are required")
+	if s.LLMProxyURL == "" || (s.Credential == "") == (s.CredentialFile == "") {
+		return errors.New("llm_proxy_url and exactly one credential source are required")
+	}
+	for model, config := range s.Models {
+		if model == "" {
+			return errors.New("model route must not be empty")
+		}
+		if err := config.Validate(); err != nil {
+			return fmt.Errorf("model %s: %w", model, err)
 		}
 	}
 	for _, account := range s.AllowedAccounts {
@@ -124,17 +169,17 @@ func (s Settings) Validate() error {
 	return nil
 }
 
-func (p Provider) ReadCredential() (string, error) {
-	if p.CredentialFile == "" {
-		return p.Credential, nil
+func (s Settings) ReadCredential() (string, error) {
+	if s.CredentialFile == "" {
+		return s.Credential, nil
 	}
-	data, err := os.ReadFile(p.CredentialFile)
+	data, err := os.ReadFile(s.CredentialFile)
 	if err != nil {
-		return "", fmt.Errorf("read provider credential file: %w", err)
+		return "", fmt.Errorf("read LLM proxy credential file: %w", err)
 	}
 	credential := strings.TrimSpace(string(data))
 	if credential == "" {
-		return "", errors.New("provider credential file is empty")
+		return "", errors.New("LLM proxy credential file is empty")
 	}
 	return credential, nil
 }

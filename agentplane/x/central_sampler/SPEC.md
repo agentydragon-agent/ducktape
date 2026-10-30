@@ -4,7 +4,7 @@
 
 `Sampler` is a separate authenticated gRPC API. `OpenSession` binds a canonical public Session UUID
 to a central `SessionSpec`, caller ServiceAccount UID and fixed `SandboxDestination` plus expected
-incarnation UID. The named service/provider and model/effort must be server-configured. Every RPC
+incarnation UID. The named service and model/effort must be server-configured. Every RPC
 uses TokenReview and the allowed-account policy; Session UUID knowledge grants no authority.
 Reusing an identifier with a different payload conflicts. The integration app owns neither this
 admission nor the continuation database.
@@ -74,7 +74,8 @@ turn completes; an interrupted or effect-uncertain turn discards them, as Codex 
 **Deviation:** a failed turn also discards them, because its unresolved intent must precede any
 later output. Boundary evidence records each output as `recorded` or `discarded`.
 
-The model sees Codex's Code Mode Only surface at the pinned version: freeform `exec` (Lark grammar,
+For routes configured with `exec_encoding: freeform`, the model sees Codex's Code Mode Only
+surface at the pinned version: freeform `exec` (Lark grammar,
 optional `// @exec:` pragma with `yield_time_ms` and `max_output_tokens`) described by Codex's
 template with a TypeScript declaration per nested tool, and function `wait` with Codex's schema
 and defaults. Results carry Codex's status header and token-budget truncation. Deviations: the
@@ -83,6 +84,15 @@ sampler has MCP/Action tools and tool search or deferred tools; `wait`
 accepts only a live cell this Session recorded (rejected before dispatch rather than reported as a
 missing cell), unknown or `null` tool arguments are rejected, and audio truncation estimates
 tokens from data URL size rather than decoded duration.
+
+A flat top-level `models` map allowlists model route IDs and per-model reasoning efforts. Each
+entry declares `api: responses`, `responses.dialect: lite` and `exec_encoding: freeform`; other
+values are rejected. A single top-level `llm_proxy_url` and credential source configure the
+connection; upstream routing belongs to the proxy. Sessions select only the configured service.
+Model changes preserve API, dialect and exec encoding, and require the target to allow the current
+effort. Effort changes must be allowed by the current model. Admission validates the projected model
+and effort after earlier queued commands under the Session transaction lock. Route contracts stay
+fixed for retained Sessions; changing a contract requires a new route ID.
 
 Nested `exec_command` and `write_stdin` match Codex 0.162.1 unified exec for one remote environment:
 upstream schemas and result objects (`chunk_id`, `wall_time_seconds`,

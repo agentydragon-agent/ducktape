@@ -200,9 +200,9 @@ def test_central_sampler_offers_the_codex_models(staging_manifests: list[dict[st
     config = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
     catalog = config["models"]
     assert catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"] == catalog["harnesses"]["HARNESS_CODEX"]
-    assert catalog["central_sampler"] == {"service": "central-sampler", "provider": "responses"}
+    assert catalog["central_sampler"] == {"service": "central-sampler"}
     sampler = json.loads(_by_name(staging_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
-    assert set(sampler["providers"]["responses"]["models"]) == set(catalog["harnesses"]["HARNESS_CODEX"])
+    assert set(sampler["models"]) == {route.id for route in STAGING_APP_MODELS.codex}
 
 
 def test_haku_launches_on_codex_with_the_wider_qwen_context_window(staging_manifests: list[dict[str, Any]]) -> None:
