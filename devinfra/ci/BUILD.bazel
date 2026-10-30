@@ -114,6 +114,16 @@ py_library(
 )
 
 py_library(
+    name = "nix_artifact_overrides",
+    srcs = ["nix_artifact_overrides.py"],
+    deps = [
+        ":release_assets",
+        "//devinfra/buildbuddy:cli",
+        "//devinfra/buildbuddy/ci:bes",
+    ],
+)
+
+py_library(
     name = "release_content_hash",
     srcs = ["release_content_hash.py"],
     visibility = ["//:__subpackages__"],
@@ -229,6 +239,18 @@ py_test(
     deps = [
         ":plan_releases",
         ":release_assets",
+        "//devinfra/buildbuddy/ci:bes",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_nix_artifact_overrides",
+    srcs = ["test_nix_artifact_overrides.py"],
+    deps = [
+        ":nix_artifact_overrides",
+        "//devinfra/buildbuddy:cli",
         "//devinfra/buildbuddy/ci:bes",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
