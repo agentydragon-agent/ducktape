@@ -9,7 +9,7 @@ from typing import Any
 import pytest_bazel
 
 from cluster.cdk8s.agentplane.codex_models import codex_catalog
-from cluster.cdk8s.model_selections import RUNNER_CONTEXT_OVERRIDES, STAGING_APP_MODELS
+from cluster.cdk8s.agentplane.model_selections import RUNNER_CONTEXT_OVERRIDES, STAGING_APP_MODELS
 from model_catalog.catalog import Provider
 from util.bazel.runfiles import get_required_path
 

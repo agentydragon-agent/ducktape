@@ -1242,7 +1242,7 @@ func TestWorkerSerializesCommandsPerSession(t *testing.T) {
 func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+callerToken))
 	store := testStore(t, 3)
-	spec := &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, CentralSampler: &runnerpb.CentralSamplerConfig{Service: "central"}}
+	spec := &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER}
 	opening, err := store.OpenSession(ctx, "central-unready-session", "sandbox-api", sandboxUID, spec, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -1266,5 +1266,33 @@ func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
 	}
 	if got := <-runner.calls; got != "central-interrupt" {
 		t.Fatalf("wrong command %s", got)
+	}
+}
+
+func TestCentralOpeningUsesConfiguredSampler(t *testing.T) {
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+callerToken))
+	store := testStore(t, 3)
+	service := &Service{Store: store, Auth: callerResolver(t), Callers: map[auth.Account]struct{}{caller: {}}, Sandboxes: blockedSandbox{}, CentralTarget: &CentralTarget{Target: "configured", TokenFile: "configured"}}
+	request := &dispatcherpb.OpenSessionRequest{SessionId: "central-configured-session", Sandbox: "sandbox-api", Spec: &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test"}}
+	if _, err := service.OpenSession(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate a pre-upgrade stored spec containing retired field 6.
+	legacy := proto.Clone(request.Spec).(*runnerpb.SessionSpec)
+	legacy.ProtoReflect().SetUnknown([]byte{0x32, 0x00})
+	encoded, err := wire(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB.ExecContext(ctx, "UPDATE session_opening SET spec=$1 WHERE session_id=$2", encoded, request.SessionId); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.OpenSession(ctx, request); err != nil {
+		t.Fatalf("retry with retired metadata: %v", err)
+	}
+	service.CentralTarget = nil
+	request.SessionId = "central-disabled-session"
+	if _, err := service.OpenSession(ctx, request); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("disabled sampler accepted: %v", err)
 	}
 }

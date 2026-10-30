@@ -97,7 +97,7 @@ func (s *Sampler) OpenSession(ctx context.Context, request *samplerpb.OpenSessio
 			return invalid()
 		}
 	}
-	if len(spec.GetInstructions()) > 1024*1024 || len(spec.GetCwd()) > 4096 || len(request.GetSetupScript()) > 65536 || spec.GetHarness() != runnerpb.Harness_HARNESS_CENTRAL_SAMPLER || spec.GetCentralSampler() == nil || spec.GetCentralSampler().GetService() != s.Settings.ServiceName || !strings.HasPrefix(spec.GetCwd(), "/") {
+	if len(spec.GetInstructions()) > 1024*1024 || len(spec.GetCwd()) > 4096 || len(request.GetSetupScript()) > 65536 || spec.GetHarness() != runnerpb.Harness_HARNESS_CENTRAL_SAMPLER || !strings.HasPrefix(spec.GetCwd(), "/") {
 		return invalid()
 	}
 	modelConfig, modelConfigured := s.Settings.Models[spec.GetModel()]

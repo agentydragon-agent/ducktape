@@ -21,8 +21,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// CentralTarget is deployment-owned. Session requests select a configured name;
-// neither provider routes nor network targets are taken from untrusted URLs.
+// CentralTarget is deployment-owned. The Dispatcher selects the service for new sessions.
 type CentralTarget struct {
 	Target    string `mapstructure:"target"`
 	TokenFile string `mapstructure:"token_file"`
@@ -38,7 +37,7 @@ type openingReader interface {
 type RoutingRunner struct {
 	Native  DeliveryRunner
 	Store   openingReader
-	Targets map[string]CentralTarget
+	Target  *CentralTarget
 	Timeout time.Duration
 }
 
@@ -57,19 +56,12 @@ func validateOpeningExecutor(opening *Opening, sandbox SandboxSnapshot) error {
 	return nil
 }
 
-func ValidateRuntime(spec *runnerpb.SessionSpec, setup *string, targets map[string]CentralTarget) error {
+func ValidateRuntime(spec *runnerpb.SessionSpec, setup *string, target *CentralTarget) error {
 	if !centralSpec(spec) {
-		if spec.GetCentralSampler() != nil {
-			return status.Error(codes.InvalidArgument, "central_sampler requires HARNESS_CENTRAL_SAMPLER")
-		}
 		return nil
 	}
-	config := spec.GetCentralSampler()
-	if config.GetService() == "" {
-		return status.Error(codes.InvalidArgument, "central sampler service is required")
-	}
-	if _, enabled := targets[config.GetService()]; !enabled {
-		return status.Error(codes.FailedPrecondition, "central sampler service is not enabled")
+	if target == nil {
+		return status.Error(codes.FailedPrecondition, "central sampler is not configured")
 	}
 	if setup != nil && len(*setup) > 65536 {
 		return status.Error(codes.InvalidArgument, "setup_script exceeds 65536 UTF-8 bytes")
@@ -77,9 +69,9 @@ func ValidateRuntime(spec *runnerpb.SessionSpec, setup *string, targets map[stri
 	return nil
 }
 
-func (r *RoutingRunner) withClient(ctx context.Context, service string, call func(context.Context, samplerpb.SamplerClient) error) error {
-	target, enabled := r.Targets[service]
-	if !enabled {
+func (r *RoutingRunner) withClient(ctx context.Context, call func(context.Context, samplerpb.SamplerClient) error) error {
+	target := r.Target
+	if target == nil {
 		return status.Error(codes.FailedPrecondition, "central sampler service is not enabled")
 	}
 	if target.Target == "" || target.TokenFile == "" || r.Timeout <= 0 {
@@ -105,7 +97,7 @@ func (r *RoutingRunner) withClient(ctx context.Context, service string, call fun
 }
 
 func (r *RoutingRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot, id string, spec *runnerpb.SessionSpec, setup *string) error {
-	if err := ValidateRuntime(spec, setup, r.Targets); err != nil {
+	if err := ValidateRuntime(spec, setup, r.Target); err != nil {
 		return err
 	}
 	if !centralSpec(spec) {
@@ -114,7 +106,7 @@ func (r *RoutingRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot
 	if sandbox.Incarnation == "" {
 		return status.Error(codes.FailedPrecondition, "executor incarnation is not available")
 	}
-	return r.withClient(ctx, spec.GetCentralSampler().GetService(), func(ctx context.Context, client samplerpb.SamplerClient) error {
+	return r.withClient(ctx, func(ctx context.Context, client samplerpb.SamplerClient) error {
 		_, err := client.OpenSession(ctx, &samplerpb.OpenSessionRequest{
 			SessionId: id, Spec: spec, ExpectedIncarnationUid: sandbox.Incarnation, SetupScript: setup,
 			Executor: &sandboxpb.SandboxDestination{Owner: &sandboxpb.ServiceAccount{Namespace: sandbox.Namespace, Name: sandbox.Name}, Sandbox: sandbox.Name, SandboxUid: sandbox.UID},
@@ -139,7 +131,7 @@ func (r *RoutingRunner) Deliver(ctx context.Context, sandbox SandboxSnapshot, id
 		return nil, err
 	}
 	var admission *eventlogpb.EventEntry
-	err = r.withClient(ctx, opening.Spec.GetCentralSampler().GetService(), func(ctx context.Context, client samplerpb.SamplerClient) error {
+	err = r.withClient(ctx, func(ctx context.Context, client samplerpb.SamplerClient) error {
 		switch payload := command.GetOperation().(type) {
 		case *commandpb.Command_SubmitInput:
 			reply, err := client.SubmitInput(ctx, &runnerservicepb.SubmitInputRequest{SessionId: id, CommandId: command.GetCommandId(), Text: payload.SubmitInput.GetText()})

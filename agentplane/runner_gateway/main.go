@@ -237,7 +237,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 		Namespace: c.Namespace, TokenFile: c.RunnerTokenFile, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second,
 		TargetTemplate: c.RunnerControlTargetTemplate,
 	}
-	runner := &dispatcher.RoutingRunner{Native: nativeRunner, Store: store, Targets: c.CentralSamplers, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second}
+	runner := &dispatcher.RoutingRunner{Native: nativeRunner, Store: store, Target: c.CentralSampler, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second}
 
 	ready := make(chan struct{})
 	worker := &dispatcher.DeliveryWorker{
@@ -256,7 +256,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	service := &dispatcher.Service{
 		Store: store, Auth: dispatchAuth, Callers: accountSet(c.DispatcherCallers),
 		WakeCallers: accountSet(c.WakeCallers), Sandboxes: catalog, Runner: runner,
-		CentralTargets: c.CentralSamplers, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
+		CentralTarget: c.CentralSampler, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
 	server := grpc.NewServer(
 		observability.GRPCServerOption(),

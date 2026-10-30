@@ -434,8 +434,7 @@ def test_central_sampler_fixtures_render_app_ingress_gateway_and_history_wiring(
 
         app_config = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
         catalog = ModelCatalog.model_validate(app_config["models"])
-        assert catalog.central_sampler is not None
-        assert catalog.central_sampler.service == central_sampler.NAME
+        assert "central_sampler" not in app_config["models"]
         assert catalog.harnesses[Harness.CENTRAL_SAMPLER] == [fixture_chart.GPT6_LUNA_RESPONSES.id]
 
         deployment = _resource(docs, "Deployment", central_sampler.NAME)
@@ -483,7 +482,7 @@ def test_central_sampler_fixtures_render_app_ingress_gateway_and_history_wiring(
         gateway_config = yaml.safe_load(
             _resource(docs, "ConfigMap", "runner-gateway-settings")["data"]["settings.yaml"]
         )
-        assert gateway_config["central_samplers"][central_sampler.NAME]["target"] == central_sampler.target(NAMESPACE)
+        assert gateway_config["central_sampler"]["target"] == central_sampler.target(NAMESPACE)
         assert f"{NAMESPACE}/{central_sampler.NAME}" in gateway_config["executor_callers"]
         gateway_pod = _resource(docs, "Deployment", "runner-gateway")["spec"]["template"]["spec"]
         gateway_tokens = next(

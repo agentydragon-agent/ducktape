@@ -27,8 +27,8 @@ from cluster.cdk8s.agentplane.egress import (
     agent_api,
 )
 from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY, PLAID_PGWEB_CREDENTIAL
+from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS
 from cluster.cdk8s.clickhouse import client
-from cluster.cdk8s.model_selections import STAGING_APP_MODELS
 from model_catalog.catalog import OLLAMA_QWEN_IQ4XS_256K
 
 
@@ -183,7 +183,9 @@ def test_github_policy_admits_the_write_verbs_a_pr_lifecycle_needs(staging_manif
 def test_claude_picker_offers_environment_models_and_keeps_ingress(staging_manifests: list[dict[str, Any]]) -> None:
     config = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert config["models"]["harnesses"]["HARNESS_CLAUDE"] == [route.id for route in STAGING_APP_MODELS.claude]
-    assert all(route.id in config["models"]["harnesses"]["HARNESS_CODEX"] for route in STAGING_APP_MODELS.claude)
+    assert all(
+        route.id in config["models"]["harnesses"]["HARNESS_CENTRAL_SAMPLER"] for route in STAGING_APP_MODELS.claude
+    )
     options = {model["model"]: model for model in config["models"]["models"]}
     assert all(
         options[route.id]["display_name"].endswith(" — Google Antigravity") for route in STAGING_APP_MODELS.claude
@@ -191,21 +193,33 @@ def test_claude_picker_offers_environment_models_and_keeps_ingress(staging_manif
     assert all(
         options[route.id]["reasoning_efforts"] == ["low", "medium", "high"] for route in STAGING_APP_MODELS.claude
     )
-    assert all(preset["harness"] == "HARNESS_CODEX" for preset in config["thread_presets"].values())
+    for preset in config["thread_presets"].values():
+        assert preset["model"] in config["models"]["harnesses"][preset["harness"]]
     # The Anthropic Messages endpoint remains available to Claude sessions.
     assert any(doc["kind"] == "Service" and doc["metadata"]["name"] == "llm-ingress" for doc in staging_manifests)
 
 
-def test_central_sampler_offers_the_codex_models(staging_manifests: list[dict[str, Any]]) -> None:
+def test_third_party_coding_models_use_standard_responses_and_json_exec(
+    staging_manifests: list[dict[str, Any]],
+) -> None:
     config = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
     catalog = config["models"]
-    assert catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"] == catalog["harnesses"]["HARNESS_CODEX"]
-    assert catalog["central_sampler"] == {"service": "central-sampler"}
+    assert catalog["harnesses"]["HARNESS_CODEX"] == [route.id for route in STAGING_APP_MODELS.wrapped_codex]
+    assert catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"] == [route.id for route in STAGING_APP_MODELS.central_sampler]
+    assert set(catalog["harnesses"]["HARNESS_CODEX"]).isdisjoint(catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"])
+    assert "central_sampler" not in catalog
     sampler = json.loads(_by_name(staging_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
     assert set(sampler["models"]) == {route.id for route in STAGING_APP_MODELS.codex}
+    for route in STAGING_APP_MODELS.central_sampler:
+        model = sampler["models"][route.id]
+        assert model["api"] == "responses"
+        assert model["responses"] == {"dialect": "standard"}
+        assert model["exec_encoding"] == "json"
 
 
-def test_haku_launches_on_codex_with_the_wider_qwen_context_window(staging_manifests: list[dict[str, Any]]) -> None:
+def test_haku_launches_on_central_sampler_with_the_wider_qwen_context_window(
+    staging_manifests: list[dict[str, Any]],
+) -> None:
     """Haku's preset remains on the local Qwen route until its Claude path is validated.
 
     The preset is the only reason a launch form picks a model, so it must name a route the
@@ -213,12 +227,17 @@ def test_haku_launches_on_codex_with_the_wider_qwen_context_window(staging_manif
     """
     config = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
     preset = config["thread_presets"]["haku-codex"]
-    assert preset["harness"] == "HARNESS_CODEX"
+    assert preset["harness"] == "HARNESS_CENTRAL_SAMPLER"
     assert preset["model"] == OLLAMA_QWEN_IQ4XS_256K.openai.id
-    assert preset["model"] in config["models"]["harnesses"]["HARNESS_CODEX"]
+    assert preset["model"] in config["models"]["harnesses"]["HARNESS_CENTRAL_SAMPLER"]
     option = one(model for model in config["models"]["models"] if model["model"] == preset["model"])
     assert preset["reasoning_effort"] in option["reasoning_efforts"]
     assert config["sandbox_presets"]["haku"]["thread_preset"] == "haku-codex"
+    actions = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "actions-settings")["data"]["settings.yaml"])
+    action_spec = actions["action_groups"]["orchestration_v1"]["executor"]["presets"]["haku"]["open_session"]["spec"]
+    assert action_spec["harness"] == preset["harness"]
+    assert action_spec["model"] == preset["model"]
+    assert "central_sampler" not in action_spec
 
 
 def _kubernetes_grants(policy_sets: list[str]) -> set[str]:

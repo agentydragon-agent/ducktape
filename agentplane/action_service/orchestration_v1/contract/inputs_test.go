@@ -91,24 +91,15 @@ func TestOptionalPointersRejectNullAndPreserveAbsentDefaults(t *testing.T) {
 	checkInputBoundary(t, input, base+`,"spec":{"harness":"HARNESS_CODEX","model":"test-model","cwd":"/test","extra":true}}`, false)
 }
 
-func TestCentralSamplerServiceIsTypedAndNonempty(t *testing.T) {
+func TestCentralSamplerEndpointIsNotAnInput(t *testing.T) {
 	inputs, err := NewInputs()
 	if err != nil {
 		t.Fatal(err)
 	}
-	base := `{"sandbox":{"name":"test-worker","uid":"00000000-0000-0000-0000-000000000000"},"session_id":"00000000-0000-0000-0000-000000000000","spec":{"harness":"HARNESS_CENTRAL_SAMPLER","model":"test-model","cwd":"/test","central_sampler":`
+	base := `{"sandbox":{"name":"test-worker","uid":"00000000-0000-0000-0000-000000000000"},"session_id":"00000000-0000-0000-0000-000000000000","spec":{"harness":"HARNESS_CENTRAL_SAMPLER","model":"test-model","cwd":"/test"`
 	input := inputFor(inputs.OpenSession)
-	input.decode = func(raw json.RawMessage) error {
-		args, err := inputs.OpenSession.Decode(raw)
-		if err == nil && (args.Spec.CentralSampler == nil || args.Spec.CentralSampler.Service != "central") {
-			t.Errorf("central sampler selection lost: %+v", args.Spec)
-		}
-		return err
-	}
-	checkInputBoundary(t, input, base+`{"service":"central"}}}`, true)
-	for _, invalid := range []string{`null`, `{}`, `{"service":""}`, `{"service":123}`, `{"service":"central","url":"arbitrary"}`} {
-		checkInputBoundary(t, input, base+invalid+`}}`, false)
-	}
+	checkInputBoundary(t, input, base+`}}`, true)
+	checkInputBoundary(t, input, base+`,"central_sampler":{"service":"central"}}}`, false)
 }
 
 func TestLaunchArraysKeepUniquenessItemBoundsAndGrantEnum(t *testing.T) {

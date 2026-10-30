@@ -13,7 +13,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
@@ -61,20 +60,8 @@ type Config struct {
 }
 
 type ModelCatalog struct {
-	Models         []ModelOption         `mapstructure:"models" json:"models"`
-	Harnesses      map[string][]string   `mapstructure:"harnesses" json:"harnesses"`
-	CentralSampler *CentralSamplerChoice `mapstructure:"central_sampler" json:"central_sampler"`
-}
-
-func (ModelCatalog) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
-	schema.Properties["central_sampler"] = &huma.Schema{AnyOf: []*huma.Schema{
-		schema.Properties["central_sampler"], {Type: "null"},
-	}}
-	return schema
-}
-
-type CentralSamplerChoice struct {
-	Service string `mapstructure:"service" json:"service" minLength:"1"`
+	Models    []ModelOption       `mapstructure:"models" json:"models"`
+	Harnesses map[string][]string `mapstructure:"harnesses" json:"harnesses"`
 }
 
 type ModelOption struct {
@@ -677,12 +664,6 @@ func validateCatalog(catalog ModelCatalog, threadPresets map[string]ThreadPreset
 	_, hasCodex := catalog.Harnesses["HARNESS_CODEX"]
 	if !hasClaude || !hasCodex {
 		return errors.New("models.harnesses must configure both native harnesses: HARNESS_CLAUDE and HARNESS_CODEX")
-	}
-	if choice := catalog.CentralSampler; choice != nil && choice.Service == "" {
-		return errors.New("models.central_sampler requires non-empty service")
-	}
-	if len(catalog.Harnesses["HARNESS_CENTRAL_SAMPLER"]) > 0 && catalog.CentralSampler == nil {
-		return errors.New("central code-mode models require models.central_sampler")
 	}
 	hasOffer := false
 	for harness, models := range catalog.Harnesses {

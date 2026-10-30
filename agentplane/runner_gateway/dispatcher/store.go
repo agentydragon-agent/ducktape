@@ -319,7 +319,7 @@ func scanOpening(row interface{ Scan(...any) error }) (*Opening, error) {
 		o.Reason = reason.String
 	}
 	o.Spec = &runnerpb.SessionSpec{}
-	if err := proto.Unmarshal(spec, o.Spec); err != nil {
+	if err := (proto.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(spec, o.Spec); err != nil {
 		return nil, err
 	}
 	return o, nil

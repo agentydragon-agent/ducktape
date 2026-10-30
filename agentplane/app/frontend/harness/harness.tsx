@@ -2593,7 +2593,6 @@ routes.push(
     "GET",
     /^\/models$/,
     () => ({
-      central_sampler: flags.has("centralSamplerEnabled") ? { service: "central" } : null,
       models: [
         {
           model: "harness-claude-model",

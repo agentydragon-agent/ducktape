@@ -10,7 +10,6 @@ from pathlib import Path
 from pydantic import AnyHttpUrl
 
 from agentplane.app.action_federation_settings import ActionFederationSettings
-from agentplane.app.model_catalog import CentralSamplerChoice
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_models import NewSandboxDefaults
 from agentplane.app.settings import AppSettingsConfig, FrontendConfig, LangfuseSearchSettings, TraceSearchSettings
@@ -49,7 +48,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     GOOGLE_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
 )
-from cluster.cdk8s.model_selections import HarnessRoutes
+from cluster.cdk8s.agentplane.model_selections import HarnessRoutes
 from cluster.cdk8s.monitoring.grafana_instance import GRAFANA_BASE_URL, TEMPO_DATASOURCE_UID
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, OLLAMA_QWEN_IQ4XS_256K
 from util.urls import HttpEndpointUrl
@@ -105,13 +104,13 @@ def config(
     models: HarnessRoutes,
     action_federation: ActionFederationSettings,
     connection_service_url: HttpEndpointUrl,
-    central_sampler: CentralSamplerChoice | None = None,
+    central_sampler_enabled: bool = False,
 ) -> AppSettingsConfig:
     cfg = settings(
         namespace=namespace,
         sandbox_template=sandbox_template,
         models=models,
-        central_sampler=central_sampler,
+        central_sampler_enabled=central_sampler_enabled,
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=action_federation,
         connection_service_url=connection_service_url,
@@ -147,13 +146,13 @@ def config(
     #
     # Haku launches on the local Qwen3.8 route with the wider 256K window the runner is
     # configured for; the OpenAI-compatible wire is the one that carries reasoning effort.
-    # Agentplane's Codex picker offers only the wider 256K Qwen route.
+    # Agentplane offers Qwen through the central sampler with standard Responses and JSON exec.
     # TODO(#9121): consider switching Haku back to a Claude default after validating the
-    # Antigravity routes and their quotas in Agentplane. Existing Haku Threads stay on Codex
-    # either way: a Thread cannot move to a model with a different configured context window.
+    # Antigravity routes and their quotas in Agentplane. Existing Haku Threads retain
+    # their existing harness; this preset affects new sessions only.
     cfg.thread_presets[_THREAD_PRESET_HAKU_CODEX] = ThreadPreset(
         title="Haku",
-        harness=Harness.CODEX,
+        harness=Harness.CENTRAL_SAMPLER,
         model=OLLAMA_QWEN_IQ4XS_256K.openai.id,
         cwd="/state/workspaces/{session_id}/haku-state",
         reasoning_effort="medium",

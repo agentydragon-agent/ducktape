@@ -5,8 +5,8 @@ from dataclasses import replace
 import pytest
 import pytest_bazel
 
+from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS
 from cluster.cdk8s.litellm.config import model_entry
-from cluster.cdk8s.model_selections import STAGING_APP_MODELS
 from model_catalog.catalog import (
     ANTHROPIC_API_ROUTES,
     ANTHROPIC_SUBSCRIPTION_ROUTES,

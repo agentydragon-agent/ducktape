@@ -44,9 +44,6 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 	if spec.Harness != runnerpb.Harness_HARNESS_CLAUDE && spec.Harness != runnerpb.Harness_HARNESS_CODEX {
 		return nil, status.Error(codes.InvalidArgument, "spec.harness must be CLAUDE or CODEX")
 	}
-	if spec.CentralSampler != nil {
-		return nil, status.Error(codes.InvalidArgument, "central sampler routing is not supported by the sandbox-local Runner")
-	}
 	if !filepath.IsAbs(spec.Cwd) || spec.Model == "" {
 		return nil, status.Error(codes.InvalidArgument, "spec.cwd must be absolute and spec.model is required")
 	}

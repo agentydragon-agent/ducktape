@@ -213,9 +213,6 @@ export function NewThreadForm({
                       model,
                       reasoningEffort: effort,
                       instructions,
-                      ...(harness === "HARNESS_CENTRAL_SAMPLER"
-                        ? { centralSampler: modelCatalog?.central_sampler }
-                        : {}),
                     } as JsonValue),
                     setupScript
                   )

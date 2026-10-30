@@ -100,7 +100,7 @@ func (c *pushCall) run(ctx context.Context, writer storage.Writer, account auth.
 		announce = sampler.GetSession()
 		executor := sampler.GetExecutor()
 		if announce == nil || announce.GetSpec().GetHarness() != runnerpb.Harness_HARNESS_CENTRAL_SAMPLER ||
-			announce.GetSpec().GetCentralSampler() == nil || executor.GetSandbox() == "" ||
+			executor.GetSandbox() == "" ||
 			executor.GetOwner().GetNamespace() == "" || executor.GetOwner().GetName() == "" {
 			return status.Error(codes.InvalidArgument, "central sampler announcement is incomplete")
 		}
@@ -112,7 +112,7 @@ func (c *pushCall) run(ctx context.Context, writer storage.Writer, account auth.
 		if announce == nil {
 			return status.Error(codes.InvalidArgument, "the first frame is not an announcement")
 		}
-		if announce.GetSpec().GetHarness() == runnerpb.Harness_HARNESS_CENTRAL_SAMPLER || announce.GetSpec().GetCentralSampler() != nil {
+		if announce.GetSpec().GetHarness() == runnerpb.Harness_HARNESS_CENTRAL_SAMPLER {
 			return status.Error(codes.PermissionDenied, "central Sessions require a sampler announcement")
 		}
 		if c.service.SandboxUIDs != nil {

@@ -616,7 +616,6 @@ py_test(
         ":model_catalog",
         "//:conftest",
         "//agentplane/runner:harness",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

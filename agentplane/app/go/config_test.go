@@ -224,11 +224,11 @@ database_url: postgresql://app@postgres/agentplane
 	if !reflect.DeepEqual(c.TokenSubjects, []string{"system:serviceaccount:sandboxes:agentplane-agent"}) {
 		t.Fatalf("token subjects environment override = %#v", c.TokenSubjects)
 	}
-	c, err = loadConfigWithArgs([]string{`--models={"models":[{"model":"model-a","display_name":"Model A","reasoning_efforts":[]}],"harnesses":{"HARNESS_CLAUDE":["model-a"],"HARNESS_CODEX":[],"HARNESS_CENTRAL_SAMPLER":["model-a"]},"central_sampler":{"service":"sampler-fixture"}}`})
+	c, err = loadConfigWithArgs([]string{`--models={"models":[{"model":"model-a","display_name":"Model A","reasoning_efforts":[]}],"harnesses":{"HARNESS_CLAUDE":["model-a"],"HARNESS_CODEX":[],"HARNESS_CENTRAL_SAMPLER":["model-a"]}}`})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Models.CentralSampler == nil || c.Models.CentralSampler.Service != "sampler-fixture" {
+	if len(c.Models.Harnesses["HARNESS_CENTRAL_SAMPLER"]) != 1 {
 		t.Fatalf("central sampler catalog = %+v", c.Models)
 	}
 }
@@ -357,20 +357,6 @@ func TestValidateCatalogRequiresBothHarnessesAndAValidPreset(t *testing.T) {
 				c.Models.Harnesses["HARNESS_CODEX"] = nil
 			},
 			want: "offer at least one model",
-		},
-		{
-			name: "central models need a runtime",
-			change: func(c *Config) {
-				c.Models.Harnesses["HARNESS_CENTRAL_SAMPLER"] = []string{"model-a"}
-			},
-			want: "models.central_sampler",
-		},
-		{
-			name: "central runtime needs service",
-			change: func(c *Config) {
-				c.Models.CentralSampler = &CentralSamplerChoice{}
-			},
-			want: "service",
 		},
 		{
 			name: "unknown harness",

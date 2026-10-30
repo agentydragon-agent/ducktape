@@ -27,7 +27,6 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.contract.actions import Action
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
-from agentplane.app.model_catalog import CentralSamplerChoice
 from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
 from agentplane.runner.configuration import GuestResources, ResourceLimits
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
@@ -45,7 +44,6 @@ from cluster.cdk8s import (
 from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
-    central_sampler,
     command_sandbox,
     llm_ingress,
     mcp_edge,
@@ -80,6 +78,7 @@ from cluster.cdk8s.agentplane.environment import (
     WebPushProps,
 )
 from cluster.cdk8s.agentplane.generation import ManifestLayout
+from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS, model_configs
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.agentplane.runner_sandbox import KeyFile
 from cluster.cdk8s.agentplane.sandbox_pod import SECRET_NAME as SANDBOX_SECRET_NAME, TOOL_CONFIG_GRANT
@@ -90,7 +89,6 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGIS
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
-from cluster.cdk8s.model_selections import STAGING_APP_MODELS, model_configs
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
@@ -114,29 +112,14 @@ _GROCY_SF_MCP_URL = "https://grocy-mcp-sf.allegedly.works/mcp"
 _MCP_CLIENT_METADATA_URL = f"https://{_ACTIONS_HOSTNAME}/oauth/client-metadata.json"
 
 
-# Agentplane sampler policy belongs here, separate from shared route facts.
+# Retain Lite/freeform support for existing central sessions on official OpenAI routes.
+# New third-party coding routes use standard Responses with JSON exec.
 _LITE_FREEFORM = ModelConfig(
     reasoning_efforts={""}, api="responses", responses=ResponsesConfig(dialect="lite"), exec_encoding="freeform"
 )
 _STANDARD_JSON = ModelConfig(
     reasoning_efforts={""}, api="responses", responses=ResponsesConfig(dialect="standard"), exec_encoding="json"
 )
-
-
-_CENTRAL_SAMPLER_CONTRACTS = {
-    "chatgpt-sub/oai-responses/gpt-6-astra": _LITE_FREEFORM,
-    "chatgpt-sub/oai-responses/gpt-6-luna": _LITE_FREEFORM,
-    "chatgpt-sub/oai-responses/gpt-6.1-sol": _LITE_FREEFORM,
-    "antigravity/ant-messages/claude-opus-4-6-thinking": _STANDARD_JSON,
-    "antigravity/ant-messages/claude-sonnet-4-6": _STANDARD_JSON,
-    "antigravity/ant-messages/gemini-3-flash": _STANDARD_JSON,
-    "antigravity/ant-messages/gemini-3.5-flash-lite": _STANDARD_JSON,
-    "antigravity/ant-messages/gemini-3.8-flash-high": _STANDARD_JSON,
-    "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k": _STANDARD_JSON,
-    "ollama/oai-chat/gpt-oss-20b-128k": _STANDARD_JSON,
-    "ollama/oai-chat/gpt-oss-120b-128k": _STANDARD_JSON,
-    "ollama/oai-chat/gemma4-31b-it-q8_0-128k": _STANDARD_JSON,
-}
 
 
 # Separate harness and executor caps leave 1 GiB below the service high watermark.
@@ -407,13 +390,13 @@ ENV = Environment(
         namespace=STAGING_NAMESPACE,
         sandbox_template=POD_TEMPLATE,
         models=STAGING_APP_MODELS,
-        central_sampler=CentralSamplerChoice(service=central_sampler.NAME),
+        central_sampler_enabled=True,
         action_federation=_ACTION_FEDERATION,
         connection_service_url=AnyHttpUrl(_CONNECTION_SERVICE.url),
     ),
     central_sampler=CentralSamplerProps(
         models={
-            route.id: _CENTRAL_SAMPLER_CONTRACTS[route.id].model_copy(
+            route.id: (_LITE_FREEFORM if route in STAGING_APP_MODELS.wrapped_codex else _STANDARD_JSON).model_copy(
                 update={"reasoning_efforts": {"", *route.reasoning_efforts}}
             )
             for route in STAGING_APP_MODELS.codex

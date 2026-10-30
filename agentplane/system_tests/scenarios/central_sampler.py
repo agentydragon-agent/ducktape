@@ -16,13 +16,7 @@ from agentplane.history_service import history_service_pb2
 from agentplane.native.codex.testing import responses_sse
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
-from agentplane.system_tests.central_sampler import (
-    MODEL,
-    SERVICE,
-    CentralStack,
-    capture_sampler_diagnostics,
-    central_stack,
-)
+from agentplane.system_tests.central_sampler import MODEL, CentralStack, capture_sampler_diagnostics, central_stack
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
@@ -230,12 +224,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
     async with central_stack(cluster, tmp_path, template=template) as deployed:
         model = scripted.model(deployed.sampler_pod_name, runner_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
-        session_spec = runner_pb2.SessionSpec(
-            harness=runner_pb2.HARNESS_CENTRAL_SAMPLER,
-            cwd=cwd,
-            model=MODEL,
-            central_sampler=runner_pb2.CentralSamplerConfig(service=SERVICE),
-        )
+        session_spec = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CENTRAL_SAMPLER, cwd=cwd, model=MODEL)
         interrupted_opening = await deployed.dispatcher.OpenSession(
             session_dispatcher_pb2.OpenSessionRequest(
                 session_id=interrupted_session_id, sandbox=deployed.sandbox, spec=session_spec, setup_script=":\n"

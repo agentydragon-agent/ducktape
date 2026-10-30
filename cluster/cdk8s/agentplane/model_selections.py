@@ -14,6 +14,7 @@ from model_catalog.catalog import (
     OLLAMA_OPENAI_ROUTES,
     OLLAMA_QWEN_IQ4XS_128K,
     OLLAMA_QWEN_IQ4XS_256K,
+    Provider,
     Route,
 )
 
@@ -23,7 +24,18 @@ class HarnessRoutes:
     """Generation-time selections retained until app and ingress settings are emitted."""
 
     claude: tuple[Route, ...]
+    # Coding-model offerings. Agentplane partitions these between wrapped Codex and the
+    # central sampler; new third-party routes take the standard Responses/JSON path.
     codex: tuple[Route, ...]
+
+    @property
+    def wrapped_codex(self) -> tuple[Route, ...]:
+        """Only OpenAI's hosted ChatGPT routes use the native Codex protocol."""
+        return tuple(route for route in self.codex if route.upstream.provider == Provider.CHATGPT)
+
+    @property
+    def central_sampler(self) -> tuple[Route, ...]:
+        return tuple(route for route in self.codex if route.upstream.provider != Provider.CHATGPT)
 
     @property
     def all(self) -> tuple[Route, ...]:
@@ -31,7 +43,7 @@ class HarnessRoutes:
 
 
 # Agentplane's hosted Claude and Codex pickers share the supported Antigravity Claude
-# and Gemini routes. Claude uses Anthropic Messages; Codex reaches the same upstream
+# and Gemini routes. Claude uses Anthropic Messages; the central sampler reaches the same upstream
 # through LiteLLM's Responses-to-Messages bridge.
 _AGENTPLANE_ANTIGRAVITY_ROUTES = (
     ANTIGRAVITY_OPUS,

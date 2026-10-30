@@ -21,13 +21,6 @@ class ModelOption(BaseModel):
     )
 
 
-class CentralSamplerChoice(BaseModel):
-    """Browser-safe service name; the Dispatcher owns network target authorization."""
-
-    model_config = ConfigDict(extra="forbid")
-    service: str = Field(min_length=1)
-
-
 class ModelCatalog(BaseModel):
     """The app's configuration: every model it can open a session with, and which harnesses
     accept it. A thread carries its harness and model; a sandbox is a Pod and carries neither.
@@ -42,7 +35,6 @@ class ModelCatalog(BaseModel):
 
     models: list[ModelOption]
     harnesses: dict[Harness, list[str]]
-    central_sampler: CentralSamplerChoice | None = None
 
     @model_validator(mode="after")
     def _check_consistency(self) -> ModelCatalog:
@@ -56,6 +48,4 @@ class ModelCatalog(BaseModel):
         for harness, referenced in self.harnesses.items():
             if unknown := [model for model in referenced if model not in known]:
                 raise ValueError(f"{harness} references models outside ModelCatalog.models: {unknown}")
-        if self.harnesses.get(Harness.CENTRAL_SAMPLER) and self.central_sampler is None:
-            raise ValueError("central code-mode models require a configured central_sampler")
         return self

@@ -4,7 +4,7 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
-from cluster.cdk8s.model_selections import RUNNER_CONTEXT_OVERRIDES
+from cluster.cdk8s.agentplane.model_selections import RUNNER_CONTEXT_OVERRIDES
 from model_catalog.catalog import Provider, Route
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 

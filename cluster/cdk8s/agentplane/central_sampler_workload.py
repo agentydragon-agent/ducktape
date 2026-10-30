@@ -74,7 +74,6 @@ class CentralSampler(Construct):
 
         settings = Settings(
             listen=f"0.0.0.0:{self.service.pod_port}",
-            service_name=central_sampler.NAME,
             llm_proxy_url=props.llm_proxy_url,
             credential_file=props.credential_file,
             models=dict(props.models),

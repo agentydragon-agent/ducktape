@@ -34,7 +34,6 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSel
 
 from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.orchestration_v1.binding import (
-    CentralSamplerConfig,
     LaunchPreset,
     OrchestrationExecutorBinding,
     PresetLaunch,
@@ -43,7 +42,6 @@ from agentplane.action_service.orchestration_v1.binding import (
 )
 from agentplane.action_service.settings import ServicePeer, Settings
 from agentplane.crd_group import GROUP
-from agentplane.runner.harness import Harness
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
@@ -120,10 +118,6 @@ def _orchestration_group(env: Environment, props: OrchestrationProps) -> ActionG
             reasoning_effort=thread.reasoning_effort or "",
             instructions=thread.instructions,
         )
-        if thread.harness == Harness.CENTRAL_SAMPLER:
-            if app.models.central_sampler is None:
-                raise ValueError("central sampler launch preset requires a configured service")
-            spec.central_sampler = CentralSamplerConfig(service=app.models.central_sampler.service)
         presets[name] = LaunchPreset(
             title=sandbox.title,
             launch=PresetLaunch(
