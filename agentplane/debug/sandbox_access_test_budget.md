@@ -13,5 +13,5 @@ That invocation's Go target failed because the diagnostic pytest flag was also p
 the independent Go rerun passed in `1da3b44f-3215-42f9-82dd-cf9bacf70790`.
 
 Size this API-server integration target `medium`, consistent with the observed executor-latency
-workaround in [the RBE investigation](../../devinfra/debug/2026_08_rbe_small_test_timeouts.md).
+workaround in [the RBE investigation](../../devinfra/buildbuddy/debug/2026_08_rbe_small_test_timeouts.md).
 This changes the test budget; it does not establish a fix for executor latency.

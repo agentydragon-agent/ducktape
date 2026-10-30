@@ -49,7 +49,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from urllib.parse import quote
 
-from devinfra.ci.bes import BuildBuddyError, Invocation, Output, artifact_output, merge, read
+from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, artifact_output, merge, read
 from devinfra.ci.publication_test_verdicts import (
     effective_rbe_image,
     recorded_test_failures,

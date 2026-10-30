@@ -13,16 +13,16 @@ Linux only.
 ## Bazel Commands
 
 - `bbr` for build/test/query; `bb run` when the binary must execute locally (Gazelle, manifest updates, formatters); `bazelisk` for local runs needing the session bazelrc; never raw `bazel`.
-- RBE and remote cache are the defaults — never disable them (`--remote_executor=""` is never needed; <devinfra/docs/rbe_workflows.md>). Browser/visual and Docker tests run **only** on RBE; never skip or stub them. `--noremote_cache`/`--noremote_accept_cached` are fine.
+- RBE and remote cache are the defaults — never disable them (`--remote_executor=""` is never needed; <devinfra/buildbuddy/docs/rbe_workflows.md>). Browser/visual and Docker tests run **only** on RBE; never skip or stub them. `--noremote_cache`/`--noremote_accept_cached` are fine.
 - Can't reach BuildBuddy from outside the sandbox → stop and report (usually a broken session hook or VPN).
-- Refs: <devinfra/bbr.py> (config layers), `buildbuddy_api` skill (logs, target history), <devinfra/docs/bazel_configuration.md> (NixOS hosts).
+- Refs: <devinfra/buildbuddy/bbr.py> (config layers), `buildbuddy_api` skill (logs, target history), <devinfra/docs/bazel_configuration.md> (NixOS hosts).
 
 ## Infrastructure
 
 - **Terraform/OpenTofu** modules are Bazel-managed (`@rules_tf`): declare provider versions in the BUILD's `tf_providers_versions`, never in `terraform.tf`. `tf/gitops/**` is applied by the in-cluster tofu-controller; `cluster/terraform/` by `bazel run //cluster:bootstrap`.
 - **Haku Forgejo tokens** are owned by the GitOps Terraform controller — never mint/sync by hand. Fix wiring in <tf/gitops/haku-state> and <cluster/cdk8s/forgejo/gitops_modules.py>; manual `curl`/`tea`/`kubectl` is diagnostics only, followed by a PR making the controller own it.
 - **CI:** GitHub Actions → `bbr`; no `buildbuddy.yaml`. `.github/workflows/ci.yml` runs bazel-ci → release/push-images; other workflows trigger independently. Container images: <cluster/docs/container-images.md>.
-- **RBE image repins are costly** (the digest is in every action's cache key and the Firecracker snapshot key). A needed edit to <devinfra/rbe_container_image/Dockerfile> is fine — never keep a falsehood to dodge one — but don't widen `rbe-container-image.yml`'s trigger or add anything Bazel could supply. Dev/agent tooling goes in <devinfra/buildbuddy_remote_runner/image.nix>.
+- **RBE image repins are costly** (the digest is in every action's cache key and the Firecracker snapshot key). A needed edit to <devinfra/buildbuddy/images/rbe/Dockerfile> is fine — never keep a falsehood to dodge one — but don't widen `rbe-container-image.yml`'s trigger or add anything Bazel could supply. Dev/agent tooling goes in <devinfra/buildbuddy/images/runner/image.nix>.
 
 ## SOPS
 

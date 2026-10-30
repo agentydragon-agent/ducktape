@@ -109,7 +109,7 @@ jobs:
       # Use the same artifact and checksum as the Nix package.
       - name: Install pinned BuildBuddy CLI
         run: |
-          python3 devinfra/ci/install_bb.py --pins nix/artifact-pins.json \
+          python3 devinfra/buildbuddy/ci/install_bb.py --pins nix/artifact-pins.json \
             --destination "$RUNNER_TEMP/buildbuddy-cli/bin/bb"
           echo "$RUNNER_TEMP/buildbuddy-cli/bin" >> "$GITHUB_PATH"
 
@@ -117,7 +117,7 @@ jobs:
       # - Saves one Firecracker VM allocation per CI run.
       # - Avoids `bb remote build`'s post-run `downloadOutputs` path, which
       #   currently fails with "Exhausted all peers" — see
-      #   devinfra/debug/bb_remote_peers_exhausted.md.
+      #   devinfra/buildbuddy/debug/bb_remote_peers_exhausted.md.
       # `&&` matches the previous step ordering: build runs only if test passed.
       #
       # run_from_commit: have the runner check out the exact commit instead of mirroring the
@@ -128,17 +128,17 @@ jobs:
       # and tests the PR combined with its event-time base instead of the isolated PR head.
       # GitHub serves that commit by exact SHA even though it is not an origin branch. On
       # push/dispatch, github.sha is the pushed/dispatched commit. See
-      # devinfra/docs/bb_remote_internals.md §"Git state synchronization"
+      # devinfra/buildbuddy/docs/remote.md §"Git state synchronization"
       # ("--run_from_commit disables patches").
       # Bazel names its invocations from the run's identity rather than CI discovering
       # them afterwards, so a consumer can find them even when this run is cancelled
-      # mid-flight. See devinfra/ci/invocation_ids.py.
+      # mid-flight. See devinfra/buildbuddy/ci/invocation_ids.py.
       - name: Derive BuildBuddy invocation IDs
         id: invocation-ids
         run: |
           publication_ids=""
           for role in test build race; do
-            id=$(python3 devinfra/ci/invocation_ids.py \
+            id=$(python3 devinfra/buildbuddy/ci/invocation_ids.py \
               --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --role "$role")
             echo "$role=$id" >> "$GITHUB_OUTPUT"
             if [[ "$role" == test || "$role" == build ]]; then
@@ -163,10 +163,10 @@ jobs:
         run: |
           set -euo pipefail
           echo "::notice::BuildBuddy test invocation: https://app.buildbuddy.io/invocation/$TEST_INVOCATION_ID"
-          python3 devinfra/ci/buildbuddy_test_status.py pending \
+          python3 devinfra/buildbuddy/ci/live_test_status.py pending \
             --invocation-id "$TEST_INVOCATION_ID" --sha "$STATUS_SHA" \
             --state-file "$LIVE_TEST_STATE_FILE"
-          setsid python3 devinfra/ci/buildbuddy_test_status.py watch \
+          setsid python3 devinfra/buildbuddy/ci/live_test_status.py watch \
             --invocation-id "$TEST_INVOCATION_ID" --sha "$STATUS_SHA" \
             --state-file "$LIVE_TEST_STATE_FILE" \
             >"$RUNNER_TEMP/buildbuddy-test-watcher.log" 2>&1 < /dev/null &
@@ -212,7 +212,7 @@ jobs:
           LIVE_TEST_STATE_FILE: ${{ runner.temp }}/buildbuddy-test-${{ github.run_id }}-${{ github.run_attempt }}.json
           LIVE_TEST_PID_FILE: ${{ runner.temp }}/buildbuddy-test-${{ github.run_id }}-${{ github.run_attempt }}.pid
         run: |
-          python3 devinfra/ci/buildbuddy_test_status.py finish \
+          python3 devinfra/buildbuddy/ci/live_test_status.py finish \
             --invocation-id "$TEST_INVOCATION_ID" --sha "$STATUS_SHA" \
             --state-file "$LIVE_TEST_STATE_FILE" --pid-file "$LIVE_TEST_PID_FILE" \
             --remote-outcome "${REMOTE_OUTCOME:-cancelled}"

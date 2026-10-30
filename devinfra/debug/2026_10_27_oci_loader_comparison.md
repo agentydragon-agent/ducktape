@@ -113,7 +113,7 @@ action. The session-scoped fixture normally calls the loader once for each
 image per pytest action, so the warm-hit microbenchmark should not be applied
 to every PostgreSQL test as a saving.
 
-The August [Docker timeout investigation](2026_08_14_docker_test_timeouts.md)
+The August [Docker timeout investigation](../buildbuddy/debug/2026_08_14_docker_test_timeouts.md)
 records a plausible concurrent-load herd and the rationale for a per-tag lock.
 It is historical evidence, not a current controlled measurement of shared
 RBE daemon state or a current importer-speed result. The manual

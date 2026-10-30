@@ -133,7 +133,7 @@ clone-owned `bb-out/` download. A writer can clear its destination and still
 copy stale inputs from a reused download tree, so require the adapter's
 review-tree equality and normal smoke checks before accepting the output.
 Preserve any prior tree outside the workspace and follow the
-[downloaded-artifact recovery procedure](https://github.com/agentydragon/ducktape/blob/devel/devinfra/docs/bb_remote_internals.md#checking-a-generated-tree-after-download).
+[downloaded-artifact recovery procedure](https://github.com/agentydragon/ducktape/blob/devel/devinfra/buildbuddy/docs/remote.md#checking-a-generated-tree-after-download).
 
 Before a Git-based remote gate, stage new spec/source/fixture files or verify
 that the runner includes them. Check the logged input snapshot: omitted files

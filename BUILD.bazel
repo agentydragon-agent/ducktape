@@ -236,27 +236,6 @@ platform(
     parents = ["@buildbuddy_toolchain//:platform_linux_x86_64"],
 )
 
-# bbr wheel — standalone `bb remote` wrapper (own package, not bundled into
-# the Python statusline wheel, so it's available with the Rust claude-hook).
-py_package(
-    name = "bbr_pkg",
-    packages = ["devinfra"],
-    deps = ["//devinfra:bbr"],
-)
-
-py_wheel(
-    name = "bbr_wheel",
-    distribution = "bbr",
-    entry_points = {
-        "console_scripts": ["bbr = devinfra.bbr:main"],
-    },
-    python_requires = ">=3.14",
-    requires = ["pygit2>=1.14"],
-    version = "0.1.0",
-    visibility = ["//visibility:public"],
-    deps = [":bbr_pkg"],
-)
-
 # Git hooks wheel — ducktape-* console scripts, precommit runners, cluster validation.
 # Installed in devtools so the ducktape-* git hooks are available alongside
 # the Rust claude-hook binary.

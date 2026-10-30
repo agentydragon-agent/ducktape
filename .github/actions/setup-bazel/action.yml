@@ -32,7 +32,7 @@ runs:
           echo "BuildBuddy API key not provided, skipping remote cache setup"
           exit 0
         fi
-        "${{ github.workspace }}/devinfra/setup_buildbuddy.sh"
+        "${{ github.workspace }}/devinfra/buildbuddy/setup.sh"
 
     - name: Enable CI quiet mode
       shell: bash

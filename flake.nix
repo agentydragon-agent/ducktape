@@ -88,7 +88,7 @@
       # Keep the experimental BuildBuddy Remote Runner NixOS configuration and
       # output definitions with the experiment; the root flake only registers them.
       buildbuddyRemoteRunnerNixosOutputs =
-        import ./devinfra/buildbuddy_remote_runner/x/nixos/flake-outputs.nix
+        import ./devinfra/buildbuddy/images/runner/x/nixos/flake-outputs.nix
           {
             inherit nixpkgs self system;
           };

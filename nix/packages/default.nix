@@ -164,9 +164,9 @@ let
   # This also keeps older pinned distribution names valid until sync-pins moves
   # them to the latest release.
   #
-  # `importsCheck` is required — at minimum list the modules backing each
-  # console-script entry point. buildPythonApplication imports them at build
-  # time, so a missing propagatedBuildInputs surfaces as a build failure
+  # Check modules backing each console script with `importsCheck`, or run the
+  # installed command with `entrypointChecks`. Both load the CLI at build time,
+  # so a missing propagatedBuildInputs surfaces as a build failure
   # instead of a runtime crash. See debug/aiquota-missing-atomicwrites.md.
   mkWheel =
     {
@@ -349,7 +349,10 @@ rec {
     pname = "bbr";
     description = "bb remote wrapper with session metadata and invocation tracking";
     mainProgram = "bbr";
-    importsCheck = [ "devinfra.bbr" ];
+    # Check the public entry point, including when the released pin still has
+    # the previous Python module layout.
+    importsCheck = [ ];
+    entrypointChecks = [ "bbr" ];
     propagatedBuildInputs = with python314Packages; [ pygit2 ];
   };
 

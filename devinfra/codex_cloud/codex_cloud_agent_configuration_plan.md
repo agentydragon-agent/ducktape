@@ -94,7 +94,7 @@ From this repository's AGENTS/README and current infra:
 - Session setup breakage (cert/proxy/buildbuddy bootstrap) should be treated as a hard failure and recovered before proceeding.
 - SOPS behavior depends on running from repo context and having `SOPS_AGE_KEY` available.
 - Canonical local developer environment is Nix-based (`flake.nix`, home-manager, codex module under `nix/home/codex`).
-- Existing repo script `devinfra/setup_buildbuddy.sh` configures BuildBuddy based on `BUILDBUDDY_API_KEY`.
+- Existing repo script `devinfra/buildbuddy/setup.sh` configures BuildBuddy based on `BUILDBUDDY_API_KEY`.
 
 References:
 
@@ -102,7 +102,7 @@ References:
 - `README.md`
 - `flake.nix`
 - `nix/home/codex/default.nix`
-- `devinfra/setup_buildbuddy.sh`
+- `devinfra/buildbuddy/setup.sh`
 
 ## 4) Remaining rollout work
 

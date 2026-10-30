@@ -99,11 +99,11 @@ def _quote_labels(path: Path) -> str:
 
 def _probe(stage: str) -> None:
     """Record runner state, while keeping the probe best-effort."""
-    _run(["python3", "devinfra/ci/bb_runner_probe.py", "snapshot", stage], check=False)
+    _run(["python3", "devinfra/buildbuddy/ci/runner_probe.py", "snapshot", stage], check=False)
 
 
 def _finalize_probe() -> None:
-    _run(["python3", "devinfra/ci/bb_runner_probe.py", "finalize", "--upload"], check=False)
+    _run(["python3", "devinfra/buildbuddy/ci/runner_probe.py", "finalize", "--upload"], check=False)
 
 
 def _announce_bazel_command(role: str) -> None:

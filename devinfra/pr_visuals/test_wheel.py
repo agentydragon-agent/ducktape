@@ -33,7 +33,7 @@ def test_wheel_contains_import_closure_templates_and_runnable_entry_points(tmp_p
             "devinfra/pr_visuals/gallery_slider.js",
             "devinfra/pr_visuals/pr_visual_test.html.j2",
             "devinfra/pr_visuals/pr_visuals.html.j2",
-            "devinfra/ci/invocation_ids.py",
+            "devinfra/buildbuddy/ci/invocation_ids.py",
             "util/visual_diff.py",
             "util/visual_review.py",
         } <= files

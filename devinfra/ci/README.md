@@ -90,4 +90,4 @@ Keep that bootstrap command independent of the standalone `bbr` wheel when
 changing CI prerequisites: an older pinned wheel cannot supply a newly added
 entry point. The wheel pin is in
 [`nix/artifact-pins.json`](../../nix/artifact-pins.json); interactive
-[`bbr`](../bbr.py) delegates repository defaults to the same native `.bbrc`.
+[`bbr`](../buildbuddy/bbr.py) delegates repository defaults to the same native `.bbrc`.

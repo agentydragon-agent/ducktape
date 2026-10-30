@@ -57,7 +57,7 @@ ducktapePkgs
   };
   # Deterministic runner image assembly. The publishing workflow supplies the
   # authenticated, digest-pinned base archive as DUCKTAPE_RUNNER_BASE_IMAGE.
-  buildbuddy-remote-runner-image = import ../../devinfra/buildbuddy_remote_runner/image.nix {
+  buildbuddy-remote-runner-image = import ../../devinfra/buildbuddy/images/runner/image.nix {
     inherit pkgs;
     runnerTools = self.packages.${system}.buildbuddy-remote-runner-tools;
   };
@@ -98,7 +98,7 @@ ducktapePkgs
   # Experimental Nix-based RBE container image (plain Docker, no NixOS/systemd).
   # Build: nix build .#nix-rbe-container-image
   # Load:  docker load < result
-  nix-rbe-container-image = import ../../devinfra/rbe_container_image/x/nix { inherit pkgs; };
+  nix-rbe-container-image = import ../../devinfra/buildbuddy/images/rbe/x/nix { inherit pkgs; };
   # agentplane's sandbox image: a box's command-line tools, as one list
   # (agentplane/images/sandbox.nix).
   # Build: nix build .#agentplane-sandbox-image

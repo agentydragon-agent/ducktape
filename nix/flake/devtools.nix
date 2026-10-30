@@ -80,7 +80,7 @@ let
     pkgs.ovhcloud-cli # OVH API CLI (Kimsufi server inventory, boot, IPMI)
     pkgs.python314Packages.ovh # OVH Python client for ad-hoc API scripts
   ];
-  # System libraries matching the RBE container image (devinfra/rbe_container_image/Dockerfile).
+  # System libraries matching the RBE container image (devinfra/buildbuddy/images/rbe/Dockerfile).
   systemLibs = import ../packages/system-libs.nix { inherit pkgs; };
   # Non-hook developer tools shared by the devShell and Claude profiles.
   # Pre-commit's packages are composed once below; the BuildBuddy runner has its

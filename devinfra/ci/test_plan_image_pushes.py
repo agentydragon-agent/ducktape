@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from devinfra.ci.bes import BuildBuddyError, Invocation, Output, merge
+from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, merge
 from devinfra.ci.image_registry import Registry
 from devinfra.ci.plan_image_pushes import (
     Decision,

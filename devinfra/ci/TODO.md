@@ -22,7 +22,7 @@ Today the push job downloads the OCI layout to the GitHub Actions runner and
 `crane push`es from there, so registry credentials never enter the runner VM.
 That download is the last consumer of `bb remote build`'s post-run output
 download — the mechanism behind every publish bug in
-`devinfra/debug/bb_remote_peers_exhausted.md`.
+`devinfra/buildbuddy/debug/bb_remote_peers_exhausted.md`.
 
 Two ways out, neither urgent:
 
