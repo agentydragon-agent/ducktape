@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Callable, Coroutine
-from contextlib import aclosing
+from collections.abc import AsyncIterator, Callable, Coroutine, Sequence
+from contextlib import AsyncExitStack, aclosing, asynccontextmanager
 from typing import Any
 from uuid import UUID
 
+from opentelemetry import trace
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import Client
-from agentplane.app.testing.models import SandboxView, sandbox_is_ready
+from agentplane.app.testing.models import NewSandbox, SandboxView, sandbox_is_ready
 from agentplane.crd_group import GROUP
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests.cluster import Cluster
@@ -24,6 +25,46 @@ VM_TEMPLATE = "runner-vm"
 VM_WORKING_DIRECTORY = "/state/workspaces/accept"
 SANDBOX_READY_SECONDS = 300.0
 Sandboxes = Callable[..., Coroutine[Any, Any, SandboxView]]
+
+
+@asynccontextmanager
+async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tracer) -> AsyncIterator[Sandboxes]:
+    """Own every Sandbox created in this scope, including one that never becomes ready."""
+    async with AsyncExitStack() as cleanup:
+
+        async def create(
+            name: str,
+            *,
+            template: str | None = None,
+            policies: list[str] | None = None,
+            preset: str | None = None,
+            bootstrap: str = "",
+            inbox_tags: Sequence[str] = (),
+        ) -> SandboxView:
+            if template is None:
+                template = POD_TEMPLATE
+            with phase_tracer.start_as_current_span(
+                "vm.sandbox.create", attributes={"sandbox.name": name, "sandbox.template": template}
+            ):
+                view = await client.create_sandbox(
+                    NewSandbox(
+                        name=name,
+                        template=template,
+                        preset=preset,
+                        policy_sets=policies or [],
+                        inbox_tags=list(inbox_tags),
+                        bootstrap=bootstrap,
+                    )
+                )
+            # Register before readiness so failed boots are released too. ExitStack also drains
+            # the other owners if one deletion fails.
+            cleanup.push_async_callback(suspend_and_delete, cluster, client, view.name, view.uid)
+            with phase_tracer.start_as_current_span(
+                "vm.sandbox.ready", attributes={"sandbox.name": view.name, "sandbox.uid": str(view.uid)}
+            ):
+                return await wait_until_running(client, view.name)
+
+        yield create
 
 
 class SandboxNotReadyError(Exception):

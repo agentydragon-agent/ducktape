@@ -57,7 +57,11 @@ its successful follow-up command with the same Runner and app-server. Its creden
 boots the VM central sampler alongside the two credential guests. All six Sandboxes boot
 independently; at most three guests run at once. Each harness scenario checks workspace ownership,
 streams, identity, security settings, resource budgets and detached-child cleanup through ordinary
-Session setup. The Claude guest uses `runner-vm-supervision`, selecting the remaining private Go
+Session setup. Each concurrent VM scenario scopes its own client and Sandboxes, captures diagnostics
+before deletion, and starts cleanup when its assertions finish, overlapping its peers. Both groups
+await all cleanup before advancing or stopping the shared stack; peer cancellation also waits for
+teardown. The scripted server remains shared and routes by Pod identity.
+The Claude guest uses `runner-vm-supervision`, selecting the remaining private Go
 supervisor checks before Runner starts, on the same root image as every other guest. There is no
 additional supervision VM or root image. `test_vm_manual` covers
 VM workspace ownership, suspend/resume and storage by hand. `test_real_model`

@@ -17,7 +17,6 @@ from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests.agent import TURN_SECONDS, WORKING_DIRECTORY, Agent, Turn
 from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.offered_models import models_offered_for
 from agentplane.system_tests.sandbox import (
     POD_TEMPLATE,
     VM_TEMPLATE,
@@ -26,7 +25,6 @@ from agentplane.system_tests.sandbox import (
     wait_until_running,
 )
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
-from agentplane.system_tests.vm_tracing import traced_vm_scenario
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
 _RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/runner-credential"
@@ -251,7 +249,7 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
     assert len(history_after) > len(history_before)
 
 
-async def _run_vm_mtls_certificate_authenticates_a_session(
+async def vm_mtls_certificate_authenticates_a_session(
     cluster: Cluster,
     client: Client,
     sandbox: Sandboxes,
@@ -280,26 +278,6 @@ async def _run_vm_mtls_certificate_authenticates_a_session(
     assert "VM_MTLS_OK" in "\n".join(turn.tool_outputs)
     current_pod_uid, current_credential_id = await _identity(cluster, view.pod.name)
     assert (current_pod_uid, current_credential_id) == (pod_uid, credential_id)
-
-
-async def vm_mtls_certificates_authenticate_both_harnesses(
-    cluster: Cluster, client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
-) -> None:
-    # pytest-asyncio serializes parametrized cases; explicit tasks overlap the independent boots
-    # while sharing this stack and its Pod-routed scripted server.
-    harnesses = [runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX]
-    offered_models = await models_offered_for(client, harnesses)
-    async with asyncio.TaskGroup() as scenarios:
-        for harness in harnesses:
-            name = f"runner-vm-mtls-{runner_pb2.Harness.Name(harness).lower()}"
-            scenarios.create_task(
-                traced_vm_scenario(
-                    name,
-                    _run_vm_mtls_certificate_authenticates_a_session(
-                        cluster, client, sandbox, harness, offered_models[harness], scripted
-                    ),
-                )
-            )
 
 
 # gazelle:include_dep @pypi//protobuf

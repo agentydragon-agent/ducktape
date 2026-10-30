@@ -33,10 +33,10 @@ py_library(
         ":offered_models",
         ":ollama_warmup",
         ":sandbox",
+        ":scenario",
         ":scripted_upstream",
         ":vm_tracing",
         "//agentplane/app/testing:client",
-        "//agentplane/app/testing:models",
         "//agentplane/proto:runner_pb2",
         "//util:net",
         "//util/testing:otel_tracing",
@@ -375,6 +375,7 @@ py_library(
         "//agentplane/app/testing:client",
         "//agentplane/app/testing:models",
         "//util/testing:undeclared_outputs",
+        "@pypi//opentelemetry_api",
         "@pypi//tenacity",
     ],
 )
@@ -452,6 +453,37 @@ py_test(
         "//agentplane/app/testing:client",
         "//agentplane/proto:runner_pb2",
         "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "scenario",
+    srcs = ["scenario.py"],
+    deps = [
+        ":cluster",
+        ":native_artifacts",
+        ":sandbox",
+        "//agentplane/app/testing:client",
+        "@pypi//opentelemetry_api",
+    ],
+)
+
+py_test(
+    name = "test_scenario",
+    srcs = ["test_scenario.py"],
+    deps = [
+        ":cluster",
+        ":conftest",
+        ":native_artifacts",
+        ":sandbox",
+        ":scenario",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/app/testing:client",
+        "//agentplane/app/testing:models",
+        "@pypi//opentelemetry_api",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
