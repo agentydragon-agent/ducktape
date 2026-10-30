@@ -45,8 +45,9 @@ type config struct {
 	WatchLeaseSeconds           int                       `mapstructure:"dispatcher_watch_lease_seconds"`
 	RunnerTimeoutSeconds        int                       `mapstructure:"runner_request_timeout_seconds"`
 
-	CentralSamplers map[string]dispatcher.CentralTarget `mapstructure:"central_samplers"`
-	ExecutorCallers []auth.Account                      `mapstructure:"executor_callers"`
+	CentralSamplerService string                              `mapstructure:"central_sampler_service"`
+	CentralSamplers       map[string]dispatcher.CentralTarget `mapstructure:"central_samplers"`
+	ExecutorCallers       []auth.Account                      `mapstructure:"executor_callers"`
 }
 
 func defaultConfig() config {
@@ -132,5 +133,10 @@ func (c *config) validate() error {
 		}
 	}
 
+	if c.CentralSamplerService != "" {
+		if _, ok := c.CentralSamplers[c.CentralSamplerService]; !ok {
+			return errors.New("central_sampler_service must name a configured central_samplers entry")
+		}
+	}
 	return nil
 }

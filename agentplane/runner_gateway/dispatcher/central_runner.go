@@ -19,10 +19,10 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
-// CentralTarget is deployment-owned. Session requests select a configured name;
-// neither provider routes nor network targets are taken from untrusted URLs.
+// CentralTarget is deployment-owned. The Dispatcher selects the service for new sessions.
 type CentralTarget struct {
 	Target    string `mapstructure:"target"`
 	TokenFile string `mapstructure:"token_file"`
@@ -55,6 +55,31 @@ func validateOpeningExecutor(opening *Opening, sandbox SandboxSnapshot) error {
 		return status.Error(codes.FailedPrecondition, "session executor identity changed")
 	}
 	return nil
+}
+
+// bindSessionRuntime resolves routing before persistence. Retries retain the original
+// binding even when the deployment changes the default for new sessions.
+func (s *Service) bindSessionRuntime(ctx context.Context, id string, spec *runnerpb.SessionSpec) (*runnerpb.SessionSpec, error) {
+	if spec.GetCentralSampler() != nil {
+		return nil, status.Error(codes.InvalidArgument, "central sampler routing is configured by the Dispatcher")
+	}
+	if !centralSpec(spec) {
+		return spec, nil
+	}
+	bound := proto.Clone(spec).(*runnerpb.SessionSpec)
+	opening, err := s.Store.GetOpening(ctx, id)
+	switch {
+	case err == nil:
+		bound.CentralSampler = opening.Spec.GetCentralSampler()
+	case errors.Is(err, ErrNotFound):
+		if s.CentralService == "" {
+			return nil, status.Error(codes.FailedPrecondition, "central sampler service is not configured")
+		}
+		bound.CentralSampler = &runnerpb.CentralSamplerConfig{Service: s.CentralService}
+	default:
+		return nil, err
+	}
+	return bound, nil
 }
 
 func ValidateRuntime(spec *runnerpb.SessionSpec, setup *string, targets map[string]CentralTarget) error {

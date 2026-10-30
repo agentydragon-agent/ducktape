@@ -80,6 +80,9 @@ class Settings(YamlFileSettings):
     dispatcher_watch_lease_seconds: int = Field(default=300, ge=1, description="WatchDispatches stream lease.")
     runner_request_timeout_seconds: int = Field(default=10, ge=1, description="Per-Sandbox Runner call timeout.")
 
+    central_sampler_service: str | None = Field(
+        default=None, min_length=1, description="Configured service used for new central sampler sessions."
+    )
     central_samplers: dict[str, CentralSamplerTarget] = Field(
         default_factory=dict, description="Enabled named central services; empty disables central Session admission."
     )

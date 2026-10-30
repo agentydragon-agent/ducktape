@@ -52,9 +52,9 @@ from trust_manager_crds.io.cert_manager.trust import (
 
 from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
-from agentplane.app.model_catalog import CentralSamplerChoice
 from agentplane.app.settings import AppSettingsConfig, FrontendConfig, LangfuseSearchSettings, TraceSearchSettings
 from agentplane.runner.configuration import GuestResources, ResourceLimits
+from agentplane.runner.harness import Harness
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests import launch_preset, probe_credential, runtime_grant, send_grant
 from agentplane.system_tests.k3s import block_storage, dex, fixture_database
@@ -231,7 +231,6 @@ def environment(
     operator_oidc = dex.operator_oidc(issuer=DEX_ISSUER, app_client_id=app_login.id)
     routes = _PUBLIC_LITELLM_MODELS if isinstance(models, PublicLiteLLM) else _LOCAL_MODEL_MODELS
     central_sampler_props = None
-    central_sampler_choice = None
     if central_sampler:
         central_sampler_props = CentralSamplerProps(
             models={
@@ -249,13 +248,16 @@ def environment(
             rpc_timeout_seconds=10,
             lease_seconds=60,
         )
-        central_sampler_choice = CentralSamplerChoice(service="central-sampler")
+    catalog = app_settings.model_catalog(routes, central_sampler_enabled=central_sampler)
+    if central_sampler:
+        # This fixture exercises the pinned Lite host with its official model.
+        catalog.harnesses[Harness.CENTRAL_SAMPLER] = [GPT6_LUNA_RESPONSES.id]
     return Environment(
         namespace=NAMESPACE,
         description="Agentplane k3s fixture",
         replicas=_ONE_REPLICA,
         app_config=AppSettingsConfig(
-            models=app_settings.model_catalog(routes, central_sampler=central_sampler_choice),
+            models=catalog,
             default_policy_sets=set(egress.DEFAULT_POLICIES),
             connection_service_url=AnyHttpUrl(MCP_EDGE_SERVICE.url),
             thread_presets={launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)},

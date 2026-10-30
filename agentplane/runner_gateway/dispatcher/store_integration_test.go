@@ -1268,3 +1268,38 @@ func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
 		t.Fatalf("wrong command %s", got)
 	}
 }
+
+func TestCentralOpeningBindsConfiguredServiceWithoutCallerRouting(t *testing.T) {
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+callerToken))
+	store := testStore(t, 3)
+	service := &Service{Store: store, Auth: callerResolver(t), Callers: map[auth.Account]struct{}{caller: {}}, Sandboxes: blockedSandbox{}, CentralService: "central", CentralTargets: map[string]CentralTarget{"central": {Target: "configured", TokenFile: "configured"}, "next": {Target: "next", TokenFile: "next"}}}
+	request := &dispatcherpb.OpenSessionRequest{SessionId: "central-configured-session", Sandbox: "sandbox-api", Spec: &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test"}}
+	if _, err := service.OpenSession(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	if request.Spec.GetCentralSampler() != nil {
+		t.Fatal("mutated caller input")
+	}
+	opening, err := store.GetOpening(ctx, request.SessionId)
+	if err != nil || opening.Spec.GetCentralSampler().GetService() != "central" {
+		t.Fatalf("stored binding: %v %v", opening, err)
+	}
+	service.CentralService = "next"
+	if _, err := service.OpenSession(ctx, request); err != nil {
+		t.Fatalf("retry after default changed: %v", err)
+	}
+	opening, err = store.GetOpening(ctx, request.SessionId)
+	if err != nil || opening.Spec.GetCentralSampler().GetService() != "central" {
+		t.Fatalf("retry changed stored binding: %v %v", opening, err)
+	}
+	request.Spec.CentralSampler = &runnerpb.CentralSamplerConfig{Service: "central"}
+	if _, err := service.OpenSession(ctx, request); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("caller routing accepted: %v", err)
+	}
+	request.Spec.CentralSampler = nil
+	request.SessionId = "central-disabled-session"
+	service.CentralService = ""
+	if _, err := service.OpenSession(ctx, request); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("missing configuration accepted: %v", err)
+	}
+}

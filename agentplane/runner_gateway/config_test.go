@@ -184,3 +184,18 @@ func TestPodNameDefaultsToTheHostname(t *testing.T) {
 		t.Fatalf("explicit pod name ignored: %q", c.PodName)
 	}
 }
+
+func TestCentralSamplerSelectionMustNameConfiguredTarget(t *testing.T) {
+	path := writeSettings(t, requiredFile+`central_sampler_service: central
+central_samplers:
+  central: {target: sampler:8080, token_file: /run/token}
+`)
+	c, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+path))
+	if err != nil || c.CentralSamplerService != "central" {
+		t.Fatalf("configured selection: %v %v", c.CentralSamplerService, err)
+	}
+	c.CentralSamplerService = "missing"
+	if err := c.validate(); err == nil {
+		t.Fatal("accepted unconfigured default")
+	}
+}

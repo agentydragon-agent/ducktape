@@ -207,7 +207,7 @@ def test_third_party_coding_models_use_standard_responses_and_json_exec(
     assert catalog["harnesses"]["HARNESS_CODEX"] == [route.id for route in STAGING_APP_MODELS.wrapped_codex]
     assert catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"] == [route.id for route in STAGING_APP_MODELS.central_sampler]
     assert set(catalog["harnesses"]["HARNESS_CODEX"]).isdisjoint(catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"])
-    assert catalog["central_sampler"] == {"service": "central-sampler"}
+    assert "central_sampler" not in catalog
     sampler = json.loads(_by_name(staging_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
     assert set(sampler["models"]) == {route.id for route in STAGING_APP_MODELS.codex}
     for route in STAGING_APP_MODELS.central_sampler:
@@ -237,7 +237,7 @@ def test_haku_launches_on_central_sampler_with_the_wider_qwen_context_window(
     action_spec = actions["action_groups"]["orchestration_v1"]["executor"]["presets"]["haku"]["open_session"]["spec"]
     assert action_spec["harness"] == preset["harness"]
     assert action_spec["model"] == preset["model"]
-    assert action_spec["central_sampler"] == {"service": config["models"]["central_sampler"]["service"]}
+    assert "central_sampler" not in action_spec
 
 
 def _kubernetes_grants(policy_sets: list[str]) -> set[str]:

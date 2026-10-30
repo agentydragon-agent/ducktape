@@ -256,7 +256,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	service := &dispatcher.Service{
 		Store: store, Auth: dispatchAuth, Callers: accountSet(c.DispatcherCallers),
 		WakeCallers: accountSet(c.WakeCallers), Sandboxes: catalog, Runner: runner,
-		CentralTargets: c.CentralSamplers, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
+		CentralTargets: c.CentralSamplers, CentralService: c.CentralSamplerService, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
 	server := grpc.NewServer(
 		observability.GRPCServerOption(),

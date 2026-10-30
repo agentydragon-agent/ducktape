@@ -85,6 +85,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     gateway = yaml.safe_load(
         _resource(staging_manifests, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
     )
+    assert gateway["central_sampler_service"] == central_sampler.NAME
     target = gateway["central_samplers"][central_sampler.NAME]
     assert target == {
         "target": central_sampler.target(namespace),

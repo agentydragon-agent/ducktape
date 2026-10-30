@@ -71,9 +71,9 @@ container limits stop meeting the production resource contract.
   empty settings preserve native operation and do not enable the new transport.
 - The sampler allows the Dispatcher account for admission. History explicitly allows the sampler
   account in `ingress.sampler_accounts`; it retains the distinct executor Sandbox identity.
-- The app's optional `model_catalog.central_sampler = {service}` and
-  `HARNESS_CENTRAL_SAMPLER` model list offer **Central sampler** alongside Codex and Claude. A caller
-  cannot choose arbitrary service endpoints. A non-empty setup script runs once on the bound executor, in the resolved working directory,
+- The app's `HARNESS_CENTRAL_SAMPLER` model list offers **Central sampler** alongside Codex and Claude.
+  The Dispatcher's `central_sampler_service` setting chooses the runtime; app and Actions callers
+  do not supply service names or endpoints. A non-empty setup script runs once on the bound executor, in the resolved working directory,
   before sampling starts. Its stdout, stderr and terminal outcome are retained in History.
 - LLM ingress must allow the sampler account in `central_sampler_accounts` to accept its
   `x-agentplane-session-id` claim. Ingress validates a canonical UUID and generates trusted
@@ -138,6 +138,10 @@ yielded cell. Both use the same JavaScript host, nested tools, output limits and
 Standard requests send text-only function results as strings and multimodal results as content
 arrays. Asynchronous `notify()` output becomes a developer message identifying its original call,
 so the public API receives only one tool result per call.
+
+Session creation accepts harness and model choices. The Dispatcher selects the central service
+from its deployment configuration and persists that binding; the app catalog, browser, and
+Actions inputs do not carry a service name or URL.
 
 Staging offers official OpenAI ChatGPT routes through wrapped Codex and third-party coding models
 through the central sampler with standard Responses and JSON exec. Adding a third-party route to

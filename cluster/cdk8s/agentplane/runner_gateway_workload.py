@@ -176,6 +176,7 @@ class RunnerGateway(Construct):
         central_sampler_account = ServiceAccountRef(namespace=namespace, name=central_sampler.NAME)
         central_sampler_settings = (
             {
+                "central_sampler_service": central_sampler.NAME,
                 "central_samplers": {
                     central_sampler.NAME: CentralSamplerTarget(
                         target=central_sampler.target(namespace),

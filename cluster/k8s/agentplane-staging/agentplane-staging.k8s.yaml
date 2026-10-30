@@ -3368,8 +3368,6 @@ data:
           - ollama/oai-chat/gpt-oss-20b-128k
           - ollama/oai-chat/gpt-oss-120b-128k
           - ollama/oai-chat/gemma4-31b-it-q8_0-128k
-      central_sampler:
-        service: central-sampler
     thread_presets:
       public-coder-codex:
         title: Public coder / Codex
@@ -6165,8 +6163,6 @@ data:
               open_session:
                 spec:
                   harness: HARNESS_CENTRAL_SAMPLER
-                  central_sampler:
-                    service: central-sampler
                   model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
                   cwd: /state/workspaces/{session_id}/haku-state
                   reasoning_effort: medium

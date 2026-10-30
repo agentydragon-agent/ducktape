@@ -26,15 +26,10 @@ func (e *Executor) openSession(ctx context.Context, args contract.OpenSessionArg
 	if _, err := e.requireSandbox(ctx, args.Sandbox); err != nil {
 		return nil, err
 	}
-	var centralSampler *runnerpb.CentralSamplerConfig
-	if config := args.Spec.CentralSampler; config != nil {
-		centralSampler = &runnerpb.CentralSamplerConfig{Service: config.Service}
-	}
 	response, err := e.dispatcher.OpenSession(ctx, &dispatcherpb.OpenSessionRequest{
 		SessionId: args.SessionID, Sandbox: args.Sandbox.Name, SetupScript: args.SetupScript,
 		Spec: &runnerpb.SessionSpec{
-			CentralSampler: centralSampler,
-			Harness:        runnerpb.Harness(runnerpb.Harness_value[string(args.Spec.Harness)]), Model: args.Spec.Model,
+			Harness: runnerpb.Harness(runnerpb.Harness_value[string(args.Spec.Harness)]), Model: args.Spec.Model,
 			Cwd:             strings.ReplaceAll(args.Spec.Cwd, "{session_id}", args.SessionID),
 			ReasoningEffort: args.Spec.ReasoningEffort, Instructions: args.Spec.Instructions,
 		},

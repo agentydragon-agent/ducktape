@@ -43,9 +43,8 @@ completes its grants, so a launch whose attempt ended without an outcome can be 
 any other launch of a taken name is refused. `open_session` and each command carry a caller-minted
 `session_id` or `command_id`, which the Dispatcher deduplicates.
 
-`open_session` accepts `HARNESS_CENTRAL_SAMPLER` with `spec.central_sampler.service` naming a
-Dispatcher-configured service. Presets retain this service selection, and the executor forwards it
-to the Dispatcher; native harnesses omit `central_sampler`.
+`open_session` accepts `HARNESS_CENTRAL_SAMPLER`. The Dispatcher selects its sampler service
+from deployment configuration; Actions and launch presets do not accept routing fields.
 
 A launched Sandbox's own account is bound to this deployment's default PolicySets and the ones the
 launch names. A launch may not name a launcher grant's PolicySet, which would hand another

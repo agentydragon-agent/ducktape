@@ -19,6 +19,7 @@ data:
         cert_file: /run/agentplane/runner-tls/tls.crt
         key_file: /run/agentplane/runner-tls/tls.key
         ca_file: /run/agentplane/runner-tls/ca.crt
+    central_sampler_service: central-sampler
     central_samplers:
       central-sampler:
         target: central-sampler.agentplane-staging.svc.cluster.local:8080

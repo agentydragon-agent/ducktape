@@ -24,19 +24,12 @@ class PresetLaunch(BaseModel):
     bootstrap: str = Field(default="", max_length=65_536)
 
 
-class CentralSamplerConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    service: str = Field(min_length=1)
-
-
 class PresetSessionSpec(BaseModel):
     """The `open_session` spec a preset stands for."""
 
     model_config = ConfigDict(extra="forbid")
 
     harness: Harness
-    central_sampler: CentralSamplerConfig | None = None
     model: str = Field(min_length=1)
     cwd: str = Field(min_length=1)
     reasoning_effort: str = ""

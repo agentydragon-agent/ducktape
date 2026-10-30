@@ -27,7 +27,6 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.contract.actions import Action
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
-from agentplane.app.model_catalog import CentralSamplerChoice
 from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
 from agentplane.runner.configuration import GuestResources, ResourceLimits
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
@@ -45,7 +44,6 @@ from cluster.cdk8s import (
 from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
-    central_sampler,
     command_sandbox,
     llm_ingress,
     mcp_edge,
@@ -392,7 +390,7 @@ ENV = Environment(
         namespace=STAGING_NAMESPACE,
         sandbox_template=POD_TEMPLATE,
         models=STAGING_APP_MODELS,
-        central_sampler=CentralSamplerChoice(service=central_sampler.NAME),
+        central_sampler_enabled=True,
         action_federation=_ACTION_FEDERATION,
         connection_service_url=AnyHttpUrl(_CONNECTION_SERVICE.url),
     ),

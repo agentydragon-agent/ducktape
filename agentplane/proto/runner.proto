@@ -49,7 +49,7 @@ enum Harness {
   HARNESS_CENTRAL_SAMPLER = 3;
 }
 
-// Selects a configured central service; the name conveys no authority.
+// Internal Dispatcher binding persisted with the session; never a caller choice.
 message CentralSamplerConfig {
   string service = 1;
   reserved 2;
@@ -64,7 +64,7 @@ message SessionSpec {
   // Standing instructions are fixed for the session's life: a spec supplied to reopen the
   // session must equal the stored one. Empty is a session without any.
   string instructions = 5;
-  // Required exactly for HARNESS_CENTRAL_SAMPLER. Other harnesses remain Sandbox-local.
+  // Populated by the Dispatcher for HARNESS_CENTRAL_SAMPLER. Rejected in session-opening inputs.
   CentralSamplerConfig central_sampler = 6;
 }
 
