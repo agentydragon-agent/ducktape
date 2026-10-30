@@ -622,7 +622,6 @@ py_library(
 
 py_test(
     name = "test_block_storage",
-    size = "medium",
     srcs = ["test_block_storage.py"],
     exec_properties = K3S_EXEC_PROPERTIES,
     deps = [
