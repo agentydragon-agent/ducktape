@@ -173,18 +173,21 @@ class K3s:
             str(self.binary), "kubectl", "--kubeconfig", str(self.kubeconfig), *args, check=check, input_text=input_text
         )
 
-    def start(self) -> subprocess.Popen[bytes]:
+    def start(self, *, layers_in_memory: bool) -> subprocess.Popen[bytes]:
         _reset_previous_stack(self.data_dir)
         _shadow_kernel_sysctls()
         # Unpacking image layers is bound by writes to the executor's disk. The tmpfs default cap, half of
         # memory, makes a stack that outgrows it fail on a full filesystem rather than on the OOM killer.
         layers = self.data_dir / "agent/containerd/io.containerd.snapshotter.v1.overlayfs"
-        if not layers.is_mount():
-            # A recycled disk-backed store names snapshots the new tmpfs cannot see.
-            # Keep the store once mounted so subsequent actions reuse its unpacked images.
+        if layers.is_mount() != layers_in_memory:
+            # A recycled runner's last stack kept its layers on the other medium, so containerd's metadata
+            # names snapshots this one would not see: start from an empty store.
+            if layers.is_mount():
+                run("umount", str(layers))
             shutil.rmtree(self.data_dir / "agent/containerd", ignore_errors=True)
-            layers.mkdir(parents=True)
-            run("mount", "-t", "tmpfs", "tmpfs", str(layers))
+            if layers_in_memory:
+                layers.mkdir(parents=True)
+                run("mount", "-t", "tmpfs", "tmpfs", str(layers))
         self.log_path = Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", self.work)) / "k3s.log"
         log = self.log_path.open("wb")
         process = subprocess.Popen(
@@ -494,7 +497,8 @@ def running_stack(
 
     work = Path(tempfile.mkdtemp())
     k3s = K3s(work, inputs.binary)
-    process = k3s.start()
+    # A VM stack's layers would leave too little memory for its guests (README § Image layers in memory).
+    process = k3s.start(layers_in_memory=not fixture.vm_sandboxes)
     timeline.mark("node Ready")
     cluster = Cluster(
         kubeconfig=k3s.kubeconfig, namespace=fixture.namespace, kubectl_command=(str(k3s.binary), "kubectl")

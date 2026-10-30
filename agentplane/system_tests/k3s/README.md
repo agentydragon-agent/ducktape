@@ -6,14 +6,14 @@ bare k3s inside the suite's own RBE action (no Cilium), which PR CI runs like an
 the deployment under test, with LLM ingress forwarding to the scenario's scripted model on the node.
 Scripted targets take the `harnesses/runner_layout` image, which carries both pinned harnesses.
 
-containerd keeps unpacked image layers (its overlayfs snapshotter's root) on a tmpfs to avoid the
-executor's slow disk writes ([measurements](debug/stack_timings.md#image-layers-in-memory-2026-10-21)).
-VM suites request an 8-unit worker with room for the layer cache as well as their guests.
+containerd keeps unpacked image layers (its overlayfs snapshotter's root) on a tmpfs, except on a stack
+with VM Sandboxes ([measurements](debug/stack_timings.md#image-layers-in-memory-2026-10-21)).
 
 The RBE platform recycles a runner after a passing action, on the same executor. A stack removes its
 Pods when it ends; the next stack on that runner keeps containerd's image store, resets the rest of the
 node, and streams only the blobs containerd lacks ([measurements](debug/stack_timings.md#recycled-runners-2026-10-23)).
-VM system tests use a separate `test.runner-recycling-key` for their larger worker snapshots.
+VM system tests use a separate `test.runner-recycling-key` so their disk-backed layers and pod tests'
+tmpfs layers keep separate image stores.
 
 Each stack records its setup in `k3s-timeline.jsonl` among the test's undeclared outputs: when each
 step finished and how long each image took to import, written as it happens, so a hung run shows how far
@@ -171,8 +171,8 @@ exits; otherwise Pod termination can stop the state filesystem while the guest c
 Existing KubeVirt initializers run before these daemons; ContainerPath daemons retain their ordinary
 container placement for KubeVirt reconciliation.
 
-Among its six concurrent guests, `test_vm` starts one per harness for the scripted turn and
-one for Codex tool OOM containment. The OOM scenario drives the real Codex
+`test_vm` starts three VM Sandboxes concurrently in one stack: one per harness for the
+scripted turn and one for Codex tool OOM containment. The OOM scenario drives the real Codex
 app-server to run a memory-exhausting shell command through its isolated exec-server. The allocator
 touches memory beyond the configured executor limit, with a raised `oom_score_adj` to select that
 tool as the victim. The test checks a single

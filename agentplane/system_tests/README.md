@@ -55,8 +55,7 @@ Deployment and deletes a recorded Pod while checking controller behavior.
 scripted turn per harness through the launcher's egress relay, plus Codex tool OOM containment and
 its successful follow-up command with the same Runner and app-server, two credential guests,
 and the VM central sampler. All six Sandboxes boot independently on an 8-unit executor with
-room for their 1.5 GiB guest allocations, unpacked image layers and the k3s services.
-Each harness scenario checks workspace ownership,
+room for their 1.5 GiB guest allocations and the k3s services. Each harness scenario checks workspace ownership,
 streams, identity, security settings, resource budgets and detached-child cleanup through ordinary
 Session setup. Each concurrent VM scenario scopes its own client and Sandboxes, captures diagnostics
 before deletion, and starts cleanup when its assertions finish, overlapping its peers. The suite
