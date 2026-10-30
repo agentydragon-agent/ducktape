@@ -88,7 +88,7 @@ jobs:
       - name: Require the trusted fork Nix result
         if: needs.nix-wheel-check.result != 'success'
         run: |
-          echo "::error::The trusted fork Nix check did not succeed (job result: ${{ needs.nix-wheel-check.result }}). See the fork Nix job and the Resolve PR merge commit job."
+          echo "::error::The trusted fork Nix check did not succeed (job result: ${{ needs.nix-wheel-check.result }}). See the fork Nix job and the Resolve fork PR context job."
           exit 1
       - name: Confirm the trusted fork Nix result
         if: needs.nix-wheel-check.result == 'success'
