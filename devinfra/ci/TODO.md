@@ -16,26 +16,22 @@ derive the other representations from it. Preserve all IDs for diagnostics and
 cancellation, while keeping race-configured outputs out of the ordinary test
 and build evidence used by release and image publication.
 
-## Consider pushing images from the BuildBuddy runner
+## Fetch publication artifacts explicitly from BuildBuddy
 
-Today the push job downloads the OCI layout to the GitHub Actions runner and
-`crane push`es from there, so registry credentials never enter the runner VM.
-That download is the last consumer of `bb remote build`'s post-run output
-download — the mechanism behind every publish bug in
-`devinfra/buildbuddy/debug/bb_remote_peers_exhausted.md`.
+Image publication and the release-artifact action still rely on `bb remote build`'s
+post-run output download. Replace that dependency with explicit BEP-based fetching
+through `bbapi`, preserving the exact target identity and source invocation for
+each output. Resolve OCI layouts from their target's advertised files instead of
+searching the local output tree by basename. Keep registry credentials on the
+GitHub runner.
 
-Two ways out, neither urgent:
+Before fetching large OCI layers, stream blob responses to the downloader's
+atomic temporary file. `bbapi blob download` currently buffers each complete blob
+in memory, with eight concurrent downloads.
 
-- Fetch the layout's files from CAS by digest on the GitHub runner. The stream
-  reports every file with its `pathPrefix`, so the layout can be rebuilt without
-  Bazel. Credentials stay where they are.
-- Push from inside the runner VM, forwarding credentials through the bb-remote
-  action's `env_overrides`, as `//props/agents:push_images_bin` already does. The
-  runner reaches `*.allegedly.works` (observed: it gets HTTP responses from the
-  props registry), and as images move to the cluster Forgejo the credential at
-  stake stops being a GHCR token.
-
-Decide when images move off GHCR, not before.
+The Nix artifact gate already uses the batch-fetch path. Track the remaining
+publication consumers and the upstream download investigation in
+<../buildbuddy/debug/bb_remote_peers_exhausted.md>.
 
 ## Expand publication test-verdict reuse to suites and patterns
 
