@@ -14,7 +14,7 @@ func startTurnForStore(t *testing.T, store *Store, session *Session, owner Owner
 	t.Helper()
 	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
 		CommandId: commandID, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: commandID}},
-	}, "fixture-account"); err != nil {
+	}, "fixture-account", nil); err != nil {
 		t.Fatal(err)
 	}
 	if command, err := store.NextCommand(t.Context(), owner, session.ID); err != nil || command == nil || command.ID != commandID {

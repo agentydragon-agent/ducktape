@@ -27,7 +27,7 @@ func openSessionForStore(t *testing.T, store *Store, setup string) *Session {
 		SessionId: uuid.NewString(),
 		Spec: &runnerpb.SessionSpec{
 			Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
-			CentralSampler: &runnerpb.CentralSamplerConfig{Service: "fixture", Provider: "responses"},
+			CentralSampler: &runnerpb.CentralSamplerConfig{Service: "fixture"},
 		},
 		SetupScript: &setup,
 	}
@@ -227,7 +227,7 @@ func TestCompletedCompactionReleasesCommandBeforeNextInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "compact", Operation: &commandpb.Command_Compact{Compact: &commandpb.Compact{}}}, "fixture-account"); err != nil {
+	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "compact", Operation: &commandpb.Command_Compact{Compact: &commandpb.Compact{}}}, "fixture-account", nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
@@ -253,7 +253,7 @@ func TestCompletedCompactionReleasesCommandBeforeNextInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "after", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "Continue"}}}, "fixture-account"); err != nil {
+	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "after", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "Continue"}}}, "fixture-account", nil); err != nil {
 		t.Fatal(err)
 	}
 	command, err := store.NextCommand(t.Context(), owner, session.ID)
@@ -304,7 +304,7 @@ func TestStoreInterruptIsFencedToItsTurnAndSettledAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "turn-1", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}, "fixture-account"); err != nil {
+	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "turn-1", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}, "fixture-account", nil); err != nil {
 		t.Fatal(err)
 	}
 	command, err := store.NextCommand(t.Context(), owner, session.ID)
@@ -312,7 +312,7 @@ func TestStoreInterruptIsFencedToItsTurnAndSettledAtomically(t *testing.T) {
 		t.Fatalf("turn command=%v err=%v", command, err)
 	}
 	interrupt := &commandpb.Command{CommandId: "interrupt-1", Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: "turn-1"}}}
-	if _, err := store.Admit(t.Context(), session.ID, interrupt, "fixture-account"); err != nil {
+	if _, err := store.Admit(t.Context(), session.ID, interrupt, "fixture-account", nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
@@ -422,7 +422,7 @@ func TestLateInterruptIsSettledWithItsTurn(t *testing.T) {
 					_, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
 						CommandId: commandID,
 						Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: commandID}},
-					}, "fixture-account")
+					}, "fixture-account", nil)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -435,7 +435,7 @@ func TestLateInterruptIsSettledWithItsTurn(t *testing.T) {
 					_, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
 						CommandId: commandID,
 						Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: "first"}},
-					}, "fixture-account")
+					}, "fixture-account", nil)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -486,7 +486,7 @@ func TestLateInterruptIsSettledWithItsTurn(t *testing.T) {
 				_, err = store.Admit(t.Context(), session.ID, &commandpb.Command{
 					CommandId: "too-late",
 					Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: "first"}},
-				}, "fixture-account")
+				}, "fixture-account", nil)
 				if !errors.Is(err, ErrPrecondition) {
 					t.Fatalf("ended turn accepted an interrupt: %v", err)
 				}
@@ -507,7 +507,7 @@ func TestKnownRejectionPreservesOtherEffectUncertainty(t *testing.T) {
 			_, err = store.Admit(t.Context(), session.ID, &commandpb.Command{
 				CommandId: "first",
 				Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "Start"}},
-			}, "fixture-account")
+			}, "fixture-account", nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -546,7 +546,7 @@ func TestKnownRejectionPreservesOtherEffectUncertainty(t *testing.T) {
 			_, err = store.Admit(t.Context(), session.ID, &commandpb.Command{
 				CommandId: "second",
 				Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "Continue"}},
-			}, "fixture-account")
+			}, "fixture-account", nil)
 			if !errors.Is(err, ErrPrecondition) {
 				t.Fatalf("blocked session accepted new input: %v", err)
 			}
@@ -578,7 +578,7 @@ func TestRecoverableSessionsUsesBoundedRotatingPages(t *testing.T) {
 func TestGooseInitializationPreservesRetainedState(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
-	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "stored-command", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "stored input"}}}, "fixture-account"); err != nil {
+	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "stored-command", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "stored input"}}}, "fixture-account", nil); err != nil {
 		t.Fatal(err)
 	}
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
@@ -691,7 +691,7 @@ func TestDescribePreservesSessionConfigurationAndUpdatesModel(t *testing.T) {
 	spec := &runnerpb.SessionSpec{
 		Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
 		ReasoningEffort: "high", Instructions: "stored instructions",
-		CentralSampler: &runnerpb.CentralSamplerConfig{Service: "fixture", Provider: "responses"},
+		CentralSampler: &runnerpb.CentralSamplerConfig{Service: "fixture"},
 	}
 	executor := &sandboxespb.SandboxDestination{
 		Owner:   &sandboxespb.ServiceAccount{Namespace: "fixture", Name: "executor"},
@@ -728,7 +728,7 @@ func TestSessionEventAppendNotifiesTransactionally(t *testing.T) {
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("no-op update created event: %v err=%v", entries, err)
 	}
-	_, err = store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: fmt.Sprintf("event-%d", before), Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "wake"}}}, "fixture-account")
+	_, err = store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: fmt.Sprintf("event-%d", before), Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "wake"}}}, "fixture-account", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -783,7 +783,7 @@ func TestFailedActiveInputFoldsAsConfirmedInputAndFailedTurn(t *testing.T) {
 				_, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
 					CommandId: commandID,
 					Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: commandID}},
-				}, "fixture-account")
+				}, "fixture-account", nil)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -878,7 +878,7 @@ func TestFailedActiveInputFoldsAsConfirmedInputAndFailedTurn(t *testing.T) {
 
 func admitInput(t *testing.T, store *Store, sessionID, commandID, text string) {
 	t.Helper()
-	if _, err := store.Admit(t.Context(), sessionID, &commandpb.Command{CommandId: commandID, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: text}}}, "fixture-account"); err != nil {
+	if _, err := store.Admit(t.Context(), sessionID, &commandpb.Command{CommandId: commandID, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: text}}}, "fixture-account", nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -895,7 +895,7 @@ func TestSteeringInputJoinsTheActiveTurnOnceInAdmissionOrder(t *testing.T) {
 		t.Fatalf("turn command=%v err=%v", command, err)
 	}
 	admitInput(t, store, session.ID, "steer-a", "steering text")
-	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "model", Operation: &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: "fixture-model-2"}}}, "fixture-account"); err != nil {
+	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "model", Operation: &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: "fixture-model-2"}}}, "fixture-account", nil); err != nil {
 		t.Fatal(err)
 	}
 	admitInput(t, store, session.ID, "after-model", "next turn text")
@@ -991,7 +991,7 @@ func TestPendingInterruptTakesPrecedenceOverSteering(t *testing.T) {
 	if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "interrupt-1", Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: "turn-1"}}}, "fixture-account"); err != nil {
+	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "interrupt-1", Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: "turn-1"}}}, "fixture-account", nil); err != nil {
 		t.Fatal(err)
 	}
 	admitInput(t, store, session.ID, "steer", "too late")

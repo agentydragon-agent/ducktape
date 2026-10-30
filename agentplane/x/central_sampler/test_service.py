@@ -49,6 +49,100 @@ async def completed(
     raise AssertionError("event stream ended")
 
 
+async def test_flat_model_routes_enforce_effort_and_session_contract(
+    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+) -> None:
+    async with Endpoint() as endpoint:
+        config = settings(
+            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+        )
+        config.models["restricted-model"] = config.models["test-model"].model_copy(
+            update={"reasoning_efforts": {"high"}}
+        )
+        config.models["compatible-model"] = config.models["test-model"].model_copy(update={"reasoning_efforts": {""}})
+        async with service(config) as stub:
+            request = open_request(tmp_path)
+            request.spec.model = "unknown-model"
+            with pytest.raises(grpc.aio.AioRpcError) as rejected:
+                await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            assert rejected.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+            request.spec.model = "restricted-model"
+            with pytest.raises(grpc.aio.AioRpcError) as rejected:
+                await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            assert rejected.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+            request.spec.model = "test-model"
+            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            await stub.SubmitInput(
+                runner_service_pb2.SubmitInputRequest(
+                    session_id=request.session_id, command_id="hold-turn", text="Wait for the response."
+                ),
+                metadata=METADATA,
+                timeout=10,
+            )
+            async with await endpoint.next() as exchange:
+                for model, code in (
+                    ("unknown-model", grpc.StatusCode.INVALID_ARGUMENT),
+                    ("restricted-model", grpc.StatusCode.INVALID_ARGUMENT),
+                ):
+                    with pytest.raises(grpc.aio.AioRpcError) as rejected:
+                        await stub.ChangeModel(
+                            runner_service_pb2.ChangeModelRequest(
+                                session_id=request.session_id, command_id=model, model=model
+                            ),
+                            metadata=METADATA,
+                            timeout=10,
+                        )
+                    assert rejected.value.code() == code
+                await stub.ChangeModel(
+                    runner_service_pb2.ChangeModelRequest(
+                        session_id=request.session_id, command_id="compatible", model="compatible-model"
+                    ),
+                    metadata=METADATA,
+                    timeout=10,
+                )
+                with pytest.raises(grpc.aio.AioRpcError) as rejected:
+                    await stub.ChangeReasoningEffort(
+                        runner_service_pb2.ChangeReasoningEffortRequest(
+                            session_id=request.session_id, command_id="unsupported-effort", effort="high"
+                        ),
+                        metadata=METADATA,
+                        timeout=10,
+                    )
+                assert rejected.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+                await stub.ChangeModel(
+                    runner_service_pb2.ChangeModelRequest(
+                        session_id=request.session_id, command_id="restore-model", model="test-model"
+                    ),
+                    metadata=METADATA,
+                    timeout=10,
+                )
+                await stub.ChangeReasoningEffort(
+                    runner_service_pb2.ChangeReasoningEffortRequest(
+                        session_id=request.session_id, command_id="high-effort", effort="high"
+                    ),
+                    metadata=METADATA,
+                    timeout=10,
+                )
+                await stub.ChangeModel(
+                    runner_service_pb2.ChangeModelRequest(
+                        session_id=request.session_id, command_id="restricted", model="restricted-model"
+                    ),
+                    metadata=METADATA,
+                    timeout=10,
+                )
+                with pytest.raises(grpc.aio.AioRpcError) as rejected:
+                    await stub.ChangeModel(
+                        runner_service_pb2.ChangeModelRequest(
+                            session_id=request.session_id, command_id="incompatible-effort", model="compatible-model"
+                        ),
+                        metadata=METADATA,
+                        timeout=10,
+                    )
+                assert rejected.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+                await exchange.send(*response_stream([Message("done")], model="test-model").events)
+            assert (await completed(stub, "hold-turn")).status == event_pb2.TURN_STATUS_COMPLETED
+
+
 async def test_session_store_survives_idle_leases_and_is_separate_between_sessions(
     database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
 ) -> None:

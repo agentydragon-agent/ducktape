@@ -85,7 +85,7 @@ func TestRenderedStagingConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rendered staging app configuration rejected: %v", err)
 	}
-	if loaded.Models.CentralSampler == nil || loaded.Models.CentralSampler.Service != "central-sampler" || loaded.Models.CentralSampler.Provider != "responses" {
+	if loaded.Models.CentralSampler == nil || loaded.Models.CentralSampler.Service != "central-sampler" {
 		t.Fatalf("rendered central sampler selection lost: %+v", loaded.Models.CentralSampler)
 	}
 	if len(loaded.Models.Harnesses["HARNESS_CENTRAL_SAMPLER"]) == 0 {

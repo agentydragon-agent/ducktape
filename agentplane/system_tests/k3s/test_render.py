@@ -436,7 +436,6 @@ def test_central_sampler_fixtures_render_app_ingress_gateway_and_history_wiring(
         catalog = ModelCatalog.model_validate(app_config["models"])
         assert catalog.central_sampler is not None
         assert catalog.central_sampler.service == central_sampler.NAME
-        assert catalog.central_sampler.provider == "responses"
         assert catalog.harnesses[Harness.CENTRAL_SAMPLER] == [fixture_chart.GPT6_LUNA_RESPONSES.id]
 
         deployment = _resource(docs, "Deployment", central_sampler.NAME)
@@ -450,10 +449,9 @@ def test_central_sampler_fixtures_render_app_ingress_gateway_and_history_wiring(
         settings = CentralSamplerSettings.model_validate_json(
             _resource(docs, "ConfigMap", f"{central_sampler.NAME}-settings")["data"]["settings.json"]
         )
-        provider = settings.providers["responses"]
-        assert provider.endpoint == f"{llm_ingress.proxied_url(NAMESPACE)}/v1/responses"
-        assert str(provider.credential_file) == "/var/run/secrets/central-sampler/llm"
-        assert provider.models == {fixture_chart.GPT6_LUNA_RESPONSES.id}
+        assert settings.llm_proxy_url == llm_ingress.proxied_url(NAMESPACE)
+        assert str(settings.credential_file) == "/var/run/secrets/central-sampler/llm"
+        assert set(settings.models) == {fixture_chart.GPT6_LUNA_RESPONSES.id}
         assert any(
             mount["name"] == "caller-tokens" and mount["mountPath"] == "/var/run/secrets/central-sampler"
             for mount in container["volumeMounts"]

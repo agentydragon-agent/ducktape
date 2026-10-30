@@ -56,7 +56,10 @@ func toolDefinitions() []ResponsesCodeToolDefinition {
 	}
 }
 
-func RequestBody(model, conversationID string, items []ResponsesItem, instructions *string, executionState *ExecutionState) (ResponsesRequest, error) {
+func RequestBody(model, conversationID string, items []ResponsesItem, instructions *string, executionState *ExecutionState, config ModelConfig) (ResponsesRequest, error) {
+	if err := config.Validate(); err != nil {
+		return ResponsesRequest{}, err
+	}
 	description, err := execToolDescription(toolDefinitions())
 	if err != nil {
 		return ResponsesRequest{}, err
@@ -142,12 +145,12 @@ func canonicalJSON(value any) string {
 	return string(data)
 }
 
-func Sample(ctx context.Context, client *http.Client, endpoint, credential string, body ResponsesRequest, evidence *ResponseEvidence, attribution map[string]string, compaction bool) (*ProviderResponse, error) {
+func Sample(ctx context.Context, client *http.Client, proxyURL, credential string, body ResponsesRequest, responses ResponsesConfig, evidence *ResponseEvidence, attribution map[string]string, compaction bool) (*ProviderResponse, error) {
 	encoded, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(encoded))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(proxyURL, "/")+"/v1/responses", bytes.NewReader(encoded))
 	if err != nil {
 		return nil, err
 	}

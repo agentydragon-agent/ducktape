@@ -503,7 +503,7 @@ func Describe(session *Session) (*samplerpb.GetSessionResponse, error) {
 	}, nil
 }
 
-func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command, ownerUID string) (*eventlogpb.EventEntry, error) {
+func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command, ownerUID string, validate func(*Session) error) (*eventlogpb.EventEntry, error) {
 	if command == nil || command.GetCommandId() == "" || ownerUID == "" {
 		return nil, ErrInvalid
 	}
@@ -539,6 +539,40 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 		}
 		if session.Blocked {
 			return ErrPrecondition
+		}
+		if validate != nil {
+			// Validate against the state after earlier commands, under the admission lock.
+			projected := *session
+			rows, err := tx.QueryContext(ctx, `SELECT payload FROM sampler_command
+                WHERE session_id=$1 AND outcome=$2 ORDER BY admission`, id,
+				int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED))
+			if err != nil {
+				return err
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var wire []byte
+				if err := rows.Scan(&wire); err != nil {
+					return err
+				}
+				queued := &commandpb.Command{}
+				if err := proto.Unmarshal(wire, queued); err != nil {
+					return err
+				}
+				if model := queued.GetChangeModel(); model != nil {
+					projected.Model = model.GetModel()
+				}
+				if effort := queued.GetChangeReasoningEffort(); effort != nil {
+					projected.Effort = effort.GetEffort()
+				}
+			}
+			if err := rows.Err(); err != nil {
+				return err
+			}
+			rows.Close()
+			if err := validate(&projected); err != nil {
+				return err
+			}
 		}
 		if interrupt := command.GetInterruptTurn(); interrupt != nil {
 			if session.ActiveTurn == nil || *session.ActiveTurn != interrupt.GetTurnId() || conversation.Owner == nil {

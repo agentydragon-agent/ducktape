@@ -26,7 +26,6 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 SERVICE = "central-sampler"
 MODEL = GPT6_LUNA_RESPONSES.id
-PROVIDER = "responses"
 HISTORY_READER_AUDIENCE = "agentplane-history-service"
 
 

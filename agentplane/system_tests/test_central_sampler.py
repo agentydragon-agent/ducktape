@@ -17,7 +17,6 @@ from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.system_tests.central_sampler import (
     MODEL,
-    PROVIDER,
     SERVICE,
     CentralStack,
     capture_sampler_diagnostics,
@@ -196,7 +195,7 @@ async def _central_sampler_scenario(tmp_path: Path, scripted: ScriptedUpstream, 
             harness=runner_pb2.HARNESS_CENTRAL_SAMPLER,
             cwd=cwd,
             model=MODEL,
-            central_sampler=runner_pb2.CentralSamplerConfig(service=SERVICE, provider=PROVIDER),
+            central_sampler=runner_pb2.CentralSamplerConfig(service=SERVICE),
         )
         interrupted_opening = await deployed.dispatcher.OpenSession(
             session_dispatcher_pb2.OpenSessionRequest(

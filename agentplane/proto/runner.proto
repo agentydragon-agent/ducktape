@@ -49,10 +49,11 @@ enum Harness {
   HARNESS_CENTRAL_SAMPLER = 3;
 }
 
-// Selects a configured central service and provider route; neither name conveys authority.
+// Selects a configured central service; the name conveys no authority.
 message CentralSamplerConfig {
   string service = 1;
-  string provider = 2;
+  reserved 2;
+  reserved "provider";
 }
 
 message SessionSpec {

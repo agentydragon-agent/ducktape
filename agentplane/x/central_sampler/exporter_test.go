@@ -135,7 +135,7 @@ func startFixtureHistory(t *testing.T, h *fixtureHistory) (string, string) {
 func exportFixtureSession(t *testing.T, store *Store) *Session {
 	t.Helper()
 	session, err := store.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
-		SessionId: uuid.NewString(), Spec: &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "test-model", CentralSampler: &runnerpb.CentralSamplerConfig{Service: "fixture", Provider: "responses"}},
+		SessionId: uuid.NewString(), Spec: &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "test-model", CentralSampler: &runnerpb.CentralSamplerConfig{Service: "fixture"}},
 		Executor: &sandboxpb.SandboxDestination{Owner: &sandboxpb.ServiceAccount{Namespace: "test", Name: "executor"}, Sandbox: "test-executor", SandboxUid: uuid.NewString()}, ExpectedIncarnationUid: uuid.NewString(),
 	}, "test-account-uid")
 	if err != nil {
@@ -145,7 +145,7 @@ func exportFixtureSession(t *testing.T, store *Store) *Session {
 }
 
 func admitExportEvent(ctx context.Context, store *Store, id string, index int) error {
-	_, err := store.Admit(ctx, id, &commandpb.Command{CommandId: fmt.Sprintf("command-%d", index), Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "test input"}}}, "test-account-uid")
+	_, err := store.Admit(ctx, id, &commandpb.Command{CommandId: fmt.Sprintf("command-%d", index), Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "test input"}}}, "test-account-uid", nil)
 	return err
 }
 

@@ -34,10 +34,10 @@ own Pod, initialize its DB with an init container, and use projected service-acc
 Gateway and History. The service and its shared JavaScript host use the Pod container's aggregate
 CPU and memory limits.
 
-Server-owned configuration names the service, provider routes (endpoint, credential placeholder,
-model and reasoning-effort allowlists), TokenReview audience and allowed caller accounts,
-code-mode host binary, executor-side Codex path, logs, concurrency/deadlines and limits. Providers
-use exactly one of `credential` or `credential_file`; the service reads the file before each
+Server-owned configuration names the service, the LLM proxy base URL, credential source,
+model contracts and per-model reasoning-effort allowlists, TokenReview audience and allowed caller accounts,
+code-mode host binary, executor-side Codex path, logs, concurrency/deadlines and limits. The LLM proxy connection
+uses exactly one of `credential` or `credential_file`; the service reads the file before each
 request so projected service-account tokens can rotate. `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL`
 overrides `database_url` in the JSON settings, so database credentials can stay in a Secret-backed
 environment variable. Gateway mode requires `gateway_target` and a rotating projected
@@ -71,7 +71,7 @@ container limits stop meeting the production resource contract.
   empty settings preserve native operation and do not enable the new transport.
 - The sampler allows the Dispatcher account for admission. History explicitly allows the sampler
   account in `ingress.sampler_accounts`; it retains the distinct executor Sandbox identity.
-- The app's optional `model_catalog.central_sampler = {service, provider}` and
+- The app's optional `model_catalog.central_sampler = {service}` and
   `HARNESS_CENTRAL_SAMPLER` model list offer **Central sampler** alongside Codex and Claude. A caller
   cannot choose arbitrary service endpoints. A non-empty setup script runs once on the bound executor, in the resolved working directory,
   before sampling starts. Its stdout, stderr and terminal outcome are retained in History.
@@ -91,6 +91,19 @@ pinned upstream host/executor processes, authenticated Gateway/History and scrip
 fixtures. Scripted acceptance does not establish live provider or subscription compatibility.
 Provider compaction uses Codex's remote-v2 beta protocol; choose a supporting endpoint/model.
 See the [v1 validation evidence](../../debug/central_sampler_v1.md) for results and fixture diagnosis.
+
+## Model contracts
+
+The top-level `models` map keys model route IDs to an API style, Responses dialect, exec encoding
+and allowed reasoning efforts. Agentplane owns this compatibility policy; the shared model catalog
+holds no sampler-specific fields. This service implements `api: responses`, `responses.dialect: lite`
+and `exec_encoding: freeform`. Unsupported values are rejected.
+
+The service uses one `llm_proxy_url` and credential source. Upstream routing belongs to the proxy.
+Sessions name only the sampler service. Model changes preserve API, dialect and exec encoding and
+require the target model to allow the current effort. Admission validates the projected model and
+effort after earlier queued commands under the Session transaction lock. Route contracts must stay
+fixed while retained Sessions exist.
 
 Rollback: remove the app offerings and named central route, then disable the sampler's inbound
 allowlists. Preserve the sampler DB and History records. Reverting sampler code does not convert a

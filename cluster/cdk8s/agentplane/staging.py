@@ -32,7 +32,7 @@ from agentplane.llm_ingress.models import AttributionConfig, AttributionField, A
 from agentplane.runner.configuration import GuestResources, ResourceLimits
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
-from agentplane.x.central_sampler.settings import Provider
+from agentplane.x.central_sampler.settings import ModelConfig, ResponsesConfig
 from cluster.cdk8s import (
     agent_access_profiles,
     cilium,
@@ -112,6 +112,7 @@ _KUBERNETES_MCP_URL = "https://kubectl-passthrough-mcp.allegedly.works/mcp"
 _KUBERNETES_MCP_SERVICE_URL = f"{kubectl_passthrough_mcp.SERVICE.url}/mcp"
 _GROCY_SF_MCP_URL = "https://grocy-mcp-sf.allegedly.works/mcp"
 _MCP_CLIENT_METADATA_URL = f"https://{_ACTIONS_HOSTNAME}/oauth/client-metadata.json"
+
 
 # Separate harness and executor caps leave 1 GiB below the service high watermark.
 # The outer service cap leaves 1 GiB for guest services and kernel work.
@@ -381,22 +382,22 @@ ENV = Environment(
         namespace=STAGING_NAMESPACE,
         sandbox_template=POD_TEMPLATE,
         models=STAGING_APP_MODELS,
-        central_sampler=CentralSamplerChoice(service=central_sampler.NAME, provider="responses"),
+        central_sampler=CentralSamplerChoice(service=central_sampler.NAME),
         action_federation=_ACTION_FEDERATION,
         connection_service_url=AnyHttpUrl(_CONNECTION_SERVICE.url),
     ),
     central_sampler=CentralSamplerProps(
-        providers={
-            "responses": Provider(
-                endpoint=f"{llm_ingress.service(STAGING_NAMESPACE).url}/v1/responses",
-                credential_file=Path("/var/run/secrets/central-sampler/llm"),
-                models={route.id for route in STAGING_APP_MODELS.codex},
-                reasoning_efforts={
-                    "",
-                    *(effort for route in STAGING_APP_MODELS.codex for effort in route.reasoning_efforts),
-                },
+        models={
+            route.id: ModelConfig(
+                api="responses",
+                responses=ResponsesConfig(dialect="lite"),
+                exec_encoding="freeform",
+                reasoning_efforts={"", *route.reasoning_efforts},
             )
+            for route in STAGING_APP_MODELS.codex
         },
+        llm_proxy_url=llm_ingress.service(STAGING_NAMESPACE).url,
+        credential_file=Path("/var/run/secrets/central-sampler/llm"),
         max_live_sessions=32,
         turn_timeout_seconds=3600,
         rpc_timeout_seconds=30,

@@ -142,7 +142,7 @@ delivering, runner-admitted, or failed state, and
 `GET /sandboxes/{name}/sessions/{id}/opening` checks that durable result. Admission does not mean the
 History Service has projected a Thread yet.
 
-The optional `model_catalog.central_sampler` names a configured service and provider route;
+The optional `model_catalog.central_sampler` names a configured service;
 its `HARNESS_CENTRAL_SAMPLER` model list adds **Central sampler** to the launch form alongside the
 native harness offerings. Setup scripts run once on the bound Sandbox executor before sampling begins. For an existing
 central Session, a suspended or unready execution Sandbox leaves conversation history and central

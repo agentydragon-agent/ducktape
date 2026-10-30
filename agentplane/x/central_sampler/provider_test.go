@@ -55,7 +55,7 @@ func TestResponsesRequestUsesCodexToolsAndPreservesOpaqueContext(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"type":"reasoning","encrypted_content":"opaque","provider_sequence":9007199254740993}`), &item); err != nil {
 		t.Fatal(err)
 	}
-	body, err := RequestBody("fixture-model", "fixture-session", []ResponsesItem{item}, nil, nil)
+	body, err := RequestBody("fixture-model", "fixture-session", []ResponsesItem{item}, nil, nil, fixtureSettings().Models["test-model"])
 	if err != nil {
 		t.Fatal(err)
 	}
