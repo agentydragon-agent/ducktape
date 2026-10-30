@@ -2517,4 +2517,4 @@ use_repo(
 
 # ─ BuildBuddy proto definitions (for bbapi CLI) ──────────────────────────────
 buildbuddy_protos = use_extension("//third_party/buildbuddy:buildbuddy_protos.bzl", "buildbuddy_protos")
-use_repo(buildbuddy_protos, "buildbuddy_protos")
+use_repo(buildbuddy_protos, "buildbuddy_protos", "kythe_protos")

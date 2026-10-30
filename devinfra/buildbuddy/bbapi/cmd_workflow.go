@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
@@ -22,9 +23,10 @@ func workflowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			req := &workflowpb.GetWorkflowsRequest{}
-			resp := &workflowpb.GetWorkflowsResponse{}
-			if err := c.call("GetWorkflows", req, resp); err != nil {
+			resp, err := c.rpc.GetWorkflows(context.Background(), req)
+			if err != nil {
 				return err
 			}
 			if jsonOutput {
@@ -57,6 +59,7 @@ func workflowRunSubCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			repo, err := detectRepoURL()
 			if err != nil {
 				return fmt.Errorf("auto-detect repo: %w", err)

@@ -143,13 +143,14 @@ bbapi cache metadata <digest> <size-bytes>
 bbapi trend [--days N] [--repo URL]
 ```
 
-All `bbapi` commands support `--json` and `--timeout <duration>` (HTTP request timeout, default 120s).
+All `bbapi` commands support `--json` and `--timeout <duration>` (API request timeout, default 120s).
 `status`, `first-failure`, `export`, and `events` always emit JSON; `blob cat` emits raw bytes.
 Reads retry transient failures; cancellation RPCs are sent once.
 
-Responses are parsed against pinned BuildBuddy protos but unknown fields are
-discarded, so `bbapi` tolerates API/proto drift between repins (newly added
-response fields) instead of hard-failing on the parse.
+Read RPCs use the generated gRPC client with API-key metadata and system TLS
+trust. Mutations, suggestions, public API queries, raw BES, and artifact downloads
+use HTTP. JSON responses discard fields unknown to the pinned BuildBuddy protos,
+so newly added response fields do not fail parsing between repins.
 
 ## Investigating Failed CI Builds
 
@@ -378,9 +379,9 @@ this from the detected group_id and repo URL. `GetWorkflows` returns empty for t
 
 ## Raw API Fallback
 
-If `bbapi` is not available, use the Twirp JSON API at `app.buildbuddy.io` directly
+If `bbapi` is not available, use BuildBuddy’s protolet JSON API at `app.buildbuddy.io` directly
 with curl. Read `devinfra/buildbuddy/bbapi/client.go` for how the CLI talks to the API
-(Twirp JSON over HTTP). The API key comes from `BUILDBUDDY_API_KEY` env var, or
+(generated gRPC calls and protolet JSON over HTTP). The API key comes from `BUILDBUDDY_API_KEY` env var, or
 parse it from `~/.config/bazel/buildbuddy.bazelrc` (`x-buildbuddy-api-key=...`).
 
 Proto definitions for request/response schemas:

@@ -1,12 +1,9 @@
-// Package main provides a CLI for querying the BuildBuddy Twirp JSON API.
-//
-// BuildBuddy exposes its internal BuildBuddyService via a Twirp-style JSON API
-// at app.buildbuddy.io/rpc/BuildBuddyService/<Method>. The gRPC endpoint
-// (remote.buildbuddy.io) only serves Bazel-specific services (RBE, BES, cache).
+// Package main queries BuildBuddy using its generated gRPC API and HTTP endpoints.
 package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -16,7 +13,9 @@ import (
 	"strings"
 	"time"
 
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	invocationpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -24,6 +23,8 @@ import (
 const defaultBaseURL = "https://app.buildbuddy.io"
 
 type client struct {
+	rpc     bbspb.BuildBuddyServiceClient
+	conn    *grpc.ClientConn
 	baseURL string
 	apiKey  string
 	http    *http.Client
@@ -40,10 +41,20 @@ func newClient() (*client, error) {
 	if base == "" {
 		base = defaultBaseURL
 	}
-	return &client{baseURL: base, apiKey: key, http: &http.Client{Timeout: requestTimeout}, retries: 3}, nil
+	conn, err := newRPCConnection(base, key, requestTimeout, 3)
+	if err != nil {
+		return nil, err
+	}
+	return &client{baseURL: base, apiKey: key, http: &http.Client{Timeout: requestTimeout}, retries: 3, conn: conn, rpc: bbspb.NewBuildBuddyServiceClient(conn)}, nil
 }
 
-// call makes a Twirp JSON RPC call: POST /rpc/BuildBuddyService/<method>.
+func (c *client) close() {
+	if c.conn != nil {
+		_ = c.conn.Close()
+	}
+}
+
+// call uses BuildBuddy's protolet HTTP adapter: POST /rpc/BuildBuddyService/<method>.
 func (c *client) call(method string, req proto.Message, resp proto.Message) error {
 	return c.callPath("/rpc/BuildBuddyService/"+method, req, resp)
 }
@@ -90,8 +101,8 @@ func (c *client) resolveGroupID(repo string) (string, error) {
 		Query: &invocationpb.InvocationQuery{RepoUrl: repo},
 		Count: 1,
 	}
-	resp := &invocationpb.SearchInvocationResponse{}
-	if err := c.call("SearchInvocation", req, resp); err != nil {
+	resp, err := c.rpc.SearchInvocation(context.Background(), req)
+	if err != nil {
 		return "", fmt.Errorf("resolve group_id: %w", err)
 	}
 	for _, inv := range resp.GetInvocation() {

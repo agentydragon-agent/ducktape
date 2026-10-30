@@ -22,6 +22,7 @@ func invocationStatusCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
+		defer c.close()
 		resp, err := getInvocationStatus(c, args[0])
 		if err != nil {
 			return err
@@ -47,6 +48,7 @@ func invocationEventsCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
+		defer c.close()
 		body, err := readInvocationEvents(c, args[0])
 		if err != nil {
 			return err
@@ -62,6 +64,7 @@ func invocationFirstFailureCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
+		defer c.close()
 		label, err := failedTest(c, args[0], "")
 		if err != nil {
 			return err
@@ -104,6 +107,7 @@ func invocationCancelCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
+		defer c.close()
 		return cancelInvocations(c, args)
 	}}
 }

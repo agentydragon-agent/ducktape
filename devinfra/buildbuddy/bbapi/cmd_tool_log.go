@@ -31,6 +31,7 @@ match against "invocation-id/name".`,
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			logs, err := listToolLogsResolved(c, args[0])
 			if err != nil {
 				return err
@@ -55,6 +56,7 @@ func toolLogListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			logs, err := listToolLogsResolved(c, args[0])
 			if err != nil {
 				return err
@@ -74,6 +76,7 @@ func toolLogCatCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			logs, err := listToolLogsResolved(c, args[0])
 			if err != nil {
 				return err
@@ -111,6 +114,7 @@ the invocation ID to avoid collisions.
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			logs, err := listToolLogsResolved(c, args[0])
 			if err != nil {
 				return err

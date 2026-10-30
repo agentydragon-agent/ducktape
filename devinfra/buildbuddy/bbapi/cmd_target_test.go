@@ -1,19 +1,71 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"io"
-	"net/http"
-	"net/http/httptest"
+	"net"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	invocationpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	targetpb "github.com/buildbuddy-io/buildbuddy/proto/target"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 )
+
+type targetHistoryTestServer struct {
+	bbspb.UnimplementedBuildBuddyServiceServer
+	t            *testing.T
+	searchResult *invocationpb.SearchInvocationResponse
+	pageTokens   []string
+	pages        map[string]*targetpb.GetTargetHistoryResponse
+}
+
+func (s *targetHistoryTestServer) SearchInvocation(context.Context, *invocationpb.SearchInvocationRequest) (*invocationpb.SearchInvocationResponse, error) {
+	return s.searchResult, nil
+}
+
+func (s *targetHistoryTestServer) GetTargetHistory(_ context.Context, req *targetpb.GetTargetHistoryRequest) (*targetpb.GetTargetHistoryResponse, error) {
+	pageToken := req.GetPageToken()
+	s.pageTokens = append(s.pageTokens, pageToken)
+	page, ok := s.pages[pageToken]
+	if !ok {
+		s.t.Errorf("unexpected page token %q", pageToken)
+		return nil, grpcstatus.Error(codes.InvalidArgument, "unexpected page token")
+	}
+	return page, nil
+}
+
+func startTargetHistoryTestServer(t *testing.T, service *targetHistoryTestServer) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen for gRPC test server: %v", err)
+	}
+	server := grpc.NewServer()
+	bbspb.RegisterBuildBuddyServiceServer(server, service)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	t.Setenv("BUILDBUDDY_API_KEY", "test-key")
+	t.Setenv("BUILDBUDDY_URL", "http://"+listener.Addr().String())
+}
+
+func decodeTargetHistoryPage(t *testing.T, data []byte) *targetpb.GetTargetHistoryResponse {
+	t.Helper()
+	response := &targetpb.GetTargetHistoryResponse{}
+	if err := protojson.Unmarshal(data, response); err != nil {
+		t.Fatalf("decode target history fixture: %v", err)
+	}
+	return response
+}
 
 func TestChooseLogsPrefersTheResultsThatFailed(t *testing.T) {
 	logs := logsOf(parseOrFail(t, shardedStream), "//pkg:visual")
@@ -84,7 +136,6 @@ func TestTargetHistoryPaginatesMergesAndFiltersBothOutputModes(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			var pageTokens []string
 			firstPage := []byte(`{"invocationTargets":[
 				{"target":{"label":"//pkg:passed"},"targetStatus":[{"status":"PASSED","invocationId":"passed-only","invocationCreatedAtUsec":"1772323200000000"}]},
 				{"target":{"label":"//pkg:keep"},"targetStatus":[{"status":"PASSED","invocationId":"keep-pass","invocationCreatedAtUsec":"1772409600000000"}]}
@@ -96,40 +147,18 @@ func TestTargetHistoryPaginatesMergesAndFiltersBothOutputModes(t *testing.T) {
 			thirdPage := []byte(`{"invocationTargets":[
 				{"target":{"label":"//pkg:keep"},"targetStatus":[{"status":"FAILED","invocationId":"stale-page","invocationCreatedAtUsec":"1767052800000000"}]}
 			],"nextPageToken":"page-4"}`)
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				switch r.URL.Path {
-				case "/rpc/BuildBuddyService/SearchInvocation":
-					_, _ = io.WriteString(w, `{"invocation":[{"acl":{"groupId":"test-group"}}]}`)
-				case "/rpc/BuildBuddyService/GetTargetHistory":
-					var request struct {
-						PageToken string `json:"pageToken"`
-					}
-					if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-						t.Errorf("decode history request: %v", err)
-						http.Error(w, "bad request", http.StatusBadRequest)
-						return
-					}
-					pageTokens = append(pageTokens, request.PageToken)
-					switch request.PageToken {
-					case "":
-						_, _ = w.Write(firstPage)
-					case "page-2":
-						_, _ = w.Write(secondPage)
-					case "page-3":
-						_, _ = w.Write(thirdPage)
-					default:
-						t.Errorf("unexpected page token %q", request.PageToken)
-						http.Error(w, "unexpected page token", http.StatusBadRequest)
-					}
-				default:
-					t.Errorf("unexpected API path %q", r.URL.Path)
-					http.NotFound(w, r)
-				}
-			}))
-			defer server.Close()
-			t.Setenv("BUILDBUDDY_API_KEY", "test-key")
-			t.Setenv("BUILDBUDDY_URL", server.URL)
+			service := &targetHistoryTestServer{
+				t: t,
+				searchResult: &invocationpb.SearchInvocationResponse{
+					Invocation: []*invocationpb.Invocation{{Acl: &aclpb.ACL{GroupId: "test-group"}}},
+				},
+				pages: map[string]*targetpb.GetTargetHistoryResponse{
+					"":       decodeTargetHistoryPage(t, firstPage),
+					"page-2": decodeTargetHistoryPage(t, secondPage),
+					"page-3": decodeTargetHistoryPage(t, thirdPage),
+				},
+			}
+			startTargetHistoryTestServer(t, service)
 
 			previousJSONOutput := jsonOutput
 			jsonOutput = tc.jsonOutput
@@ -148,8 +177,8 @@ func TestTargetHistoryPaginatesMergesAndFiltersBothOutputModes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("run target history: %v", err)
 			}
-			if len(pageTokens) != 3 || pageTokens[0] != "" || pageTokens[1] != "page-2" || pageTokens[2] != "page-3" {
-				t.Errorf("history page tokens = %q, want empty, page-2, page-3; page-4 must be skipped", pageTokens)
+			if len(service.pageTokens) != 3 || service.pageTokens[0] != "" || service.pageTokens[1] != "page-2" || service.pageTokens[2] != "page-3" {
+				t.Errorf("history page tokens = %q, want empty, page-2, page-3; page-4 must be skipped", service.pageTokens)
 			}
 
 			if tc.jsonOutput {

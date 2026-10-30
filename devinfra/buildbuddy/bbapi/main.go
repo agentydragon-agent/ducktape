@@ -19,7 +19,7 @@ func main() {
 	root := &cobra.Command{
 		Use:   "bbapi",
 		Short: "Query the BuildBuddy API",
-		Long: `Query the BuildBuddy Twirp JSON API (app.buildbuddy.io).
+		Long: `Query BuildBuddy via its gRPC service and HTTP APIs (app.buildbuddy.io).
 
 Set BUILDBUDDY_API_KEY to authenticate. Use --json for raw proto JSON output.
 
@@ -32,7 +32,7 @@ Full service definition:
 	}
 	root.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output raw JSON")
 
-	root.PersistentFlags().DurationVar(&requestTimeout, "timeout", 120*time.Second, "HTTP request timeout")
+	root.PersistentFlags().DurationVar(&requestTimeout, "timeout", 120*time.Second, "API request timeout")
 	root.AddCommand(blobCmd())
 	root.AddCommand(invocationCmd())
 	root.AddCommand(targetCmd())

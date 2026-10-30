@@ -2,30 +2,43 @@ package main
 
 import (
 	"bytes"
-	"encoding/base64"
+	"context"
 	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	eventlogpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	invocationpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	invocationstatuspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	targetpb "github.com/buildbuddy-io/buildbuddy/proto/target"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 )
 
-type targetRequestJSON struct {
-	RequestContext struct {
-		GroupID string `json:"groupId"`
-	} `json:"requestContext"`
-	InvocationID string `json:"invocationId"`
-	Status       string `json:"status"`
+type invocationWatchTestRPC struct {
+	bbspb.BuildBuddyServiceClient
+	getInvocation    func(context.Context, *invocationpb.GetInvocationRequest) (*invocationpb.GetInvocationResponse, error)
+	getEventLogChunk func(context.Context, *eventlogpb.GetEventLogChunkRequest) (*eventlogpb.GetEventLogChunkResponse, error)
+	getTarget        func(context.Context, *targetpb.GetTargetRequest) (*targetpb.GetTargetResponse, error)
 }
 
-type eventLogChunkRequestJSON struct {
-	ChunkID string `json:"chunkId"`
+func (r *invocationWatchTestRPC) GetInvocation(ctx context.Context, req *invocationpb.GetInvocationRequest, _ ...grpc.CallOption) (*invocationpb.GetInvocationResponse, error) {
+	return r.getInvocation(ctx, req)
+}
+
+func (r *invocationWatchTestRPC) GetEventLogChunk(ctx context.Context, req *eventlogpb.GetEventLogChunkRequest, _ ...grpc.CallOption) (*eventlogpb.GetEventLogChunkResponse, error) {
+	return r.getEventLogChunk(ctx, req)
+}
+
+func (r *invocationWatchTestRPC) GetTarget(ctx context.Context, req *targetpb.GetTargetRequest, _ ...grpc.CallOption) (*targetpb.GetTargetResponse, error) {
+	return r.getTarget(ctx, req)
 }
 
 type invocationWatchTestChunk struct {
@@ -34,13 +47,38 @@ type invocationWatchTestChunk struct {
 	buffer      string
 }
 
+func invocationWatchTestResponse(status invocationstatuspb.InvocationStatus, success bool, firstChunkID string, chunked bool) *invocationpb.GetInvocationResponse {
+	return &invocationpb.GetInvocationResponse{
+		Invocation: []*invocationpb.Invocation{{
+			Acl:                 &aclpb.ACL{GroupId: "test-group"},
+			InvocationStatus:    status,
+			Success:             success,
+			HasChunkedEventLogs: chunked,
+			LastChunkId:         firstChunkID,
+		}},
+	}
+}
+
+func invocationWatchTestTargetResponse(failedTest string) *targetpb.GetTargetResponse {
+	if failedTest == "" {
+		return &targetpb.GetTargetResponse{}
+	}
+	return &targetpb.GetTargetResponse{
+		TargetGroups: []*targetpb.TargetGroup{{
+			Targets: []*targetpb.Target{{
+				Metadata: &targetpb.TargetMetadata{Label: failedTest},
+			}},
+		}},
+	}
+}
+
 func newChunkedInvocationWatchTestClient(
 	t *testing.T,
-	invocationStatus string,
+	invocationStatus invocationstatuspb.InvocationStatus,
 	success bool,
 	failedTest string,
 	chunks []invocationWatchTestChunk,
-	chunkErrorStatus int,
+	chunkError error,
 ) *client {
 	t.Helper()
 
@@ -52,113 +90,56 @@ func newChunkedInvocationWatchTestClient(
 	if len(chunks) > 0 {
 		firstChunkID = chunks[0].id
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Errorf("request method = %q, want POST", r.Method)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/rpc/BuildBuddyService/GetInvocation":
-			_, _ = fmt.Fprintf(
-				w,
-				`{"invocation":[{"acl":{"groupId":"test-group"},"invocationStatus":%q,"success":%t,"hasChunkedEventLogs":true,"lastChunkId":%q}]}`,
-				invocationStatus,
-				success,
-				firstChunkID,
-			)
-		case "/rpc/BuildBuddyService/GetEventLogChunk":
-			if chunkErrorStatus != 0 {
-				http.Error(w, "Log index limit exceeded", chunkErrorStatus)
-				return
+	rpc := &invocationWatchTestRPC{
+		getInvocation: func(context.Context, *invocationpb.GetInvocationRequest) (*invocationpb.GetInvocationResponse, error) {
+			return invocationWatchTestResponse(invocationStatus, success, firstChunkID, true), nil
+		},
+		getEventLogChunk: func(_ context.Context, request *eventlogpb.GetEventLogChunkRequest) (*eventlogpb.GetEventLogChunkResponse, error) {
+			if chunkError != nil {
+				return nil, chunkError
 			}
-			var request eventLogChunkRequestJSON
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-				t.Errorf("decode GetEventLogChunk request: %v", err)
-				http.Error(w, "bad request", http.StatusBadRequest)
-				return
-			}
-			chunk, ok := chunkByID[request.ChunkID]
+			chunk, ok := chunkByID[request.GetChunkId()]
 			if !ok {
-				t.Errorf("unexpected chunk ID %q", request.ChunkID)
-				http.NotFound(w, r)
-				return
+				t.Errorf("unexpected chunk ID %q", request.GetChunkId())
+				return nil, grpcstatus.Error(codes.NotFound, "unexpected chunk ID")
 			}
-			buffer := base64.StdEncoding.EncodeToString([]byte(chunk.buffer))
-			_, _ = fmt.Fprintf(w, `{"buffer":%q,"nextChunkId":%q}`, buffer, chunk.nextChunkID)
-		case "/rpc/BuildBuddyService/GetTarget":
-			if failedTest == "" {
-				_, _ = io.WriteString(w, `{}`)
-				return
-			}
-			_, _ = fmt.Fprintf(w, `{"targetGroups":[{"targets":[{"metadata":{"label":%q}}]}]}`, failedTest)
-		default:
-			t.Errorf("unexpected API path %q", r.URL.Path)
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	return &client{baseURL: server.URL, apiKey: "test-key", http: server.Client()}
+			return &eventlogpb.GetEventLogChunkResponse{Buffer: []byte(chunk.buffer), NextChunkId: chunk.nextChunkID}, nil
+		},
+		getTarget: func(context.Context, *targetpb.GetTargetRequest) (*targetpb.GetTargetResponse, error) {
+			return invocationWatchTestTargetResponse(failedTest), nil
+		},
+	}
+	return &client{baseURL: "https://app.buildbuddy.io", rpc: rpc}
 }
 
 func newInvocationWatchTestClient(
 	t *testing.T,
-	invocationStatus string,
+	invocationStatus invocationstatuspb.InvocationStatus,
 	success bool,
 	failedTest string,
-) (*client, func() (int, int, targetRequestJSON)) {
+) (*client, func() (int, int, *targetpb.GetTargetRequest)) {
 	t.Helper()
 
 	invocationCalls := 0
 	targetCalls := 0
-	var targetRequest targetRequestJSON
+	var targetRequest *targetpb.GetTargetRequest
 	var mu sync.Mutex
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Errorf("request method = %q, want POST", r.Method)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/rpc/BuildBuddyService/GetInvocation":
+	rpc := &invocationWatchTestRPC{
+		getInvocation: func(context.Context, *invocationpb.GetInvocationRequest) (*invocationpb.GetInvocationResponse, error) {
 			mu.Lock()
 			invocationCalls++
 			mu.Unlock()
-			_, _ = fmt.Fprintf(
-				w,
-				`{"invocation":[{"acl":{"groupId":"test-group"},"invocationStatus":%q,"success":%t,"hasChunkedEventLogs":false}]}`,
-				invocationStatus,
-				success,
-			)
-		case "/rpc/BuildBuddyService/GetTarget":
+			return invocationWatchTestResponse(invocationStatus, success, "", false), nil
+		},
+		getTarget: func(_ context.Context, request *targetpb.GetTargetRequest) (*targetpb.GetTargetResponse, error) {
 			mu.Lock()
 			targetCalls++
-			mu.Unlock()
-			var request targetRequestJSON
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-				t.Errorf("decode GetTarget request: %v", err)
-				http.Error(w, "bad request", http.StatusBadRequest)
-				return
-			}
-			mu.Lock()
 			targetRequest = request
 			mu.Unlock()
-			if failedTest == "" {
-				_, _ = io.WriteString(w, `{}`)
-				return
-			}
-			_, _ = fmt.Fprintf(w, `{"targetGroups":[{"targets":[{"metadata":{"label":%q}}]}]}`, failedTest)
-		default:
-			t.Errorf("unexpected API path %q", r.URL.Path)
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	return &client{baseURL: server.URL, apiKey: "test-key", http: server.Client()}, func() (int, int, targetRequestJSON) {
+			return invocationWatchTestTargetResponse(failedTest), nil
+		},
+	}
+	return &client{baseURL: "https://app.buildbuddy.io", rpc: rpc}, func() (int, int, *targetpb.GetTargetRequest) {
 		mu.Lock()
 		defer mu.Unlock()
 		return invocationCalls, targetCalls, targetRequest
@@ -181,7 +162,7 @@ func readInvocationWatchResult(t *testing.T, path string) invocationWatchResult 
 func TestWatchInvocationWritesEarlyTestFailureResult(t *testing.T) {
 	const invocationID = "invocation-test"
 	const failedTest = "//pkg:failed_test"
-	client, requestCounts := newInvocationWatchTestClient(t, "PARTIAL_INVOCATION_STATUS", false, failedTest)
+	client, requestCounts := newInvocationWatchTestClient(t, invocationstatuspb.InvocationStatus_PARTIAL_INVOCATION_STATUS, false, failedTest)
 	resultPath := filepath.Join(t.TempDir(), "result.json")
 	var logs bytes.Buffer
 
@@ -200,7 +181,7 @@ func TestWatchInvocationWritesEarlyTestFailureResult(t *testing.T) {
 	if invocations != 2 || targets != 1 {
 		t.Errorf("API call counts = GetInvocation %d, GetTarget %d; want 2 and 1", invocations, targets)
 	}
-	if request.InvocationID != invocationID || request.RequestContext.GroupID != "test-group" || request.Status != "FAILED" {
+	if request.GetInvocationId() != invocationID || request.GetRequestContext().GetGroupId() != "test-group" || request.GetStatus().String() != "FAILED" {
 		t.Errorf("GetTarget request = %+v", request)
 	}
 }
@@ -208,7 +189,7 @@ func TestWatchInvocationWritesEarlyTestFailureResult(t *testing.T) {
 func TestWatchInvocationWritesTerminalResult(t *testing.T) {
 	tests := []struct {
 		name         string
-		status       string
+		status       invocationstatuspb.InvocationStatus
 		success      bool
 		wantState    string
 		wantReason   string
@@ -217,7 +198,7 @@ func TestWatchInvocationWritesTerminalResult(t *testing.T) {
 	}{
 		{
 			name:         "success",
-			status:       "COMPLETE_INVOCATION_STATUS",
+			status:       invocationstatuspb.InvocationStatus_COMPLETE_INVOCATION_STATUS,
 			success:      true,
 			wantState:    "success",
 			wantReason:   "completed",
@@ -225,14 +206,14 @@ func TestWatchInvocationWritesTerminalResult(t *testing.T) {
 		},
 		{
 			name:         "failure",
-			status:       "COMPLETE_INVOCATION_STATUS",
+			status:       invocationstatuspb.InvocationStatus_COMPLETE_INVOCATION_STATUS,
 			wantState:    "failure",
 			wantReason:   "completed",
 			wantComplete: true,
 		},
 		{
 			name:       "disconnected",
-			status:     "DISCONNECTED_INVOCATION_STATUS",
+			status:     invocationstatuspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS,
 			wantState:  "error",
 			wantReason: "disconnected",
 			wantError:  true,
@@ -260,7 +241,7 @@ func TestWatchInvocationWritesTerminalResult(t *testing.T) {
 func TestWatchInvocationResultWhenLogReadFails(t *testing.T) {
 	tests := []struct {
 		name         string
-		status       string
+		status       invocationstatuspb.InvocationStatus
 		success      bool
 		wantState    string
 		wantReason   string
@@ -268,7 +249,7 @@ func TestWatchInvocationResultWhenLogReadFails(t *testing.T) {
 	}{
 		{
 			name:         "success",
-			status:       "COMPLETE_INVOCATION_STATUS",
+			status:       invocationstatuspb.InvocationStatus_COMPLETE_INVOCATION_STATUS,
 			success:      true,
 			wantState:    "success",
 			wantReason:   "completed",
@@ -276,20 +257,20 @@ func TestWatchInvocationResultWhenLogReadFails(t *testing.T) {
 		},
 		{
 			name:         "failure",
-			status:       "COMPLETE_INVOCATION_STATUS",
+			status:       invocationstatuspb.InvocationStatus_COMPLETE_INVOCATION_STATUS,
 			wantState:    "failure",
 			wantReason:   "completed",
 			wantComplete: true,
 		},
 		{
 			name:       "disconnected",
-			status:     "DISCONNECTED_INVOCATION_STATUS",
+			status:     invocationstatuspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS,
 			wantState:  "error",
 			wantReason: "disconnected",
 		},
 		{
 			name:       "still-running",
-			status:     "PARTIAL_INVOCATION_STATUS",
+			status:     invocationstatuspb.InvocationStatus_PARTIAL_INVOCATION_STATUS,
 			wantState:  "pending",
 			wantReason: "watching",
 		},
@@ -303,13 +284,13 @@ func TestWatchInvocationResultWhenLogReadFails(t *testing.T) {
 				test.success,
 				"",
 				nil,
-				http.StatusTooManyRequests,
+				grpcstatus.Error(codes.ResourceExhausted, "Log index limit exceeded"),
 			)
 			resultPath := filepath.Join(t.TempDir(), "result.json")
 			var logs bytes.Buffer
 
 			err := watchInvocation(client, "invocation-test", &logs, time.Millisecond, false, resultPath)
-			if err == nil || !strings.Contains(err.Error(), "read BuildBuddy event log: HTTP 429") {
+			if err == nil || grpcstatus.Code(err) != codes.ResourceExhausted || !strings.Contains(err.Error(), "Log index limit exceeded") {
 				t.Fatalf("watchInvocation error = %v, want event-log read failure", err)
 			}
 			result := readInvocationWatchResult(t, resultPath)
@@ -322,27 +303,21 @@ func TestWatchInvocationResultWhenLogReadFails(t *testing.T) {
 
 func TestWatchInvocationPreservesInitialTerminalOutcomeWhenRefreshFails(t *testing.T) {
 	invocationCalls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/rpc/BuildBuddyService/GetInvocation" {
-			t.Errorf("unexpected API path %q", r.URL.Path)
-			http.NotFound(w, r)
-			return
-		}
-		invocationCalls++
-		if invocationCalls > 1 {
-			http.Error(w, "BuildBuddy unavailable", http.StatusServiceUnavailable)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"invocation":[{"acl":{"groupId":"test-group"},"invocationStatus":"COMPLETE_INVOCATION_STATUS","success":true,"hasChunkedEventLogs":false}]}`)
-	}))
-	t.Cleanup(server.Close)
-	client := &client{baseURL: server.URL, apiKey: "test-key", http: server.Client()}
+	rpc := &invocationWatchTestRPC{
+		getInvocation: func(context.Context, *invocationpb.GetInvocationRequest) (*invocationpb.GetInvocationResponse, error) {
+			invocationCalls++
+			if invocationCalls > 1 {
+				return nil, grpcstatus.Error(codes.Unavailable, "BuildBuddy unavailable")
+			}
+			return invocationWatchTestResponse(invocationstatuspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, true, "", false), nil
+		},
+	}
+	client := &client{baseURL: "https://app.buildbuddy.io", rpc: rpc}
 	resultPath := filepath.Join(t.TempDir(), "result.json")
 	var logs bytes.Buffer
 
 	err := watchInvocation(client, "invocation-test", &logs, time.Millisecond, false, resultPath)
-	if err == nil || !strings.Contains(err.Error(), "HTTP 503") {
+	if err == nil || grpcstatus.Code(err) != codes.Unavailable || !strings.Contains(err.Error(), "BuildBuddy unavailable") {
 		t.Fatalf("watchInvocation error = %v, want refresh failure", err)
 	}
 	result := readInvocationWatchResult(t, resultPath)
@@ -354,14 +329,14 @@ func TestWatchInvocationPreservesInitialTerminalOutcomeWhenRefreshFails(t *testi
 func TestWatchInvocationStreamsTerminalChunks(t *testing.T) {
 	client := newChunkedInvocationWatchTestClient(
 		t,
-		"COMPLETE_INVOCATION_STATUS",
+		invocationstatuspb.InvocationStatus_COMPLETE_INVOCATION_STATUS,
 		true,
 		"",
 		[]invocationWatchTestChunk{
 			{id: "chunk-1", nextChunkID: "chunk-2", buffer: "first chunk\n"},
 			{id: "chunk-2", buffer: "second chunk\n"},
 		},
-		0,
+		nil,
 	)
 	resultPath := filepath.Join(t.TempDir(), "result.json")
 	var logs bytes.Buffer
@@ -382,11 +357,11 @@ func TestWatchInvocationFailFastTargetOverridesObservedCompletion(t *testing.T) 
 	const failedTest = "//pkg:failed_test"
 	client := newChunkedInvocationWatchTestClient(
 		t,
-		"COMPLETE_INVOCATION_STATUS",
+		invocationstatuspb.InvocationStatus_COMPLETE_INVOCATION_STATUS,
 		false,
 		failedTest,
 		[]invocationWatchTestChunk{{id: "chunk-1", buffer: "first chunk\n"}},
-		0,
+		nil,
 	)
 	resultPath := filepath.Join(t.TempDir(), "result.json")
 	var logs bytes.Buffer
@@ -402,17 +377,18 @@ func TestWatchInvocationFailFastTargetOverridesObservedCompletion(t *testing.T) 
 }
 
 func TestWatchInvocationLeavesPendingResultWhenLookupFails(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "BuildBuddy unavailable", http.StatusServiceUnavailable)
-	}))
-	t.Cleanup(server.Close)
-	client := &client{baseURL: server.URL, apiKey: "test-key", http: server.Client()}
+	rpc := &invocationWatchTestRPC{
+		getInvocation: func(context.Context, *invocationpb.GetInvocationRequest) (*invocationpb.GetInvocationResponse, error) {
+			return nil, grpcstatus.Error(codes.Unavailable, "BuildBuddy unavailable")
+		},
+	}
+	client := &client{baseURL: "https://app.buildbuddy.io", rpc: rpc}
 	resultPath := filepath.Join(t.TempDir(), "result.json")
 	var logs bytes.Buffer
 
 	err := watchInvocation(client, "invocation-test", &logs, time.Millisecond, true, resultPath)
 	if err == nil {
-		t.Fatal("watchInvocation succeeded after BuildBuddy returned 503")
+		t.Fatal("watchInvocation succeeded after GetInvocation failed")
 	}
 	result := readInvocationWatchResult(t, resultPath)
 	if result.State != "pending" || result.Reason != "watching" || result.InvocationComplete {

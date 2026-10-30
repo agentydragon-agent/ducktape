@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/dustin/go-humanize"
@@ -20,13 +21,14 @@ func executionCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			req := &executionpb.GetExecutionRequest{
 				ExecutionLookup: &executionpb.ExecutionLookup{
 					InvocationId: args[0],
 				},
 			}
-			resp := &executionpb.GetExecutionResponse{}
-			if err := c.call("GetExecution", req, resp); err != nil {
+			resp, err := c.rpc.GetExecution(context.Background(), req)
+			if err != nil {
 				return err
 			}
 			if jsonOutput {
@@ -61,6 +63,7 @@ func executionSearchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			if repo == "" {
 				repo, err = detectRepoURL()
 				if err != nil {
@@ -73,8 +76,8 @@ func executionSearchCmd() *cobra.Command {
 				},
 				Count: count,
 			}
-			resp := &executionpb.SearchExecutionResponse{}
-			if err := c.call("SearchExecution", req, resp); err != nil {
+			resp, err := c.rpc.SearchExecution(context.Background(), req)
+			if err != nil {
 				return err
 			}
 			if jsonOutput {
@@ -113,6 +116,7 @@ func executionFilesCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			out := &cachepb.GetExecutionDownloadsResponse{}
 			var pageToken string
 			for i := 0; i < 100; i++ { // bound pagination as a safety cap
@@ -122,8 +126,8 @@ func executionFilesCmd() *cobra.Command {
 					PageSize:     pageSize,
 					PageToken:    pageToken,
 				}
-				resp := &cachepb.GetExecutionDownloadsResponse{}
-				if err := c.call("GetExecutionDownloads", req, resp); err != nil {
+				resp, err := c.rpc.GetExecutionDownloads(context.Background(), req)
+				if err != nil {
 					return err
 				}
 				out.Downloads = append(out.Downloads, resp.GetDownloads()...)

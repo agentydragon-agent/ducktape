@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -41,6 +42,7 @@ streaming continues after that status is recorded.`,
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			return watchInvocation(c, args[0], os.Stdout, pollInterval, failOnTestFailure, resultFile)
 		},
 	}
@@ -134,8 +136,8 @@ func getInvocation(c *client, invocationID string) (*invocationpb.Invocation, er
 	req := &invocationpb.GetInvocationRequest{
 		Lookup: &invocationpb.InvocationLookup{InvocationId: invocationID},
 	}
-	resp := &invocationpb.GetInvocationResponse{}
-	if err := c.call("GetInvocation", req, resp); err != nil {
+	resp, err := c.rpc.GetInvocation(context.Background(), req)
+	if err != nil {
 		return nil, err
 	}
 	if len(resp.GetInvocation()) == 0 {
@@ -151,8 +153,8 @@ func failedTest(c *client, invocationID, groupID string) (string, error) {
 		InvocationId:   invocationID,
 		Status:         &status,
 	}
-	resp := &targetpb.GetTargetResponse{}
-	if err := c.call("GetTarget", req, resp); err != nil {
+	resp, err := c.rpc.GetTarget(context.Background(), req)
+	if err != nil {
 		return "", err
 	}
 	for _, group := range resp.GetTargetGroups() {
@@ -219,14 +221,14 @@ func watchInvocation(c *client, invocationID string, out io.Writer, pollInterval
 			chunkID = inv.GetLastChunkId()
 		}
 		if chunkID != "" {
-			chunk := &eventlogpb.GetEventLogChunkResponse{}
 			request := &eventlogpb.GetEventLogChunkRequest{
 				RequestContext: &ctxpb.RequestContext{GroupId: groupID},
 				InvocationId:   invocationID,
 				ChunkId:        chunkID,
 				Type:           eventlogpb.LogType_BUILD_LOG,
 			}
-			if err := c.call("GetEventLogChunk", request, chunk); err != nil {
+			chunk, err := c.rpc.GetEventLogChunk(context.Background(), request)
+			if err != nil {
 				return fmt.Errorf("read BuildBuddy event log: %w", err)
 			}
 			buffer := chunk.GetBuffer()

@@ -86,6 +86,7 @@ func blobCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
+		defer c.close()
 		body, err := c.fetchURL(c.bytestreamDownloadURL(invocationID, args[0]))
 		if err != nil {
 			return err
@@ -100,6 +101,7 @@ func blobCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
+		defer c.close()
 		raw, err := os.ReadFile(manifest)
 		if err != nil {
 			return err
