@@ -78,6 +78,9 @@ bbapi target stats [--repo URL]
 # Show flake samples for a specific target
 bbapi target flakes <target-label> [--repo URL]
 
+# With --json, artifact entries contain native BES id and file messages (file.name,
+# file.uri, file.pathPrefix, file.digest, file.length); result IDs retain configuration.
+# Tool-log entries likewise contain invocationId and a native file message.
 # List artifacts for an invocation (test outputs and build outputs). RESULT and STATUS
 # tell the shards, runs and attempts of one test apart
 bbapi artifact list <invocation-id>

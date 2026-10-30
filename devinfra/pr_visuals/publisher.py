@@ -367,7 +367,7 @@ def _download_artifact(download: _Download, *, api_key: str, fetch: Fetcher) -> 
     """
     download.destination.parent.mkdir(parents=True, exist_ok=True)
     request = urllib.request.Request(
-        f"{BUILDBUDDY_APP}/file/download?bytestream_url={urllib.parse.quote(download.listed.artifact.uri, safe='')}",
+        f"{BUILDBUDDY_APP}/file/download?bytestream_url={urllib.parse.quote(download.listed.artifact.file.uri, safe='')}",
         headers={"x-buildbuddy-api-key": api_key},
     )
     download.destination.write_bytes(fetch(request))
@@ -447,8 +447,12 @@ def download_visual_tests(
     used_slugs: dict[str, str] = {}
     for target_label, target_artifacts in sorted(by_target.items()):
         manifests = sorted(
-            (artifact for artifact in target_artifacts if artifact.artifact.name == f"test.outputs/{MANIFEST_NAME}"),
-            key=lambda listed: (listed.invocation_id, listed.artifact.uri),
+            (
+                artifact
+                for artifact in target_artifacts
+                if artifact.artifact.file.name == f"test.outputs/{MANIFEST_NAME}"
+            ),
+            key=lambda listed: (listed.invocation_id, listed.artifact.file.uri),
         )
         if not manifests:
             continue
@@ -481,7 +485,7 @@ def download_visual_tests(
 
         listings: defaultdict[str, list[ListedArtifact]] = defaultdict(list)
         for artifact in by_target[plan.target_label]:
-            listings[artifact.artifact.name].append(artifact)
+            listings[artifact.artifact.file.name].append(artifact)
         for asset in manifest.assets:
             candidates = listings.get(f"test.outputs/{asset.path}")
             if candidates is None:

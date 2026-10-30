@@ -1,9 +1,13 @@
 package main
 
 import (
-	"encoding/json"
+	"path"
 	"strings"
 	"testing"
+
+	bbapipb "github.com/agentydragon/ducktape/devinfra/buildbuddy/bbapi/proto"
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const invocationExportStream = `[
@@ -45,23 +49,23 @@ func TestParseInvocationExportWalksFileSetDAGAndKeepsFullPaths(t *testing.T) {
 	if len(got.Outputs) != 4 {
 		t.Fatalf("got %d outputs, want one app wheel, two same-named files and one aspect report: %+v", len(got.Outputs), got.Outputs)
 	}
-	byPath := map[string]invocationOutput{}
+	byPath := map[string]*bbapipb.Artifact{}
 	for _, output := range got.Outputs {
-		byPath[output.Path] = output
+		byPath[path.Join(append(output.GetFile().GetPathPrefix(), output.GetFile().GetName())...)] = output
 	}
-	if byPath["bazel-out/k8-fastbuild/bin/pkg/app.whl"].Digest != "app" {
+	if byPath["bazel-out/k8-fastbuild/bin/pkg/app.whl"].GetFile().GetDigest() != "app" {
 		t.Errorf("nested wheel output missing or wrong: %+v", byPath)
 	}
-	if byPath["pkg/same.txt"].Digest != "source" || byPath["bazel-out/k8-fastbuild/bin/pkg/same.txt"].Digest != "generated" {
+	if byPath["pkg/same.txt"].GetFile().GetDigest() != "source" || byPath["bazel-out/k8-fastbuild/bin/pkg/same.txt"].GetFile().GetDigest() != "generated" {
 		t.Errorf("same-named files were collapsed across path prefixes: %+v", byPath)
 	}
-	if byPath["bazel-out/k8-fastbuild/bin/pkg/app.mypy_stdout"].Aspect != "//devinfra/lint:linters.bzl%mypy_aspect" ||
-		byPath["bazel-out/k8-fastbuild/bin/pkg/app.mypy_stdout"].OutputGroup != "mypy" {
+	if byPath["bazel-out/k8-fastbuild/bin/pkg/app.mypy_stdout"].GetId().GetTargetCompleted().GetAspect() != "//devinfra/lint:linters.bzl%mypy_aspect" ||
+		byPath["bazel-out/k8-fastbuild/bin/pkg/app.mypy_stdout"].GetOutputGroup() != "mypy" {
 		t.Errorf("aspect output metadata missing: %+v", byPath)
 	}
 	for _, output := range got.Outputs {
-		if output.Path == "bazel-out/k8-fastbuild/bin/pkg/app.whl" && output.Size != 12 {
-			t.Errorf("size = %d, want 12", output.Size)
+		if output.GetFile().GetName() == "pkg/app.whl" && output.GetFile().GetLength() != 12 {
+			t.Errorf("size = %d, want 12", output.GetFile().GetLength())
 		}
 	}
 }
@@ -75,20 +79,20 @@ func TestParseInvocationExportPreservesSummaryPresenceAndConfigurations(t *testi
 		t.Fatalf("got %d summaries, want both configurations", len(got.TestSummaries))
 	}
 	first, second := got.TestSummaries[0], got.TestSummaries[1]
-	if first.ConfigurationID != "cfg-one" || first.Status != "PASSED" || first.AttemptCount == nil || *first.AttemptCount != 0 || first.CachedCount == nil || *first.CachedCount != 0 {
+	if first.GetId().GetConfiguration().GetId() != "cfg-one" || first.GetSummary().GetOverallStatus() != bespb.TestStatus_PASSED || !first.GetAttemptCountPresent() || first.GetSummary().GetAttemptCount() != 0 || !first.GetCachedCountPresent() || first.GetSummary().GetTotalNumCached() != 0 {
 		t.Errorf("first summary lost explicit zero values: %+v", first)
 	}
-	if second.ConfigurationID != "cfg-two" || second.Status != "FLAKY" || second.AttemptCount != nil || second.CachedCount != nil {
+	if second.GetId().GetConfiguration().GetId() != "cfg-two" || second.GetSummary().GetOverallStatus() != bespb.TestStatus_FLAKY || second.GetAttemptCountPresent() || second.GetCachedCountPresent() {
 		t.Errorf("second summary should retain absent count fields: %+v", second)
 	}
-	if got.TestStatus["//pkg:test"] != "FLAKY" {
+	if got.TestStatus["//pkg:test"] != bespb.TestStatus_FLAKY {
 		t.Errorf("test status should retain last summary value: %+v", got.TestStatus)
 	}
-	encoded, err := json.Marshal(got.TestSummaries)
+	encoded, err := protojson.Marshal(got)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(encoded), `"attempt_count":0`) || strings.Contains(string(encoded), `"cached_count":null`) {
+	if !strings.Contains(string(encoded), `"attemptCountPresent":true`) || !strings.Contains(string(encoded), `"cachedCountPresent":true`) {
 		t.Errorf("JSON does not distinguish absent and zero counts: %s", encoded)
 	}
 }
@@ -104,14 +108,14 @@ func TestParseInvocationExportPreservesUnambiguousProvenance(t *testing.T) {
 	if got.Command == nil || *got.Command != "test" {
 		t.Errorf("command = %v, want test", got.Command)
 	}
-	if got.RequestedPatterns == nil || strings.Join(*got.RequestedPatterns, ",") != "//pkg:...,//other:target" {
+	if got.RequestedPatterns == nil || strings.Join(got.RequestedPatterns.GetValues(), ",") != "//pkg:...,//other:target" {
 		t.Errorf("requested patterns = %v", got.RequestedPatterns)
 	}
-	if got.ExplicitCmdLine == nil || strings.Join(*got.ExplicitCmdLine, " ") != "test //pkg:..." {
+	if got.ExplicitCmdLine == nil || strings.Join(got.ExplicitCmdLine.GetValues(), " ") != "test //pkg:..." {
 		t.Errorf("explicit command line = %v", got.ExplicitCmdLine)
 	}
-	if got.CommitSHA == nil || *got.CommitSHA != "deadbeef" {
-		t.Errorf("commit SHA = %v", got.CommitSHA)
+	if got.CommitSha == nil || *got.CommitSha != "deadbeef" {
+		t.Errorf("commit SHA = %v", got.CommitSha)
 	}
 }
 
@@ -131,10 +135,10 @@ func TestParseInvocationExportRejectsAmbiguousProvenance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Command != nil || got.ExplicitCmdLine != nil || got.CommitSHA != nil {
+	if got.Command != nil || got.ExplicitCmdLine != nil || got.CommitSha != nil {
 		t.Errorf("ambiguous provenance was guessed: %+v", got)
 	}
-	if got.RequestedPatterns == nil || strings.Join(*got.RequestedPatterns, ",") != "//pkg:..." {
+	if got.RequestedPatterns == nil || strings.Join(got.RequestedPatterns.GetValues(), ",") != "//pkg:..." {
 		t.Errorf("requested patterns = %v", got.RequestedPatterns)
 	}
 	if got.Finished || got.Successful {

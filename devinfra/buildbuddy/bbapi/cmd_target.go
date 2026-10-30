@@ -369,8 +369,8 @@ Examples:
 				if a.Kind != kindTest {
 					continue
 				}
-				combined := a.Label + "/" + a.Name
-				if strings.Contains(combined, args[1]) && strings.Contains(a.Name, artifactName) {
+				combined := a.label() + "/" + a.GetFile().GetName()
+				if strings.Contains(combined, args[1]) && strings.Contains(a.GetFile().GetName(), artifactName) {
 					matches = append(matches, a)
 				}
 			}
@@ -383,14 +383,14 @@ Examples:
 				fmt.Fprintln(os.Stderr)
 				var targetMatches []artifact
 				for _, a := range artifacts {
-					if strings.Contains(a.Label+"/"+a.Name, args[1]) {
+					if strings.Contains(a.label()+"/"+a.GetFile().GetName(), args[1]) {
 						targetMatches = append(targetMatches, a)
 					}
 				}
 				if len(targetMatches) > 0 {
 					fmt.Fprintf(os.Stderr, "Artifacts for matching targets:\n")
 					for _, a := range targetMatches {
-						fmt.Fprintf(os.Stderr, "  %s  %s\n", a.Label, a.Name)
+						fmt.Fprintf(os.Stderr, "  %s  %s\n", a.label(), a.GetFile().GetName())
 					}
 				} else {
 					// Show a few available targets as hints
@@ -398,9 +398,9 @@ Examples:
 					count := 0
 					fmt.Fprintf(os.Stderr, "No targets match %q. Available targets (first 5):\n", args[1])
 					for _, a := range artifacts {
-						if !seen[a.Label] {
-							seen[a.Label] = true
-							fmt.Fprintf(os.Stderr, "  %s\n", a.Label)
+						if !seen[a.label()] {
+							seen[a.label()] = true
+							fmt.Fprintf(os.Stderr, "  %s\n", a.label())
 							count++
 							if count >= 5 {
 								fmt.Fprintf(os.Stderr, "  ... (%d more)\n", len(artifacts)-count)

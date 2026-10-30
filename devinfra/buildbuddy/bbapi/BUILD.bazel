@@ -19,10 +19,12 @@ go_library(
         "git.go",
         "invocation_export.go",
         "main.go",
+        "proto_json.go",
         "table.go",
     ],
     importpath = "github.com/agentydragon/ducktape/devinfra/buildbuddy/bbapi",
     deps = [
+        "//devinfra/buildbuddy/bbapi/proto:bbapi_go_proto",
         "@buildbuddy_protos//:api_v1_common_go_proto",
         "@buildbuddy_protos//:api_v1_invocation_go_proto",
         "@buildbuddy_protos//:build_event_stream_go_proto",

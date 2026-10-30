@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	targetpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -17,7 +18,7 @@ import (
 func TestChooseLogsPrefersTheResultsThatFailed(t *testing.T) {
 	logs := logsOf(parseOrFail(t, shardedStream), "//pkg:visual")
 	chosen, why := chooseLogs(logs)
-	if len(chosen) != 1 || chosen[0].Shard != 2 {
+	if len(chosen) != 1 || chosen[0].GetId().GetTestResult().GetShard() != 2 {
 		t.Errorf("chose %v", describeAll(chosen))
 	}
 	if !strings.Contains(why, "1 of 3") {
@@ -27,9 +28,9 @@ func TestChooseLogsPrefersTheResultsThatFailed(t *testing.T) {
 
 func TestChooseLogsFallsBackToTheFirstWhenNothingFailed(t *testing.T) {
 	logs := logsOf(parseOrFail(t, shardedStream), "//pkg:visual")
-	logs[1].Status = "PASSED"
+	logs[1].Status = bespb.TestStatus_PASSED
 	chosen, why := chooseLogs(logs)
-	if len(chosen) != 1 || chosen[0].Shard != 1 {
+	if len(chosen) != 1 || chosen[0].GetId().GetTestResult().GetShard() != 1 {
 		t.Errorf("chose %v", describeAll(chosen))
 	}
 	if !strings.Contains(why, "None failed") {

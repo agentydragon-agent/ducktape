@@ -27,7 +27,7 @@ from devinfra.pr_visuals.determinism import (
 from util.visual_review import VisualReviewAsset, VisualReviewManifest
 
 
-def _listing(by_invocation: dict[str, list[dict[str, str]]]):
+def _listing(by_invocation: dict[str, list[dict[str, object]]]):
     """`bbapi artifact list <invocation> --json`, answered per invocation."""
 
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -36,8 +36,8 @@ def _listing(by_invocation: dict[str, list[dict[str, str]]]):
     return fake_run
 
 
-def _artifact(label: str, name: str, uri: str) -> dict[str, str]:
-    return {"label": label, "name": f"test.outputs/{name}", "uri": uri}
+def _artifact(label: str, name: str, uri: str) -> dict[str, object]:
+    return {"id": {"testResult": {"label": label}}, "file": {"name": f"test.outputs/{name}", "uri": uri}}
 
 
 def _manifest(*names: str) -> VisualReviewManifest:
@@ -116,7 +116,7 @@ def test_manifest_membership_not_filename_decides_what_is_reviewed(name: str) ->
 
 
 @pytest.mark.parametrize("second_manifest", [[], [_artifact("//ui:visual", "visual-review.json", "other")]])
-def test_a_png_without_its_own_runs_declaration_is_missing(second_manifest: list[dict[str, str]]) -> None:
+def test_a_png_without_its_own_runs_declaration_is_missing(second_manifest: list[dict[str, object]]) -> None:
     png = _artifact("//ui:visual", "list.png", "same")
     manifests = {"first": _manifest("list.png"), "other": _manifest("other.png")}
     observations = observe(

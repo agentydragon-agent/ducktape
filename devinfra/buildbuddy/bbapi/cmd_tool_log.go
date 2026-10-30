@@ -8,18 +8,13 @@ import (
 	"strconv"
 	"strings"
 
+	bbapipb "github.com/agentydragon/ducktape/devinfra/buildbuddy/bbapi/proto"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/proto"
 )
 
-type toolLog struct {
-	InvocationID string `json:"invocation_id"`
-	Name         string `json:"name"`
-	URI          string `json:"uri"`
-	Source       string `json:"source"`
-	SizeBytes    int    `json:"size_bytes,omitempty"`
-	contents     []byte
-}
+type toolLog struct{ *bbapipb.ToolLog }
 
 func toolLogCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -141,7 +136,7 @@ the invocation ID to avoid collisions.
 				return err
 			}
 			if output == "" {
-				output = filepath.Base(match.Name)
+				output = filepath.Base(match.GetFile().GetName())
 			}
 			return saveToolLog(c, match, output)
 		},
@@ -153,29 +148,28 @@ the invocation ID to avoid collisions.
 
 func printToolLogs(logs []toolLog) error {
 	if jsonOutput {
-		b, err := json.MarshalIndent(logs, "", "  ")
-		if err != nil {
-			return err
+		messages := make([]proto.Message, len(logs))
+		for i, l := range logs {
+			messages[i] = l.ToolLog
 		}
-		os.Stdout.Write(b)
-		fmt.Println()
-		return nil
+		return printProtoJSONArray(messages)
 	}
 	t := newTable()
 	t.header("INVOCATION", "NAME", "SOURCE", "SIZE")
 	for _, l := range logs {
+		source, n := toolLogSourceAndSize(l.GetFile().GetUri(), l.GetFile().GetContents())
 		size := ""
-		if l.SizeBytes > 0 {
-			size = fmt.Sprintf("%d", l.SizeBytes)
+		if n > 0 {
+			size = fmt.Sprintf("%d", n)
 		}
-		t.row(l.InvocationID, l.Name, l.Source, size)
+		t.row(l.InvocationId, l.GetFile().GetName(), source, size)
 	}
 	t.flush()
 	return nil
 }
 
 func (l toolLog) matchKey() string {
-	return l.InvocationID + "/" + l.Name
+	return l.InvocationId + "/" + l.GetFile().GetName()
 }
 
 func resolveToolLog(logs []toolLog, pattern string) (toolLog, error) {
@@ -185,7 +179,7 @@ func resolveToolLog(logs []toolLog, pattern string) (toolLog, error) {
 		if len(logs) > 0 {
 			fmt.Fprintf(os.Stderr, "\nAvailable tool logs:\n")
 			for _, l := range logs {
-				fmt.Fprintf(os.Stderr, "  %s  %s\n", l.InvocationID, l.Name)
+				fmt.Fprintf(os.Stderr, "  %s  %s\n", l.InvocationId, l.GetFile().GetName())
 			}
 		}
 		return toolLog{}, fmt.Errorf("no build tool logs matching %q", pattern)
@@ -193,9 +187,9 @@ func resolveToolLog(logs []toolLog, pattern string) (toolLog, error) {
 	if len(matches) > 1 {
 		fmt.Fprintf(os.Stderr, "Multiple build tool logs match %q:\n", pattern)
 		for _, l := range matches {
-			fmt.Fprintf(os.Stderr, "  %s  %s\n", l.InvocationID, l.Name)
+			fmt.Fprintf(os.Stderr, "  %s  %s\n", l.InvocationId, l.GetFile().GetName())
 		}
-		fmt.Fprintf(os.Stderr, "Using first match: %s %s\n", matches[0].InvocationID, matches[0].Name)
+		fmt.Fprintf(os.Stderr, "Using first match: %s %s\n", matches[0].InvocationId, matches[0].GetFile().GetName())
 	}
 	return matches[0], nil
 }
@@ -204,14 +198,14 @@ func filterToolLogs(logs []toolLog, pattern string) []toolLog {
 	var matches []toolLog
 	if strings.Contains(pattern, "*") {
 		for _, l := range logs {
-			if matchGlob(pattern, l.matchKey()) || matchGlob(pattern, l.Name) {
+			if matchGlob(pattern, l.matchKey()) || matchGlob(pattern, l.GetFile().GetName()) {
 				matches = append(matches, l)
 			}
 		}
 		return matches
 	}
 	for _, l := range logs {
-		if strings.Contains(l.matchKey(), pattern) || strings.Contains(l.Name, pattern) {
+		if strings.Contains(l.matchKey(), pattern) || strings.Contains(l.GetFile().GetName(), pattern) {
 			matches = append(matches, l)
 		}
 	}
@@ -254,16 +248,7 @@ func listToolLogs(c *client, invocationID string) ([]toolLog, error) {
 			continue
 		}
 		for _, f := range logs.GetLog() {
-			contents := f.GetContents()
-			source, size := toolLogSourceAndSize(f.GetUri(), contents)
-			result = append(result, toolLog{
-				InvocationID: invocationID,
-				Name:         f.GetName(),
-				URI:          f.GetUri(),
-				Source:       source,
-				SizeBytes:    size,
-				contents:     contents,
-			})
+			result = append(result, toolLog{&bbapipb.ToolLog{InvocationId: invocationID, File: f}})
 		}
 	}
 	return result, nil
@@ -278,10 +263,10 @@ func downloadAllToolLogs(c *client, logs []toolLog, dir string) error {
 	}
 	var failures []string
 	for _, l := range logs {
-		dest := filepath.Join(dir, l.InvocationID+"-"+filepath.Base(l.Name))
+		dest := filepath.Join(dir, l.InvocationId+"-"+filepath.Base(l.GetFile().GetName()))
 		if err := saveToolLog(c, l, dest); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to download %s %s: %v\n", l.InvocationID, l.Name, err)
-			failures = append(failures, l.InvocationID+"/"+l.Name)
+			fmt.Fprintf(os.Stderr, "Failed to download %s %s: %v\n", l.InvocationId, l.GetFile().GetName(), err)
+			failures = append(failures, l.InvocationId+"/"+l.GetFile().GetName())
 		}
 	}
 	if len(failures) > 0 {
@@ -303,13 +288,13 @@ func saveToolLog(c *client, l toolLog, dest string) error {
 }
 
 func readToolLog(c *client, l toolLog) ([]byte, error) {
-	if l.URI != "" {
-		return fetchBytestream(c, l.InvocationID, l.URI)
+	if l.GetFile().GetUri() != "" {
+		return fetchBytestream(c, l.InvocationId, l.GetFile().GetUri())
 	}
-	if len(l.contents) > 0 {
-		return l.contents, nil
+	if contents, ok := l.GetFile().GetFile().(*bespb.File_Contents); ok {
+		return contents.Contents, nil
 	}
-	return nil, fmt.Errorf("build tool log %q has neither URI nor inline contents", l.Name)
+	return nil, fmt.Errorf("build tool log %q has neither URI nor inline contents", l.GetFile().GetName())
 }
 
 func fetchBytestream(c *client, invocationID, uri string) ([]byte, error) {

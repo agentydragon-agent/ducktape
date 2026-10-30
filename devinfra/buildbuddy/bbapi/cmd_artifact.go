@@ -8,8 +8,10 @@ import (
 	"regexp"
 	"strings"
 
+	bbapipb "github.com/agentydragon/ducktape/devinfra/buildbuddy/bbapi/proto"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/proto"
 )
 
 // matchGlob reports whether s matches a simple glob pattern supporting '*' only.
@@ -70,66 +72,36 @@ func addResultFlags(cmd *cobra.Command) {
 		"only test artifacts of results that did not pass: the failing shard, run or attempt")
 }
 
-type artifact struct {
-	Label        string `json:"label"`
-	Name         string `json:"name"`
-	URI          string `json:"uri"`
-	Kind         string `json:"kind"`
-	invocationID string
-	// Bazel output group, for build artifacts only. Aspects contribute their own
-	// groups (this repo adds rules_lint_report, mypy, clippy_checks,
-	// rustfmt_checks), so the group is what separates a target's real outputs
-	// from its lint reports.
-	OutputGroup string `json:"outputGroup,omitempty"`
-	// Directory prefix BES reports separately from Name, e.g.
-	// "bazel-out/k8-fastbuild/bin". Name alone is ambiguous: a source file has an
-	// empty prefix while the generated file of the same name sits under bazel-out,
-	// and a configuration transition puts its outputs under a distinct prefix
-	// ("bazel-out/k8-fastbuild-ST-<hash>/bin"). Only Prefix+Name identifies a file.
-	PathPrefix string `json:"pathPrefix,omitempty"`
-	// Content digest and size as BES reports them. For a single-file release the
-	// digest is the published content identity, so callers can compare against a
-	// registry or release tag without fetching the bytes at all.
-	Digest string `json:"digest,omitempty"`
-	Size   int64  `json:"size,omitempty"`
-	// The aspect that produced this build output, or "" for the target's own
-	// outputs. Test artifacts do not have an aspect.
-	Aspect string `json:"aspect,omitempty"`
-	// Which result of its target a test artifact came from. A sharded test, or one that runs more than once
-	// or is retried, reports one result per shard, run and attempt, each with a test.log of the same name,
-	// so Label and Name cannot tell them apart. Shard, Run and Attempt count from 1, as Bazel's
-	// shard_N_of_M directories do; ShardCount and RunCount come from the target's summary.
-	Shard      int `json:"shard,omitempty"`
-	ShardCount int `json:"shardCount,omitempty"`
-	Run        int `json:"run,omitempty"`
-	RunCount   int `json:"runCount,omitempty"`
-	Attempt    int `json:"attempt,omitempty"`
-	// This result's own status ("PASSED", "FAILED", "TIMEOUT", ...), not the target's overall one: the
-	// failing shard among passing ones is the result a reader is after.
-	Status string `json:"status,omitempty"`
+type artifact struct{ *bbapipb.Artifact }
+
+func (a artifact) label() string {
+	if id := a.GetId().GetTestResult(); id != nil {
+		return id.GetLabel()
+	}
+	return a.GetId().GetTargetCompleted().GetLabel()
 }
 
 // notFailing are the statuses of a result that went as hoped; any other status, from a failure to a
 // timeout to a run that never finished, is one worth reading.
-var notFailing = map[string]bool{"": true, "NO_STATUS": true, "PASSED": true, "FLAKY": true}
+var notFailing = map[bespb.TestStatus]bool{bespb.TestStatus_NO_STATUS: true, bespb.TestStatus_PASSED: true, bespb.TestStatus_FLAKY: true}
 
 // failed reports whether a test artifact came from a result that did not pass.
 func (a artifact) failed() bool {
-	return a.Kind == kindTest && !notFailing[a.Status]
+	return a.Kind == kindTest && !notFailing[a.GetStatus()]
 }
 
 // result names which result of its target a test artifact came from ("shard 4/6", "run 2/3 attempt 2"), and
 // is empty for a build artifact and for a target that ran once.
 func (a artifact) result() string {
 	var parts []string
-	if a.ShardCount > 1 {
-		parts = append(parts, fmt.Sprintf("shard %d/%d", a.Shard, a.ShardCount))
+	if a.GetTestSummary().GetShardCount() > 1 {
+		parts = append(parts, fmt.Sprintf("shard %d/%d", a.GetId().GetTestResult().GetShard(), a.GetTestSummary().GetShardCount()))
 	}
-	if a.RunCount > 1 {
-		parts = append(parts, fmt.Sprintf("run %d/%d", a.Run, a.RunCount))
+	if a.GetTestSummary().GetRunCount() > 1 {
+		parts = append(parts, fmt.Sprintf("run %d/%d", a.GetId().GetTestResult().GetRun(), a.GetTestSummary().GetRunCount()))
 	}
-	if a.Attempt > 1 {
-		parts = append(parts, fmt.Sprintf("attempt %d", a.Attempt))
+	if a.GetId().GetTestResult().GetAttempt() > 1 {
+		parts = append(parts, fmt.Sprintf("attempt %d", a.GetId().GetTestResult().GetAttempt()))
 	}
 	return strings.Join(parts, " ")
 }
@@ -141,14 +113,14 @@ func (a artifact) describe() string {
 	if r := a.result(); r != "" {
 		tags = append(tags, r)
 	}
-	if a.Status != "" && a.Kind == kindTest {
-		tags = append(tags, a.Status)
+	if a.GetStatus() != bespb.TestStatus_NO_STATUS && a.Kind == kindTest {
+		tags = append(tags, a.GetStatus().String())
 	}
-	s := a.Label
+	s := a.label()
 	if len(tags) > 0 {
 		s += " (" + strings.Join(tags, ", ") + ")"
 	}
-	return s + "  " + a.Name
+	return s + "  " + a.GetFile().GetName()
 }
 
 func artifactCmd() *cobra.Command {
@@ -279,18 +251,20 @@ Patterns containing '*' use glob matching; otherwise substring match against
 
 func printArtifacts(artifacts []artifact) error {
 	if jsonOutput {
-		b, err := json.MarshalIndent(artifacts, "", "  ")
-		if err != nil {
-			return err
+		messages := make([]proto.Message, len(artifacts))
+		for i, a := range artifacts {
+			messages[i] = a.Artifact
 		}
-		os.Stdout.Write(b)
-		fmt.Println()
-		return nil
+		return printProtoJSONArray(messages)
 	}
 	t := newTable()
 	t.header("KIND", "GROUP", "LABEL", "RESULT", "STATUS", "NAME")
 	for _, a := range artifacts {
-		t.row(a.Kind, a.OutputGroup, a.Label, a.result(), a.Status, a.Name)
+		status := ""
+		if a.Kind == kindTest {
+			status = a.GetStatus().String()
+		}
+		t.row(a.Kind, a.OutputGroup, a.label(), a.result(), status, a.GetFile().GetName())
 	}
 	t.flush()
 	return nil
@@ -323,7 +297,7 @@ func filterResults(artifacts []artifact, shard int, failedOnly bool) []artifact 
 	}
 	var kept []artifact
 	for _, a := range artifacts {
-		if a.Kind == kindTest && (shard == 0 || a.Shard == shard) && (!failedOnly || a.failed()) {
+		if a.Kind == kindTest && (shard == 0 || int(a.GetId().GetTestResult().GetShard()) == shard) && (!failedOnly || a.failed()) {
 			kept = append(kept, a)
 		}
 	}
@@ -332,7 +306,7 @@ func filterResults(artifacts []artifact, shard int, failedOnly bool) []artifact 
 
 // matchKey returns the string matched against: "label/name".
 func (a artifact) matchKey() string {
-	return a.Label + "/" + a.Name
+	return a.label() + "/" + a.GetFile().GetName()
 }
 
 // resolveArtifact finds a single artifact matching pattern (glob if it
@@ -346,15 +320,15 @@ func resolveArtifact(artifacts []artifact, pattern string) (artifact, error) {
 		if len(artifacts) > 0 {
 			fmt.Fprintf(os.Stderr, "\nAvailable labels (first 5):\n")
 			for _, a := range artifacts {
-				if !seen[a.Label] {
-					seen[a.Label] = true
-					fmt.Fprintf(os.Stderr, "  %s\n", a.Label)
+				if !seen[a.label()] {
+					seen[a.label()] = true
+					fmt.Fprintf(os.Stderr, "  %s\n", a.label())
 					count++
 					if count >= 5 {
 						remaining := 0
 						for _, a2 := range artifacts {
-							if !seen[a2.Label] {
-								seen[a2.Label] = true
+							if !seen[a2.label()] {
+								seen[a2.label()] = true
 								remaining++
 							}
 						}
@@ -438,7 +412,7 @@ func catArtifact(c *client, artifacts []artifact, substr string) error {
 
 // printArtifact streams one artifact's content to stdout.
 func printArtifact(c *client, match artifact) error {
-	downloadURL := c.bytestreamDownloadURL(match.invocationID, match.URI)
+	downloadURL := c.bytestreamDownloadURL(match.InvocationId, match.GetFile().GetUri())
 	data, err := c.fetchURL(downloadURL)
 	if err != nil {
 		return err
@@ -453,7 +427,7 @@ func downloadArtifactToFile(c *client, artifacts []artifact, pattern string, out
 		return err
 	}
 	if output == "" {
-		output = filepath.Base(match.Name)
+		output = filepath.Base(match.GetFile().GetName())
 	}
 	return saveArtifact(c, match, output)
 }
@@ -469,7 +443,7 @@ func downloadAllArtifacts(c *client, artifacts []artifact, dir string) error {
 	for i, a := range artifacts {
 		dest := filepath.Join(dir, names[i])
 		if err := saveArtifact(c, a, dest); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to download %s: %v\n", a.Name, err)
+			fmt.Fprintf(os.Stderr, "Failed to download %s: %v\n", a.GetFile().GetName(), err)
 		}
 	}
 	return nil
@@ -481,23 +455,23 @@ func downloadAllArtifacts(c *client, artifacts []artifact, dir string) error {
 func downloadNames(artifacts []artifact) []string {
 	counts := map[string]int{}
 	for _, a := range artifacts {
-		counts[filepath.Base(a.Name)]++
+		counts[filepath.Base(a.GetFile().GetName())]++
 	}
 	unsafe := regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 	names := make([]string, len(artifacts))
 	used := map[string]bool{}
 	for i, a := range artifacts {
-		name := filepath.Base(a.Name)
+		name := filepath.Base(a.GetFile().GetName())
 		if counts[name] > 1 {
-			origin := []string{strings.Trim(unsafe.ReplaceAllString(a.Label, "_"), "_")}
-			if a.ShardCount > 1 {
-				origin = append(origin, fmt.Sprintf("shard_%d_of_%d", a.Shard, a.ShardCount))
+			origin := []string{strings.Trim(unsafe.ReplaceAllString(a.label(), "_"), "_")}
+			if a.GetTestSummary().GetShardCount() > 1 {
+				origin = append(origin, fmt.Sprintf("shard_%d_of_%d", a.GetId().GetTestResult().GetShard(), a.GetTestSummary().GetShardCount()))
 			}
-			if a.RunCount > 1 {
-				origin = append(origin, fmt.Sprintf("run_%d_of_%d", a.Run, a.RunCount))
+			if a.GetTestSummary().GetRunCount() > 1 {
+				origin = append(origin, fmt.Sprintf("run_%d_of_%d", a.GetId().GetTestResult().GetRun(), a.GetTestSummary().GetRunCount()))
 			}
-			if a.Attempt > 1 {
-				origin = append(origin, fmt.Sprintf("attempt_%d", a.Attempt))
+			if a.GetId().GetTestResult().GetAttempt() > 1 {
+				origin = append(origin, fmt.Sprintf("attempt_%d", a.GetId().GetTestResult().GetAttempt()))
 			}
 			name = strings.Join(origin, "__") + "__" + name
 		}
@@ -513,7 +487,7 @@ func downloadNames(artifacts []artifact) []string {
 }
 
 func saveArtifact(c *client, a artifact, dest string) error {
-	downloadURL := c.bytestreamDownloadURL(a.invocationID, a.URI)
+	downloadURL := c.bytestreamDownloadURL(a.InvocationId, a.GetFile().GetUri())
 	data, err := c.fetchURL(downloadURL)
 	if err != nil {
 		return err
@@ -556,7 +530,7 @@ func listArtifacts(c *client, invocationID string) ([]artifact, error) {
 		return nil, err
 	}
 	for i := range artifacts {
-		artifacts[i].invocationID = invocationID
+		artifacts[i].InvocationId = invocationID
 	}
 	return artifacts, nil
 }
@@ -576,8 +550,8 @@ func parseArtifacts(data []byte) ([]artifact, error) {
 	events := make([]*bespb.BuildEvent, 0, len(rawEvents))
 	fileSets := map[string]*bespb.NamedSetOfFiles{}
 	// How many shards and runs each test had, which only its summary, last in the stream, says.
-	type shape struct{ shards, runs int }
-	shapes := map[string]shape{}
+	type summaryKey struct{ label, configuration string }
+	summaries := map[summaryKey]*bespb.TestSummary{}
 	for _, raw := range rawEvents {
 		var ev bespb.BuildEvent
 		if err := unmarshalJSON(raw, &ev); err != nil {
@@ -588,38 +562,36 @@ func parseArtifacts(data []byte) ([]artifact, error) {
 			fileSets[ev.GetId().GetNamedSet().GetId()] = ns
 		}
 		if ts := ev.GetTestSummary(); ts != nil {
-			shapes[ev.GetId().GetTestSummary().GetLabel()] = shape{int(ts.GetShardCount()), int(ts.GetRunCount())}
+			id := ev.GetId().GetTestSummary()
+			summaries[summaryKey{id.GetLabel(), id.GetConfiguration().GetId()}] = ts
 		}
 	}
 
 	var result []artifact
-	seen := map[artifact]bool{}
-	add := func(a artifact) {
-		if !seen[a] {
-			seen[a] = true
+	seen := map[string]bool{}
+	add := func(a artifact) error {
+		encoded, err := proto.MarshalOptions{Deterministic: true}.Marshal(a.Artifact)
+		if err != nil {
+			return err
+		}
+		key := string(encoded)
+		if !seen[key] {
+			seen[key] = true
 			result = append(result, a)
 		}
+		return nil
 	}
 	for _, ev := range events {
 		if tr := ev.GetTestResult(); tr != nil {
 			id := ev.GetId().GetTestResult()
 			label := id.GetLabel()
 			for _, f := range tr.GetTestActionOutput() {
-				add(artifact{
-					Label:      label,
-					Name:       f.GetName(),
-					URI:        f.GetUri(),
-					Kind:       kindTest,
-					PathPrefix: strings.Join(f.GetPathPrefix(), "/"),
-					Digest:     f.GetDigest(),
-					Size:       f.GetLength(),
-					Shard:      int(id.GetShard()),
-					ShardCount: shapes[label].shards,
-					Run:        int(id.GetRun()),
-					RunCount:   shapes[label].runs,
-					Attempt:    int(id.GetAttempt()),
-					Status:     tr.GetStatus().String(),
-				})
+				if err := add(artifact{&bbapipb.Artifact{
+					Id: ev.GetId(), File: f, Kind: kindTest,
+					TestSummary: summaries[summaryKey{label, id.GetConfiguration().GetId()}], Status: tr.GetStatus(),
+				}}); err != nil {
+					return nil, fmt.Errorf("index artifact: %w", err)
+				}
 			}
 			continue
 		}
@@ -627,20 +599,13 @@ func parseArtifacts(data []byte) ([]artifact, error) {
 		if completed == nil {
 			continue
 		}
-		label := ev.GetId().GetTargetCompleted().GetLabel()
 		for _, group := range completed.GetOutputGroup() {
 			for _, f := range filesInSets(fileSets, group.GetFileSets()) {
-				add(artifact{
-					Label:       label,
-					Name:        f.GetName(),
-					URI:         f.GetUri(),
-					Kind:        kindBuild,
-					OutputGroup: group.GetName(),
-					PathPrefix:  strings.Join(f.GetPathPrefix(), "/"),
-					Digest:      f.GetDigest(),
-					Size:        f.GetLength(),
-					Aspect:      ev.GetId().GetTargetCompleted().GetAspect(),
-				})
+				if err := add(artifact{&bbapipb.Artifact{
+					Id: ev.GetId(), File: f, Kind: kindBuild, OutputGroup: group.GetName(),
+				}}); err != nil {
+					return nil, fmt.Errorf("index artifact: %w", err)
+				}
 			}
 		}
 	}

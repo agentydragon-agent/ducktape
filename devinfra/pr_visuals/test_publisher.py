@@ -86,7 +86,7 @@ def _manifest(title: str, *assets: str) -> bytes:
     ).encode()
 
 
-def _listing(artifacts: list[dict[str, str]]) -> Callable[..., subprocess.CompletedProcess[str]]:
+def _listing(artifacts: list[dict[str, object]]) -> Callable[..., subprocess.CompletedProcess[str]]:
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(command, 0, json.dumps(artifacts), "")
 
@@ -94,7 +94,7 @@ def _listing(artifacts: list[dict[str, str]]) -> Callable[..., subprocess.Comple
 
 
 def _listing_per_invocation(
-    by_invocation: dict[str, list[dict[str, str]]],
+    by_invocation: dict[str, list[dict[str, object]]],
 ) -> Callable[..., subprocess.CompletedProcess[str]]:
     """`bbapi artifact list <invocation> --json`, answered differently per invocation."""
 
@@ -279,21 +279,21 @@ def test_successful_build_only_run_has_no_visuals_without_waiting(
 def test_download_visual_tests_groups_manifests_by_executed_target(tmp_path: Path) -> None:
     artifacts = [
         {
-            "label": "//haku/console/frontend:screenshots",
-            "name": "test.outputs/visual-review.json",
-            "uri": "bytestream://manifest-haku",
+            "id": {"testResult": {"label": "//haku/console/frontend:screenshots"}},
+            "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://manifest-haku"},
         },
         {
-            "label": "//haku/console/frontend:screenshots",
-            "name": "test.outputs/preview.png",
-            "uri": "bytestream://preview-haku",
+            "id": {"testResult": {"label": "//haku/console/frontend:screenshots"}},
+            "file": {"name": "test.outputs/preview.png", "uri": "bytestream://preview-haku"},
         },
         {
-            "label": "//aiquota/gnome:test_render",
-            "name": "test.outputs/visual-review.json",
-            "uri": "bytestream://manifest-aiquota",
+            "id": {"testResult": {"label": "//aiquota/gnome:test_render"}},
+            "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://manifest-aiquota"},
         },
-        {"label": "//aiquota/gnome:test_render", "name": "test.outputs/hot.png", "uri": "bytestream://hot-aiquota"},
+        {
+            "id": {"testResult": {"label": "//aiquota/gnome:test_render"}},
+            "file": {"name": "test.outputs/hot.png", "uri": "bytestream://hot-aiquota"},
+        },
     ]
     commands: list[list[str | Path]] = []
 
@@ -332,9 +332,15 @@ def test_bbapi_is_asked_once_per_invocation_however_many_files_a_commit_has(tmp_
     the invocation's whole build event stream — 33 MB on a `//...` sweep — for each of a
     commit's ~294 files, which is what made a publish take a quarter of an hour."""
     artifacts = [
-        {"label": "//ui:screenshots", "name": "test.outputs/visual-review.json", "uri": "bytestream://manifest"},
+        {
+            "id": {"testResult": {"label": "//ui:screenshots"}},
+            "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://manifest"},
+        },
         *(
-            {"label": "//ui:screenshots", "name": f"test.outputs/shot-{index}.png", "uri": f"bytestream://shot-{index}"}
+            {
+                "id": {"testResult": {"label": "//ui:screenshots"}},
+                "file": {"name": f"test.outputs/shot-{index}.png", "uri": f"bytestream://shot-{index}"},
+            }
             for index in range(12)
         ),
     ]
@@ -362,7 +368,10 @@ def test_bbapi_is_asked_once_per_invocation_however_many_files_a_commit_has(tmp_
 
 def test_download_visual_tests_rejects_missing_declared_asset(tmp_path: Path) -> None:
     artifacts = [
-        {"label": "//ui:screenshots", "name": "test.outputs/visual-review.json", "uri": "bytestream://manifest"}
+        {
+            "id": {"testResult": {"label": "//ui:screenshots"}},
+            "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://manifest"},
+        }
     ]
 
     with pytest.raises(ValueError, match=r"references missing artifact missing\.png"):
@@ -377,9 +386,18 @@ def test_download_visual_tests_rejects_missing_declared_asset(tmp_path: Path) ->
 
 def test_download_visual_tests_deduplicates_equivalent_manifests(tmp_path: Path) -> None:
     artifacts = [
-        {"label": "//ui:screenshots", "name": "test.outputs/visual-review.json", "uri": "bytestream://manifest-first"},
-        {"label": "//ui:screenshots", "name": "test.outputs/visual-review.json", "uri": "bytestream://manifest-retry"},
-        {"label": "//ui:screenshots", "name": "test.outputs/screen.png", "uri": "bytestream://screen"},
+        {
+            "id": {"testResult": {"label": "//ui:screenshots"}},
+            "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://manifest-first"},
+        },
+        {
+            "id": {"testResult": {"label": "//ui:screenshots"}},
+            "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://manifest-retry"},
+        },
+        {
+            "id": {"testResult": {"label": "//ui:screenshots"}},
+            "file": {"name": "test.outputs/screen.png", "uri": "bytestream://screen"},
+        },
     ]
     manifest = _manifest("UI", "screen.png")
 
@@ -407,10 +425,22 @@ def test_download_visual_tests_unions_a_sharded_targets_manifests(tmp_path: Path
     The target's review is their union — the shards are one test, not competing answers.
     """
     artifacts = [
-        {"label": "//ui:visual", "name": "test.outputs/visual-review.json", "uri": "bytestream://shard-0"},
-        {"label": "//ui:visual", "name": "test.outputs/visual-review.json", "uri": "bytestream://shard-1"},
-        {"label": "//ui:visual", "name": "test.outputs/list.png", "uri": "bytestream://list"},
-        {"label": "//ui:visual", "name": "test.outputs/detail.png", "uri": "bytestream://detail"},
+        {
+            "id": {"testResult": {"label": "//ui:visual"}},
+            "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://shard-0"},
+        },
+        {
+            "id": {"testResult": {"label": "//ui:visual"}},
+            "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://shard-1"},
+        },
+        {
+            "id": {"testResult": {"label": "//ui:visual"}},
+            "file": {"name": "test.outputs/list.png", "uri": "bytestream://list"},
+        },
+        {
+            "id": {"testResult": {"label": "//ui:visual"}},
+            "file": {"name": "test.outputs/detail.png", "uri": "bytestream://detail"},
+        },
     ]
 
     tests = download_visual_tests(
@@ -442,16 +472,30 @@ def test_download_visual_tests_rejects_a_sweep_and_an_affected_set_run_disagreei
     whichever run was listed first, so it stays an error -- which is what find_test_invocations'
     "the two are not combined" relies on.
     """
-    manifest_artifact = {"label": "//ui:visual", "name": "test.outputs/visual-review.json"}
     by_invocation = {
         "sweep": [
-            {**manifest_artifact, "uri": "bytestream://sweep-manifest"},
-            {"label": "//ui:visual", "name": "test.outputs/list.png", "uri": "bytestream://list"},
-            {"label": "//ui:visual", "name": "test.outputs/detail.png", "uri": "bytestream://detail"},
+            {
+                "id": {"testResult": {"label": "//ui:visual"}},
+                "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://sweep-manifest"},
+            },
+            {
+                "id": {"testResult": {"label": "//ui:visual"}},
+                "file": {"name": "test.outputs/list.png", "uri": "bytestream://list"},
+            },
+            {
+                "id": {"testResult": {"label": "//ui:visual"}},
+                "file": {"name": "test.outputs/detail.png", "uri": "bytestream://detail"},
+            },
         ],
         "affected": [
-            {**manifest_artifact, "uri": "bytestream://affected-manifest"},
-            {"label": "//ui:visual", "name": "test.outputs/list.png", "uri": "bytestream://list"},
+            {
+                "id": {"testResult": {"label": "//ui:visual"}},
+                "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://affected-manifest"},
+            },
+            {
+                "id": {"testResult": {"label": "//ui:visual"}},
+                "file": {"name": "test.outputs/list.png", "uri": "bytestream://list"},
+            },
         ],
     }
 
@@ -475,10 +519,22 @@ def test_download_visual_tests_rejects_a_sweep_and_an_affected_set_run_disagreei
 def test_download_visual_tests_unions_shards_across_a_retried_invocation(tmp_path: Path) -> None:
     """A sharded target listed through two invocations: each unions to the same roster, so it publishes."""
     shards = [
-        {"label": "//ui:visual", "name": "test.outputs/visual-review.json", "uri": "bytestream://shard-0"},
-        {"label": "//ui:visual", "name": "test.outputs/visual-review.json", "uri": "bytestream://shard-1"},
-        {"label": "//ui:visual", "name": "test.outputs/list.png", "uri": "bytestream://list"},
-        {"label": "//ui:visual", "name": "test.outputs/detail.png", "uri": "bytestream://detail"},
+        {
+            "id": {"testResult": {"label": "//ui:visual"}},
+            "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://shard-0"},
+        },
+        {
+            "id": {"testResult": {"label": "//ui:visual"}},
+            "file": {"name": "test.outputs/visual-review.json", "uri": "bytestream://shard-1"},
+        },
+        {
+            "id": {"testResult": {"label": "//ui:visual"}},
+            "file": {"name": "test.outputs/list.png", "uri": "bytestream://list"},
+        },
+        {
+            "id": {"testResult": {"label": "//ui:visual"}},
+            "file": {"name": "test.outputs/detail.png", "uri": "bytestream://detail"},
+        },
     ]
 
     tests = download_visual_tests(
@@ -502,8 +558,14 @@ def test_download_visual_tests_unions_shards_across_a_retried_invocation(tmp_pat
 
 def test_download_visual_tests_rejects_conflicting_titles(tmp_path: Path) -> None:
     artifacts = [
-        {"label": "//ui:screenshots", "name": "test.outputs/visual-review.json", "uri": "manifest-one"},
-        {"label": "//ui:screenshots", "name": "test.outputs/visual-review.json", "uri": "manifest-two"},
+        {
+            "id": {"testResult": {"label": "//ui:screenshots"}},
+            "file": {"name": "test.outputs/visual-review.json", "uri": "manifest-one"},
+        },
+        {
+            "id": {"testResult": {"label": "//ui:screenshots"}},
+            "file": {"name": "test.outputs/visual-review.json", "uri": "manifest-two"},
+        },
     ]
 
     with pytest.raises(ValueError, match="conflicting visual-review titles"):
@@ -521,8 +583,14 @@ def test_download_visual_tests_rejects_conflicting_titles(tmp_path: Path) -> Non
 def test_download_visual_tests_rejects_one_asset_described_two_ways(tmp_path: Path) -> None:
     """Union resolves disjoint and identical manifests; it cannot resolve disagreement."""
     artifacts = [
-        {"label": "//ui:screenshots", "name": "test.outputs/visual-review.json", "uri": "manifest-one"},
-        {"label": "//ui:screenshots", "name": "test.outputs/visual-review.json", "uri": "manifest-two"},
+        {
+            "id": {"testResult": {"label": "//ui:screenshots"}},
+            "file": {"name": "test.outputs/visual-review.json", "uri": "manifest-one"},
+        },
+        {
+            "id": {"testResult": {"label": "//ui:screenshots"}},
+            "file": {"name": "test.outputs/visual-review.json", "uri": "manifest-two"},
+        },
     ]
     relabelled = json.dumps(
         {

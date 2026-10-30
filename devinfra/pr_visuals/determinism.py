@@ -167,9 +167,9 @@ def observe(
     declared: dict[tuple[str, str], set[str]] = defaultdict(set)
     review: dict[Render, Observation] = {}
     for listed in artifacts:
-        if listed.artifact.name != f"test.outputs/{MANIFEST_NAME}":
+        if listed.artifact.file.name != f"test.outputs/{MANIFEST_NAME}":
             continue
-        uri = listed.artifact.uri
+        uri = listed.artifact.file.uri
         if uri not in manifests:
             manifests[uri] = read_manifest(uri)
         for asset in manifests[uri].assets:
@@ -179,16 +179,16 @@ def observe(
 
     diagnostics: dict[Render, Observation] = {}
     for listed in artifacts:
-        if not listed.artifact.name.startswith("test.outputs/") or not listed.artifact.name.endswith(".png"):
+        if not listed.artifact.file.name.startswith("test.outputs/") or not listed.artifact.file.name.endswith(".png"):
             continue
-        render = Render(listed.artifact.label, listed.artifact.name.removeprefix("test.outputs/"))
+        render = Render(listed.artifact.label, listed.artifact.file.name.removeprefix("test.outputs/"))
         if render in review:
             if render.asset not in declared[listed.invocation_id, render.target]:
                 continue
             observation = review[render]
         else:
             observation = diagnostics.setdefault(render, Observation(by_digest={}))
-        produced_by = observation.by_digest.setdefault(listed.artifact.uri, [])
+        produced_by = observation.by_digest.setdefault(listed.artifact.file.uri, [])
         # Shards/retries may list identical artifacts more than once in an invocation.
         if listed.invocation_id not in produced_by:
             produced_by.append(listed.invocation_id)

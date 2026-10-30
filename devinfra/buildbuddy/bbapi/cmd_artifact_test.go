@@ -7,7 +7,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	bbapipb "github.com/agentydragon/ducktape/devinfra/buildbuddy/bbapi/proto"
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	"google.golang.org/protobuf/proto"
 )
 
 // A BES stream in the shape BuildBuddy serves it, exercising the indirection a
@@ -51,7 +56,7 @@ func parseOrFail(t *testing.T, stream string) []artifact {
 
 func find(artifacts []artifact, name string) (artifact, bool) {
 	for _, a := range artifacts {
-		if a.Name == name {
+		if a.GetFile().GetName() == name {
 			return a, true
 		}
 	}
@@ -64,10 +69,10 @@ func TestParseArtifactsFindsBuildOutputs(t *testing.T) {
 	if !ok {
 		t.Fatalf("build output missing from %d artifacts", len(got))
 	}
-	if a.Kind != kindBuild || a.Label != "//skills/backtrace:backtrace_skill" || a.OutputGroup != "default" {
+	if a.Kind != kindBuild || a.label() != "//skills/backtrace:backtrace_skill" || a.OutputGroup != "default" {
 		t.Errorf("got %+v", a)
 	}
-	if a.Digest != "bbb" || a.Size != 34 {
+	if a.GetFile().GetDigest() != "bbb" || a.GetFile().GetLength() != 34 {
 		t.Errorf("digest/size not carried through: %+v", a)
 	}
 }
@@ -103,9 +108,13 @@ func TestParseArtifactsSeparatesOutputGroups(t *testing.T) {
 }
 
 func TestParseArtifactsDoesNotRepeatSharedFiles(t *testing.T) {
-	seen := map[artifact]int{}
+	seen := map[string]int{}
 	for _, a := range parseOrFail(t, besStream) {
-		seen[a]++
+		encoded, err := proto.MarshalOptions{Deterministic: true}.Marshal(a.Artifact)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen[string(encoded)]++
 	}
 	for a, n := range seen {
 		if n > 1 {
@@ -120,14 +129,14 @@ func TestParseArtifactsKeepsFilesDistinctByPathPrefix(t *testing.T) {
 	// silently collapse them into one and hand callers the wrong bytes.
 	var got []artifact
 	for _, a := range parseOrFail(t, besStream) {
-		if a.Name == "util/testing/frozen-clock.js" {
+		if a.GetFile().GetName() == "util/testing/frozen-clock.js" {
 			got = append(got, a)
 		}
 	}
 	if len(got) != 2 {
 		t.Fatalf("want 2 same-named files, got %d: %+v", len(got), got)
 	}
-	prefixes := map[string]string{got[0].PathPrefix: got[0].Digest, got[1].PathPrefix: got[1].Digest}
+	prefixes := map[string]string{strings.Join(got[0].GetFile().GetPathPrefix(), "/"): got[0].GetFile().GetDigest(), strings.Join(got[1].GetFile().GetPathPrefix(), "/"): got[1].GetFile().GetDigest()}
 	if prefixes["bazel-out/k8-fastbuild-ST-abc/bin"] != "eee" || prefixes[""] != "fff" {
 		t.Errorf("prefix/digest pairing wrong: %+v", prefixes)
 	}
@@ -179,7 +188,7 @@ const shardedStream = `[
 func logsOf(artifacts []artifact, label string) []artifact {
 	var logs []artifact
 	for _, a := range artifacts {
-		if a.Label == label && a.Name == "test.log" {
+		if a.label() == label && a.GetFile().GetName() == "test.log" {
 			logs = append(logs, a)
 		}
 	}
@@ -225,11 +234,11 @@ func TestFailedMeansAResultThatDidNotPass(t *testing.T) {
 		"FAILED": true, "TIMEOUT": true, "INCOMPLETE": true, "REMOTE_FAILURE": true,
 		"PASSED": false, "FLAKY": false, "NO_STATUS": false, "": false,
 	} {
-		if got := (artifact{Kind: kindTest, Status: status}).failed(); got != want {
+		if got := (artifact{&bbapipb.Artifact{Kind: kindTest, Status: bespb.TestStatus(bespb.TestStatus_value[status])}}).failed(); got != want {
 			t.Errorf("failed() for %q = %v, want %v", status, got, want)
 		}
 	}
-	if (artifact{Kind: kindBuild, Status: "FAILED"}).failed() {
+	if (artifact{&bbapipb.Artifact{Kind: kindBuild, Status: bespb.TestStatus_FAILED}}).failed() {
 		t.Error("a build artifact has no test result to have failed")
 	}
 }
@@ -240,11 +249,11 @@ func TestFilterResults(t *testing.T) {
 		t.Errorf("no filter must keep everything, build artifacts too: %d of %d", len(got), len(all))
 	}
 	second := filterResults(all, 2, false)
-	if len(second) != 1 || second[0].Shard != 2 || second[0].Kind != kindTest {
+	if len(second) != 1 || second[0].GetId().GetTestResult().GetShard() != 2 || second[0].Kind != kindTest {
 		t.Errorf("shard 2 = %+v", second)
 	}
 	failed := filterResults(all, 0, true)
-	if len(failed) != 1 || failed[0].Status != "FAILED" {
+	if len(failed) != 1 || failed[0].GetStatus().String() != "FAILED" {
 		t.Errorf("failed = %+v", failed)
 	}
 	if got := filterResults(all, 3, true); len(got) != 0 {
@@ -261,7 +270,7 @@ func TestDownloadNamesKeepShardLogsFromOverwritingEachOther(t *testing.T) {
 			t.Errorf("%q would be written twice", name)
 		}
 		seen[name] = true
-		if arts[i].Name == "test.xml" && name != "test.xml" {
+		if arts[i].GetFile().GetName() == "test.xml" && name != "test.xml" {
 			t.Errorf("a name nothing else shares stays as it is, got %q", name)
 		}
 	}
@@ -272,7 +281,7 @@ func TestDownloadNamesKeepShardLogsFromOverwritingEachOther(t *testing.T) {
 
 func TestDownloadNamesLastResortKeepsEveryFile(t *testing.T) {
 	// Nothing about these tells them apart but their prefix, which the name does not carry.
-	arts := []artifact{{Label: "//a:b", Name: "x/out.txt"}, {Label: "//a:b", Name: "y/out.txt"}}
+	arts := []artifact{artifactForTest("//a:b", "x/out.txt"), artifactForTest("//a:b", "y/out.txt")}
 	if names := downloadNames(arts); names[0] == names[1] {
 		t.Errorf("names collide: %v", names)
 	}
@@ -280,12 +289,12 @@ func TestDownloadNamesLastResortKeepsEveryFile(t *testing.T) {
 
 func TestNearArtifacts(t *testing.T) {
 	arts := []artifact{
-		{Label: "//v:visual", Name: "test.outputs/session_recovery_tools_open-actual.png"},
-		{Label: "//v:visual", Name: "test.outputs/session-shell-calls-actual.png"},
+		artifactForTest("//v:visual", "test.outputs/session_recovery_tools_open-actual.png"),
+		artifactForTest("//v:visual", "test.outputs/session-shell-calls-actual.png"),
 	}
 	// A name guessed with the other of '-' and '_' than the output uses.
 	near := nearArtifacts(arts, "session-recovery-tools-open-actual.png", 5)
-	if len(near) != 1 || near[0].Name != arts[0].Name {
+	if len(near) != 1 || near[0].GetFile().GetName() != arts[0].GetFile().GetName() {
 		t.Errorf("near = %+v", near)
 	}
 	if got := nearArtifacts(arts, "nothing-like-it", 5); len(got) != 0 {
@@ -427,4 +436,25 @@ func captureStdout(t *testing.T, run func() error) ([]byte, error) {
 		return nil, readErr
 	}
 	return output, nil
+}
+
+func TestParseArtifactsPreservesNativeFileAndConfiguration(t *testing.T) {
+	stream := `[
+ {"id":{"testResult":{"label":"//pkg:test","configuration":{"id":"one"},"shard":1}},
+  "testResult":{"status":"PASSED","testActionOutput":[{"name":"test.log","contents":"aGk=","pathPrefix":["logs"],"digest":"abc","length":"2"}]}},
+ {"id":{"testSummary":{"label":"//pkg:test","configuration":{"id":"one"}}},"testSummary":{"shardCount":2}},
+ {"id":{"testSummary":{"label":"//pkg:test","configuration":{"id":"two"}}},"testSummary":{"shardCount":7}}
+]`
+	got := parseOrFail(t, stream)
+	if len(got) != 1 {
+		t.Fatalf("got %d artifacts", len(got))
+	}
+	a := got[0]
+	if a.GetId().GetTestResult().GetConfiguration().GetId() != "one" || a.GetTestSummary().GetShardCount() != 2 {
+		t.Errorf("artifact lost its configuration: %v", a.Artifact)
+	}
+	want := &bespb.File{Name: "test.log", PathPrefix: []string{"logs"}, Digest: "abc", Length: 2, File: &bespb.File_Contents{Contents: []byte("hi")}}
+	if !proto.Equal(a.GetFile(), want) {
+		t.Errorf("native file = %v, want %v", a.GetFile(), want)
+	}
 }
