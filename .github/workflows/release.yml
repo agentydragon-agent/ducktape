@@ -76,6 +76,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          installables: ".#bbapi"
+
       - uses: ./.github/actions/setup-ci-secrets
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
@@ -117,7 +121,7 @@ jobs:
 
       - uses: ./.github/actions/setup-nix-devtools
         with:
-          installables: ".#bb"
+          installables: ".#bb .#bbapi"
 
       - uses: ./.github/actions/setup-ci-secrets
         with:
