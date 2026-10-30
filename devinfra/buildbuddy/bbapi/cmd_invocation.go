@@ -90,6 +90,11 @@ func invocationCmd() *cobra.Command {
 	cmd.AddCommand(invocationListCmd())
 	cmd.AddCommand(invocationStatSubCmd())
 	cmd.AddCommand(invocationWatchCmd())
+	cmd.AddCommand(invocationStatusCmd())
+	cmd.AddCommand(invocationFirstFailureCmd())
+	cmd.AddCommand(invocationEventsCmd())
+	cmd.AddCommand(invocationExportCmd())
+	cmd.AddCommand(invocationCancelCmd())
 	return cmd
 }
 
@@ -98,6 +103,7 @@ func invocationListCmd() *cobra.Command {
 	var count int32
 	var tagFilter string
 	var roleFilter string
+	var commitFilter, commandFilter string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List recent invocations",
@@ -112,7 +118,7 @@ func invocationListCmd() *cobra.Command {
 					return fmt.Errorf("auto-detect repo (use --repo to override): %w", err)
 				}
 			}
-			query := &invocationpb.InvocationQuery{RepoUrl: repo}
+			query := &invocationpb.InvocationQuery{RepoUrl: repo, CommitSha: commitFilter, Command: commandFilter}
 			if tagFilter != "" {
 				query.Tags = []string{tagFilter}
 			}
@@ -154,6 +160,8 @@ func invocationListCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (default: auto-detect from git)")
 	cmd.Flags().Int32Var(&count, "count", 10, "Number of invocations to list")
+	cmd.Flags().StringVar(&commitFilter, "commit", "", "Filter by commit SHA")
+	cmd.Flags().StringVar(&commandFilter, "command", "", "Filter by Bazel command")
 	cmd.Flags().StringVar(&tagFilter, "tag", "", "Filter by tag (exact match)")
 	cmd.Flags().StringVar(&roleFilter, "role", "", "Filter by role (exact match)")
 	return cmd

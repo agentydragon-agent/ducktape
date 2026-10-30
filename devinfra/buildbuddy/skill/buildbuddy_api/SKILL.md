@@ -40,8 +40,25 @@ bbapi invocation <invocation-id>
 bbapi invocation watch <invocation-id>
 bbapi invocation watch <invocation-id> --fail-on-test-failure
 
+# State lookup: unknown invocation is an empty list; API errors exit nonzero.
+bbapi invocation status <invocation-id> --json
+bbapi invocation first-failure <invocation-id>  # JSON {"label": "..."}, empty label if none
+
+# Export build outputs, test summaries, and command/commit provenance for planners.
+bbapi invocation export <invocation-id>
+bbapi invocation events <invocation-id>         # raw build event JSON
+
+# Cancel exactly these IDs concurrently; bound each request during teardown.
+bbapi --timeout 4s invocation cancel <invocation-id> [<invocation-id>...]
+
+# Download advertised blob URIs without fetching the invocation again.
+bbapi blob cat <bytestream-uri> [--invocation <invocation-id>]
+bbapi blob download --manifest downloads.json
+# downloads.json: [{"uri":"bytestream://...","destination":"out/file","invocation_id":"..."}]
+# The invocation_id is optional; include it for BuildBuddy's legacy artifact fallback.
+
 # List recent invocations (auto-detects repo from git remote)
-bbapi invocation list [--repo URL] [--count N]
+bbapi invocation list [--repo URL] [--count N] [--commit SHA] [--command test]
 
 # Download test.log for a specific target (most common for debugging failures).
 # A sharded target has one log per shard: the failing ones are printed, each under a header
@@ -123,7 +140,9 @@ bbapi cache metadata <digest> <size-bytes>
 bbapi trend [--days N] [--repo URL]
 ```
 
-All `bbapi` commands support `--json` for raw JSON output.
+All `bbapi` commands support `--json` and `--timeout <duration>` (HTTP request timeout, default 120s).
+`status`, `first-failure`, `export`, and `events` always emit JSON; `blob cat` emits raw bytes.
+Reads retry transient failures; cancellation RPCs are sent once.
 
 Responses are parsed against pinned BuildBuddy protos but unknown fields are
 discarded, so `bbapi` tolerates API/proto drift between repins (newly added

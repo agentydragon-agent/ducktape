@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -236,9 +235,7 @@ func listToolLogsResolved(c *client, invocationID string) ([]toolLog, error) {
 }
 
 func listToolLogs(c *client, invocationID string) ([]toolLog, error) {
-	besURL := fmt.Sprintf("%s/file/download?invocation_id=%s&artifact=raw_json",
-		c.baseURL, url.QueryEscape(invocationID))
-	data, err := c.fetchURL(besURL)
+	data, err := readInvocationEvents(c, invocationID)
 	if err != nil {
 		return nil, fmt.Errorf("fetch BES event stream: %w", err)
 	}

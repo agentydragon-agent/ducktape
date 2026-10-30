@@ -75,12 +75,9 @@ jobs:
             --state "$RUNNER_TEMP/runner-image/state.json" \
             --image "$RUNNER_IMAGE" --tag "$GITHUB_SHA"
 
-      - name: Install the pinned BuildBuddy launcher
+      - name: Install pinned BuildBuddy CLIs
         if: steps.image.outputs.needs_publish == 'true'
-        run: |
-          python3 devinfra/buildbuddy/ci/install_bb.py --pins nix/artifact-pins.json \
-            --destination "$RUNNER_TEMP/buildbuddy-cli/bin/bb"
-          echo "$RUNNER_TEMP/buildbuddy-cli/bin" >> "$GITHUB_PATH"
+        run: nix profile install .#bb .#bbapi
 
       - name: Exercise candidate on a BuildBuddy runner before pinning
         if: steps.image.outputs.needs_publish == 'true'

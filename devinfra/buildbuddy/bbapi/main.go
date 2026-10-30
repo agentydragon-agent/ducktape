@@ -10,7 +10,10 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var jsonOutput bool
+var (
+	jsonOutput     bool
+	requestTimeout = 120 * time.Second
+)
 
 func main() {
 	root := &cobra.Command{
@@ -29,6 +32,8 @@ Full service definition:
 	}
 	root.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output raw JSON")
 
+	root.PersistentFlags().DurationVar(&requestTimeout, "timeout", 120*time.Second, "HTTP request timeout")
+	root.AddCommand(blobCmd())
 	root.AddCommand(invocationCmd())
 	root.AddCommand(targetCmd())
 	root.AddCommand(executionCmd())
