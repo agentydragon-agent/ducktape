@@ -142,6 +142,7 @@ Prefer the explicit subcommands:
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			artifacts, err := listArtifactsResolved(c, args[0])
 			if err != nil {
 				return err
@@ -172,6 +173,7 @@ func artifactListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			artifacts, err := listArtifactsResolved(c, args[0])
 			if err != nil {
 				return err
@@ -191,6 +193,7 @@ func artifactCatCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			artifacts, err := listArtifactsResolved(c, args[0])
 			if err != nil {
 				return err
@@ -221,6 +224,7 @@ Patterns containing '*' use glob matching; otherwise substring match against
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			artifacts, err := listArtifactsResolved(c, args[0])
 			if err != nil {
 				return err

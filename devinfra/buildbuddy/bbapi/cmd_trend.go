@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -21,6 +22,7 @@ func trendCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			if repo == "" {
 				repo, err = detectRepoURL()
 				if err != nil {
@@ -36,8 +38,8 @@ func trendCmd() *cobra.Command {
 					UpdatedBefore: timestamppb.New(now),
 				},
 			}
-			resp := &statspb.GetTrendResponse{}
-			if err := c.call("GetTrend", req, resp); err != nil {
+			resp, err := c.rpc.GetTrend(context.Background(), req)
+			if err != nil {
 				return err
 			}
 			if jsonOutput {

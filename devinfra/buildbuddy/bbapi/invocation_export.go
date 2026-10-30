@@ -33,6 +33,7 @@ func invocationExportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			raw, err := readInvocationEvents(c, args[0])
 			if err != nil {
 				return err

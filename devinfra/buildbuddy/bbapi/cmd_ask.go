@@ -18,6 +18,7 @@ func askCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			req := &suggestionpb.GetSuggestionRequest{
 				Type:         suggestionpb.SuggestionType_FIX_ERROR,
 				InvocationId: args[0],

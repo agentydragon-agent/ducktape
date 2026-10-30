@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -23,6 +24,7 @@ func targetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			ids, err := resolveInvocationIDs(c, args[0])
 			if err != nil {
 				return err
@@ -35,8 +37,8 @@ func targetCmd() *cobra.Command {
 					TargetLabel:  label,
 					Filter:       filter,
 				}
-				resp := &targetpb.GetTargetResponse{}
-				if err := c.call("GetTarget", req, resp); err != nil {
+				resp, err := c.rpc.GetTarget(context.Background(), req)
+				if err != nil {
 					return err
 				}
 				if jsonOutput {
@@ -81,6 +83,7 @@ func targetHistorySubCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			if repo == "" {
 				repo, err = detectRepoURL()
 				if err != nil {
@@ -143,8 +146,8 @@ func fetchAllTargetHistory(c *client, req *targetpb.GetTargetHistoryRequest, sin
 	result := &targetpb.GetTargetHistoryResponse{}
 	indexesByLabel := make(map[string]int)
 	for {
-		page := &targetpb.GetTargetHistoryResponse{}
-		if err := c.call("GetTargetHistory", req, page); err != nil {
+		page, err := c.rpc.GetTargetHistory(context.Background(), req)
+		if err != nil {
 			return nil, err
 		}
 		if !since.IsZero() && targetHistoryPageIsOlderThan(page, since) {
@@ -235,6 +238,7 @@ func targetStatsSubCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			if repo == "" {
 				repo, err = detectRepoURL()
 				if err != nil {
@@ -249,8 +253,8 @@ func targetStatsSubCmd() *cobra.Command {
 				RequestContext: &ctxpb.RequestContext{GroupId: groupID},
 				Repo:           repo,
 			}
-			resp := &targetpb.GetTargetStatsResponse{}
-			if err := c.call("GetTargetStats", req, resp); err != nil {
+			resp, err := c.rpc.GetTargetStats(context.Background(), req)
+			if err != nil {
 				return err
 			}
 			if jsonOutput {
@@ -288,6 +292,7 @@ func targetFlakesSubCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			if repo == "" {
 				repo, err = detectRepoURL()
 				if err != nil {
@@ -303,8 +308,8 @@ func targetFlakesSubCmd() *cobra.Command {
 				Label:          args[0],
 				Repo:           repo,
 			}
-			resp := &targetpb.GetTargetFlakeSamplesResponse{}
-			if err := c.call("GetTargetFlakeSamples", req, resp); err != nil {
+			resp, err := c.rpc.GetTargetFlakeSamples(context.Background(), req)
+			if err != nil {
 				return err
 			}
 			if jsonOutput {
@@ -357,6 +362,7 @@ Examples:
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			artifacts, err := listArtifactsResolved(c, args[0])
 			if err != nil {
 				return err

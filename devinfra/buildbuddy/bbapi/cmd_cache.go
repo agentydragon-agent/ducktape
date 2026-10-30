@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -21,11 +22,12 @@ func cacheCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			req := &cachepb.GetCacheScoreCardRequest{
 				InvocationId: args[0],
 			}
-			resp := &cachepb.GetCacheScoreCardResponse{}
-			if err := c.call("GetCacheScoreCard", req, resp); err != nil {
+			resp, err := c.rpc.GetCacheScoreCard(context.Background(), req)
+			if err != nil {
 				return err
 			}
 			if jsonOutput {
@@ -56,6 +58,7 @@ func cacheMetadataSubCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			var sizeBytes int64
 			if _, err := fmt.Sscanf(args[1], "%d", &sizeBytes); err != nil {
 				return fmt.Errorf("invalid size %q: %w", args[1], err)
@@ -74,8 +77,8 @@ func cacheMetadataSubCmd() *cobra.Command {
 					CacheType:    ct,
 				},
 			}
-			resp := &cachepb.GetCacheMetadataResponse{}
-			if err := c.call("GetCacheMetadata", req, resp); err != nil {
+			resp, err := c.rpc.GetCacheMetadata(context.Background(), req)
+			if err != nil {
 				return err
 			}
 			if jsonOutput {

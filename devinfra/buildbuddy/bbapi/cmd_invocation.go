@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -29,13 +30,14 @@ func invocationCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			req := &invocationpb.GetInvocationRequest{
 				Lookup: &invocationpb.InvocationLookup{
 					InvocationId: args[0],
 				},
 			}
-			resp := &invocationpb.GetInvocationResponse{}
-			if err := c.call("GetInvocation", req, resp); err != nil {
+			resp, err := c.rpc.GetInvocation(context.Background(), req)
+			if err != nil {
 				return err
 			}
 			if jsonOutput {
@@ -112,6 +114,7 @@ func invocationListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			if repo == "" {
 				repo, err = detectRepoURL()
 				if err != nil {
@@ -129,8 +132,8 @@ func invocationListCmd() *cobra.Command {
 				Query: query,
 				Count: count,
 			}
-			resp := &invocationpb.SearchInvocationResponse{}
-			if err := c.call("SearchInvocation", req, resp); err != nil {
+			resp, err := c.rpc.SearchInvocation(context.Background(), req)
+			if err != nil {
 				return err
 			}
 			if jsonOutput {
@@ -173,8 +176,8 @@ func getChildInvocationIDs(c *client, invocationID string) ([]string, error) {
 	req := &invocationpb.GetInvocationRequest{
 		Lookup: &invocationpb.InvocationLookup{InvocationId: invocationID},
 	}
-	resp := &invocationpb.GetInvocationResponse{}
-	if err := c.call("GetInvocation", req, resp); err != nil {
+	resp, err := c.rpc.GetInvocation(context.Background(), req)
+	if err != nil {
 		return nil, err
 	}
 	var children []string
@@ -236,6 +239,7 @@ func invocationStatSubCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer c.close()
 			if repo == "" {
 				repo, err = detectRepoURL()
 				if err != nil {
@@ -258,8 +262,8 @@ func invocationStatSubCmd() *cobra.Command {
 					RepoUrl: repo,
 				},
 			}
-			resp := &invocationpb.GetInvocationStatResponse{}
-			if err := c.call("GetInvocationStat", req, resp); err != nil {
+			resp, err := c.rpc.GetInvocationStat(context.Background(), req)
+			if err != nil {
 				return err
 			}
 			if jsonOutput {

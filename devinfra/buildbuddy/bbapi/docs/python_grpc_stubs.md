@@ -137,7 +137,7 @@ types we already have, and call RPCs by method name string via
 ```python
 channel = grpc.secure_channel("remote.buildbuddy.io:443", creds)
 call = channel.unary_unary(
-    "/runner.BuildBuddyService/Run",
+    "/buildbuddy.service.BuildBuddyService/Run",
     request_serializer=RunRequest.SerializeToString,
     response_deserializer=RunResponse.FromString,
 )
