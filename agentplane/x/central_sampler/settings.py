@@ -1,10 +1,17 @@
 """Typed JSON configuration schema for the central sampler Go service."""
 
 from pathlib import Path
-from typing import ClassVar, Self
+from typing import ClassVar, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_serializer, model_validator
 from pydantic_settings import SettingsConfigDict
+
+
+class ModelConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    responses_mode: Literal["lite", "standard"]
+    exec_encoding: Literal["freeform", "json"]
 
 
 class Provider(BaseModel):
@@ -13,7 +20,7 @@ class Provider(BaseModel):
     endpoint: str
     credential: SecretStr | None = None
     credential_file: Path | None = None
-    models: set[str] = Field(min_length=1)
+    models: dict[str, ModelConfig] = Field(min_length=1)
     reasoning_efforts: set[str] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -22,8 +29,8 @@ class Provider(BaseModel):
             raise ValueError("configure exactly one of credential and credential_file")
         return self
 
-    @field_serializer("models", "reasoning_efforts")
-    def serialize_allowlists(self, value: set[str]) -> list[str]:
+    @field_serializer("reasoning_efforts")
+    def serialize_reasoning_efforts(self, value: set[str]) -> list[str]:
         return sorted(value)
 
 

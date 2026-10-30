@@ -92,6 +92,40 @@ fixtures. Scripted acceptance does not establish live provider or subscription c
 Provider compaction uses Codex's remote-v2 beta protocol; choose a supporting endpoint/model.
 See the [v1 validation evidence](../../debug/central_sampler_v1.md) for results and fixture diagnosis.
 
+## Model contracts
+
+Each provider's `models` is a map from an allowed model route ID to its request and tool encodings:
+
+```json
+{
+  "models": {
+    "native-code-model": { "responses_mode": "lite", "exec_encoding": "freeform" },
+    "function-calling-model": { "responses_mode": "standard", "exec_encoding": "json" }
+  }
+}
+```
+
+The two settings are independent; all four combinations are supported. `lite` uses Codex's
+Responses Lite header, `additional_tools` input item and all-turn reasoning context. `standard`
+declares top-level Responses `tools` and omits the private Lite header, reasoning context and
+client metadata. With no reasoning effort selected, standard requests omit reasoning configuration
+and encrypted-reasoning includes entirely.
+
+`freeform` exposes the native JavaScript `exec` custom tool and separate function `wait`.
+`json` exposes only a function `exec`: pass `{code, yield_time_ms?, max_output_tokens?}` to execute
+JavaScript, or `{cell_id, yield_time_ms?, max_output_tokens?, terminate?}` to resume or terminate a
+yielded cell. Both use the same JavaScript host, nested tools, output limits and effect journal.
+Standard requests send text-only function results as strings and multimodal results as content
+arrays. Asynchronous `notify()` output becomes a developer message identifying its original call,
+so the public API receives only one tool result per call.
+
+Staging generates these settings from the shared model route catalog. A model change within a
+Session must keep both encodings. Treat a route's contract as fixed while its Sessions exist;
+use a new route ID to change it. Standard routes reject manual compaction, and reaching the
+configured automatic compaction threshold fails the turn before any private compaction request.
+Portable compaction is not implemented. Provider compatibility still needs live validation;
+scripted tests establish the sampler's protocol and execution behavior.
+
 Rollback: remove the app offerings and named central route, then disable the sampler's inbound
 allowlists. Preserve the sampler DB and History records. Reverting sampler code does not convert a
 central Session into a native harness Session.

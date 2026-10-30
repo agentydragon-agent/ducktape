@@ -74,7 +74,8 @@ turn completes; an interrupted or effect-uncertain turn discards them, as Codex 
 **Deviation:** a failed turn also discards them, because its unresolved intent must precede any
 later output. Boundary evidence records each output as `recorded` or `discarded`.
 
-The model sees Codex's Code Mode Only surface at the pinned version: freeform `exec` (Lark grammar,
+For routes configured with `exec_encoding: freeform`, the model sees Codex's Code Mode Only
+surface at the pinned version: freeform `exec` (Lark grammar,
 optional `// @exec:` pragma with `yield_time_ms` and `max_output_tokens`) described by Codex's
 template with a TypeScript declaration per nested tool, and function `wait` with Codex's schema
 and defaults. Results carry Codex's status header and token-budget truncation. Deviations: the
@@ -83,6 +84,26 @@ sampler has MCP/Action tools and tool search or deferred tools; `wait`
 accepts only a live cell this Session recorded (rejected before dispatch rather than reported as a
 missing cell), unknown or `null` tool arguments are rejected, and audio truncation estimates
 tokens from data URL size rather than decoded duration.
+
+Each provider allowlists model route IDs with explicit, independent `responses_mode` (`lite` or
+`standard`) and `exec_encoding` (`freeform` or `json`) settings. JSON encoding exposes a single
+function `exec`. Exactly one of `code` (execute JavaScript) or `cell_id` (resume a yielded cell)
+is required; both accept optional `yield_time_ms` and `max_output_tokens`, and only the resume
+variant accepts `terminate`. JSON source does not accept the native exec pragma. The adapter
+validates arguments before dispatch and uses the same host operations, journal and recovery
+rules as freeform calls. Calls are accepted only with their configured name and item type.
+Model changes cannot change either encoding within a Session. Route contracts must remain fixed
+for retained Sessions; changing a contract requires a new route ID.
+
+Lite mode retains the Codex wire contract described below. Standard mode sends top-level `tools`,
+omits the Lite header, `additional_tools`, private client metadata and `reasoning.context`, and
+requests reasoning only when an effort is selected. The standard request adapter emits text-only
+function results as strings, preserving multimodal content arrays and opaque provider items.
+In standard mode or with JSON exec encoding, repeated `notify()` outputs for a completed call
+become asynchronous developer messages identifying the original call, without modifying the
+durable Codex transcript. Standard mode has no compaction
+implementation: explicit compaction is rejected at admission, and automatic compaction fails the
+turn before sending a private provider request.
 
 Nested `exec_command` and `write_stdin` match Codex 0.162.1 unified exec for one remote environment:
 upstream schemas and result objects (`chunk_id`, `wall_time_seconds`,

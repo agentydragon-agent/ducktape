@@ -102,7 +102,8 @@ func (s *Sampler) OpenSession(ctx context.Context, request *samplerpb.OpenSessio
 		return invalid()
 	}
 	provider, ok := s.Settings.Providers[spec.GetCentralSampler().GetProvider()]
-	if !ok || !slices.Contains(provider.Models, spec.GetModel()) || !slices.Contains(provider.ReasoningEfforts, spec.GetReasoningEffort()) {
+	_, modelConfigured := provider.Models[spec.GetModel()]
+	if !ok || !modelConfigured || !slices.Contains(provider.ReasoningEfforts, spec.GetReasoningEffort()) {
 		return invalid()
 	}
 	session, err := s.Store.OpenSession(ctx, request, principal.ServiceAccountUID)
@@ -140,11 +141,27 @@ func (s *Sampler) command(ctx context.Context, sessionID string, command *comman
 	if !ok {
 		return nil, status.Error(codes.FailedPrecondition, "session cannot apply this operation")
 	}
-	if model := command.GetChangeModel(); model != nil && !slices.Contains(provider.Models, model.GetModel()) {
-		return nil, status.Error(codes.InvalidArgument, "invalid sampler request")
+	if model := command.GetChangeModel(); model != nil {
+		targetConfig, targetConfigured := provider.Models[model.GetModel()]
+		if !targetConfigured {
+			return nil, status.Error(codes.InvalidArgument, "invalid sampler request")
+		}
+		currentConfig, currentConfigured := provider.Models[session.Model]
+		if !currentConfigured || targetConfig != currentConfig {
+			return nil, status.Error(codes.FailedPrecondition, "model changes cannot change the session's Responses or exec encoding")
+		}
 	}
 	if effort := command.GetChangeReasoningEffort(); effort != nil && !slices.Contains(provider.ReasoningEfforts, effort.GetEffort()) {
 		return nil, status.Error(codes.InvalidArgument, "invalid sampler request")
+	}
+	if command.GetCompact() != nil {
+		modelConfig, configured := provider.Models[session.Model]
+		if !configured {
+			return nil, status.Error(codes.FailedPrecondition, "session cannot apply this operation")
+		}
+		if modelConfig.ResponsesMode == "standard" {
+			return nil, status.Error(codes.FailedPrecondition, "manual compaction requires Responses lite mode")
+		}
 	}
 	if input := command.GetSubmitInput(); input != nil && (input.GetText() == "" || len(input.GetText()) > 1024*1024) {
 		return nil, status.Error(codes.InvalidArgument, "invalid sampler request")

@@ -19,7 +19,7 @@ from agentplane.native.testing.model_endpoint import ModelEndpoint, ModelExchang
 from agentplane.proto import runner_pb2, sandboxes_pb2
 from agentplane.testing.go_process import go_process
 from agentplane.x.central_sampler import sampler_pb2, sampler_pb2_grpc
-from agentplane.x.central_sampler.settings import Provider, Settings
+from agentplane.x.central_sampler.settings import ModelConfig, Provider, Settings
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import listen_tcp
 
@@ -109,7 +109,10 @@ def settings(database_url: str, endpoint: str, executor_url: str, codex_binary: 
             "test-provider": Provider(
                 endpoint=endpoint + "/v1/responses",
                 credential=SecretStr("test-key"),
-                models={"test-model", "second-model"},
+                models={
+                    "test-model": ModelConfig(responses_mode="lite", exec_encoding="freeform"),
+                    "second-model": ModelConfig(responses_mode="lite", exec_encoding="freeform"),
+                },
                 reasoning_efforts={"", "high"},
             )
         },

@@ -60,7 +60,7 @@ from agentplane.system_tests import launch_preset, probe_credential, runtime_gra
 from agentplane.system_tests.k3s import block_storage, dex, fixture_database
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, Models, PublicLiteLLM
-from agentplane.x.central_sampler.settings import Provider
+from agentplane.x.central_sampler.settings import ModelConfig, Provider
 from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.agentplane import (
     actions,
@@ -110,10 +110,18 @@ from cluster.cdk8s.providers.cert_manager.certificate import Certificate, Certif
 from cluster.cdk8s.providers.cert_manager.cluster_issuer import ClusterIssuer
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Port, ServiceRef
-from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API, OLLAMA_QWEN_IQ4XS_128K
+from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API, OLLAMA_QWEN_IQ4XS_128K, Route
 
 RUNNER_GATEWAY = "runner-gateway"
 SESSION_DISPATCHER = "session-dispatcher"
+
+
+def _central_sampler_model_config(route: Route) -> ModelConfig:
+    if route.responses_mode is None or route.exec_encoding is None:
+        raise ValueError(f"central sampler route {route.id} lacks Responses or exec compatibility metadata")
+    return ModelConfig(responses_mode=route.responses_mode, exec_encoding=route.exec_encoding)
+
+
 # The fixture's one Pod execution environment. Nothing outside the fixture names it -- no live Sandbox
 # or preset does -- so unlike staging's it is the fixture's own to rename.
 POD_TEMPLATE = "runner"
@@ -236,7 +244,7 @@ def environment(
                 "responses": Provider(
                     endpoint=f"{llm_ingress.proxied_url(NAMESPACE)}/v1/responses",
                     credential_file=Path("/var/run/secrets/central-sampler/llm"),
-                    models={GPT6_LUNA_RESPONSES.id},
+                    models={GPT6_LUNA_RESPONSES.id: _central_sampler_model_config(GPT6_LUNA_RESPONSES)},
                     reasoning_efforts={"", *GPT6_LUNA_RESPONSES.reasoning_efforts},
                 )
             },

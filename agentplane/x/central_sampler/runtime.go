@@ -661,7 +661,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		}
 	}
 	if call := pendingCall(conversation.Items); call != nil {
-		if !call.IsModelTool() {
+		if !call.IsModelTool(provider.Models[session.Model]) {
 			return "", &KnownFailureError{Evidence: map[string]any{"reason": "unsupported model tool", "call": call}}
 		}
 		if live == nil {
@@ -722,16 +722,23 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if conversation, err = r.store.RecordEnvironmentContext(ctx, owner); err != nil {
 		return "", err
 	}
-	body, err := RequestBody(session.Model, conversation.ID, conversation.Context(), conversation.Instructions, state)
+	body, err := RequestBody(session.Model, conversation.ID, conversation.Context(), conversation.Instructions, state, provider.Models[session.Model])
 	if err != nil {
 		return "", err
 	}
-	body.Reasoning.Effort = session.Effort
+	if body.Reasoning != nil {
+		body.Reasoning.Effort = session.Effort
+	} else if session.Effort != "" {
+		body.Reasoning = &ResponsesReasoningConfig{Effort: session.Effort}
+		body.Include = []string{"reasoning.encrypted_content"}
+	}
 	metadata, err := r.store.ProviderMetadata(ctx, owner)
 	if err != nil {
 		return "", err
 	}
-	body.ClientMetadata = ResponsesClientMetadata{SessionID: metadata.SessionID, ThreadID: metadata.ThreadID, TurnID: metadata.TurnID}
+	if body.ClientMetadata != nil {
+		body.ClientMetadata = &ResponsesClientMetadata{SessionID: metadata.SessionID, ThreadID: metadata.ThreadID, TurnID: metadata.TurnID}
+	}
 	body.PromptCacheKey = metadata.SessionID
 	credential, err := provider.ReadCredential()
 	if err != nil {
@@ -765,7 +772,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			}
 			return "", failure
 		}
-		if isCall && !call.IsModelTool() {
+		if isCall && !call.IsModelTool(provider.Models[session.Model]) {
 			failure := &KnownFailureError{Evidence: map[string]any{"reason": "unsupported model tool", "response": response.Audit(), "item": item}}
 			if err := r.store.Reject(ctx, owner, intentID, failure); err != nil {
 				return "", err
@@ -781,6 +788,9 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 }
 
 func (r *Runtime) compact(ctx context.Context, owner Owner, provider Provider, model string) error {
+	if provider.Models[model].ResponsesMode != "lite" {
+		return &KnownFailureError{Evidence: map[string]any{"reason": "compaction requires a Responses Lite route; standard Responses compaction is not supported"}}
+	}
 	state, err := r.store.ExecutionState(ctx, owner)
 	if err != nil {
 		return err
@@ -799,7 +809,7 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, provider Provider, m
 	if err := checkPairs(original); err != nil {
 		return err
 	}
-	body, err := RequestBody(model, conversation.ID, original, conversation.Instructions, state)
+	body, err := RequestBody(model, conversation.ID, original, conversation.Instructions, state, provider.Models[model])
 	if err != nil {
 		return err
 	}
@@ -807,7 +817,7 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, provider Provider, m
 	if err != nil {
 		return err
 	}
-	body.ClientMetadata = ResponsesClientMetadata{SessionID: metadata.SessionID, ThreadID: metadata.ThreadID, TurnID: metadata.TurnID}
+	body.ClientMetadata = &ResponsesClientMetadata{SessionID: metadata.SessionID, ThreadID: metadata.ThreadID, TurnID: metadata.TurnID}
 	body.PromptCacheKey = metadata.SessionID
 	body.Input = append(body.Input, ResponsesItem{Type: ResponsesItemCompactionTrigger})
 	credential, err := provider.ReadCredential()

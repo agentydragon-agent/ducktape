@@ -3,6 +3,8 @@ package centralsampler
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
@@ -55,7 +57,7 @@ func TestResponsesRequestUsesCodexToolsAndPreservesOpaqueContext(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"type":"reasoning","encrypted_content":"opaque","provider_sequence":9007199254740993}`), &item); err != nil {
 		t.Fatal(err)
 	}
-	body, err := RequestBody("fixture-model", "fixture-session", []ResponsesItem{item}, nil, nil)
+	body, err := RequestBody("fixture-model", "fixture-session", []ResponsesItem{item}, nil, nil, ModelConfig{ResponsesMode: "lite", ExecEncoding: "freeform"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,6 +99,94 @@ func TestResponsesRequestUsesCodexToolsAndPreservesOpaqueContext(t *testing.T) {
 		if !strings.Contains(string(encoded), expected) {
 			t.Fatalf("Responses request lost %s: %s", expected, encoded)
 		}
+	}
+}
+
+func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
+	for _, mode := range []string{"standard", "lite"} {
+		for _, encoding := range []string{"json", "freeform"} {
+			t.Run(mode+"/"+encoding, func(t *testing.T) {
+				config := ModelConfig{ResponsesMode: mode, ExecEncoding: encoding}
+				body, err := RequestBody("fixture", "session", nil, nil, nil, config)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var wire map[string]json.RawMessage
+				if err := json.Unmarshal(mustJSON(body), &wire); err != nil {
+					t.Fatal(err)
+				}
+				tools := body.Tools
+				if mode == "lite" {
+					tools = body.Input[0].Tools
+					if _, present := wire["tools"]; present {
+						t.Fatal("Lite declares top-level tools")
+					}
+				} else {
+					for _, private := range []string{"client_metadata", "reasoning", "include"} {
+						if _, present := wire[private]; present {
+							t.Fatalf("standard request includes %s", private)
+						}
+					}
+					if strings.Contains(string(wire["input"]), "additional_tools") {
+						t.Fatal("standard request includes additional_tools")
+					}
+				}
+				if encoding == "json" {
+					if len(tools) != 1 || tools[0].Name != "exec" || tools[0].Type != "function" {
+						t.Fatalf("JSON tools: %+v", tools)
+					}
+					if strings.Contains(tools[0].Description, "Accepts raw JavaScript") {
+						t.Fatal("JSON exec advertises raw input")
+					}
+				} else if len(tools) != 2 || tools[0].Type != "custom" || tools[1].Name != "wait" {
+					t.Fatalf("freeform tools: %+v", tools)
+				}
+				for _, call := range []ResponsesToolCall{
+					{Type: ResponsesItemFunctionCall, Name: "exec"},
+					{Type: ResponsesItemCustomToolCall, Name: "exec"},
+					{Type: ResponsesItemFunctionCall, Name: "wait"},
+				} {
+					want := encoding == "json" && call.Name == "exec" && call.Type == ResponsesItemFunctionCall || encoding == "freeform" && (call.Name == "wait" || call.Type == ResponsesItemCustomToolCall)
+					if call.IsModelTool(config) != want {
+						t.Fatalf("wrong tool validation: %+v", call)
+					}
+				}
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if got := r.Header.Get("x-openai-internal-codex-responses-lite"); (got == "true") != (mode == "lite") {
+						t.Errorf("Lite header: %q", got)
+					}
+					_, _ = w.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n"))
+				}))
+				defer server.Close()
+				if _, err := Sample(context.Background(), server.Client(), server.URL, "fixture", body, nil, nil, false); err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
+	}
+}
+
+func TestStandardResponsesSerializesTextAndAsyncNotifications(t *testing.T) {
+	call := ResponsesToolCall{Type: ResponsesItemFunctionCall, Name: "exec", CallID: "call"}
+	output := call.OutputItem([]ResponsesContentPart{{Type: "input_text", Text: "result"}})
+	notification := ResponsesItem{Type: ResponsesItemCustomToolOutput, CallID: "call", Output: []ResponsesContentPart{{Type: "input_text", Text: "later"}}}
+	body, err := RequestBody("fixture", "session", []ResponsesItem{
+		{Type: ResponsesItemFunctionCall, Name: "exec", CallID: "call", Arguments: `{"code":"text(1)"}`}, output, notification,
+	}, nil, nil, ModelConfig{ResponsesMode: "standard", ExecEncoding: "json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded := string(mustJSON(body))
+	for _, expected := range []string{`"output":"result"`, `"role":"developer"`, `Asynchronous output from exec call call:\nlater`} {
+		if !strings.Contains(encoded, expected) {
+			t.Fatalf("missing %s in %s", expected, encoded)
+		}
+	}
+	if strings.Contains(encoded, "custom_tool_call_output") {
+		t.Fatal("standard notification became a duplicate tool output")
+	}
+	if body.Input[2].Type != ResponsesItemCustomToolOutput {
+		t.Fatal("request encoding mutated durable context")
 	}
 }
 

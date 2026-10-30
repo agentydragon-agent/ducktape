@@ -32,7 +32,7 @@ from agentplane.llm_ingress.models import AttributionConfig, AttributionField, A
 from agentplane.runner.configuration import GuestResources, ResourceLimits
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
-from agentplane.x.central_sampler.settings import Provider
+from agentplane.x.central_sampler.settings import ModelConfig, Provider
 from cluster.cdk8s import (
     agent_access_profiles,
     cilium,
@@ -96,6 +96,7 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRul
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.public_coder import egress as public_coder_egress
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
+from model_catalog.catalog import Route
 
 _HOSTNAME = "agentplane-staging.allegedly.works"
 _ACTIONS_HOSTNAME = "agentplane-actions-staging.allegedly.works"
@@ -112,6 +113,13 @@ _KUBERNETES_MCP_URL = "https://kubectl-passthrough-mcp.allegedly.works/mcp"
 _KUBERNETES_MCP_SERVICE_URL = f"{kubectl_passthrough_mcp.SERVICE.url}/mcp"
 _GROCY_SF_MCP_URL = "https://grocy-mcp-sf.allegedly.works/mcp"
 _MCP_CLIENT_METADATA_URL = f"https://{_ACTIONS_HOSTNAME}/oauth/client-metadata.json"
+
+
+def _central_sampler_model_config(route: Route) -> ModelConfig:
+    if route.responses_mode is None or route.exec_encoding is None:
+        raise ValueError(f"central sampler route {route.id} lacks Responses or exec compatibility metadata")
+    return ModelConfig(responses_mode=route.responses_mode, exec_encoding=route.exec_encoding)
+
 
 # Separate harness and executor caps leave 1 GiB below the service high watermark.
 # The outer service cap leaves 1 GiB for guest services and kernel work.
@@ -390,7 +398,7 @@ ENV = Environment(
             "responses": Provider(
                 endpoint=f"{llm_ingress.service(STAGING_NAMESPACE).url}/v1/responses",
                 credential_file=Path("/var/run/secrets/central-sampler/llm"),
-                models={route.id for route in STAGING_APP_MODELS.codex},
+                models={route.id: _central_sampler_model_config(route) for route in STAGING_APP_MODELS.codex},
                 reasoning_efforts={
                     "",
                     *(effort for route in STAGING_APP_MODELS.codex for effort in route.reasoning_efforts),

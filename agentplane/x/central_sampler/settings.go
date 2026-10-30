@@ -12,11 +12,17 @@ import (
 )
 
 type Provider struct {
-	Endpoint         string   `json:"endpoint"`
-	Credential       string   `json:"credential"`
-	CredentialFile   string   `json:"credential_file"`
-	Models           []string `json:"models"`
-	ReasoningEfforts []string `json:"reasoning_efforts"`
+	Endpoint         string                 `json:"endpoint"`
+	Credential       string                 `json:"credential"`
+	CredentialFile   string                 `json:"credential_file"`
+	Models           map[string]ModelConfig `json:"models"`
+	ReasoningEfforts []string               `json:"reasoning_efforts"`
+}
+
+// ModelConfig contains the wire and tool-call encodings supported by one model route.
+type ModelConfig struct {
+	ResponsesMode string `json:"responses_mode"`
+	ExecEncoding  string `json:"exec_encoding"`
 }
 
 type Settings struct {
@@ -93,6 +99,11 @@ func (s Settings) Validate() error {
 	for name, provider := range s.Providers {
 		if name == "" || provider.Endpoint == "" || (provider.Credential == "") == (provider.CredentialFile == "") || len(provider.Models) == 0 || len(provider.ReasoningEfforts) == 0 {
 			return errors.New("provider endpoint, exactly one credential source, models and reasoning_efforts are required")
+		}
+		for model, config := range provider.Models {
+			if model == "" || (config.ResponsesMode != "lite" && config.ResponsesMode != "standard") || (config.ExecEncoding != "freeform" && config.ExecEncoding != "json") {
+				return errors.New("provider models require responses_mode lite or standard and exec_encoding freeform or json")
+			}
 		}
 	}
 	for _, account := range s.AllowedAccounts {

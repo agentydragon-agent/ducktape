@@ -10,7 +10,26 @@ import (
 
 func fixtureSettings() Settings {
 	return Settings{
-		DatabaseURL: "postgresql://fixture.invalid/sampler", Listen: "127.0.0.1:0", ServiceName: "fixture", Providers: map[string]Provider{"responses": {Endpoint: "https://model.invalid/responses", Credential: "test-credential", Models: []string{"test-model"}, ReasoningEfforts: []string{"", "high"}}}, Audience: "test-sampler", AllowedAccounts: []string{"test/client"}, CodeModeHost: "/fixture/host", ExecutorCodex: "/fixture/codex", Logs: "/fixture/logs", DirectExecutorURL: "ws://executor.invalid", MaxLiveSessions: 2, TurnTimeoutSeconds: 40, RPCTimeoutSeconds: 10, LeaseSeconds: 60,
+		DatabaseURL: "postgresql://fixture.invalid/sampler", Listen: "127.0.0.1:0", ServiceName: "fixture", Providers: map[string]Provider{"responses": {Endpoint: "https://model.invalid/responses", Credential: "test-credential", Models: map[string]ModelConfig{"test-model": {ResponsesMode: "lite", ExecEncoding: "freeform"}}, ReasoningEfforts: []string{"", "high"}}}, Audience: "test-sampler", AllowedAccounts: []string{"test/client"}, CodeModeHost: "/fixture/host", ExecutorCodex: "/fixture/codex", Logs: "/fixture/logs", DirectExecutorURL: "ws://executor.invalid", MaxLiveSessions: 2, TurnTimeoutSeconds: 40, RPCTimeoutSeconds: 10, LeaseSeconds: 60,
+	}
+}
+
+func TestProviderRequiresExplicitSupportedModelConfiguration(t *testing.T) {
+	for name, config := range map[string]ModelConfig{
+		"missing responses mode":     {ExecEncoding: "freeform"},
+		"unsupported responses mode": {ResponsesMode: "unknown", ExecEncoding: "freeform"},
+		"missing exec encoding":      {ResponsesMode: "lite"},
+		"unsupported exec encoding":  {ResponsesMode: "lite", ExecEncoding: "yaml"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := fixtureSettings()
+			provider := s.Providers["responses"]
+			provider.Models["test-model"] = config
+			s.Providers["responses"] = provider
+			if err := s.Validate(); err == nil {
+				t.Fatalf("accepted model configuration %+v", config)
+			}
+		})
 	}
 }
 

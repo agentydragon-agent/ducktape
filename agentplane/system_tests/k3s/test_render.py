@@ -453,7 +453,11 @@ def test_central_sampler_fixtures_render_app_ingress_gateway_and_history_wiring(
         provider = settings.providers["responses"]
         assert provider.endpoint == f"{llm_ingress.proxied_url(NAMESPACE)}/v1/responses"
         assert str(provider.credential_file) == "/var/run/secrets/central-sampler/llm"
-        assert provider.models == {fixture_chart.GPT6_LUNA_RESPONSES.id}
+        assert provider.models == {
+            fixture_chart.GPT6_LUNA_RESPONSES.id: fixture_chart._central_sampler_model_config(
+                fixture_chart.GPT6_LUNA_RESPONSES
+            )
+        }
         assert any(
             mount["name"] == "caller-tokens" and mount["mountPath"] == "/var/run/secrets/central-sampler"
             for mount in container["volumeMounts"]

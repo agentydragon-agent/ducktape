@@ -128,9 +128,11 @@ type ResponsesToolCall struct {
 	Input  string            `json:"input"`
 }
 
-// IsModelTool reports whether the call names a model-facing tool with its declared kind: freeform
-// `exec` and function `wait`.
-func (call ResponsesToolCall) IsModelTool() bool {
+// IsModelTool checks the exact tool surface declared for this model route.
+func (call ResponsesToolCall) IsModelTool(config ModelConfig) bool {
+	if config.ExecEncoding == "json" {
+		return call.Name == "exec" && call.Type == ResponsesItemFunctionCall
+	}
 	return call.Name == "exec" && call.Type == ResponsesItemCustomToolCall ||
 		call.Name == "wait" && call.Type == ResponsesItemFunctionCall
 }
@@ -215,15 +217,18 @@ type ResponsesJSONSchema struct {
 }
 
 type ResponsesRequest struct {
-	Model          string                   `json:"model"`
-	Instructions   string                   `json:"instructions"`
-	Input          []ResponsesItem          `json:"input"`
-	Stream         bool                     `json:"stream"`
-	Store          bool                     `json:"store"`
-	Include        []string                 `json:"include"`
-	PromptCacheKey string                   `json:"prompt_cache_key"`
-	ClientMetadata ResponsesClientMetadata  `json:"client_metadata"`
-	Reasoning      ResponsesReasoningConfig `json:"reasoning"`
+	Model          string                    `json:"model"`
+	Instructions   string                    `json:"instructions"`
+	Input          []ResponsesItem           `json:"input"`
+	Stream         bool                      `json:"stream"`
+	Store          bool                      `json:"store"`
+	Include        []string                  `json:"include,omitempty"`
+	PromptCacheKey string                    `json:"prompt_cache_key"`
+	ClientMetadata *ResponsesClientMetadata  `json:"client_metadata,omitempty"`
+	Reasoning      *ResponsesReasoningConfig `json:"reasoning,omitempty"`
+	Tools          []ResponsesAdditionalTool `json:"tools,omitempty"`
+	ResponsesMode  string                    `json:"-"`
+	ExecEncoding   string                    `json:"-"`
 	// Codex rust-v0.162.1 core/src/client.rs build_responses_request: Responses Lite disables
 	// parallel tool calls.
 	ParallelToolCalls bool `json:"parallel_tool_calls"`
@@ -235,12 +240,75 @@ type ResponsesClientMetadata struct {
 	TurnID    string `json:"turn_id"`
 }
 
+// MarshalJSON adapts durable Codex observations to the public Responses contract without
+// rewriting the journal. Public function outputs use strings for text, and notify() becomes
+// a developer message instead of a second output for an already answered call.
+func (request ResponsesRequest) MarshalJSON() ([]byte, error) {
+	type wire ResponsesRequest
+	if request.ResponsesMode != "standard" && request.ExecEncoding != "json" {
+		return json.Marshal(wire(request))
+	}
+	input := make([]json.RawMessage, 0, len(request.Input))
+	answered := map[string]bool{}
+	for _, item := range request.Input {
+		if item.IsToolOutput() {
+			if answered[item.CallID] {
+				texts := make([]string, 0, len(item.Output))
+				for _, part := range item.Output {
+					texts = append(texts, part.Text)
+				}
+				message, err := newResponsesMessage("developer", "Asynchronous output from exec call "+item.CallID+":\n"+strings.Join(texts, "\n"))
+				if err != nil {
+					return nil, err
+				}
+				item = message
+			} else {
+				answered[item.CallID] = true
+			}
+		}
+		encoded, err := json.Marshal(item)
+		if err != nil {
+			return nil, err
+		}
+		if request.ResponsesMode == "standard" && item.Type == ResponsesItemFunctionOutput {
+			var texts []string
+			allText := true
+			for _, part := range item.Output {
+				if part.Type != "input_text" {
+					allText = false
+					break
+				}
+				texts = append(texts, part.Text)
+			}
+			if allText {
+				var fields map[string]json.RawMessage
+				if err := json.Unmarshal(encoded, &fields); err != nil {
+					return nil, err
+				}
+				fields["output"], err = json.Marshal(strings.Join(texts, "\n"))
+				if err != nil {
+					return nil, err
+				}
+				encoded, err = json.Marshal(fields)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+		input = append(input, encoded)
+	}
+	return json.Marshal(struct {
+		wire
+		Input []json.RawMessage `json:"input"`
+	}{wire: wire(request), Input: input})
+}
+
 type ResponsesReasoningConfig struct {
 	Effort  string `json:"effort,omitempty"`
 	Summary string `json:"summary,omitempty"`
 	// Codex rust-v0.162.1 core/src/client.rs build_reasoning: the Responses Lite header
 	// (provider.go) requires `all_turns`; the provider rejects any other value.
-	Context string `json:"context"`
+	Context string `json:"context,omitempty"`
 }
 
 // Codex rust-v0.162.1 core/src/client.rs build_reasoning and session/step_settings.rs: the summary is

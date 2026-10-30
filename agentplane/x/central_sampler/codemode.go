@@ -472,6 +472,9 @@ type preparedCall struct {
 }
 
 func (r *CodeMode) prepareCall(ctx context.Context, call ResponsesToolCall) (preparedCall, error) {
+	if call.Name == "exec" && call.Type == ResponsesItemFunctionCall {
+		return r.prepareJSONCall(ctx, call)
+	}
 	if call.Name == "wait" && call.Type == ResponsesItemFunctionCall {
 		return r.prepareWait(ctx, call.Input)
 	}
@@ -499,6 +502,45 @@ func (r *CodeMode) prepareCall(ctx context.Context, call ResponsesToolCall) (pre
 		operation: codeExecuteOperation{codeSessionOperation: codeSessionOperation{Method: "session/execute", SessionID: r.sessionID}, Request: request},
 		execute:   true, maxTokens: source.maxOutputTokens,
 	}, nil
+}
+
+// JSON exec uses the same host operations and journal as the native freeform contract.
+// Resuming through exec keeps the compatibility surface to one function.
+func (r *CodeMode) prepareJSONCall(ctx context.Context, call ResponsesToolCall) (preparedCall, error) {
+	var input struct {
+		Code            *string `json:"code"`
+		CellID          *string `json:"cell_id"`
+		YieldTimeMS     *uint64 `json:"yield_time_ms"`
+		MaxOutputTokens *uint64 `json:"max_output_tokens"`
+		Terminate       *bool   `json:"terminate"`
+	}
+	if err := decodeToolInput([]byte(call.Input), &input); err != nil {
+		return preparedCall{}, err
+	}
+	if (input.Code == nil) == (input.CellID == nil) {
+		return preparedCall{}, errors.New("exec requires exactly one of code or cell_id")
+	}
+	if input.CellID != nil {
+		terminate := input.Terminate != nil && *input.Terminate
+		return r.prepareWait(ctx, canonicalJSON(waitInput{
+			CellID: *input.CellID, YieldTimeMS: input.YieldTimeMS,
+			MaxTokens: input.MaxOutputTokens, Terminate: terminate,
+		}))
+	}
+	if input.Terminate != nil {
+		return preparedCall{}, errors.New("terminate requires cell_id")
+	}
+	// Use the native parser for the same bounds and defaults; source is JSON-escaped only
+	// on the provider wire and is never interpolated into executable wrapper code.
+	source := *input.Code
+	if strings.HasPrefix(strings.TrimSpace(source), execPragmaPrefix) {
+		return preparedCall{}, errors.New("JSON exec takes yield_time_ms and max_output_tokens as arguments, not a pragma")
+	}
+	pragma := execPragma{YieldTimeMS: input.YieldTimeMS, MaxOutputTokens: input.MaxOutputTokens}
+	return r.prepareCall(ctx, ResponsesToolCall{
+		Type: ResponsesItemCustomToolCall, Name: "exec", CallID: call.CallID,
+		Input: execPragmaPrefix + " " + canonicalJSON(pragma) + "\n" + source,
+	})
 }
 
 type waitArguments struct {

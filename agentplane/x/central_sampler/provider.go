@@ -56,19 +56,34 @@ func toolDefinitions() []ResponsesCodeToolDefinition {
 	}
 }
 
-func RequestBody(model, conversationID string, items []ResponsesItem, instructions *string, executionState *ExecutionState) (ResponsesRequest, error) {
+func RequestBody(model, conversationID string, items []ResponsesItem, instructions *string, executionState *ExecutionState, config ModelConfig) (ResponsesRequest, error) {
+	if (config.ResponsesMode != "lite" && config.ResponsesMode != "standard") || (config.ExecEncoding != "freeform" && config.ExecEncoding != "json") {
+		return ResponsesRequest{}, errors.New("model route has no valid Responses and exec encoding configuration")
+	}
 	description, err := execToolDescription(toolDefinitions())
 	if err != nil {
 		return ResponsesRequest{}, err
 	}
 	strict := false
-	input := []ResponsesItem{{
-		Type: ResponsesItemAdditionalTools, Role: "developer", Tools: []ResponsesAdditionalTool{
-			// Codex rust-v0.162.1 core/src/tools/code_mode/execute_spec.rs create_code_mode_tool.
-			{Type: "custom", Name: "exec", Description: description, Format: &ResponsesToolFormat{Type: "grammar", Syntax: "lark", Definition: execFreeformGrammar}},
-			{Type: "function", Name: "wait", Description: waitToolDescription(), Strict: &strict, Parameters: waitToolParameters()},
-		},
-	}}
+	tools := []ResponsesAdditionalTool{
+		// Codex rust-v0.162.1 core/src/tools/code_mode/execute_spec.rs create_code_mode_tool.
+		{Type: "custom", Name: "exec", Description: description, Format: &ResponsesToolFormat{Type: "grammar", Syntax: "lark", Definition: execFreeformGrammar}},
+		{Type: "function", Name: "wait", Description: waitToolDescription(), Strict: &strict, Parameters: waitToolParameters()},
+	}
+	if config.ExecEncoding == "json" {
+		tools = []ResponsesAdditionalTool{jsonExecToolDefinition(description)}
+	}
+	if config.ResponsesMode == "standard" || config.ExecEncoding == "json" {
+		for index := range tools {
+			tools[index].Description = strings.ReplaceAll(tools[index].Description,
+				"immediately injects an extra `custom_tool_call_output` for the current `exec` call",
+				"queues an asynchronous developer message identifying the current `exec` call")
+		}
+	}
+	var input []ResponsesItem
+	if config.ResponsesMode == "lite" {
+		input = append(input, ResponsesItem{Type: ResponsesItemAdditionalTools, Role: "developer", Tools: tools})
+	}
 	if instructions != nil && *instructions != "" {
 		item, err := newResponsesMessage("developer", *instructions)
 		if err != nil {
@@ -101,12 +116,18 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 		input = append(input, item)
 	}
 	input = append(input, items...)
-	return ResponsesRequest{
+	body := ResponsesRequest{
 		Model: model, Instructions: baseInstructions, Input: input, Stream: true, Store: false,
-		Reasoning: ResponsesReasoningConfig{Summary: codexReasoningSummary, Context: "all_turns"},
-		Include:   []string{"reasoning.encrypted_content"}, PromptCacheKey: conversationID,
-		ClientMetadata: ResponsesClientMetadata{SessionID: conversationID, ThreadID: conversationID, TurnID: conversationID},
-	}, nil
+		PromptCacheKey: conversationID, ResponsesMode: config.ResponsesMode, ExecEncoding: config.ExecEncoding,
+	}
+	if config.ResponsesMode == "lite" {
+		body.Reasoning = &ResponsesReasoningConfig{Summary: codexReasoningSummary, Context: "all_turns"}
+		body.Include = []string{"reasoning.encrypted_content"}
+		body.ClientMetadata = &ResponsesClientMetadata{SessionID: conversationID, ThreadID: conversationID, TurnID: conversationID}
+	} else {
+		body.Tools = tools
+	}
+	return body, nil
 }
 
 type ResponsesExecutionState struct {
@@ -153,7 +174,9 @@ func Sample(ctx context.Context, client *http.Client, endpoint, credential strin
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer "+credential)
-	request.Header.Set("x-openai-internal-codex-responses-lite", "true")
+	if body.ResponsesMode == "lite" {
+		request.Header.Set("x-openai-internal-codex-responses-lite", "true")
+	}
 	for name, value := range attribution {
 		request.Header.Set(name, value)
 	}
