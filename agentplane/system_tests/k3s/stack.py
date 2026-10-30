@@ -475,7 +475,7 @@ def running_stack(
     bringing it up marked on `timeline`.
 
     The manifest is the build's rendering for `models`' backend, `K3S_FIXTURE_RLOCATION`. A rendering
-    with the MCP fixtures takes their image layouts from `K3S_MCP_FIXTURE_LAYOUTS`, space-separated
+    with the MCP fixtures takes their image layouts from `K3S_EXTRA_IMAGE_LAYOUTS`, space-separated
     runfiles paths of `.rloc` files. A rendering with VM Sandboxes also runs what they need
     (`vm_sandboxes`) and the test guest's images.
     """
@@ -487,7 +487,7 @@ def running_stack(
     elif not fixture.vm_sandboxes:
         raise ValueError("non-VM system test is missing K3S_RUNNER_LAYOUT_RLOCATION")
     if fixture.mcp_fixtures is not None:
-        fixture_layouts.extend(get_required_path(path) for path in os.environ["K3S_MCP_FIXTURE_LAYOUTS"].split())
+        fixture_layouts.extend(get_required_path(path) for path in os.environ["K3S_EXTRA_IMAGE_LAYOUTS"].split())
     fixture_images = {_ci_image(rloc): rloc for rloc in fixture_layouts}
     guest_images: dict[str, Path] = {}
     if fixture.vm_sandboxes:

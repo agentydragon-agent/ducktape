@@ -21,7 +21,9 @@ it through `AGENTPLANE_SYSTEM_TEST_{URL,TOKEN,NAMESPACE,SERVICE_ACCOUNT}`
 
 The shared stack cuts setup and image-import work, while each target now has a coarser cache key: a
 changed scenario reruns its suite. Scenario modules live in [`scenarios/`](scenarios/) as ordinary
-libraries. Suite targets explicitly collect only their scenario modules, so offline helper tests
+libraries. Python entrypoints in `suites/test_*.py` explicitly import their scenario tests and
+local fixtures; Gazelle derives their dependencies, and `k3s_suite` configures the stack. Only
+those entrypoints are collected, so offline helper tests
 such as `test_agent.py` and `test_operator_login.py` are not collected into a live stack. Scenarios
 use function-scoped fixtures and create/clean up only their own Sandboxes and resources. The
 Dispatcher suite remains separate because replica coverage changes the shared Runner Gateway

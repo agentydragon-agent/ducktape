@@ -30,19 +30,11 @@ _STACKS = {
     "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, proof = False, real_model = True),
 }
 
-def k3s_suite(name, scenarios, stack, tags = []):
-    """Collect named scenario libraries in one pytest process and one session-scoped stack.
-
-    Each scenario label names its Python module. Explicit module arguments collect these
-    modules despite their non-test filenames and exclude adjacent unit
-    tests from the transitive runfiles. The plugins select Pod/VM and scripted/live cases.
-    """
-    if not scenarios:
-        fail("a k3s suite requires at least one scenario")
+def k3s_suite(name, srcs, deps, stack, tags = []):
+    """Run a Python suite entrypoint against one session-scoped k3s stack."""
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
     config = _STACKS[stack]
-    modules = [scenario.removeprefix("//").replace("/", ".").replace(":", ".") for scenario in scenarios]
     layouts = _MCP_LAYOUTS if stack == "mcp" else []
     data = [config.fixture, K3S_BINARY, _CERT_MANAGER_INSTALL, _TRUST_MANAGER_INSTALL] + layouts
     env = {
@@ -51,7 +43,7 @@ def k3s_suite(name, scenarios, stack, tags = []):
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _TRUST_MANAGER_INSTALL + ")",
         "AGENTPLANE_SYSTEM_TEST_MODEL_BACKEND": "real_model" if config.real_model else "scripted_model",
         "K3S_FIXTURE_RLOCATION": "$(rlocationpath " + config.fixture + ")",
-        "K3S_MCP_FIXTURE_LAYOUTS": " ".join(["$(rlocationpath " + layout + ")" for layout in layouts]),
+        "K3S_EXTRA_IMAGE_LAYOUTS": " ".join(["$(rlocationpath " + layout + ")" for layout in layouts]),
         "PYTEST_PLUGINS": "agentplane.system_tests.k3s.system_test_target",
     }
     properties = {}
@@ -72,17 +64,12 @@ def k3s_suite(name, scenarios, stack, tags = []):
     py_test(
         name = name,
         size = "enormous",
-        main_module = "pytest_bazel",
-        # Names such as scenarios/mcp.py must not shadow the installed mcp package.
-        args = ["--import-mode=importlib", "--pyargs"] + modules,
+        srcs = srcs,
         data = data,
         env = env,
         exec_properties = K3S_EXEC_PROPERTIES | properties,
         tags = suite_tags,
-        deps = scenarios + [
-            "//:conftest",
-            "//agentplane/system_tests:conftest",
+        deps = deps + [
             "//agentplane/system_tests/k3s:system_test_target",
-            "@pypi//pytest_bazel",
         ],
     )
