@@ -18,8 +18,7 @@ from agentplane.grpc.calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
-from agentplane.system_tests.cluster import api_client, kubectl
-from agentplane.system_tests.conftest import namespace
+from agentplane.system_tests.cluster import Cluster
 from agentplane.x.central_sampler import sampler_pb2_grpc
 from model_catalog.catalog import GPT6_LUNA_RESPONSES
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -43,10 +42,10 @@ class CentralStack:
     sampler_pod_name: str
 
 
-async def _bound_token(core: k8s.CoreV1Api, account: str, pod: k8s.V1Pod, audience: str) -> str:
+async def _bound_token(cluster: Cluster, core: k8s.CoreV1Api, account: str, pod: k8s.V1Pod, audience: str) -> str:
     reply = await core.create_namespaced_service_account_token(
         account,
-        namespace(),
+        cluster.namespace,
         k8s.AuthenticationV1TokenRequest(
             spec=k8s.V1TokenRequestSpec(
                 audiences=[audience],
@@ -60,22 +59,22 @@ async def _bound_token(core: k8s.CoreV1Api, account: str, pod: k8s.V1Pod, audien
     return reply.status.token
 
 
-async def _pod(core: k8s.CoreV1Api, component: str) -> k8s.V1Pod:
-    pods = await core.list_namespaced_pod(namespace(), label_selector=f"app.kubernetes.io/name={component}")
+async def _pod(cluster: Cluster, core: k8s.CoreV1Api, component: str) -> k8s.V1Pod:
+    pods = await core.list_namespaced_pod(cluster.namespace, label_selector=f"app.kubernetes.io/name={component}")
     return next(pod for pod in pods.items if pod.metadata.deletion_timestamp is None)
 
 
-async def _address(core: k8s.CoreV1Api, service: str, port: int) -> str:
-    endpoint = await core.read_namespaced_service(service, namespace())
+async def _address(cluster: Cluster, core: k8s.CoreV1Api, service: str, port: int) -> str:
+    endpoint = await core.read_namespaced_service(service, cluster.namespace)
     assert endpoint.spec.cluster_ip not in (None, "None"), service
     return f"{endpoint.spec.cluster_ip}:{port}"
 
 
-async def _control_address(connection: k8s.ApiClient, sandbox: str, uid: str) -> str:
+async def _control_address(cluster: Cluster, connection: k8s.ApiClient, sandbox: str, uid: str) -> str:
     # The control Service is headless and selector-less. Its Gateway-owned slice names
     # the Runner observation Lease holder, including after the scenario's Gateway rollout.
     slices = await k8s.DiscoveryV1Api(connection).list_namespaced_endpoint_slice(
-        namespace(), label_selector=f"kubernetes.io/service-name={sandbox}-control"
+        cluster.namespace, label_selector=f"kubernetes.io/service-name={sandbox}-control"
     )
     (holder,) = slices.items
     assert holder.metadata.labels["endpointslice.kubernetes.io/managed-by"] == "agentplane-runner-gateway"
@@ -88,8 +87,8 @@ async def _control_address(connection: k8s.ApiClient, sandbox: str, uid: str) ->
     return f"{address}:{port.port}"
 
 
-async def _delete_sandbox(name: str, uid: str) -> None:
-    await kubectl(
+async def _delete_sandbox(cluster: Cluster, name: str, uid: str) -> None:
+    await cluster.kubectl(
         "patch",
         "sandbox",
         name,
@@ -97,42 +96,46 @@ async def _delete_sandbox(name: str, uid: str) -> None:
         "-p",
         json.dumps({"metadata": {"uid": uid}, "spec": {"running": False}}),
     )
-    await kubectl("wait", f"sandbox/{name}", "--for=jsonpath={.status.operatingMode}=Suspended", "--timeout=300s")
-    await kubectl(
+    await cluster.kubectl(
+        "wait", f"sandbox/{name}", "--for=jsonpath={.status.operatingMode}=Suspended", "--timeout=300s"
+    )
+    await cluster.kubectl(
         "wait",
         f"sandbox/{name}",
         '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
         "--timeout=300s",
     )
-    async with api_client() as connection:
+    async with cluster.api_client() as connection:
         await k8s.CustomObjectsApi(connection).delete_namespaced_custom_object(
             GROUP,
             VERSION,
-            namespace(),
+            cluster.namespace,
             "sandboxes",
             name,
             body=k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=uid)),
         )
-    await kubectl("wait", f"sandbox/{name}", "--for=delete", "--timeout=120s")
+    await cluster.kubectl("wait", f"sandbox/{name}", "--for=delete", "--timeout=120s")
 
 
-async def _diagnostics() -> None:
+async def _diagnostics(cluster: Cluster) -> None:
     output = undeclared_outputs_dir()
-    (output / "central-services.json").write_text(await kubectl("get", "services,endpointslices,pods", "-o", "json"))
+    (output / "central-services.json").write_text(
+        await cluster.kubectl("get", "services,endpointslices,pods", "-o", "json")
+    )
     for component in ("runner-gateway", "history-service"):
         (output / f"central-{component}.log").write_text(
-            await kubectl("logs", f"deployment/{component}", "--all-containers")
+            await cluster.kubectl("logs", f"deployment/{component}", "--all-containers")
         )
 
 
-async def capture_sampler_diagnostics(core: k8s.CoreV1Api | None = None) -> Path:
+async def capture_sampler_diagnostics(cluster: Cluster, core: k8s.CoreV1Api | None = None) -> Path:
     """Retain this sampler Pod's logs before another scenario replaces the Pod."""
     if core is None:
-        async with api_client() as connection:
-            return await capture_sampler_diagnostics(k8s.CoreV1Api(connection))
+        async with cluster.api_client() as connection:
+            return await capture_sampler_diagnostics(cluster, k8s.CoreV1Api(connection))
 
-    pod = await _pod(core, SERVICE)
-    state = await kubectl("get", "pod", pod.metadata.name, "-o", "json")
+    pod = await _pod(cluster, core, SERVICE)
+    state = await cluster.kubectl("get", "pod", pod.metadata.name, "-o", "json")
     uid = str(pod.metadata.uid)
     output = undeclared_outputs_dir() / "central-sampler-pods" / uid
     output.mkdir(parents=True, exist_ok=True)
@@ -141,7 +144,7 @@ async def capture_sampler_diagnostics(core: k8s.CoreV1Api | None = None) -> Path
     containers.extend(container.name for container in pod.spec.init_containers or [])
     for container in containers:
         try:
-            log = await core.read_namespaced_pod_log(pod.metadata.name, namespace(), container=container)
+            log = await core.read_namespaced_pod_log(pod.metadata.name, cluster.namespace, container=container)
         except ApiException as error:
             log = f"Container logs unavailable: {error}"
         (output / f"{container}.log").write_text(log)
@@ -153,20 +156,20 @@ async def capture_sampler_diagnostics(core: k8s.CoreV1Api | None = None) -> Path
 
 
 @asynccontextmanager
-async def central_stack(directory: Path, *, template: str) -> AsyncIterator[CentralStack]:
+async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> AsyncIterator[CentralStack]:
     async with AsyncExitStack() as cleanup, AsyncExitStack() as stack:
-        stack.push_async_callback(_diagnostics)
-        connection = await stack.enter_async_context(api_client())
+        stack.push_async_callback(_diagnostics, cluster)
+        connection = await stack.enter_async_context(cluster.api_client())
         core = k8s.CoreV1Api(connection)
-        app = await _pod(core, "app")
-        caller_token = await _bound_token(core, "app", app, "session-dispatcher")
+        app = await _pod(cluster, core, "app")
+        caller_token = await _bound_token(cluster, core, "app", app, "session-dispatcher")
         reader_token = directory / "history-reader-token"
-        reader_token.write_text(await _bound_token(core, "app", app, HISTORY_READER_AUDIENCE))
-        app_config = await core.read_namespaced_config_map("app-config", namespace())
+        reader_token.write_text(await _bound_token(cluster, core, "app", app, HISTORY_READER_AUDIENCE))
+        app_config = await core.read_namespaced_config_map("app-config", cluster.namespace)
         policies = yaml.safe_load(app_config.data["config.yaml"])["default_policy_sets"]
         sandbox = "systest-central-" + uuid4().hex[:8]
         created = json.loads(
-            await kubectl(
+            await cluster.kubectl(
                 "create",
                 "-f",
                 "-",
@@ -175,35 +178,37 @@ async def central_stack(directory: Path, *, template: str) -> AsyncIterator[Cent
                 body={
                     "apiVersion": SANDBOX_API_VERSION,
                     "kind": "Sandbox",
-                    "metadata": {"name": sandbox, "namespace": namespace()},
+                    "metadata": {"name": sandbox, "namespace": cluster.namespace},
                     "spec": {"template": template, "running": True, "policySets": policies},
                 },
             )
         )
         uid = created["metadata"]["uid"]
-        cleanup.push_async_callback(_delete_sandbox, sandbox, uid)
-        await kubectl("wait", f"sandbox/{sandbox}", "--for=condition=Ready=True", "--timeout=300s")
-        ready = json.loads(await kubectl("get", "sandbox", sandbox, "-o", "json"))
+        cleanup.push_async_callback(_delete_sandbox, cluster, sandbox, uid)
+        await cluster.kubectl("wait", f"sandbox/{sandbox}", "--for=condition=Ready=True", "--timeout=300s")
+        ready = json.loads(await cluster.kubectl("get", "sandbox", sandbox, "-o", "json"))
         incarnation = ready["status"]["incarnation"]["uid"]
-        target = await _address(core, SERVICE, 8080)
-        sampler_pod = await _pod(core, SERVICE)
-        stack.push_async_callback(capture_sampler_diagnostics, core)
-        gateway_pod = await _pod(core, "runner-gateway")
-        await kubectl(
+        target = await _address(cluster, core, SERVICE, 8080)
+        sampler_pod = await _pod(cluster, core, SERVICE)
+        stack.push_async_callback(capture_sampler_diagnostics, cluster, core)
+        gateway_pod = await _pod(cluster, core, "runner-gateway")
+        await cluster.kubectl(
             "wait",
             f"endpointslice/{sandbox}-control",
             f"--for=jsonpath={{.endpoints[0].addresses[0]}}={gateway_pod.status.pod_ip}",
             "--timeout=60s",
         )
         # The per-Sandbox Service selects the replica holding this Sandbox's Runner stream.
-        control_target = await _control_address(connection, sandbox, uid)
-        sampler_token = await _bound_token(core, "runner-gateway", gateway_pod, SERVICE)
+        control_target = await _control_address(cluster, connection, sandbox, uid)
+        sampler_token = await _bound_token(cluster, core, "runner-gateway", gateway_pod, SERVICE)
         sampler_channel = await stack.enter_async_context(dial(target))
-        dispatcher_channel = await stack.enter_async_context(dial(await _address(core, "session-dispatcher", 8080)))
+        dispatcher_channel = await stack.enter_async_context(
+            dial(await _address(cluster, core, "session-dispatcher", 8080))
+        )
         await asyncio.wait_for(dispatcher_channel.channel_ready(), timeout=30)
         history = await stack.enter_async_context(
             HistoryServiceClient(
-                await _address(core, "history-service", 8080), token_file=reader_token, request_timeout_s=20
+                await _address(cluster, core, "history-service", 8080), token_file=reader_token, request_timeout_s=20
             )
         )
         yield CentralStack(

@@ -15,14 +15,10 @@ from agentplane.native.codex import wire
 from agentplane.native.codex.testing import frames, responses_sse
 from agentplane.proto import runner_pb2
 from agentplane.system_tests.agent import TURN_SECONDS, Agent, Turn
-from agentplane.system_tests.conftest import (
-    VM_TEMPLATE,
-    VM_WORKING_DIRECTORY,
-    Sandboxes,
-    models_offered_for,
-    traced_vm_scenario,
-)
+from agentplane.system_tests.offered_models import models_offered_for
+from agentplane.system_tests.sandbox import VM_TEMPLATE, VM_WORKING_DIRECTORY, Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.vm_tracing import traced_vm_scenario
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import ShellCall, Text
 from util.testing.undeclared_outputs import undeclared_outputs_dir

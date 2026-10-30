@@ -33,7 +33,7 @@ from urllib.parse import urlsplit
 import yaml
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.system_tests.conftest import AGENT_SERVICE_ACCOUNT, AUDIENCE
+from agentplane.system_tests.cluster import AGENT_SERVICE_ACCOUNT, AUDIENCE, Cluster
 from agentplane.system_tests.k3s import block_storage, certificates, guest_logs, rendered_fixture, vm_sandboxes
 from agentplane.system_tests.k3s.bootstrap import Bootstrap
 from agentplane.system_tests.k3s.iptables_rule import ensure_rule
@@ -389,13 +389,12 @@ class StackInputs:
     binary: Path
     image_layouts: tuple[Path, ...]
     guest_image_layouts: tuple[Path, ...]
-    workspace_volumes: int
 
 
 @dataclass(frozen=True)
 class Stack:
     k3s: K3s
-    namespace: str
+    cluster: Cluster
     base_url: str
     token: str
     mcp_fixtures: McpFixtureAccess | None
@@ -501,8 +500,11 @@ def running_stack(
     # A VM stack's layers would leave too little memory for its guests (README § Image layers in memory).
     process = k3s.start(layers_in_memory=not fixture.vm_sandboxes)
     timeline.mark("node Ready")
+    cluster = Cluster(
+        kubeconfig=k3s.kubeconfig, namespace=fixture.namespace, kubectl_command=(str(k3s.binary), "kubectl")
+    )
     with contextlib.ExitStack() as cleanup:
-        raw_block = block_storage.BlockStorage(work, volume_count=inputs.workspace_volumes)
+        raw_block = block_storage.BlockStorage(work)
 
         def remove_work() -> None:
             if raw_block.closed:
@@ -511,7 +513,7 @@ def running_stack(
                 logger.error("preserving %s because a fixture loop device did not detach", work)
 
         cleanup.callback(remove_work)
-        cleanup.callback(raw_block.close)
+        cleanup.enter_context(raw_block)
         cleanup.callback(k3s.stop, process)
         ca_cert, ca_key = _openssl_ca(work)
         cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
@@ -555,8 +557,8 @@ def running_stack(
         rest = [d for d in fixture.objects if d["kind"] != "Namespace"]
         k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(namespaces))
         if fixture.vm_sandboxes:
-            k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(raw_block.prepare()))
-            timeline.mark("raw block PVs applied")
+            cleanup.enter_context(raw_block.provisioning(cluster, node_name="env"))
+            timeline.mark("workspace provisioner ready")
         print("apply:", k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(rest)))
         logger.info("applied %s objects", len(rest))
         timeline.mark("manifests applied")
@@ -628,7 +630,7 @@ def running_stack(
                     validate_shutdown=validate_vm_shutdown,
                 )
             )
-        yield Stack(k3s=k3s, namespace=fixture.namespace, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
+        yield Stack(k3s=k3s, cluster=cluster, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
         print(k3s.report(fixture.namespace))
         if fixture.vm_sandboxes:
             (undeclared_outputs_dir() / "vm-sandboxes.txt").write_text(

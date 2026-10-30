@@ -18,8 +18,9 @@ from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests.agent import TURN_SECONDS, WORKING_DIRECTORY, Agent, Turn, runner_startup_retries
-from agentplane.system_tests.conftest import POD_TEMPLATE, Sandboxes, wait_until_running
+from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
+from agentplane.system_tests.sandbox import POD_TEMPLATE, Sandboxes, wait_until_running
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Text
@@ -40,9 +41,9 @@ RECALL_PROMPT = (
 )
 
 
-def _storage_volumes(namespace: str, sandbox_uid: UUID) -> dict[str, tuple[str, str]]:
+def _storage_volumes(cluster: Cluster, sandbox_uid: UUID) -> dict[str, tuple[str, str]]:
     result = subprocess.run(
-        ["kubectl", "-n", namespace, "get", "pvc", "-o", "json"], capture_output=True, text=True, check=True, timeout=20
+        cluster.command("get", "pvc", "-o", "json"), capture_output=True, text=True, check=True, timeout=20
     )
     claims = [
         claim
@@ -101,6 +102,7 @@ class _ResumeRun:
     Each test plays the model itself.
     """
 
+    cluster: Cluster
     client: Client
     view: SandboxView
     template: str
@@ -117,15 +119,16 @@ class _ResumeRun:
     passed: bool = False
 
     @classmethod
-    async def start(cls, client: Client, sandbox: Sandboxes, *, template: str) -> _ResumeRun:
+    async def start(cls, cluster: Cluster, client: Client, sandbox: Sandboxes, *, template: str) -> _ResumeRun:
         view = await sandbox(f"systest-resume-{template}-{uuid4().hex[:8]}", template=template)
         assert view.pod is not None
         run = cls(
+            cluster=cluster,
             client=client,
             view=view,
             template=template,
             original_incarnation=view.pod.uid,
-            storage_volumes=_storage_volumes(view.namespace, view.uid),
+            storage_volumes=_storage_volumes(cluster, view.uid),
         )
         run.save()
         return run
@@ -172,7 +175,7 @@ class _ResumeRun:
         assert len({agent.thread_id for agent in self.agents.values()}) == len(self.agents)
         await self.client.suspend_sandbox(self.view.name)
         await _wait_until_suspended_without_pod(self.client, self.view.name)
-        assert _storage_volumes(self.view.namespace, self.view.uid) == self.storage_volumes
+        assert _storage_volumes(self.cluster, self.view.uid) == self.storage_volumes
         for harness, agent in self.agents.items():
             self.suspended_history[harness] = await _history(self.client, agent.thread_id, completed_turns=None)
             _assert_prefix(self.seeded_history[harness], self.suspended_history[harness])
@@ -197,7 +200,7 @@ class _ResumeRun:
         assert resumed.uid == self.view.uid
         assert resumed.pod is not None
         assert resumed.pod.uid != self.original_incarnation
-        assert _storage_volumes(self.view.namespace, self.view.uid) == self.storage_volumes
+        assert _storage_volumes(self.cluster, self.view.uid) == self.storage_volumes
         self.view = resumed
         self.resumed_incarnation = resumed.pod.uid
         self.checks.append("same_sandbox_new_incarnation_same_volumes")
@@ -268,11 +271,11 @@ def _marker(harness: runner_pb2.Harness) -> str:
 
 
 async def two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
-    client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream, executor: Executor
+    cluster: Cluster, client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream, executor: Executor
 ) -> None:
     """One replacement of the Sandbox's Pod, or of a VM's launcher, exercises both native stores."""
     template, cwd = executor.template, executor.cwd
-    run = await _ResumeRun.start(client, sandbox, template=template)
+    run = await _ResumeRun.start(cluster, client, sandbox, template=template)
     markers = {harness: _marker(harness) for harness in (runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX)}
     models = {harness: scripted.model(run.pod_name, harness) for harness in markers}
     for harness, marker in markers.items():
@@ -301,10 +304,10 @@ async def two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
 
 
 async def codex_standing_instructions_after_suspend_and_compact(
-    client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
+    cluster: Cluster, client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
 ) -> None:
     standing = "SESSION_STANDING_ORDER: consult Agentplane before declaring access unavailable."
-    run = await _ResumeRun.start(client, sandbox, template=POD_TEMPLATE)
+    run = await _ResumeRun.start(cluster, client, sandbox, template=POD_TEMPLATE)
     agent = await run.open(runner_pb2.HARNESS_CODEX, cwd=WORKING_DIRECTORY, instructions=standing)
     model = scripted.model(run.pod_name, runner_pb2.HARNESS_CODEX)
     assert isinstance(model, CodexModel)

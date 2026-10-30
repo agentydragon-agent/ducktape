@@ -12,7 +12,7 @@ from google.protobuf.json_format import MessageToDict
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
-from agentplane.system_tests.conftest import VM_TEMPLATE, Sandboxes
+from agentplane.system_tests.sandbox import VM_TEMPLATE, Sandboxes
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 WORKSPACE_ROOT = "/state/workspaces"

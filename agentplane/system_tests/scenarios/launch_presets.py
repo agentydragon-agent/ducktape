@@ -14,11 +14,9 @@ from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests import launch_preset
 from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, Agent
-from agentplane.system_tests.conftest import SANDBOX_READY_SECONDS, Sandboxes, wait_until_running
+from agentplane.system_tests.sandbox import SANDBOX_READY_SECONDS, Sandboxes, wait_until_running
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import ShellCall, Text
-
-# The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 
 INSTRUCTIONS = "Test instructions that override the preset's for this session."
 
@@ -122,4 +120,5 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
     assert local.model == local_model
 
 
+# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf

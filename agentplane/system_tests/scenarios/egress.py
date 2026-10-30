@@ -40,11 +40,10 @@ from agentplane.proto import runner_pb2
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
 from agentplane.system_tests import probe_credential, runtime_grant
 from agentplane.system_tests.agent import Agent
-from agentplane.system_tests.conftest import Sandboxes, namespace
+from agentplane.system_tests.cluster import Cluster
+from agentplane.system_tests.sandbox import Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import Text
-
-# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 
 # Anonymous `git` fetches from github.com (cluster/cdk8s/agentplane/egress.py, `GITHUB_CLONE_POLICY`).
 GITHUB_CLONE = "github-clone"
@@ -123,7 +122,7 @@ async def _decision_for(client: Client, sandbox: str, host: str, *, after: datet
 
 
 async def a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
-    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, model: str
+    cluster: Cluster, client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, model: str
 ) -> None:
     """The whole path in one turn: the agent asks what it may reach, uses the credential it is told
     about without ever holding it, is authenticated as that credential's account, and is refused
@@ -133,7 +132,7 @@ async def a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
     """
     view = await sandbox(f"systest-probe-{harness}", policies=[probe_credential.POLICY_SET, GITHUB_CLONE])
     agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
-    turn = await agent.run(_probe(f"http://egress.{namespace()}.svc.cluster.local/v1/rules"))
+    turn = await agent.run(_probe(f"http://egress.{cluster.namespace}.svc.cluster.local/v1/rules"))
     probe = turn.report(Probe)
 
     assert probe.placeholder, f"the sandbox could not learn what credential to present:\n{turn.transcript}"
@@ -156,7 +155,12 @@ async def a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
 
 
 async def the_model_call_itself_goes_through_the_proxy(
-    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
+    cluster: Cluster,
+    client: Client,
+    sandbox: Sandboxes,
+    harness: runner_pb2.Harness,
+    offered_model: str,
+    scripted: ScriptedUpstream,
 ) -> None:
     """The runner holds only an inert placeholder, not the LiteLLM key, so a turn happens at all only
     if the proxy admits the model call and substitutes its sidecar-only workload token for the
@@ -181,7 +185,7 @@ async def the_model_call_itself_goes_through_the_proxy(
         await model.reply(await model.request(), Text("ok"))
     turn = answered.result()
 
-    served = await _decision_for(client, view.name, f"llm-ingress.{namespace()}.svc.cluster.local")
+    served = await _decision_for(client, view.name, f"llm-ingress.{cluster.namespace}.svc.cluster.local")
     assert served.outcome is Outcome.ALLOW, f"{served!r}\n{turn.transcript}"
     assert served.policy == BASIC_POLICY, f"the model call was admitted by another policy: {served!r}"
     assert served.substituted, (
@@ -190,7 +194,7 @@ async def the_model_call_itself_goes_through_the_proxy(
     )
 
 
-def _kubectl_create_binding(sandbox: SandboxView, policy_set: str) -> None:
+def _kubectl_create_binding(cluster: Cluster, sandbox: SandboxView, policy_set: str) -> None:
     body = {
         "apiVersion": f"{GROUP}/{VERSION}",
         "kind": "PolicyBinding",
@@ -202,13 +206,13 @@ def _kubectl_create_binding(sandbox: SandboxView, policy_set: str) -> None:
         },
         "spec": {"subject": sandbox.service_account.model_dump(), "policySets": [policy_set]},
     }
-    subprocess.run(["kubectl", "-n", namespace(), "create", "-f", "-"], input=json.dumps(body), text=True, check=True)
+    subprocess.run(cluster.command("create", "-f", "-"), input=json.dumps(body), text=True, check=True)
 
 
-def _granted_request() -> tuple[str, str]:
+def _granted_request(cluster: Cluster) -> tuple[str, str]:
     """The host and path the fixture's runtime-grant PolicySet admits."""
     result = subprocess.run(
-        ["kubectl", "-n", namespace(), "get", "policyset", runtime_grant.POLICY_SET, "-o", "json"],
+        cluster.command("get", "policyset", runtime_grant.POLICY_SET, "-o", "json"),
         capture_output=True,
         text=True,
         check=True,
@@ -219,10 +223,15 @@ def _granted_request() -> tuple[str, str]:
 
 
 async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
-    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
+    cluster: Cluster,
+    client: Client,
+    sandbox: Sandboxes,
+    harness: runner_pb2.Harness,
+    offered_model: str,
+    scripted: ScriptedUpstream,
 ) -> None:
     """Binding at runtime is a live grant, not a restart: one sandbox, refused and then admitted."""
-    host, path = _granted_request()
+    host, path = _granted_request(cluster)
     view = await sandbox(f"systest-bind-{harness}")
     assert view.pod is not None
     model = scripted.model(view.pod.name, harness)
@@ -235,7 +244,7 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
 
     # The app's grant route needs an operator login, which this agent-token suite does not hold, so
     # the binding is written as an operator would with kubectl, owned by the Sandbox.
-    _kubectl_create_binding(view, runtime_grant.POLICY_SET)
+    _kubectl_create_binding(cluster, view, runtime_grant.POLICY_SET)
     # Observe the read-only request, not one replica's acknowledgement of the binding.
     async for attempt in AsyncRetrying(stop=stop_after_delay(BINDING_SECONDS), wait=wait_fixed(1), reraise=True):
         with attempt:
@@ -246,4 +255,5 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
             assert admitted.policy == runtime_grant.POLICY_SET, f"{admitted!r}"
 
 
+# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf

@@ -6,8 +6,8 @@ cross-component behavior and durable system evidence. They are not unit tests wi
 they are the checks that the deployed system does what <../egress/SPEC.md> says it does and that a
 session's standing instructions reach the model that serves it.
 
-The seven CI suites each start one [disposable k3s stack](k3s/README.md) in an RBE action and publish
-it through `AGENTPLANE_SYSTEM_TEST_{URL,TOKEN,NAMESPACE,SERVICE_ACCOUNT}`
+The seven CI suites each start one [disposable k3s stack](k3s/README.md) in an RBE action.
+The session-scoped `deployment` fixture exposes its cluster handle, app URL, token, and MCP access
 ([`system_test_target.py`](k3s/system_test_target.py)). Compatible scenarios share a stack:
 
 | Target                                                                                                  | Scenarios                                                                                                    |
@@ -33,10 +33,11 @@ tracing and diagnostics; they do not select deployment configuration.
 
 The build supplies complete service and guest image lists. The pytest adapter resolves these and
 the rendered deployment once into `StackInputs`; stack startup does not discover image layouts by
-scanning runfiles. Existing Kubernetes helpers still use the published kubeconfig and namespace.
-Per-test fixtures create and clean up their own Sandboxes and resources. VM suites declare their
-total workspace-volume demand: retained static PVs cannot bind another Sandbox after deletion,
-so `test_vm` needs five volumes for its two sequential concurrent groups, despite a peak of three guests.
+scanning runfiles. Kubernetes helpers take an explicit `Cluster` containing the kubeconfig, namespace,
+and kubectl command. Only the live-test fixture reads ambient deployment settings.
+Per-test fixtures create and clean up their own Sandboxes and resources. A host-side provisioner
+allocates a fresh loop-backed volume for each VM workspace claim UID, retaining it until stack teardown.
+Suites do not declare volume counts; deleting and recreating a claim never reuses its workspace data.
 
 The Dispatcher suite remains separate because replica coverage changes the shared Runner Gateway
 Deployment and deletes a recorded Pod while checking controller behavior.
@@ -51,12 +52,13 @@ runs the real-model egress and session-instruction cases with the BuildBuddy liv
 ([Real model on k3s](#real-model-on-k3s)). Two other checks need what only a deployment has and run
 against staging by hand ([Running live](#running-live)).
 
-The model backend is the target's too (`AGENTPLANE_SYSTEM_TEST_MODEL_BACKEND`). The `test_real_model` stack
+The rendered stack selects the model backend. The `test_real_model` stack
 and a deployment serve a real model. On the other stacks, LLM ingress forwards to the scenario itself, which plays the model
 ([`scripted_upstream.py`](scripted_upstream.py)): the `scripted` fixture hands a scenario the
 `ScriptedModel` of its own Sandbox's Pod, and the scenario answers each request and asserts what
-the harness sent. A case marked `real_model` or `scripted_model` runs only where that backend is;
-only cases whose evidence is what a model does are `real_model`. Codex is offered a ChatGPT route there
+the harness sent. Suites explicitly select their cases; a case marked `real_model` or
+`scripted_model` fails setup if its stack serves the other backend. Only cases whose evidence
+is what a model does are `real_model`. Codex is offered a ChatGPT route there
 too, so it runs in code mode, which the scripted model answers.
 Every request the scripted model receives is kept in the target's `test.outputs/scripted_upstream/`.
 
@@ -150,7 +152,7 @@ The result is written to the target's `test.outputs/vm-workspace-ownership.json`
 
 The `storage` scenario is a model-free fixture for the
 built-in Pod `DirectoryTree` and VM `BlockFilesystem`/ext4 workspace paths. The VM workspace uses
-the k3s stack's static loop-backed raw block class while VM state remains on local-path filesystem
+the k3s stack's loop-backed raw block class while VM state remains on local-path filesystem
 storage. It checks Sandbox-owned PVC identity, `Block` volume mode and layout records, marker bytes
 across suspend/resume, refusal of an incompatible claim before workload start, and retained data
 after VM replacement. It creates only its own
@@ -305,8 +307,8 @@ receipt back from what the harness sent the model.
   wait for the operator, who denies them. The launcher grant auto-approves a read of a Session from
   another Sandbox, and the executor refuses that mismatch.
 
-These cases read only the operator Secret the k3s target publishes (`AGENTPLANE_OPERATOR_SECRET_PATH`)
-via `kubectl get --raw`, with a kubeconfig naming the k3s fixture's apiserver. No pre-issued cookie is
+These cases receive the operator Secret name from `deployment.mcp_fixtures` and read only that Secret
+via `kubectl get --raw`, using the explicit cluster handle naming the k3s fixture's apiserver. No pre-issued cookie is
 used. A missing Secret or malformed Secret data fails **BLOCKED**, without printing kubectl output or
 decoded values.
 

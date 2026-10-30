@@ -6,7 +6,8 @@ import pytest
 import pytest_bazel
 
 from agentplane.app.testing.client import Client
-from agentplane.system_tests.conftest import Sandboxes
+from agentplane.system_tests.cluster import Cluster
+from agentplane.system_tests.sandbox import Sandboxes
 from agentplane.system_tests.scenarios import runner_credentials, vm_sandbox
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 
@@ -17,9 +18,9 @@ pytestmark = pytest.mark.vm_sandboxes
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
 async def test_vm_mtls_certificates_authenticate_both_harnesses(
-    client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
+    cluster: Cluster, client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
 ) -> None:
-    await runner_credentials.vm_mtls_certificates_authenticate_both_harnesses(client, sandbox, scripted)
+    await runner_credentials.vm_mtls_certificates_authenticate_both_harnesses(cluster, client, sandbox, scripted)
 
 
 @pytest.mark.vm_sandboxes

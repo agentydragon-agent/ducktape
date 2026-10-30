@@ -30,24 +30,20 @@ _STACKS = {
     "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, proof = False, real_model = True, images = [_HARNESSES_LAYOUT]),
 }
 
-def k3s_suite(name, srcs, deps, stack, tags = [], workspace_volumes = 0):
+def k3s_suite(name, srcs, deps, stack, tags = []):
     """Run a Python suite entrypoint against one session-scoped k3s stack."""
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
     config = _STACKS[stack]
-    if config.vm != (workspace_volumes > 0):
-        fail("VM suites must declare their total workspace volume count; Pod suites use zero")
     layouts = K3S_SERVICE_LAYOUTS + config.images
     data = [config.fixture, K3S_BINARY, _CERT_MANAGER_INSTALL, _TRUST_MANAGER_INSTALL] + layouts
     env = {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _CERT_MANAGER_INSTALL + ")",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _TRUST_MANAGER_INSTALL + ")",
-        "AGENTPLANE_SYSTEM_TEST_MODEL_BACKEND": "real_model" if config.real_model else "scripted_model",
         "K3S_FIXTURE_RLOCATION": "$(rlocationpath " + config.fixture + ")",
         "K3S_IMAGE_LAYOUTS": " ".join(["$(rlocationpath " + layout + ")" for layout in layouts]),
         "K3S_GUEST_IMAGE_LAYOUTS": "",
-        "K3S_WORKSPACE_VOLUMES": str(workspace_volumes),
         "PYTEST_PLUGINS": "agentplane.system_tests.k3s.system_test_target",
     }
     properties = {}

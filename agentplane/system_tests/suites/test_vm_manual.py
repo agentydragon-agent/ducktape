@@ -6,8 +6,9 @@ import pytest
 import pytest_bazel
 
 from agentplane.app.testing.client import Client
-from agentplane.system_tests.conftest import Sandboxes
+from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
+from agentplane.system_tests.sandbox import Sandboxes
 from agentplane.system_tests.scenarios import storage, suspend_resume, vm_workspace_ownership
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 
@@ -15,9 +16,9 @@ pytestmark = pytest.mark.vm_sandboxes
 
 
 async def test_fresh_workspace_storage_survives_replacement(
-    client: Client, executor: Executor, storage_layout: storage.StorageLayout
+    cluster: Cluster, client: Client, executor: Executor, storage_layout: storage.StorageLayout
 ) -> None:
-    await storage.fresh_workspace_storage_survives_replacement(client, executor, storage_layout)
+    await storage.fresh_workspace_storage_survives_replacement(cluster, client, executor, storage_layout)
 
 
 @pytest.fixture
@@ -32,10 +33,10 @@ def storage_layout() -> storage.StorageLayout:
 
 @pytest.mark.scripted_model
 async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
-    client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream, executor: Executor
+    cluster: Cluster, client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream, executor: Executor
 ) -> None:
     await suspend_resume.two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
-        client, sandbox, scripted, executor
+        cluster, client, sandbox, scripted, executor
     )
 
 

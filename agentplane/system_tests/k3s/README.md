@@ -48,10 +48,13 @@ can run it.
 
 [`fixture_chart.py`](fixture_chart.py) constructs the chart directly
 with shared service constructs and explicit bare-k3s settings. It supplies fixture Secrets,
-local-path storage for filesystem claims and a test egress CA. VM stacks add a separate static
-`agentplane-test-loop-block` class for the VM workspace claim. `block_storage.py` backs its three
-10 GiB `Block` PVs with sparse files attached to loop devices on the k3s node; the action detaches
-only the loops it attached after k3s removes its Pods. This gives the VM test guest a real raw block
+local-path storage for filesystem claims and a test egress CA. VM stacks add the
+`agentplane-test-loop-block` class for workspace claims. [`block_storage.py`](block_storage.py) runs a
+host-side provisioner in an owned thread, independent of pytest's per-test event loops. It relists
+claims in the stack namespace and creates one sparse 10 GiB file, loop device, and UID-reserved
+`Block` PV for each matching claim. Volumes survive claim deletion; a replacement UID gets fresh
+storage. The provisioner stops before k3s, and its devices detach after k3s removes its Pods.
+Worker failures propagate to fixture teardown. This gives the VM test guest a real raw block
 device while keeping state on the fixture's filesystem class. The fixture runs the Go egress proxy
 and Goose history migrator through the same construct as staging, with fixture-only PostgreSQL TLS
 settings. The shared construct supplies the egress RBAC, policies, trust mounts, images and flags.

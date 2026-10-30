@@ -1,25 +1,14 @@
-"""A pytest plugin that runs system test scenarios against a k3s stack of their own.
+"""Start one session-scoped stack from the suite's declared Bazel artifacts.
 
-Each suite target loads it by name (`PYTEST_PLUGINS`). Before any
-scenario fixture runs, it starts the stack and publishes it the way an operator names a deployment:
-the `AGENTPLANE_SYSTEM_TEST_*` variables the system tests' `conftest` reads, `KUBECONFIG`, and `kubectl`
-on `PATH`. LLM ingress forwards to the scenario's scripted model on the node, which the scenario starts
-on the published address (`scripted_upstream`); on the public LiteLLM rendering, to the public LiteLLM with
-the key BuildBuddy decrypts into the action as `OPENAI_API_KEY`. A stack with the MCP fixtures also
-publishes the operator's login Secret for `operator_login` and the standalone MCP edge endpoint, and trusts
-Dex's CA (`SSL_CERT_FILE`). The test log ends with the stack's setup timeline, how long each step and each image
-import took.
+Suite fixtures expose the stack's explicit cluster, app URL, token, and MCP access.
+The process trust bundle also includes Dex's CA for HTTP clients used by MCP scenarios.
 """
 
 import os
-import tempfile
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 
-from agentplane.system_tests import operator_login
-from agentplane.system_tests.conftest import BASE_URL, MCP_EDGE_URL, NAMESPACE, TOKEN
 from agentplane.system_tests.k3s import guest_logs, rendered_fixture
 from agentplane.system_tests.k3s.rendered_fixture import Backend, LocalModel, PublicLiteLLM
 from agentplane.system_tests.k3s.stack import Stack, StackInputs, Timeline, node_ip, running_stack
@@ -47,7 +36,6 @@ def scripted_listener() -> Iterator[Listener]:
 def load_stack_inputs() -> StackInputs:
     return StackInputs(
         fixture=rendered_fixture.read(get_required_path(os.environ["K3S_FIXTURE_RLOCATION"])),
-        workspace_volumes=int(os.environ["K3S_WORKSPACE_VOLUMES"]),
         binary=get_required_path(os.environ["K3S_BINARY_RLOCATION"]),
         image_layouts=tuple(get_required_path(path) for path in os.environ["K3S_IMAGE_LAYOUTS"].split()),
         guest_image_layouts=tuple(get_required_path(path) for path in os.environ["K3S_GUEST_IMAGE_LAYOUTS"].split()),
@@ -67,6 +55,11 @@ def deployment(
     pytestconfig: pytest.Config, request: pytest.FixtureRequest, scripted_listener: Listener
 ) -> Iterator[Stack]:
     inputs = load_stack_inputs()
+    required_backend = "scripted_model" if inputs.fixture.backend is Backend.LOCAL_MODEL else "real_model"
+    incompatible = "real_model" if required_backend == "scripted_model" else "scripted_model"
+    for item in request.session.items:
+        if item.get_closest_marker(incompatible) is not None:
+            raise pytest.UsageError(f"{item.nodeid} requires {incompatible}; suite stack serves {required_backend}")
     timeline = pytestconfig.stash[TIMELINE] = Timeline()
     with (
         running_stack(
@@ -75,22 +68,9 @@ def deployment(
             timeline=timeline,
             validate_vm_shutdown=lambda: request.session.testsfailed == 0,
         ) as stack,
-        tempfile.TemporaryDirectory() as tools,
         pytest.MonkeyPatch.context() as environment,
     ):
-        # k3s is a multi-call binary: invoked as `kubectl`, it is a kubectl of the server's own version.
-        (Path(tools) / "kubectl").symlink_to(stack.k3s.binary)
-        environment.setenv("PATH", tools, prepend=os.pathsep)
-        environment.setenv("KUBECONFIG", str(stack.k3s.kubeconfig))
-        environment.setenv(BASE_URL, stack.base_url)
-        environment.setenv(TOKEN, stack.token)
-        environment.setenv(NAMESPACE, stack.namespace)
         environment.setenv(guest_logs.CONSOLES_ENV, str(undeclared_outputs_dir() / "vm-artifacts/consoles"))
         if stack.mcp_fixtures is not None:
             environment.setenv("SSL_CERT_FILE", str(stack.mcp_fixtures.ca_bundle))
-            environment.setenv(
-                operator_login.SECRET_PATH_ENV,
-                f"/api/v1/namespaces/{stack.namespace}/secrets/{stack.mcp_fixtures.operator_secret}",
-            )
-            environment.setenv(MCP_EDGE_URL, stack.mcp_fixtures.mcp_edge_url)
         yield stack

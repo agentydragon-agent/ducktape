@@ -23,7 +23,7 @@ from agentplane.system_tests.central_sampler import (
     capture_sampler_diagnostics,
     central_stack,
 )
-from agentplane.system_tests.cluster import kubectl
+from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.codex_model import CodexModel
@@ -70,7 +70,7 @@ VM_EXECUTION = ExecutionProbe(
 
 
 async def _capture_session_diagnostics(
-    deployed: CentralStack, session_id: str, command_id: str, admission: str, *, phase: str
+    cluster: Cluster, deployed: CentralStack, session_id: str, command_id: str, admission: str, *, phase: str
 ) -> None:
     """Retain sampler, History, Sandbox, and full event evidence for a Session."""
     diagnostic: dict[str, object] = {
@@ -80,7 +80,7 @@ async def _capture_session_diagnostics(
         "dispatcher_admission": admission,
     }
     try:
-        pod_artifacts = await capture_sampler_diagnostics()
+        pod_artifacts = await capture_sampler_diagnostics(cluster)
         diagnostic["sampler_pod_artifacts"] = str(pod_artifacts.relative_to(undeclared_outputs_dir()))
     except Exception as error:
         diagnostic["sampler_pod_artifacts_error"] = repr(error)
@@ -112,7 +112,7 @@ async def _capture_session_diagnostics(
     except Exception as error:
         diagnostic["history_events_error"] = repr(error)
     try:
-        sandbox_state = json.loads(await kubectl("get", "sandbox", deployed.sandbox, "-o", "json"))
+        sandbox_state = json.loads(await cluster.kubectl("get", "sandbox", deployed.sandbox, "-o", "json"))
         diagnostic["sandbox"] = {
             "name": sandbox_state["metadata"]["name"],
             "uid": sandbox_state["metadata"]["uid"],
@@ -121,19 +121,19 @@ async def _capture_session_diagnostics(
     except Exception as error:
         diagnostic["sandbox_error"] = repr(error)
     try:
-        runner_lease = await kubectl("get", "lease", f"{deployed.sandbox}-runner", "-o", "json")
+        runner_lease = await cluster.kubectl("get", "lease", f"{deployed.sandbox}-runner", "-o", "json")
         diagnostic["runner_lease"] = json.loads(runner_lease)
     except Exception as error:
         diagnostic["runner_lease_error"] = repr(error)
     try:
         diagnostic["cluster_services_endpoints_pods"] = json.loads(
-            await kubectl("get", "services,endpointslices,pods", "-o", "json")
+            await cluster.kubectl("get", "services,endpointslices,pods", "-o", "json")
         )
     except Exception as error:
         diagnostic["cluster_services_endpoints_pods_error"] = repr(error)
     for component in ("runner-gateway", "history-service"):
         try:
-            diagnostic[f"{component}_logs"] = await kubectl(
+            diagnostic[f"{component}_logs"] = await cluster.kubectl(
                 "logs", f"deployment/{component}", "--all-containers", "--tail=100", "--since=10m"
             )
         except Exception as error:
@@ -184,9 +184,9 @@ async def _wait_for_execution_progress(deployed: CentralStack, session_id: str, 
         events.cancel()
 
 
-async def _sampler_code_mode_host_pid(deployed: CentralStack) -> tuple[Path, str]:
+async def _sampler_code_mode_host_pid(cluster: Cluster, deployed: CentralStack) -> tuple[Path, str]:
     """Read the shared host PID through the sampler Pod's existing diagnostic EmptyDir."""
-    pod = json.loads(await kubectl("get", "pod", deployed.sampler_pod_name, "-o", "json"))
+    pod = json.loads(await cluster.kubectl("get", "pod", deployed.sampler_pod_name, "-o", "json"))
     pod_uid = pod["metadata"]["uid"]
     pid_file = Path(f"/var/lib/kubelet/pods/{pod_uid}/volumes/kubernetes.io~empty-dir/logs/code-mode-host.pid")
     pid = await asyncio.to_thread(pid_file.read_text)
@@ -219,7 +219,7 @@ async def _wait_for_turn_status(
 
 
 async def dispatcher_central_setup_tool_and_retained_answer(
-    tmp_path: Path, scripted: ScriptedUpstream, executor: Executor, execution_probe: ExecutionProbe
+    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream, executor: Executor, execution_probe: ExecutionProbe
 ) -> None:
     template, cwd = executor.template, executor.cwd
     session_id, command_id = str(uuid4()), str(uuid4())
@@ -227,7 +227,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
     prompt = "Read the setup marker and report the result."
     reasoning = "I will read the marker created during setup."
     answer = "The executor returned prepared-on-executor."
-    async with central_stack(tmp_path, template=template) as deployed:
+    async with central_stack(cluster, tmp_path, template=template) as deployed:
         model = scripted.model(deployed.sampler_pod_name, runner_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
         session_spec = runner_pb2.SessionSpec(
@@ -285,7 +285,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
                 ).events
             )
         await _wait_for_execution_progress(deployed, interrupted_session_id, "cell", "live")
-        host_pid_file, host_pid = await _sampler_code_mode_host_pid(deployed)
+        host_pid_file, host_pid = await _sampler_code_mode_host_pid(cluster, deployed)
         # A yielded cell returns control to sampling. Hold that continuation explicitly so
         # B's request is the next scripted exchange and A remains active until interruption.
         continuation = await model.request()
@@ -346,7 +346,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
             request = await model.request()
         except Exception:
             await _capture_session_diagnostics(
-                deployed, session_id, command_id, admission, phase="setup_or_initial_model_request"
+                cluster, deployed, session_id, command_id, admission, phase="setup_or_initial_model_request"
             )
             raise
         assert request.model == MODEL
@@ -390,7 +390,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
         except Exception as error:
             try:
                 await _capture_session_diagnostics(
-                    deployed, session_id, command_id, admission, phase="tool_result_model_request"
+                    cluster, deployed, session_id, command_id, admission, phase="tool_result_model_request"
                 )
             except Exception as diagnostic_error:
                 error.add_note(f"Could not capture central sampler diagnostics: {diagnostic_error!r}")
@@ -440,7 +440,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
         setup_stdout = b"".join(entry.event.setup_output.stdout for entry in retained.entries)
         if setup_stdout != b"setup-on-executor\n":
             await _capture_session_diagnostics(
-                deployed, session_id, command_id, admission, phase="setup_stdout_assertion"
+                cluster, deployed, session_id, command_id, admission, phase="setup_stdout_assertion"
             )
         assert setup_stdout == b"setup-on-executor\n"
         completed = [entry for entry in retained.entries if entry.event.HasField("item_completed")]

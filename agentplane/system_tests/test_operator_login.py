@@ -3,6 +3,7 @@
 import base64
 import json
 import subprocess
+from pathlib import Path
 from unittest.mock import Mock
 from uuid import UUID
 
@@ -12,9 +13,9 @@ import pytest_bazel
 from pydantic import JsonValue, SecretStr
 
 from agentplane.app.oidc import SECURE_COOKIE
+from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.operator_login import (
     K3S_FIXTURE_API,
-    SECRET_PATH_ENV,
     LoginBlockedError,
     OperatorCredentials,
     app_origin,
@@ -130,12 +131,16 @@ async def _follow_mcp_linkage(browser: httpx.AsyncClient) -> tuple[str, str]:
 SECRET_PATH = "/api/v1/namespaces/test-namespace/secrets/test-operator-login"
 
 
-@pytest.fixture(autouse=True)
-def secret_path(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(SECRET_PATH_ENV, SECRET_PATH)
+@pytest.fixture
+def cluster() -> Cluster:
+    return Cluster(
+        kubeconfig=Path("/test/explicit-kubeconfig"), namespace="test-namespace", kubectl_command=("kubectl",)
+    )
 
 
-def test_secret_is_one_named_get_through_the_fixture_apiserver(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_secret_is_one_named_get_through_the_fixture_apiserver(
+    cluster: Cluster, monkeypatch: pytest.MonkeyPatch
+) -> None:
     data = {name: base64.b64encode(value.get_secret_value().encode()).decode() for name, value in CREDENTIALS}
     run = Mock(
         side_effect=[
@@ -144,18 +149,13 @@ def test_secret_is_one_named_get_through_the_fixture_apiserver(monkeypatch: pyte
         ]
     )
     monkeypatch.setattr(subprocess, "run", run)
-    assert read_operator_credentials() == CREDENTIALS
-    assert run.call_args_list[0].args[0] == [
-        "kubectl",
-        "--v=0",
-        "--request-timeout=20s",
-        "config",
-        "view",
-        "--minify",
-        "-o",
-        "jsonpath={.clusters[0].cluster.server}",
-    ]
-    assert run.call_args_list[1].args[0] == ["kubectl", "--v=0", "--request-timeout=20s", "get", f"--raw={SECRET_PATH}"]
+    assert read_operator_credentials(cluster, secret_name="test-operator-login") == CREDENTIALS
+    assert run.call_args_list[0].args[0] == cluster.command(
+        "--v=0", "--request-timeout=20s", "config", "view", "--minify", "-o", "jsonpath={.clusters[0].cluster.server}"
+    )
+    assert run.call_args_list[1].args[0] == cluster.command(
+        "--v=0", "--request-timeout=20s", "get", f"--raw={SECRET_PATH}"
+    )
     for call in run.call_args_list:
         assert call.kwargs["stderr"] == subprocess.DEVNULL
         assert call.kwargs["stdout"] == subprocess.PIPE
@@ -164,7 +164,7 @@ def test_secret_is_one_named_get_through_the_fixture_apiserver(monkeypatch: pyte
 
 @pytest.mark.parametrize("failure", ["direct", "missing", "timeout", "denied", "malformed", "empty"])
 def test_secret_failures_are_closed_and_do_not_echo_output(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failure: str
+    cluster: Cluster, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failure: str
 ) -> None:
     marker = "must-not-be-in-failure-output"
     results: list[object] = [subprocess.CompletedProcess([], 0, stdout=K3S_FIXTURE_API.encode())]
@@ -187,7 +187,7 @@ def test_secret_failures_are_closed_and_do_not_echo_output(
     run = Mock(side_effect=results)
     monkeypatch.setattr(subprocess, "run", run)
     with pytest.raises(LoginBlockedError, match="BLOCKED") as caught:
-        read_operator_credentials()
+        read_operator_credentials(cluster, secret_name="test-operator-login")
     assert marker not in str(caught.value)
     assert capsys.readouterr() == ("", "")
     assert run.call_count == len(results)

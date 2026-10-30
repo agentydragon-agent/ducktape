@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import pytest_bazel
 
-from agentplane.system_tests.conftest import Sandboxes
+from agentplane.system_tests.sandbox import Sandboxes
 from agentplane.system_tests.scenarios import runner_systemd
 
 

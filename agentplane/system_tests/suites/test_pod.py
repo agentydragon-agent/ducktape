@@ -12,8 +12,9 @@ import pytest_bazel
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.system_tests.agent import TURN_SECONDS
-from agentplane.system_tests.conftest import Sandboxes
+from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
+from agentplane.system_tests.sandbox import Sandboxes
 from agentplane.system_tests.scenarios import (
     agent_messaging,
     egress,
@@ -50,27 +51,44 @@ def storage_layout() -> storage.StorageLayout:
 
 @pytest.mark.scripted_model
 async def test_an_agent_messages_another_which_reads_and_acknowledges_it(
-    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
+    cluster: Cluster,
+    client: Client,
+    sandbox: Sandboxes,
+    harness: runner_pb2.Harness,
+    offered_model: str,
+    scripted: ScriptedUpstream,
 ) -> None:
     await agent_messaging.an_agent_messages_another_which_reads_and_acknowledges_it(
-        client, sandbox, harness, offered_model, scripted
+        cluster, client, sandbox, harness, offered_model, scripted
     )
 
 
 @pytest.mark.scripted_model
 async def test_a_policy_granted_after_the_sandbox_is_running_takes_effect(
-    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
+    cluster: Cluster,
+    client: Client,
+    sandbox: Sandboxes,
+    harness: runner_pb2.Harness,
+    offered_model: str,
+    scripted: ScriptedUpstream,
 ) -> None:
     await egress.a_policy_granted_after_the_sandbox_is_running_takes_effect(
-        client, sandbox, harness, offered_model, scripted
+        cluster, client, sandbox, harness, offered_model, scripted
     )
 
 
 @pytest.mark.scripted_model
 async def test_the_model_call_itself_goes_through_the_proxy(
-    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
+    cluster: Cluster,
+    client: Client,
+    sandbox: Sandboxes,
+    harness: runner_pb2.Harness,
+    offered_model: str,
+    scripted: ScriptedUpstream,
 ) -> None:
-    await egress.the_model_call_itself_goes_through_the_proxy(client, sandbox, harness, offered_model, scripted)
+    await egress.the_model_call_itself_goes_through_the_proxy(
+        cluster, client, sandbox, harness, offered_model, scripted
+    )
 
 
 @pytest.mark.scripted_model
@@ -80,17 +98,22 @@ async def test_a_preset_launches_an_initialized_editable_codex_thread(
     await launch_presets.a_preset_launches_an_initialized_editable_codex_thread(client, sandbox, scripted)
 
 
-async def test_cert_manager_reissues_a_deleted_tls_secret() -> None:
-    await runner_credentials.cert_manager_reissues_a_deleted_tls_secret()
+async def test_cert_manager_reissues_a_deleted_tls_secret(cluster: Cluster) -> None:
+    await runner_credentials.cert_manager_reissues_a_deleted_tls_secret(cluster)
 
 
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
 async def test_pod_mtls_session_survives_replacement_and_keeps_history(
-    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
+    cluster: Cluster,
+    client: Client,
+    sandbox: Sandboxes,
+    harness: runner_pb2.Harness,
+    offered_model: str,
+    scripted: ScriptedUpstream,
 ) -> None:
     await runner_credentials.pod_mtls_session_survives_replacement_and_keeps_history(
-        client, sandbox, harness, offered_model, scripted
+        cluster, client, sandbox, harness, offered_model, scripted
     )
 
 
@@ -104,24 +127,24 @@ async def test_the_standing_instruction_reaches_the_model_and_only_in_its_own_se
 
 
 async def test_fresh_workspace_storage_survives_replacement(
-    client: Client, executor: Executor, storage_layout: storage.StorageLayout
+    cluster: Cluster, client: Client, executor: Executor, storage_layout: storage.StorageLayout
 ) -> None:
-    await storage.fresh_workspace_storage_survives_replacement(client, executor, storage_layout)
+    await storage.fresh_workspace_storage_survives_replacement(cluster, client, executor, storage_layout)
 
 
 @pytest.mark.scripted_model
 async def test_codex_standing_instructions_after_suspend_and_compact(
-    client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
+    cluster: Cluster, client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
 ) -> None:
-    await suspend_resume.codex_standing_instructions_after_suspend_and_compact(client, sandbox, scripted)
+    await suspend_resume.codex_standing_instructions_after_suspend_and_compact(cluster, client, sandbox, scripted)
 
 
 @pytest.mark.scripted_model
 async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
-    client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream, executor: Executor
+    cluster: Cluster, client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream, executor: Executor
 ) -> None:
     await suspend_resume.two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
-        client, sandbox, scripted, executor
+        cluster, client, sandbox, scripted, executor
     )
 
 

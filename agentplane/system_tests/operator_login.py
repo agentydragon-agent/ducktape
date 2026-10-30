@@ -4,7 +4,6 @@ OIDC/session implementation."""
 import base64
 import binascii
 import json
-import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -17,10 +16,10 @@ from bs4 import BeautifulSoup
 from pydantic import BaseModel, ConfigDict, SecretStr
 
 from agentplane.app.oidc import INSECURE_COOKIE, SECURE_COOKIE
+from agentplane.system_tests.cluster import Cluster
 
 # The k3s fixture's own apiserver (`agentplane/system_tests/k3s`), which holds only its test operator.
 K3S_FIXTURE_API = "https://127.0.0.1:6443"
-SECRET_PATH_ENV = "AGENTPLANE_OPERATOR_SECRET_PATH"
 _DEX_AUTHORIZATION_PATH = "/dex/auth"
 _DEX_LOCAL_FORM_PATH = re.compile(r"/dex/auth/local(?:/login)?/?")
 _DEX_LOCAL_LOGIN_PATH = re.compile(r"/dex/auth/local/login/?")
@@ -75,11 +74,11 @@ class OperatorCredentials(BaseModel):
     subject: SecretStr
 
 
-def _kubectl(*args: str) -> bytes:
+def _kubectl(cluster: Cluster, *args: str) -> bytes:
     __tracebackhide__ = True
     try:
         result = subprocess.run(
-            ["kubectl", "--v=0", "--request-timeout=20s", *args],
+            cluster.command("--v=0", "--request-timeout=20s", *args),
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             check=False,
@@ -92,13 +91,13 @@ def _kubectl(*args: str) -> bytes:
     return result.stdout
 
 
-def read_operator_credentials() -> OperatorCredentials:
+def read_operator_credentials(cluster: Cluster, *, secret_name: str) -> OperatorCredentials:
     __tracebackhide__ = True
     # Project only the active server, never raw kubeconfig credentials. Reject any other cluster.
-    server = _kubectl("config", "view", "--minify", "-o", "jsonpath={.clusters[0].cluster.server}")
+    server = _kubectl(cluster, "config", "view", "--minify", "-o", "jsonpath={.clusters[0].cluster.server}")
     if server.strip() != K3S_FIXTURE_API.encode():
         raise LoginBlockedError("BLOCKED: current kubeconfig must use the k3s fixture's apiserver")
-    secret_path = os.environ[SECRET_PATH_ENV]
+    secret_path = f"/api/v1/namespaces/{cluster.namespace}/secrets/{secret_name}"
     if (
         re.fullmatch(
             r"/api/v1/namespaces/[a-z0-9]([-a-z0-9]*[a-z0-9])?/secrets/[a-z0-9]([-a-z0-9]*[a-z0-9])?", secret_path
@@ -106,7 +105,7 @@ def read_operator_credentials() -> OperatorCredentials:
         is None
     ):
         raise LoginBlockedError("BLOCKED: operator Secret path must name one Kubernetes Secret")
-    raw = _kubectl("get", f"--raw={secret_path}")
+    raw = _kubectl(cluster, "get", f"--raw={secret_path}")
     try:
         data = json.loads(raw)["data"]
         values = {

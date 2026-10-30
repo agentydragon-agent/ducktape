@@ -28,22 +28,21 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":cluster",
         ":native_artifacts",
+        ":offered_models",
         ":ollama_warmup",
+        ":sandbox",
         ":scripted_upstream",
-        "//agentplane:crd_group",
-        "//agentplane:sandbox_resource",
+        ":vm_tracing",
         "//agentplane/app/testing:client",
         "//agentplane/app/testing:models",
         "//agentplane/proto:runner_pb2",
-        "//agentplane/runner:harness",
         "//util:net",
         "//util/testing:otel_tracing",
-        "//util/testing:undeclared_outputs",
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//tenacity",
     ],
 )
 
@@ -65,6 +64,7 @@ py_test(
         ":agent",
         ":conftest",
         ":ollama_catalog",
+        ":sandbox",
         "//:conftest",
         "//agentplane/app:model_catalog",
         "//agentplane/app/testing:client",
@@ -99,6 +99,7 @@ py_test(
     deps = [
         ":agent",
         ":conftest",
+        ":sandbox",
         "//:conftest",
         "//agentplane/app/testing:client",
         "//agentplane/app/testing:models",
@@ -127,6 +128,7 @@ py_library(
     testonly = True,
     srcs = ["operator_login.py"],
     deps = [
+        ":cluster",
         "//agentplane/app:oidc",
         "@pypi//beautifulsoup4",
         "@pypi//httpx",
@@ -141,6 +143,7 @@ py_test(
     name = "test_operator_login",
     srcs = ["test_operator_login.py"],
     deps = [
+        ":cluster",
         ":conftest",
         ":operator_login",
         "//:conftest",
@@ -161,9 +164,7 @@ py_test(
         ":agent",
         ":conftest",
         "//:conftest",
-        "//agentplane:sandbox_resource",
         "//agentplane/app/testing:client",
-        "//agentplane/app/testing:models",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
@@ -248,10 +249,7 @@ py_library(
     name = "cluster",
     testonly = True,
     srcs = ["cluster.py"],
-    deps = [
-        ":conftest",
-        "@pypi//kubernetes_asyncio",
-    ],
+    deps = ["@pypi//kubernetes_asyncio"],
 )
 
 py_library(
@@ -324,7 +322,6 @@ py_library(
     data = ["//agentplane/system_tests/k3s:central_sampler_layout"],
     deps = [
         ":cluster",
-        ":conftest",
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
         "//agentplane/grpc:calls",
@@ -354,4 +351,53 @@ py_binary(
 py_library(
     name = "executor",
     srcs = ["executor.py"],
+)
+
+py_library(
+    name = "offered_models",
+    srcs = ["offered_models.py"],
+    deps = [
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner:harness",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "sandbox",
+    srcs = ["sandbox.py"],
+    deps = [
+        ":cluster",
+        ":vm_tracing",
+        "//agentplane:crd_group",
+        "//agentplane:sandbox_resource",
+        "//agentplane/app/testing:client",
+        "//agentplane/app/testing:models",
+        "//util/testing:undeclared_outputs",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "vm_tracing",
+    srcs = ["vm_tracing.py"],
+    deps = ["@pypi//opentelemetry_api"],
+)
+
+py_test(
+    name = "test_sandbox",
+    srcs = ["test_sandbox.py"],
+    deps = [
+        ":cluster",
+        ":conftest",
+        ":sandbox",
+        "//:conftest",
+        "//agentplane:sandbox_resource",
+        "//agentplane/app/testing:client",
+        "//agentplane/app/testing:models",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

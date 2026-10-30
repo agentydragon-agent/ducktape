@@ -195,8 +195,6 @@ py_library(
         ":guest_logs",
         ":rendered_fixture",
         ":stack",
-        "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests:operator_login",
         "//util:net",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
@@ -209,6 +207,10 @@ py_library(
     testonly = True,
     srcs = ["block_storage.py"],
     visibility = ["//agentplane/system_tests:__subpackages__"],
+    deps = [
+        "//agentplane/system_tests:cluster",
+        "@pypi//kubernetes_asyncio",
+    ],
 )
 
 py_library(
@@ -229,7 +231,7 @@ py_library(
         ":iptables_rule",
         ":rendered_fixture",
         ":vm_sandboxes",
-        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests:cluster",
         "//agentplane/testing:tls",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
@@ -614,6 +616,24 @@ py_library(
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//pyyaml",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_block_storage",
+    size = "medium",
+    srcs = ["test_block_storage.py"],
+    exec_properties = K3S_EXEC_PROPERTIES,
+    deps = [
+        ":block_storage",
+        "//:conftest",
+        "//agentplane/system_tests:cluster",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/testing:kubernetes_apiserver",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//tenacity",
     ],
 )

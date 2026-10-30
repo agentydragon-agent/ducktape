@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
+from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.scenarios import central_sampler
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
@@ -27,10 +28,14 @@ def execution_probe() -> central_sampler.ExecutionProbe:
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
 async def test_dispatcher_central_setup_tool_and_retained_answer(
-    tmp_path: Path, scripted: ScriptedUpstream, executor: Executor, execution_probe: central_sampler.ExecutionProbe
+    cluster: Cluster,
+    tmp_path: Path,
+    scripted: ScriptedUpstream,
+    executor: Executor,
+    execution_probe: central_sampler.ExecutionProbe,
 ) -> None:
     await central_sampler.dispatcher_central_setup_tool_and_retained_answer(
-        tmp_path, scripted, executor, execution_probe
+        cluster, tmp_path, scripted, executor, execution_probe
     )
 
 

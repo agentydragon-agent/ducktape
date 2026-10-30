@@ -16,8 +16,7 @@ from kubernetes_asyncio import client as k8s
 from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
-from agentplane.system_tests.cluster import api_client, kubectl
-from agentplane.system_tests.conftest import namespace
+from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.k3s import guest_logs
 from agentplane.system_tests.k3s.block_storage import STORAGE_CLASS
@@ -32,14 +31,14 @@ class StorageLayout(StrEnum):
     VM_RAW = "vm-raw"
 
 
-async def _object(kind: str, name: str) -> dict:
-    decoded = json.loads(await kubectl("get", kind, name, "-o", "json"))
+async def _object(cluster: Cluster, kind: str, name: str) -> dict:
+    decoded = json.loads(await cluster.kubectl("get", kind, name, "-o", "json"))
     assert isinstance(decoded, dict)
     return decoded
 
 
-async def _condition(name: str, condition: str, value: str = "True") -> None:
-    await kubectl(
+async def _condition(cluster: Cluster, name: str, condition: str, value: str = "True") -> None:
+    await cluster.kubectl(
         "wait",
         f"sandboxes.{GROUP}/{name}",
         f'--for=jsonpath={{.status.conditions[?(@.type=="{condition}")].status}}={value}',
@@ -48,9 +47,9 @@ async def _condition(name: str, condition: str, value: str = "True") -> None:
     )
 
 
-async def _readiness_snapshot(name: str) -> dict:
+async def _readiness_snapshot(cluster: Cluster, name: str) -> dict:
     """Capture the bounded Sandbox/VM readiness state before fixture cleanup removes it."""
-    sandbox = await _object(f"sandboxes.{GROUP}", name)
+    sandbox = await _object(cluster, f"sandboxes.{GROUP}", name)
     snapshot: dict = {
         "sandbox": {
             "uid": sandbox["metadata"]["uid"],
@@ -60,7 +59,7 @@ async def _readiness_snapshot(name: str) -> dict:
     }
     for kind in ("virtualmachine", "virtualmachineinstance"):
         try:
-            obj = await _object(kind, name)
+            obj = await _object(cluster, kind, name)
         except Exception as error:
             snapshot[kind] = {"read_error": str(error)}
         else:
@@ -75,7 +74,7 @@ async def _readiness_snapshot(name: str) -> dict:
             }
 
     pods = json.loads(
-        await kubectl("get", "pods", "--selector=agentplane.allegedly.works/sandbox=" + name, "-o", "json")
+        await cluster.kubectl("get", "pods", "--selector=agentplane.allegedly.works/sandbox=" + name, "-o", "json")
     )["items"]
     pod_names = {pod["metadata"]["name"] for pod in pods}
     snapshot["pods"] = [
@@ -99,7 +98,7 @@ async def _readiness_snapshot(name: str) -> dict:
         }
         for pod in pods
     ]
-    events = json.loads(await kubectl("get", "events", "-o", "json"))["items"]
+    events = json.loads(await cluster.kubectl("get", "events", "-o", "json"))["items"]
     snapshot["events"] = [
         {key: event.get(key) for key in ("eventTime", "firstTimestamp", "lastTimestamp", "type", "reason", "message")}
         | {"object": event.get("involvedObject", {}).get("name"), "kind": event.get("involvedObject", {}).get("kind")}
@@ -109,8 +108,8 @@ async def _readiness_snapshot(name: str) -> dict:
     return snapshot
 
 
-async def _running(name: str, uid: str, value: bool) -> None:
-    await kubectl(
+async def _running(cluster: Cluster, name: str, uid: str, value: bool) -> None:
+    await cluster.kubectl(
         "patch",
         f"sandboxes.{GROUP}",
         name,
@@ -120,22 +119,24 @@ async def _running(name: str, uid: str, value: bool) -> None:
     )
 
 
-async def _delete(plural: str, name: str, uid: str, *, group: str = GROUP, version: str = VERSION) -> None:
-    async with api_client() as api:
+async def _delete(
+    cluster: Cluster, plural: str, name: str, uid: str, *, group: str = GROUP, version: str = VERSION
+) -> None:
+    async with cluster.api_client() as api:
         await k8s.CustomObjectsApi(api).delete_namespaced_custom_object(
             group,
             version,
-            namespace(),
+            cluster.namespace,
             plural,
             name,
             body=k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=uid)),
         )
-    await kubectl("wait", f"{plural}.{group}/{name}", "--for=delete", "--timeout=120s")
+    await cluster.kubectl("wait", f"{plural}.{group}/{name}", "--for=delete", "--timeout=120s")
 
 
-async def _suspend(name: str, uid: str) -> None:
-    await _running(name, uid, False)
-    await kubectl(
+async def _suspend(cluster: Cluster, name: str, uid: str) -> None:
+    await _running(cluster, name, uid, False)
+    await cluster.kubectl(
         "wait",
         f"sandboxes.{GROUP}/{name}",
         '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
@@ -143,33 +144,33 @@ async def _suspend(name: str, uid: str) -> None:
     )
 
 
-async def _cleanup(name: str, uid: str, claims: list[str]) -> None:
+async def _cleanup(cluster: Cluster, name: str, uid: str, claims: list[str]) -> None:
     errors: list[Exception] = []
     try:
-        await _suspend(name, uid)
+        await _suspend(cluster, name, uid)
     except Exception as error:
         errors.append(error)
     # Delete remains allowed when bootstrap/startup cannot suspend. It follows the controller's
     # ordinary seal policy; the fixture never removes a finalizer or forces shared state.
     try:
-        await _delete("sandboxes", name, uid)
+        await _delete(cluster, "sandboxes", name, uid)
         for claim in claims:
-            await kubectl("wait", f"pvc/{claim}", "--for=delete", "--timeout=120s")
+            await cluster.kubectl("wait", f"pvc/{claim}", "--for=delete", "--timeout=120s")
     except Exception as error:
         errors.append(error)
     if errors:
         raise ExceptionGroup("storage fixture cleanup failed", errors)
 
 
-async def _volumes(name: str, uid: str) -> dict:
-    state = await _object("pvc", f"{name}-state")
-    workspace = await _object("pvc", f"{name}-workspace")
+async def _volumes(cluster: Cluster, name: str, uid: str) -> dict:
+    state = await _object(cluster, "pvc", f"{name}-state")
+    workspace = await _object(cluster, "pvc", f"{name}-workspace")
     assert state["status"]["phase"] == workspace["status"]["phase"] == "Bound"
     assert any(owner["uid"] == uid and owner.get("controller") for owner in state["metadata"]["ownerReferences"])
     record = workspace["metadata"].get("annotations", {}).get(RECORD)
     assert any(owner["uid"] == uid and owner.get("controller") for owner in workspace["metadata"]["ownerReferences"])
     assert record is not None
-    binding = (await _object(f"sandboxes.{GROUP}", name))["status"]["volumes"]["workspace"]
+    binding = (await _object(cluster, f"sandboxes.{GROUP}", name))["status"]["volumes"]["workspace"]
     assert binding["name"] == workspace["metadata"]["name"]
     assert binding["uid"] == workspace["metadata"]["uid"]
     assert binding["layout"] == json.loads(record)["layout"]
@@ -233,16 +234,16 @@ async def _probe(client: Client, name: str, cwd: str, workspace_dir: str, marker
 
 
 async def fresh_workspace_storage_survives_replacement(
-    client: Client, executor: Executor, storage_layout: StorageLayout
+    cluster: Cluster, client: Client, executor: Executor, storage_layout: StorageLayout
 ) -> None:
     case = storage_layout.value
-    controller = await _object("deployment", "sandbox-controller")
+    controller = await _object(cluster, "deployment", "sandbox-controller")
     assert controller["status"].get("readyReplicas") == 1
     controller_image = controller["spec"]["template"]["spec"]["containers"][0]["image"]
-    existing = json.loads(await kubectl("get", f"sandboxes.{GROUP}", "-o", "json"))["items"]
+    existing = json.loads(await cluster.kubectl("get", f"sandboxes.{GROUP}", "-o", "json"))["items"]
     assert not existing, "serialize this scenario with the deployment's other Sandbox users"
     vm = storage_layout is StorageLayout.VM_RAW
-    base = await _object(f"sandboxtemplates.{GROUP}", executor.template)
+    base = await _object(cluster, f"sandboxtemplates.{GROUP}", executor.template)
     name = f"systest-storage-{case}-{uuid4().hex[:8]}"
     template = name
     spec = copy.deepcopy(base["spec"])
@@ -255,13 +256,13 @@ async def fresh_workspace_storage_survives_replacement(
         runner["volumeMounts"].append({"name": "workspace", "mountPath": workspace_dir})
     marker = f"storage-test-{uuid4().hex}"
     bootstrap = f"set -eu\nprintf '%s\\n' {marker} > /state/storage-systest-state\nprintf '%s\\n' {marker} > {workspace_dir}/storage-systest-workspace\nsync\n"
-    config = await _object("configmap", "app-config")
+    config = await _object(cluster, "configmap", "app-config")
     policies = yaml.safe_load(config["data"]["config.yaml"])["default_policy_sets"]
     assert policies
     assert all(isinstance(policy, str) for policy in policies)
     evidence: dict = {
         "case": case,
-        "namespace": namespace(),
+        "namespace": cluster.namespace,
         "controller_image": controller_image,
         "base_template": base,
         "sandbox": name,
@@ -276,7 +277,7 @@ async def fresh_workspace_storage_survives_replacement(
     save()
     async with AsyncExitStack() as stack:
         created_template = json.loads(
-            await kubectl(
+            await cluster.kubectl(
                 "create",
                 "-f",
                 "-",
@@ -285,14 +286,14 @@ async def fresh_workspace_storage_survives_replacement(
                 body={
                     "apiVersion": SANDBOX_API_VERSION,
                     "kind": "SandboxTemplate",
-                    "metadata": {"name": template, "namespace": namespace()},
+                    "metadata": {"name": template, "namespace": cluster.namespace},
                     "spec": spec,
                 },
             )
         )
-        stack.push_async_callback(_delete, "sandboxtemplates", template, created_template["metadata"]["uid"])
+        stack.push_async_callback(_delete, cluster, "sandboxtemplates", template, created_template["metadata"]["uid"])
         created = json.loads(
-            await kubectl(
+            await cluster.kubectl(
                 "create",
                 "-f",
                 "-",
@@ -301,30 +302,30 @@ async def fresh_workspace_storage_survives_replacement(
                 body={
                     "apiVersion": SANDBOX_API_VERSION,
                     "kind": "Sandbox",
-                    "metadata": {"name": name, "namespace": namespace()},
+                    "metadata": {"name": name, "namespace": cluster.namespace},
                     "spec": {"template": template, "running": True, "policySets": policies, "bootstrap": bootstrap},
                 },
             )
         )
         uid = created["metadata"]["uid"]
         evidence["sandbox_uid"] = uid
-        stack.push_async_callback(_cleanup, name, uid, [f"{name}-state", f"{name}-workspace"])
+        stack.push_async_callback(_cleanup, cluster, name, uid, [f"{name}-state", f"{name}-workspace"])
         save()
         try:
-            await _condition(name, "Ready")
+            await _condition(cluster, name, "Ready")
         except Exception as error:
             evidence["readiness_error"] = str(error)
             try:
-                evidence["readiness_snapshot"] = await _readiness_snapshot(name)
+                evidence["readiness_snapshot"] = await _readiness_snapshot(cluster, name)
             except Exception as diagnostic_error:
                 evidence["readiness_snapshot_error"] = str(diagnostic_error)
             save()
             raise
-        await _condition(name, "Bootstrapped")
-        old_incarnation = (await _object(f"sandboxes.{GROUP}", name))["status"]["incarnation"]
-        before = await _volumes(name, uid)
+        await _condition(cluster, name, "Bootstrapped")
+        old_incarnation = (await _object(cluster, f"sandboxes.{GROUP}", name))["status"]["incarnation"]
+        before = await _volumes(cluster, name, uid)
         if vm:
-            workspace_pv = await _object("pv", before["workspace"]["pv"])
+            workspace_pv = await _object(cluster, "pv", before["workspace"]["pv"])
             assert before["state"]["storage_class"] == "local-path"
             assert before["state"]["volume_mode"] == "Filesystem"
             assert before["workspace"]["storage_class"] == STORAGE_CLASS
@@ -340,7 +341,7 @@ async def fresh_workspace_storage_survives_replacement(
                 "capacity": workspace_pv["spec"]["capacity"]["storage"],
                 "volume_mode": workspace_pv["spec"]["volumeMode"],
             }
-        workload = await _object("virtualmachine" if vm else "pod", name)
+        workload = await _object(cluster, "virtualmachine" if vm else "pod", name)
         workload_uid = workload["metadata"]["uid"]
         workload_spec = workload["spec"]["template"]["spec"] if vm else workload["spec"]
         attachment = next(volume for volume in workload_spec["volumes"] if volume["name"] == "workspace")
@@ -355,44 +356,44 @@ async def fresh_workspace_storage_survives_replacement(
         if vm:
             assert "\next4 " in evidence["first_probe"]["stdout"]
         save()
-        await _suspend(name, uid)
-        await kubectl("wait", f"pod/{old_incarnation['name']}", "--for=delete", "--timeout=120s")
+        await _suspend(cluster, name, uid)
+        await cluster.kubectl("wait", f"pod/{old_incarnation['name']}", "--for=delete", "--timeout=120s")
         # Ordinary VM suspension halts the VM and removes its VMI/launcher, retaining the VM and
         # all its disks. VM-object replacement is a separate explicit fixture operation below.
         if vm:
-            await kubectl("wait", f"virtualmachineinstance/{name}", "--for=delete", "--timeout=120s")
-        assert await _volumes(name, uid) == before
+            await cluster.kubectl("wait", f"virtualmachineinstance/{name}", "--for=delete", "--timeout=120s")
+        assert await _volumes(cluster, name, uid) == before
         # Exercise the durable record at the actual resume boundary: an incompatible claim
         # edit must refuse before starting any replacement or changing retained contents.
-        changed = await _object(f"sandboxtemplates.{GROUP}", template)
+        changed = await _object(cluster, f"sandboxtemplates.{GROUP}", template)
         changed["spec"]["workspaceVolume"]["claim"]["resources"]["requests"]["storage"] = "11Gi"
-        await kubectl("replace", "-f", "-", body=changed)
-        await _running(name, uid, True)
-        await kubectl(
+        await cluster.kubectl("replace", "-f", "-", body=changed)
+        await _running(cluster, name, uid, True)
+        await cluster.kubectl(
             "wait",
             f"sandboxes.{GROUP}/{name}",
             '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=VolumeLayoutMismatch',
             f"--timeout={BOUND_SECONDS}s",
         )
-        refused = await _object(f"sandboxes.{GROUP}", name)
+        refused = await _object(cluster, f"sandboxes.{GROUP}", name)
         assert not refused["status"].get("incarnation")
-        assert await _volumes(name, uid) == before
+        assert await _volumes(cluster, name, uid) == before
         evidence["incompatible_claim_refused"] = True
         save()
-        await _suspend(name, uid)
-        changed = await _object(f"sandboxtemplates.{GROUP}", template)
+        await _suspend(cluster, name, uid)
+        changed = await _object(cluster, f"sandboxtemplates.{GROUP}", template)
         changed["spec"] = spec
-        await kubectl("replace", "-f", "-", body=changed)
-        await _running(name, uid, True)
-        await _condition(name, "Ready")
-        await _condition(name, "Bootstrapped")
-        new_incarnation = (await _object(f"sandboxes.{GROUP}", name))["status"]["incarnation"]
+        await cluster.kubectl("replace", "-f", "-", body=changed)
+        await _running(cluster, name, uid, True)
+        await _condition(cluster, name, "Ready")
+        await _condition(cluster, name, "Bootstrapped")
+        new_incarnation = (await _object(cluster, f"sandboxes.{GROUP}", name))["status"]["incarnation"]
         assert new_incarnation["uid"] != old_incarnation["uid"]
-        after = await _volumes(name, uid)
+        after = await _volumes(cluster, name, uid)
         assert after["state"] == before["state"]
         assert after == before
         if vm:
-            assert (await _object("virtualmachine", name))["metadata"]["uid"] == workload_uid
+            assert (await _object(cluster, "virtualmachine", name))["metadata"]["uid"] == workload_uid
         evidence.update(
             after=after,
             new_incarnation=new_incarnation,
@@ -400,10 +401,10 @@ async def fresh_workspace_storage_survives_replacement(
         )
         save()
         if vm:
-            await _suspend(name, uid)
-            await kubectl("wait", f"pod/{new_incarnation['name']}", "--for=delete", "--timeout=120s")
-            await kubectl("wait", f"virtualmachineinstance/{name}", "--for=delete", "--timeout=120s")
-            halted = await _object("virtualmachine", name)
+            await _suspend(cluster, name, uid)
+            await cluster.kubectl("wait", f"pod/{new_incarnation['name']}", "--for=delete", "--timeout=120s")
+            await cluster.kubectl("wait", f"virtualmachineinstance/{name}", "--for=delete", "--timeout=120s")
+            halted = await _object(cluster, "virtualmachine", name)
             assert halted["metadata"]["uid"] == workload_uid
             assert halted["spec"]["runStrategy"] == "Halted"
             assert any(
@@ -411,16 +412,16 @@ async def fresh_workspace_storage_survives_replacement(
             )
             # Delete only this recorded, fully stopped fixture VM. The Sandbox-owned workspace
             # claim survives replacement of its VM.
-            await _delete("virtualmachines", name, workload_uid, group="kubevirt.io", version="v1")
-            assert await _volumes(name, uid) == before
-            await _running(name, uid, True)
-            await _condition(name, "Ready")
-            await _condition(name, "Bootstrapped")
-            replacement = await _object("virtualmachine", name)
+            await _delete(cluster, "virtualmachines", name, workload_uid, group="kubevirt.io", version="v1")
+            assert await _volumes(cluster, name, uid) == before
+            await _running(cluster, name, uid, True)
+            await _condition(cluster, name, "Ready")
+            await _condition(cluster, name, "Bootstrapped")
+            replacement = await _object(cluster, "virtualmachine", name)
             assert replacement["metadata"]["uid"] != workload_uid
-            replacement_incarnation = (await _object(f"sandboxes.{GROUP}", name))["status"]["incarnation"]
+            replacement_incarnation = (await _object(cluster, f"sandboxes.{GROUP}", name))["status"]["incarnation"]
             assert replacement_incarnation["uid"] != new_incarnation["uid"]
-            replacement_volumes = await _volumes(name, uid)
+            replacement_volumes = await _volumes(cluster, name, uid)
             assert replacement_volumes["state"] == before["state"]
             assert replacement_volumes == before
             evidence["replacement"] = {

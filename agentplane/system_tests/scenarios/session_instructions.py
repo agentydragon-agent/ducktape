@@ -21,12 +21,9 @@ import asyncio
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.system_tests.agent import Agent
-from agentplane.system_tests.conftest import Sandboxes
+from agentplane.system_tests.sandbox import Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import Text
-
-# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
-
 
 # Not a word, not a plausible identifier, and in no harness's vocabulary: a model reaches for it
 # only because it was told to. It appears nowhere in the prompt, so the instruction is the only
@@ -97,4 +94,5 @@ async def the_standing_instruction_reaches_the_model_and_only_in_its_own_session
         await model.reply(request, Text("A checksum detects corrupted data."))
 
 
+# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf

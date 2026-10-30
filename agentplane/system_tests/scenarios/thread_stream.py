@@ -28,11 +28,9 @@ from agentplane.app.testing.models import SandboxView
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, Agent
-from agentplane.system_tests.conftest import Sandboxes
+from agentplane.system_tests.sandbox import Sandboxes
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import Text
-
-# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 
 # What History's settlement may drop once a field completes (`history_service/storage/settlement.go`):
 # its streamed deltas, each a native frame paired with the delta derived from it.
@@ -291,4 +289,5 @@ async def turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_inp
     assert _texts(recovered) == ["AFTER_HTTP_ERROR_OK"]
 
 
+# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf

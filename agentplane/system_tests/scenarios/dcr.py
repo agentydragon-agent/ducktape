@@ -1,15 +1,12 @@
 """Deployed MCP edge discovery and registration through its real port-forward."""
 
 import asyncio
-import os
 import re
 from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
 import pytest
-
-from agentplane.system_tests.conftest import MCP_EDGE_URL
 
 
 def _edge_url(value: object, server: str) -> str:
@@ -31,10 +28,7 @@ def _document(response: httpx.Response, status: int = 200) -> dict[str, Any]:
     return document
 
 
-async def deployed_discovery_and_registration(pytestconfig: pytest.Config) -> None:
-    if pytestconfig.option.showlocals:
-        pytest.fail("Disable pytest local-variable dumps before DCR", pytrace=False)
-    server = os.environ[MCP_EDGE_URL]
+async def deployed_discovery_and_registration(server: str) -> None:
     phase = "MCP challenge"
     try:
         async with asyncio.timeout(60), httpx.AsyncClient(timeout=15, follow_redirects=False) as client:

@@ -16,17 +16,17 @@ from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests.agent import TURN_SECONDS, WORKING_DIRECTORY, Agent, Turn
-from agentplane.system_tests.cluster import kubectl
-from agentplane.system_tests.conftest import (
+from agentplane.system_tests.cluster import Cluster
+from agentplane.system_tests.offered_models import models_offered_for
+from agentplane.system_tests.sandbox import (
     POD_TEMPLATE,
     VM_TEMPLATE,
     VM_WORKING_DIRECTORY,
     Sandboxes,
-    models_offered_for,
-    traced_vm_scenario,
     wait_until_running,
 )
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.vm_tracing import traced_vm_scenario
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
 _RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/runner-credential"
@@ -94,17 +94,17 @@ async def _history(client: Client, thread_id: UUID, *, completed_turns: int) -> 
     return entries
 
 
-async def _identity(pod_name: str) -> tuple[str, str]:
-    pod = json.loads(await kubectl("get", "pod", pod_name, "-o", "json"))
+async def _identity(cluster: Cluster, pod_name: str) -> tuple[str, str]:
+    pod = json.loads(await cluster.kubectl("get", "pod", pod_name, "-o", "json"))
     metadata = pod["metadata"]
     labels = metadata["labels"]
     return (metadata["uid"], labels[_RUNNER_CREDENTIAL_LABEL])
 
 
 async def _ready_certificate(
-    name: str, sandbox_name: str, sandbox_uid: str, credential_id: str, namespace: str
+    cluster: Cluster, name: str, sandbox_name: str, sandbox_uid: str, credential_id: str, namespace: str
 ) -> None:
-    certificate = json.loads(await kubectl("get", "certificate", name, "-o", "json"))
+    certificate = json.loads(await cluster.kubectl("get", "certificate", name, "-o", "json"))
     spec = certificate["spec"]
     assert spec["secretName"] == f"runner-{credential_id}"
     assert spec["uris"] == [f"spiffe://agentplane/runner/{namespace}/{sandbox_uid}/{credential_id}"]
@@ -113,11 +113,11 @@ async def _ready_certificate(
         condition["type"] == "Ready" and condition["status"] == "True"
         for condition in certificate["status"]["conditions"]
     )
-    secret = json.loads(await kubectl("get", "secret", f"runner-{credential_id}", "-o", "json"))
+    secret = json.loads(await cluster.kubectl("get", "secret", f"runner-{credential_id}", "-o", "json"))
     assert secret["metadata"]["annotations"]["cert-manager.io/certificate-name"] == name
     assert secret["metadata"]["labels"][_SANDBOX_LABEL] == sandbox_name
     assert secret["metadata"]["labels"][_RUNNER_CREDENTIAL_LABEL] == credential_id
-    requests = json.loads(await kubectl("get", "certificaterequests", "-o", "json"))["items"]
+    requests = json.loads(await cluster.kubectl("get", "certificaterequests", "-o", "json"))["items"]
     issued = [
         request
         for request in requests
@@ -150,9 +150,9 @@ async def _open_agent(
     return agent
 
 
-async def cert_manager_reissues_a_deleted_tls_secret() -> None:
+async def cert_manager_reissues_a_deleted_tls_secret(cluster: Cluster) -> None:
     name = f"test-reissue-{uuid4().hex[:8]}"
-    await kubectl(
+    await cluster.kubectl(
         "apply",
         "-f",
         "-",
@@ -169,11 +169,11 @@ async def cert_manager_reissues_a_deleted_tls_secret() -> None:
             },
         },
     )
-    await kubectl("wait", "--for=condition=Ready", f"certificate/{name}", f"--timeout={REQUEST_SECONDS}s")
-    original = json.loads(await kubectl("get", "secret", name, "-o", "json"))
-    certificate = json.loads(await kubectl("get", "certificate", name, "-o", "json"))
+    await cluster.kubectl("wait", "--for=condition=Ready", f"certificate/{name}", f"--timeout={REQUEST_SECONDS}s")
+    original = json.loads(await cluster.kubectl("get", "secret", name, "-o", "json"))
+    certificate = json.loads(await cluster.kubectl("get", "certificate", name, "-o", "json"))
     revision = certificate["status"]["revision"]
-    await kubectl("delete", "secret", name, "--wait=false")
+    await cluster.kubectl("delete", "secret", name, "--wait=false")
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(REQUEST_SECONDS),
         wait=wait_fixed(1),
@@ -181,23 +181,30 @@ async def cert_manager_reissues_a_deleted_tls_secret() -> None:
         reraise=True,
     ):
         with attempt:
-            encoded = await kubectl("get", "secret", name, "--ignore-not-found", "-o", "json")
+            encoded = await cluster.kubectl("get", "secret", name, "--ignore-not-found", "-o", "json")
             assert encoded
             replacement = json.loads(encoded)
             assert replacement["metadata"]["uid"] != original["metadata"]["uid"]
-            certificate = json.loads(await kubectl("get", "certificate", name, "-o", "json"))
+            certificate = json.loads(await cluster.kubectl("get", "certificate", name, "-o", "json"))
             assert certificate["status"]["revision"] > revision
             assert any(c["type"] == "Ready" and c["status"] == "True" for c in certificate["status"]["conditions"])
     assert replacement["data"]["tls.crt"] != original["data"]["tls.crt"]
 
 
 async def pod_mtls_session_survives_replacement_and_keeps_history(
-    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
+    cluster: Cluster,
+    client: Client,
+    sandbox: Sandboxes,
+    harness: runner_pb2.Harness,
+    offered_model: str,
+    scripted: ScriptedUpstream,
 ) -> None:
     view = await sandbox(f"systest-runner-pod-{uuid4().hex[:8]}", template=POD_TEMPLATE)
     assert view.pod is not None
-    old_pod_uid, old_credential_id = await _identity(view.pod.name)
-    await _ready_certificate(f"runner-{old_credential_id}", view.name, str(view.uid), old_credential_id, view.namespace)
+    old_pod_uid, old_credential_id = await _identity(cluster, view.pod.name)
+    await _ready_certificate(
+        cluster, f"runner-{old_credential_id}", view.name, str(view.uid), old_credential_id, view.namespace
+    )
 
     agent = await _open_agent(client, view.name, harness, offered_model)
     model = scripted.model(view.pod.name, harness)
@@ -219,11 +226,11 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
     resumed = await wait_until_running(client, view.name)
     assert resumed.uid == view.uid
     assert resumed.pod is not None
-    new_pod_uid, new_credential_id = await _identity(resumed.pod.name)
+    new_pod_uid, new_credential_id = await _identity(cluster, resumed.pod.name)
     assert new_pod_uid != old_pod_uid
     assert new_credential_id != old_credential_id
     await _ready_certificate(
-        f"runner-{new_credential_id}", resumed.name, str(resumed.uid), new_credential_id, resumed.namespace
+        cluster, f"runner-{new_credential_id}", resumed.name, str(resumed.uid), new_credential_id, resumed.namespace
     )
 
     resumed_model = scripted.model(resumed.pod.name, harness)
@@ -245,12 +252,19 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(
 
 
 async def _run_vm_mtls_certificate_authenticates_a_session(
-    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
+    cluster: Cluster,
+    client: Client,
+    sandbox: Sandboxes,
+    harness: runner_pb2.Harness,
+    offered_model: str,
+    scripted: ScriptedUpstream,
 ) -> None:
     view = await sandbox(f"systest-runner-vm-{uuid4().hex[:8]}", template=VM_TEMPLATE)
     assert view.pod is not None
-    pod_uid, credential_id = await _identity(view.pod.name)
-    await _ready_certificate(f"runner-{credential_id}", view.name, str(view.uid), credential_id, view.namespace)
+    pod_uid, credential_id = await _identity(cluster, view.pod.name)
+    await _ready_certificate(
+        cluster, f"runner-{credential_id}", view.name, str(view.uid), credential_id, view.namespace
+    )
 
     agent = await _open_agent(client, view.name, harness, offered_model, cwd=VM_WORKING_DIRECTORY)
     model = scripted.model(view.pod.name, harness)
@@ -264,12 +278,12 @@ async def _run_vm_mtls_certificate_authenticates_a_session(
         response="VM_MTLS_OK",
     )
     assert "VM_MTLS_OK" in "\n".join(turn.tool_outputs)
-    current_pod_uid, current_credential_id = await _identity(view.pod.name)
+    current_pod_uid, current_credential_id = await _identity(cluster, view.pod.name)
     assert (current_pod_uid, current_credential_id) == (pod_uid, credential_id)
 
 
 async def vm_mtls_certificates_authenticate_both_harnesses(
-    client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
+    cluster: Cluster, client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
 ) -> None:
     # pytest-asyncio serializes parametrized cases; explicit tasks overlap the independent boots
     # while sharing this stack and its Pod-routed scripted server.
@@ -282,7 +296,7 @@ async def vm_mtls_certificates_authenticate_both_harnesses(
                 traced_vm_scenario(
                     name,
                     _run_vm_mtls_certificate_authenticates_a_session(
-                        client, sandbox, harness, offered_models[harness], scripted
+                        cluster, client, sandbox, harness, offered_models[harness], scripted
                     ),
                 )
             )

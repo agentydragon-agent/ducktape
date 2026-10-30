@@ -2,6 +2,7 @@
 
 import pytest
 
+from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.k3s.stack import Stack
 
 
@@ -13,3 +14,8 @@ def base_url(deployment: Stack) -> str:
 @pytest.fixture(scope="session")
 def token(deployment: Stack) -> str:
     return deployment.token
+
+
+@pytest.fixture(scope="session")
+def cluster(deployment: Stack) -> Cluster:
+    return deployment.cluster

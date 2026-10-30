@@ -2,8 +2,8 @@
 
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
-from agentplane.system_tests.conftest import VM_TEMPLATE, Sandboxes
 from agentplane.system_tests.k3s.guest_logs import check_boot, systemd_proof_passed
+from agentplane.system_tests.sandbox import VM_TEMPLATE, Sandboxes
 
 
 async def real_systemd_supervision(sandbox: Sandboxes) -> None:

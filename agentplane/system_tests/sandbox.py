@@ -1,0 +1,132 @@
+"""Sandbox readiness, lifecycle operations, and cleanup diagnostics for system scenarios."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from collections.abc import Callable, Coroutine
+from contextlib import aclosing
+from typing import Any
+from uuid import UUID
+
+from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
+
+from agentplane.app.testing.client import Client
+from agentplane.app.testing.models import SandboxView, sandbox_is_ready
+from agentplane.crd_group import GROUP
+from agentplane.sandbox_resource import OperatingMode
+from agentplane.system_tests.cluster import Cluster
+from agentplane.system_tests.vm_tracing import tracer
+from util.testing.undeclared_outputs import undeclared_outputs_dir
+
+POD_TEMPLATE = "runner"
+VM_TEMPLATE = "runner-vm"
+VM_WORKING_DIRECTORY = "/state/workspaces/accept"
+SANDBOX_READY_SECONDS = 300.0
+Sandboxes = Callable[..., Coroutine[Any, Any, SandboxView]]
+
+
+class SandboxNotReadyError(Exception):
+    """The sandbox did not reach Running with a Pod address in time."""
+
+
+async def wait_until_running(client: Client, name: str) -> SandboxView:
+    """Wait for the Sandbox's own `Ready` condition — the condition, not a delay."""
+    async for attempt in AsyncRetrying(stop=stop_after_delay(SANDBOX_READY_SECONDS), wait=wait_fixed(2), reraise=True):
+        with attempt:
+            view = await client.sandbox(name)
+            if not sandbox_is_ready(view):
+                raise SandboxNotReadyError(f"{name} is not Ready: {view.status}")
+            return view
+    raise AssertionError("unreachable: reraise=True either returns the view or raises")
+
+
+async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: UUID) -> None:
+    with tracer.start_as_current_span(
+        "vm.sandbox.cleanup", attributes={"sandbox.name": name, "sandbox.uid": str(uid)}
+    ) as cleanup:
+        await client.suspend_sandbox(name)
+        cleanup.add_event("suspend.accepted")
+        # Deletion admission reads effective mode, which the controller publishes after the spec write.
+        delete_requested = False
+        last_snapshot = None
+        try:
+            async with asyncio.timeout(SANDBOX_READY_SECONDS), aclosing(client.sandbox_snapshots()) as snapshots:
+                async for snapshot in snapshots:
+                    last_snapshot = snapshot
+                    if not snapshot.watch.fresh:
+                        continue
+                    view = next((view for view in snapshot.sandboxes if view.name == name), None)
+                    if view is None:
+                        if delete_requested:
+                            cleanup.add_event("deleted")
+                            return
+                        continue
+                    if view.uid != uid:
+                        raise SandboxNotReadyError(f"{name} has been replaced: expected {uid}, observed {view.uid}")
+                    if not delete_requested and view.operating_mode is OperatingMode.SUSPENDED:
+                        cleanup.add_event("suspended")
+                        await client.delete_sandbox(name)
+                        cleanup.add_event("delete.accepted")
+                        # The delete response only accepts the request. Keep controllers and kubelet alive
+                        # until the finalizer has removed the VM/Pod and released its volumes.
+                        delete_requested = True
+                raise SandboxNotReadyError(f"{name}'s stream ended before observing deletion")
+        except TimeoutError as error:
+            try:
+                path = await _write_cleanup_diagnostics(cluster, client, name, last_snapshot)
+                error.add_note(f"Sandbox cleanup diagnostics: {path}")
+            except Exception as diagnostic_error:
+                error.add_note(f"Sandbox cleanup diagnostics failed: {diagnostic_error!r}")
+            raise
+
+
+async def _write_cleanup_diagnostics(cluster: Cluster, client: Client, name: str, last_snapshot: Any) -> str:
+    """Capture the state and control logs when the effective suspend watch stops progressing."""
+
+    diagnostic: dict[str, Any] = {
+        "sandbox_name": name,
+        "last_live_snapshot": None if last_snapshot is None else last_snapshot.model_dump(mode="json"),
+    }
+
+    async def app_state(key: str, operation: Callable[[], Coroutine[Any, Any, Any]]) -> None:
+        try:
+            async with asyncio.timeout(10):
+                diagnostic[key] = (await operation()).model_dump(mode="json")
+        except Exception as error:
+            diagnostic[f"{key}_error"] = repr(error)
+
+    await asyncio.gather(
+        app_state("app_sandbox", lambda: client.sandbox(name)),
+        app_state("runner_status", lambda: client.runner_status(name)),
+    )
+
+    async def kubectl(*args: str) -> dict[str, Any]:
+        try:
+            return {"returncode": 0, "stdout": await cluster.kubectl(*args, timeout_s=10)}
+        except Exception as error:
+            return {"error": repr(error)}
+
+    resource, lease, pods, controller_logs, gateway_logs = await asyncio.gather(
+        kubectl("get", "sandbox", name, "-o", "json"),
+        kubectl("get", "lease", f"{name}-runner", "-o", "json"),
+        kubectl("get", "pods", "-l", f"{GROUP}/sandbox={name}", "-o", "json"),
+        kubectl("logs", "deployment/sandbox-controller", "--all-pods=true", "--tail=100", "--since=10m"),
+        kubectl("logs", "deployment/runner-gateway", "--all-pods=true", "--tail=100", "--since=10m"),
+    )
+    diagnostic["kubernetes_sandbox"] = resource
+    diagnostic["runner_lease"] = lease
+    diagnostic["sandbox_pods"] = pods
+    diagnostic["sandbox_controller_logs"] = controller_logs
+    diagnostic["runner_gateway_logs"] = gateway_logs
+    if pods.get("returncode") == 0:
+        try:
+            pod_names = [pod["metadata"]["name"] for pod in json.loads(pods["stdout"]).get("items", [])]
+        except KeyError, TypeError, ValueError:
+            pod_names = []
+        diagnostic["runner_logs"] = await asyncio.gather(
+            *(kubectl("logs", f"pod/{pod}", "-c", "runner", "--tail=100", "--since=10m") for pod in pod_names)
+        )
+    path = undeclared_outputs_dir() / f"sandbox-cleanup-{name}.json"
+    path.write_text(json.dumps(diagnostic, indent=2) + "\n")
+    return str(path)
