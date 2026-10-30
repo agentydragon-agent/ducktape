@@ -12,7 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -21,10 +21,32 @@ Runner = Callable[..., subprocess.CompletedProcess[str]]
 INVOCATION_ABSENT = "invocation not found"
 
 
-class BuildBuddyArtifact(BaseModel):
-    label: str
+class BESFile(BaseModel):
+    """Fields consumed from the native BES File JSON."""
+
     name: str
     uri: str
+
+
+class BESLabelId(BaseModel):
+    label: str
+
+
+class BESArtifactId(BaseModel):
+    test_result: BESLabelId | None = Field(default=None, alias="testResult")
+    target_completed: BESLabelId | None = Field(default=None, alias="targetCompleted")
+
+
+class BuildBuddyArtifact(BaseModel):
+    id: BESArtifactId
+    file: BESFile
+
+    @property
+    def label(self) -> str:
+        target = self.id.test_result or self.id.target_completed
+        if target is None:
+            raise ValueError("artifact has neither test result nor target completion ID")
+        return target.label
 
 
 @dataclass(frozen=True)

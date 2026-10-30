@@ -3,6 +3,9 @@ package main
 import (
 	"testing"
 	"time"
+
+	bbapipb "github.com/agentydragon/ducktape/devinfra/buildbuddy/bbapi/proto"
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 )
 
 func TestMatchGlob(t *testing.T) {
@@ -37,9 +40,9 @@ func TestMatchGlob(t *testing.T) {
 
 func TestFilterArtifacts(t *testing.T) {
 	arts := []artifact{
-		{Label: "//foo:test", Name: "snapshot.ambr"},
-		{Label: "//foo:test", Name: "test.log"},
-		{Label: "//bar:test", Name: "other.ambr"},
+		artifactForTest("//foo:test", "snapshot.ambr"),
+		artifactForTest("//foo:test", "test.log"),
+		artifactForTest("//bar:test", "other.ambr"),
 	}
 	tests := []struct {
 		pattern string
@@ -62,9 +65,9 @@ func TestFilterArtifacts(t *testing.T) {
 
 func TestFilterToolLogs(t *testing.T) {
 	logs := []toolLog{
-		{InvocationID: "inv-test", Name: "elapsed time"},
-		{InvocationID: "inv-test", Name: "command.profile.gz"},
-		{InvocationID: "inv-build", Name: "command.profile.gz"},
+		toolLogForTest("inv-test", "elapsed time"),
+		toolLogForTest("inv-test", "command.profile.gz"),
+		toolLogForTest("inv-build", "command.profile.gz"),
 	}
 	tests := []struct {
 		pattern string
@@ -85,7 +88,7 @@ func TestFilterToolLogs(t *testing.T) {
 }
 
 func TestReadToolLogInline(t *testing.T) {
-	got, err := readToolLog(nil, toolLog{Name: "elapsed time", contents: []byte("12.300000")})
+	got, err := readToolLog(nil, toolLog{&bbapipb.ToolLog{File: &bespb.File{Name: "elapsed time", File: &bespb.File_Contents{Contents: []byte("12.300000")}}}})
 	if err != nil {
 		t.Fatalf("readToolLog inline returned error: %v", err)
 	}
@@ -93,7 +96,12 @@ func TestReadToolLogInline(t *testing.T) {
 		t.Fatalf("readToolLog inline = %q, want %q", got, "12.300000")
 	}
 
-	_, err = readToolLog(nil, toolLog{Name: "empty"})
+	empty, err := readToolLog(nil, toolLog{&bbapipb.ToolLog{File: &bespb.File{Name: "empty inline", File: &bespb.File_Contents{Contents: []byte{}}}}})
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("empty inline log = %q, %v", empty, err)
+	}
+
+	_, err = readToolLog(nil, toolLogForTest("", "empty"))
 	if err == nil {
 		t.Fatal("readToolLog empty expected error")
 	}
@@ -240,4 +248,12 @@ func TestParseSince(t *testing.T) {
 			}
 		})
 	}
+}
+
+func artifactForTest(label, name string) artifact {
+	return artifact{&bbapipb.Artifact{Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_TargetCompleted{TargetCompleted: &bespb.BuildEventId_TargetCompletedId{Label: label}}}, File: &bespb.File{Name: name}}}
+}
+
+func toolLogForTest(id, name string) toolLog {
+	return toolLog{&bbapipb.ToolLog{InvocationId: id, File: &bespb.File{Name: name}}}
 }

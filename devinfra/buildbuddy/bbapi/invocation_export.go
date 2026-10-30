@@ -4,44 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
 
+	bbapipb "github.com/agentydragon/ducktape/devinfra/buildbuddy/bbapi/proto"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/encoding/protojson"
 )
-
-// invocationExport is the stable, structured form consumed by CI planners.
-// Keep these fields aligned with devinfra/buildbuddy/ci/bes.py's Invocation.
-type invocationExport struct {
-	Outputs           []invocationOutput      `json:"outputs"`
-	TestStatus        map[string]string       `json:"test_status"`
-	TestSummaries     []invocationTestSummary `json:"test_summaries"`
-	Finished          bool                    `json:"finished"`
-	Successful        bool                    `json:"successful"`
-	Command           *string                 `json:"command"`
-	RequestedPatterns *[]string               `json:"requested_patterns"`
-	ExplicitCmdLine   *[]string               `json:"explicit_cmd_line"`
-	CommitSHA         *string                 `json:"commit_sha"`
-}
-
-type invocationOutput struct {
-	Label       string `json:"label"`
-	Path        string `json:"path"`
-	URI         string `json:"uri"`
-	Digest      string `json:"digest"`
-	Size        int64  `json:"size"`
-	OutputGroup string `json:"output_group"`
-	Aspect      string `json:"aspect"`
-}
-
-type invocationTestSummary struct {
-	Label           string `json:"label"`
-	ConfigurationID string `json:"configuration_id"`
-	Status          string `json:"status"`
-	AttemptCount    *int64 `json:"attempt_count,omitempty"`
-	CachedCount     *int64 `json:"cached_count,omitempty"`
-}
 
 // Only these fields need raw JSON: protobuf scalars and repeated fields cannot
 // distinguish an absent count/command line from one explicitly reported empty.
@@ -79,50 +47,35 @@ func invocationExportCmd() *cobra.Command {
 }
 
 // writeInvocationExport emits JSON regardless of the global --json flag.
-func writeInvocationExport(exported invocationExport) error {
-	encoder := json.NewEncoder(os.Stdout)
-	encoder.SetIndent("", "  ")
-	encoder.SetEscapeHTML(false)
-	return encoder.Encode(exported)
+func writeInvocationExport(exported *bbapipb.InvocationExport) error {
+	data, err := (protojson.MarshalOptions{Indent: "  ", EmitUnpopulated: true}).Marshal(exported)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(os.Stdout, string(data))
+	return err
 }
 
 // parseInvocationExport parses a raw BuildBuddy BES stream into the stable CI
-// contract. Counts use pointers so an absent value differs from explicit zero.
-func parseInvocationExport(raw []byte) (invocationExport, error) {
+// contract. Presence flags distinguish an absent count from explicit zero.
+func parseInvocationExport(raw []byte) (*bbapipb.InvocationExport, error) {
 	var rawEvents []json.RawMessage
 	if err := json.Unmarshal(raw, &rawEvents); err != nil {
-		return invocationExport{}, fmt.Errorf("parse invocation event stream: %w", err)
+		return nil, fmt.Errorf("parse invocation event stream: %w", err)
 	}
 	if rawEvents == nil {
-		return invocationExport{}, fmt.Errorf("invocation event stream is not a list")
+		return nil, fmt.Errorf("invocation event stream is not a list")
 	}
 
 	artifacts, err := parseArtifacts(raw)
 	if err != nil {
-		return invocationExport{}, err
+		return nil, err
 	}
-	result := invocationExport{
-		Outputs:       make([]invocationOutput, 0, len(artifacts)),
-		TestStatus:    map[string]string{},
-		TestSummaries: []invocationTestSummary{},
-	}
+	result := &bbapipb.InvocationExport{TestStatus: map[string]bespb.TestStatus{}}
 	for _, artifact := range artifacts {
-		if artifact.Kind != kindBuild {
-			continue
+		if artifact.Kind == kindBuild {
+			result.Outputs = append(result.Outputs, artifact.Artifact)
 		}
-		path := artifact.Name
-		if artifact.PathPrefix != "" {
-			path = artifact.PathPrefix + "/" + path
-		}
-		result.Outputs = append(result.Outputs, invocationOutput{
-			Label:       artifact.Label,
-			Path:        path,
-			URI:         artifact.URI,
-			Digest:      artifact.Digest,
-			Size:        artifact.Size,
-			OutputGroup: artifact.OutputGroup,
-			Aspect:      artifact.Aspect,
-		})
 	}
 
 	finishedCount := 0
@@ -134,45 +87,25 @@ func parseInvocationExport(raw []byte) (invocationExport, error) {
 	for i, rawEvent := range rawEvents {
 		var event bespb.BuildEvent
 		if err := unmarshalJSON(rawEvent, &event); err != nil {
-			return invocationExport{}, fmt.Errorf("parse invocation event %d: %w", i, err)
+			return nil, fmt.Errorf("parse invocation event %d: %w", i, err)
 		}
 		var presence invocationPresenceEvent
 		if err := json.Unmarshal(rawEvent, &presence); err != nil {
-			return invocationExport{}, fmt.Errorf("parse invocation event presence %d: %w", i, err)
+			return nil, fmt.Errorf("parse invocation event presence %d: %w", i, err)
 		}
 
 		if summary := event.GetTestSummary(); summary != nil {
 			id := event.GetId().GetTestSummary()
 			if id == nil || id.GetLabel() == "" {
-				return invocationExport{}, fmt.Errorf("test summary event %d has no target label", i)
+				return nil, fmt.Errorf("test summary event %d has no target label", i)
 			}
-			var attemptCountJSON, cachedCountJSON json.RawMessage
+			result.TestStatus[id.GetLabel()] = summary.GetOverallStatus()
+			record := &bbapipb.TestSummaryRecord{Id: id, Summary: summary}
 			if presence.TestSummary != nil {
-				attemptCountJSON = presence.TestSummary.AttemptCount
-				cachedCountJSON = presence.TestSummary.CachedCount
+				record.AttemptCountPresent = jsonPresent(presence.TestSummary.AttemptCount)
+				record.CachedCountPresent = jsonPresent(presence.TestSummary.CachedCount)
 			}
-			attemptCount, err := parseOptionalInt64(attemptCountJSON)
-			if err != nil {
-				return invocationExport{}, fmt.Errorf("parse test summary attempt count in event %d: %w", i, err)
-			}
-			cachedCount, err := parseOptionalInt64(cachedCountJSON)
-			if err != nil {
-				return invocationExport{}, fmt.Errorf("parse test summary cached count in event %d: %w", i, err)
-			}
-			configurationID := ""
-			if config := id.GetConfiguration(); config != nil {
-				configurationID = config.GetId()
-			}
-			label := id.GetLabel()
-			status := summary.GetOverallStatus().String()
-			result.TestStatus[label] = status
-			result.TestSummaries = append(result.TestSummaries, invocationTestSummary{
-				Label:           label,
-				ConfigurationID: configurationID,
-				Status:          status,
-				AttemptCount:    attemptCount,
-				CachedCount:     cachedCount,
-			})
+			result.TestSummaries = append(result.TestSummaries, record)
 			continue
 		}
 
@@ -187,7 +120,8 @@ func parseInvocationExport(raw []byte) (invocationExport, error) {
 		}
 		if options := event.GetOptionsParsed(); options != nil {
 			if presence.OptionsParsed != nil {
-				if explicit, ok := rawStringSlice(presence.OptionsParsed.ExplicitCmdLine); ok {
+				if jsonPresent(presence.OptionsParsed.ExplicitCmdLine) {
+					explicit := options.GetExplicitCmdLine()
 					explicitCmdLines = append(explicitCmdLines, &explicit)
 				} else {
 					explicitCmdLines = append(explicitCmdLines, nil)
@@ -214,10 +148,10 @@ func parseInvocationExport(raw []byte) (invocationExport, error) {
 		result.Command = stringPointer(commands[0])
 	}
 	if len(explicitCmdLines) == 1 && explicitCmdLines[0] != nil {
-		result.ExplicitCmdLine = explicitCmdLines[0]
+		result.ExplicitCmdLine = &bbapipb.Arguments{Values: *explicitCmdLines[0]}
 	}
 	if len(requestedPatterns) > 0 {
-		result.RequestedPatterns = &requestedPatterns
+		result.RequestedPatterns = &bbapipb.Arguments{Values: requestedPatterns}
 	}
 	commitValues := map[string]bool{}
 	for _, sha := range commitSHAs {
@@ -226,49 +160,15 @@ func parseInvocationExport(raw []byte) (invocationExport, error) {
 	if len(commitValues) == 1 {
 		for sha := range commitValues {
 			if sha != "" {
-				result.CommitSHA = stringPointer(sha)
+				result.CommitSha = stringPointer(sha)
 			}
 		}
 	}
 	return result, nil
 }
 
-func parseOptionalInt64(raw json.RawMessage) (*int64, error) {
-	text := strings.TrimSpace(string(raw))
-	if len(raw) == 0 || text == "null" {
-		return nil, nil
-	}
-	if strings.HasPrefix(text, "\"") {
-		var parsed string
-		if err := json.Unmarshal([]byte(text), &parsed); err != nil {
-			return nil, err
-		}
-		text = parsed
-	}
-	value, err := strconv.ParseInt(text, 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("expected an integer, got %s", text)
-	}
-	return &value, nil
-}
-
-func rawStringSlice(raw json.RawMessage) ([]string, bool) {
-	if len(raw) == 0 {
-		return nil, false
-	}
-	var values []json.RawMessage
-	if err := json.Unmarshal(raw, &values); err != nil || values == nil {
-		return nil, false
-	}
-	result := make([]string, 0, len(values))
-	for _, item := range values {
-		var value string
-		if err := json.Unmarshal(item, &value); err != nil {
-			return nil, false
-		}
-		result = append(result, value)
-	}
-	return result, true
+func jsonPresent(raw json.RawMessage) bool {
+	return len(raw) != 0 && string(raw) != "null"
 }
 
 func stringPointer(value string) *string { return &value }
