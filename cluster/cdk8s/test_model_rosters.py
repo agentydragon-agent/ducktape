@@ -74,16 +74,6 @@ def test_gpt_6_1_sol_is_available_to_agentplane_codex() -> None:
     }
 
 
-def test_central_sampler_compatibility_is_declared_for_staging_codex_routes() -> None:
-    gpt_routes = set(GPT6_RESPONSES_ROUTES) & set(STAGING_APP_MODELS.codex)
-    other_routes = set(STAGING_APP_MODELS.codex) - gpt_routes
-
-    assert gpt_routes
-    assert all((route.responses_mode, route.exec_encoding) == ("lite", "freeform") for route in gpt_routes)
-    assert other_routes
-    assert all((route.responses_mode, route.exec_encoding) == ("standard", "json") for route in other_routes)
-
-
 def test_rugged_local_candidates_are_served_and_experiment_only() -> None:
     lane = KEY_MODEL_LANES["cheap_experiments_models"]
     routes = (*RUGGED_LOCAL_CANDIDATE_ROUTES, *RUGGED_LOCAL_EXPERIMENTAL_ROUTES)

@@ -752,7 +752,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if err != nil {
 		return "", err
 	}
-	response, err := Sample(ctx, client, provider.Endpoint, credential, body,
+	response, err := Sample(ctx, client, provider.Endpoint, credential, body, r.settings.Models[session.Model].Responses,
 		&ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, headers, false)
 	if err != nil {
 		var known *KnownFailureError
@@ -833,7 +833,7 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, provider Provider, m
 	if err != nil {
 		return err
 	}
-	response, err := Sample(ctx, client, provider.Endpoint, credential, body,
+	response, err := Sample(ctx, client, provider.Endpoint, credential, body, r.settings.Models[model].Responses,
 		&ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, headers, true)
 	if err != nil {
 		var known *KnownFailureError

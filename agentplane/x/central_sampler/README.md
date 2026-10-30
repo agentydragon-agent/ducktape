@@ -100,7 +100,9 @@ are rejected. Provider-native transcript and continuation handling still require
 this configuration change does not implement cross-API session switching.
 
 The top-level `models` map keys model route IDs to a connection provider, API and tool encoding.
-Providers hold endpoint, credentials and allowed reasoning efforts; they do not contain models:
+Agentplane deployment configuration owns these compatibility choices; the shared model catalog
+holds no sampler-specific fields. Providers hold endpoint, credentials and allowed reasoning
+efforts; they do not contain models:
 
 ```json
 {

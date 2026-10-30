@@ -70,7 +70,6 @@ stays until the index is deliberately rebuilt.
 
 from dataclasses import dataclass, replace
 from enum import StrEnum
-from typing import Literal
 
 from model_catalog import ollama
 
@@ -103,10 +102,6 @@ class ApiShape(StrEnum):
     OLM_CHAT = "olm-chat"
     OLM_EMBED = "olm-embed"
     OAI_TRANSCRIBE = "oai-transcribe"
-
-
-ResponsesMode = Literal["lite", "standard"]
-ExecEncoding = Literal["freeform", "json"]
 
 
 _SHAPE_MODE: dict[ApiShape, str] = {
@@ -220,22 +215,10 @@ class Route:
     # its own timeout because LiteLLM resolves that independently from timeout.
     timeout: int | None = None
     stream_timeout: int | None = None
-    # Compatibility contract for the optional central sampler. Unset routes cannot be
-    # selected for it until their Responses and model-tool encodings are declared.
-    responses_mode: ResponsesMode | None = None
-    exec_encoding: ExecEncoding | None = None
 
     def __post_init__(self) -> None:
         if self.default_reasoning_effort is not None and self.default_reasoning_effort not in self.reasoning_efforts:
             raise ValueError(f"default reasoning effort {self.default_reasoning_effort!r} is not allowed for {self.id}")
-        if (self.responses_mode is None) != (self.exec_encoding is None):
-            raise ValueError(f"central sampler compatibility for {self.id} must declare both request encodings")
-        if self.responses_mode not in (None, "lite", "standard") or self.exec_encoding not in (
-            None,
-            "freeform",
-            "json",
-        ):
-            raise ValueError(f"central sampler compatibility for {self.id} has an unsupported encoding")
 
     @property
     def id(self) -> str:
@@ -569,14 +552,7 @@ def _ollama_routes(variant: ollama.ChatVariant, *, openai_reasoning_efforts: tup
         display_name=f"{variant.model.display_name} ({suffix})",
     )
     return OllamaRoutes(
-        openai=Route(
-            model,
-            OLLAMA_OPENAI,
-            upstream_model=variant.tag,
-            reasoning_efforts=openai_reasoning_efforts,
-            responses_mode="standard",
-            exec_encoding="json",
-        ),
+        openai=Route(model, OLLAMA_OPENAI, upstream_model=variant.tag, reasoning_efforts=openai_reasoning_efforts),
         native=Route(model, OLLAMA_NATIVE, upstream_model=variant.tag, num_ctx=context),
     )
 
@@ -646,38 +622,10 @@ GPT6_LUNA_MESSAGES = Route(GPT_6_LUNA, CHATGPT_MESSAGES, publish_limits=True)
 GPT6_SOL_MESSAGES = Route(GPT_6_SOL, CHATGPT_MESSAGES, publish_limits=True)
 GPT6_MESSAGES_ROUTES = (GPT6_ASTRA_MESSAGES, GPT6_LUNA_MESSAGES, GPT6_SOL_MESSAGES)
 CHATGPT_MESSAGES_ROUTES = (GPT6_ASTRA_MESSAGES, GPT6_SOL_MESSAGES, GPT6_LUNA_MESSAGES)
-GPT6_ASTRA_RESPONSES = Route(
-    GPT_6_ASTRA,
-    CHATGPT_RESPONSES,
-    publish_limits=True,
-    reasoning_efforts=_CODEX_EFFORTS,
-    responses_mode="lite",
-    exec_encoding="freeform",
-)
-GPT6_LUNA_RESPONSES = Route(
-    GPT_6_LUNA,
-    CHATGPT_RESPONSES,
-    publish_limits=True,
-    reasoning_efforts=_CODEX_EFFORTS,
-    responses_mode="lite",
-    exec_encoding="freeform",
-)
-GPT6_SOL_RESPONSES = Route(
-    GPT_6_SOL,
-    CHATGPT_RESPONSES,
-    publish_limits=True,
-    reasoning_efforts=_CODEX_EFFORTS,
-    responses_mode="lite",
-    exec_encoding="freeform",
-)
-GPT6_1_SOL_RESPONSES = Route(
-    GPT_6_1_SOL,
-    CHATGPT_RESPONSES,
-    publish_limits=True,
-    reasoning_efforts=_CODEX_EFFORTS,
-    responses_mode="lite",
-    exec_encoding="freeform",
-)
+GPT6_ASTRA_RESPONSES = Route(GPT_6_ASTRA, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
+GPT6_LUNA_RESPONSES = Route(GPT_6_LUNA, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
+GPT6_SOL_RESPONSES = Route(GPT_6_SOL, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
+GPT6_1_SOL_RESPONSES = Route(GPT_6_1_SOL, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
 GPT6_RESPONSES_ROUTES = (GPT6_ASTRA_RESPONSES, GPT6_LUNA_RESPONSES, GPT6_SOL_RESPONSES, GPT6_1_SOL_RESPONSES)
 CHATGPT_RESPONSES_ROUTES = (GPT6_ASTRA_RESPONSES, GPT6_SOL_RESPONSES, GPT6_LUNA_RESPONSES, GPT6_1_SOL_RESPONSES)
 ANTHROPIC_SUBSCRIPTION = Upstream(Provider.ANTHROPIC_MAX20, "anthropic", "messages", supports_function_calling=True)
@@ -722,20 +670,10 @@ HAIKU_API = Route(
 ANTHROPIC_API_ROUTES = (OPUS_API, SONNET_API, FABLE_API, HAIKU_API)
 ANTIGRAVITY_MESSAGES = Upstream(Provider.ANTIGRAVITY, "anthropic", "messages", supports_function_calling=True)
 ANTIGRAVITY_OPUS = Route(
-    _ANTIGRAVITY_OPUS,
-    ANTIGRAVITY_MESSAGES,
-    publish_limits=True,
-    reasoning_efforts=_ANTHROPIC_EFFORTS,
-    responses_mode="standard",
-    exec_encoding="json",
+    _ANTIGRAVITY_OPUS, ANTIGRAVITY_MESSAGES, publish_limits=True, reasoning_efforts=_ANTHROPIC_EFFORTS
 )
 ANTIGRAVITY_SONNET = Route(
-    _ANTIGRAVITY_SONNET,
-    ANTIGRAVITY_MESSAGES,
-    publish_limits=True,
-    reasoning_efforts=_ANTHROPIC_EFFORTS,
-    responses_mode="standard",
-    exec_encoding="json",
+    _ANTIGRAVITY_SONNET, ANTIGRAVITY_MESSAGES, publish_limits=True, reasoning_efforts=_ANTHROPIC_EFFORTS
 )
 ANTIGRAVITY_GEMINI_FLASH = Route(
     Model(
@@ -747,8 +685,6 @@ ANTIGRAVITY_GEMINI_FLASH = Route(
     ANTIGRAVITY_MESSAGES,
     publish_limits=True,
     reasoning_efforts=_ANTIGRAVITY_GEMINI_EFFORTS,
-    responses_mode="standard",
-    exec_encoding="json",
 )
 ANTIGRAVITY_GEMINI_FLASH_LITE = Route(
     Model(
@@ -760,8 +696,6 @@ ANTIGRAVITY_GEMINI_FLASH_LITE = Route(
     ANTIGRAVITY_MESSAGES,
     publish_limits=True,
     reasoning_efforts=_ANTIGRAVITY_GEMINI_EFFORTS,
-    responses_mode="standard",
-    exec_encoding="json",
 )
 ANTIGRAVITY_GEMINI_38_FLASH_HIGH = Route(
     Model(
@@ -773,8 +707,6 @@ ANTIGRAVITY_GEMINI_38_FLASH_HIGH = Route(
     ANTIGRAVITY_MESSAGES,
     publish_limits=True,
     reasoning_efforts=("low", "medium", "high"),
-    responses_mode="standard",
-    exec_encoding="json",
 )
 # Re-enable `gemini-pro-agent` and `gemini-3.1-pro-low` only after the pinned
 # CLIProxyAPI model registry registers those exact Antigravity IDs again and the

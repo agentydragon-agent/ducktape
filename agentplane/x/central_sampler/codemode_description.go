@@ -93,11 +93,11 @@ func execToolDescription(definitions []ResponsesCodeToolDefinition) (string, err
 func jsonExecToolDefinition(description string) ResponsesAdditionalTool {
 	description = strings.ReplaceAll(description,
 		"- Accepts raw JavaScript source text, not JSON, quoted strings, or markdown code fences.",
-		"- Pass JavaScript source in the JSON code field, without markdown fences.")
+		"- Pass JavaScript source in the JSON code field.")
 	description = strings.ReplaceAll(description,
-		"- You may optionally start the tool input with a first-line pragma like `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`.",
-		"- Pass yield_time_ms and max_output_tokens as JSON arguments; do not use a // @exec: pragma.")
-	description += "\n\nThis is the only model-facing tool. To resume a yielded cell, call exec with cell_id instead of code. " +
+		"- You may optionally start the tool input with a first-line pragma like `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`.\n",
+		"")
+	description += "\n\nTo resume a yielded cell, call exec with cell_id instead of code. " +
 		"Use yield_time_ms (default 10000), max_output_tokens (default 10000), and optionally terminate: true. " +
 		"Resume only after exec reports Script running with cell ID. Each resume returns new output or completion. " +
 		"For a new cell, pass code and optional yield_time_ms (default 30000) and max_output_tokens (default 10000). " +

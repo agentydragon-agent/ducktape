@@ -96,7 +96,6 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRul
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.public_coder import egress as public_coder_egress
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
-from model_catalog.catalog import Route
 
 _HOSTNAME = "agentplane-staging.allegedly.works"
 _ACTIONS_HOSTNAME = "agentplane-actions-staging.allegedly.works"
@@ -115,15 +114,13 @@ _GROCY_SF_MCP_URL = "https://grocy-mcp-sf.allegedly.works/mcp"
 _MCP_CLIENT_METADATA_URL = f"https://{_ACTIONS_HOSTNAME}/oauth/client-metadata.json"
 
 
-def _central_sampler_model_config(route: Route) -> ModelConfig:
-    if route.responses_mode is None or route.exec_encoding is None:
-        raise ValueError(f"central sampler route {route.id} lacks Responses or exec compatibility metadata")
-    return ModelConfig(
-        provider="responses",
-        api="responses",
-        responses=ResponsesConfig(dialect=route.responses_mode),
-        exec_encoding=route.exec_encoding,
-    )
+# Agentplane sampler policy belongs here, separate from shared route facts.
+_LITE_FREEFORM = ModelConfig(
+    provider="responses", api="responses", responses=ResponsesConfig(dialect="lite"), exec_encoding="freeform"
+)
+_STANDARD_JSON = ModelConfig(
+    provider="responses", api="responses", responses=ResponsesConfig(dialect="standard"), exec_encoding="json"
+)
 
 
 # Separate harness and executor caps leave 1 GiB below the service high watermark.
@@ -399,7 +396,20 @@ ENV = Environment(
         connection_service_url=AnyHttpUrl(_CONNECTION_SERVICE.url),
     ),
     central_sampler=CentralSamplerProps(
-        models={route.id: _central_sampler_model_config(route) for route in STAGING_APP_MODELS.codex},
+        models={
+            "chatgpt-sub/oai-responses/gpt-6-astra": _LITE_FREEFORM,
+            "chatgpt-sub/oai-responses/gpt-6-luna": _LITE_FREEFORM,
+            "chatgpt-sub/oai-responses/gpt-6.1-sol": _LITE_FREEFORM,
+            "antigravity/ant-messages/claude-opus-4-6-thinking": _STANDARD_JSON,
+            "antigravity/ant-messages/claude-sonnet-4-6": _STANDARD_JSON,
+            "antigravity/ant-messages/gemini-3-flash": _STANDARD_JSON,
+            "antigravity/ant-messages/gemini-3.5-flash-lite": _STANDARD_JSON,
+            "antigravity/ant-messages/gemini-3.8-flash-high": _STANDARD_JSON,
+            "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k": _STANDARD_JSON,
+            "ollama/oai-chat/gpt-oss-20b-128k": _STANDARD_JSON,
+            "ollama/oai-chat/gpt-oss-120b-128k": _STANDARD_JSON,
+            "ollama/oai-chat/gemma4-31b-it-q8_0-128k": _STANDARD_JSON,
+        },
         providers={
             "responses": Provider(
                 endpoint=f"{llm_ingress.service(STAGING_NAMESPACE).url}/v1/responses",

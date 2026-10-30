@@ -80,7 +80,7 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 				"queues an asynchronous developer message identifying the current `exec` call")
 		}
 	}
-	var input []ResponsesItem
+	input := make([]ResponsesInput, 0, len(items)+3)
 	if config.Responses.Dialect == "lite" {
 		input = append(input, ResponsesItem{Type: ResponsesItemAdditionalTools, Role: "developer", Tools: tools})
 	}
@@ -115,10 +115,14 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 		}
 		input = append(input, item)
 	}
-	input = append(input, items...)
+	adapted, err := buildResponsesInput(items, config)
+	if err != nil {
+		return ResponsesRequest{}, err
+	}
+	input = append(input, adapted...)
 	body := ResponsesRequest{
 		Model: model, Instructions: baseInstructions, Input: input, Stream: true, Store: false,
-		PromptCacheKey: conversationID, ResponsesMode: config.Responses.Dialect, ExecEncoding: config.ExecEncoding,
+		PromptCacheKey: conversationID,
 	}
 	if config.Responses.Dialect == "lite" {
 		body.Reasoning = &ResponsesReasoningConfig{Summary: codexReasoningSummary, Context: "all_turns"}
@@ -128,6 +132,46 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 		body.Tools = tools
 	}
 	return body, nil
+}
+
+// buildResponsesInput adapts durable observations before the wire request is serialized.
+// It retains native items, and converts notifications and public text tool results.
+func buildResponsesInput(items []ResponsesItem, config ModelConfig) ([]ResponsesInput, error) {
+	input := make([]ResponsesInput, 0, len(items))
+	answered := map[string]bool{}
+	adaptNotifications := config.Responses.Dialect == "standard" || config.ExecEncoding == "json"
+	for _, item := range items {
+		if adaptNotifications && item.IsToolOutput() {
+			if answered[item.CallID] {
+				texts := make([]string, 0, len(item.Output))
+				for _, part := range item.Output {
+					texts = append(texts, part.Text)
+				}
+				message, err := newResponsesMessage("developer", "Asynchronous output from exec call "+item.CallID+":\n"+strings.Join(texts, "\n"))
+				if err != nil {
+					return nil, err
+				}
+				input = append(input, message)
+				continue
+			}
+			answered[item.CallID] = true
+		}
+		if config.Responses.Dialect == "standard" && item.Type == ResponsesItemFunctionOutput {
+			texts := make([]string, 0, len(item.Output))
+			for _, part := range item.Output {
+				if part.Type != "input_text" {
+					break
+				}
+				texts = append(texts, part.Text)
+			}
+			if len(texts) == len(item.Output) {
+				input = append(input, ResponsesTextToolOutput{Type: item.Type, ID: item.ID, CallID: item.CallID, Output: strings.Join(texts, "\n")})
+				continue
+			}
+		}
+		input = append(input, item)
+	}
+	return input, nil
 }
 
 type ResponsesExecutionState struct {
@@ -163,7 +207,7 @@ func canonicalJSON(value any) string {
 	return string(data)
 }
 
-func Sample(ctx context.Context, client *http.Client, endpoint, credential string, body ResponsesRequest, evidence *ResponseEvidence, attribution map[string]string, compaction bool) (*ProviderResponse, error) {
+func Sample(ctx context.Context, client *http.Client, endpoint, credential string, body ResponsesRequest, responses ResponsesConfig, evidence *ResponseEvidence, attribution map[string]string, compaction bool) (*ProviderResponse, error) {
 	encoded, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
@@ -174,7 +218,7 @@ func Sample(ctx context.Context, client *http.Client, endpoint, credential strin
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer "+credential)
-	if body.ResponsesMode == "lite" {
+	if responses.Dialect == "lite" {
 		request.Header.Set("x-openai-internal-codex-responses-lite", "true")
 	}
 	for name, value := range attribution {

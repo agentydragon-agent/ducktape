@@ -110,21 +110,10 @@ from cluster.cdk8s.providers.cert_manager.certificate import Certificate, Certif
 from cluster.cdk8s.providers.cert_manager.cluster_issuer import ClusterIssuer
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Port, ServiceRef
-from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API, OLLAMA_QWEN_IQ4XS_128K, Route
+from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API, OLLAMA_QWEN_IQ4XS_128K
 
 RUNNER_GATEWAY = "runner-gateway"
 SESSION_DISPATCHER = "session-dispatcher"
-
-
-def _central_sampler_model_config(route: Route) -> ModelConfig:
-    if route.responses_mode is None or route.exec_encoding is None:
-        raise ValueError(f"central sampler route {route.id} lacks Responses or exec compatibility metadata")
-    return ModelConfig(
-        provider="responses",
-        api="responses",
-        responses=ResponsesConfig(dialect=route.responses_mode),
-        exec_encoding=route.exec_encoding,
-    )
 
 
 # The fixture's one Pod execution environment. Nothing outside the fixture names it -- no live Sandbox
@@ -245,7 +234,14 @@ def environment(
     central_sampler_choice = None
     if central_sampler:
         central_sampler_props = CentralSamplerProps(
-            models={GPT6_LUNA_RESPONSES.id: _central_sampler_model_config(GPT6_LUNA_RESPONSES)},
+            models={
+                GPT6_LUNA_RESPONSES.id: ModelConfig(
+                    provider="responses",
+                    api="responses",
+                    responses=ResponsesConfig(dialect="lite"),
+                    exec_encoding="freeform",
+                )
+            },
             providers={
                 "responses": Provider(
                     endpoint=f"{llm_ingress.proxied_url(NAMESPACE)}/v1/responses",

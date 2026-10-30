@@ -216,10 +216,26 @@ type ResponsesJSONSchema struct {
 	AdditionalProperties *bool                          `json:"additionalProperties,omitempty"`
 }
 
+// ResponsesInput is a wire input item: a retained native item or a public text tool result.
+type ResponsesInput interface {
+	responsesInput()
+}
+
+func (ResponsesItem) responsesInput() {}
+
+type ResponsesTextToolOutput struct {
+	Type   ResponsesItemType `json:"type"`
+	ID     string            `json:"id,omitempty"`
+	CallID string            `json:"call_id"`
+	Output string            `json:"output"`
+}
+
+func (ResponsesTextToolOutput) responsesInput() {}
+
 type ResponsesRequest struct {
 	Model          string                    `json:"model"`
 	Instructions   string                    `json:"instructions"`
-	Input          []ResponsesItem           `json:"input"`
+	Input          []ResponsesInput          `json:"input"`
 	Stream         bool                      `json:"stream"`
 	Store          bool                      `json:"store"`
 	Include        []string                  `json:"include,omitempty"`
@@ -227,8 +243,6 @@ type ResponsesRequest struct {
 	ClientMetadata *ResponsesClientMetadata  `json:"client_metadata,omitempty"`
 	Reasoning      *ResponsesReasoningConfig `json:"reasoning,omitempty"`
 	Tools          []ResponsesAdditionalTool `json:"tools,omitempty"`
-	ResponsesMode  string                    `json:"-"`
-	ExecEncoding   string                    `json:"-"`
 	// Codex rust-v0.162.1 core/src/client.rs build_responses_request: Responses Lite disables
 	// parallel tool calls.
 	ParallelToolCalls bool `json:"parallel_tool_calls"`
@@ -238,69 +252,6 @@ type ResponsesClientMetadata struct {
 	SessionID string `json:"session_id"`
 	ThreadID  string `json:"thread_id"`
 	TurnID    string `json:"turn_id"`
-}
-
-// MarshalJSON adapts durable Codex observations to the public Responses contract without
-// rewriting the journal. Public function outputs use strings for text, and notify() becomes
-// a developer message instead of a second output for an already answered call.
-func (request ResponsesRequest) MarshalJSON() ([]byte, error) {
-	type wire ResponsesRequest
-	if request.ResponsesMode != "standard" && request.ExecEncoding != "json" {
-		return json.Marshal(wire(request))
-	}
-	input := make([]json.RawMessage, 0, len(request.Input))
-	answered := map[string]bool{}
-	for _, item := range request.Input {
-		if item.IsToolOutput() {
-			if answered[item.CallID] {
-				texts := make([]string, 0, len(item.Output))
-				for _, part := range item.Output {
-					texts = append(texts, part.Text)
-				}
-				message, err := newResponsesMessage("developer", "Asynchronous output from exec call "+item.CallID+":\n"+strings.Join(texts, "\n"))
-				if err != nil {
-					return nil, err
-				}
-				item = message
-			} else {
-				answered[item.CallID] = true
-			}
-		}
-		encoded, err := json.Marshal(item)
-		if err != nil {
-			return nil, err
-		}
-		if request.ResponsesMode == "standard" && item.Type == ResponsesItemFunctionOutput {
-			var texts []string
-			allText := true
-			for _, part := range item.Output {
-				if part.Type != "input_text" {
-					allText = false
-					break
-				}
-				texts = append(texts, part.Text)
-			}
-			if allText {
-				var fields map[string]json.RawMessage
-				if err := json.Unmarshal(encoded, &fields); err != nil {
-					return nil, err
-				}
-				fields["output"], err = json.Marshal(strings.Join(texts, "\n"))
-				if err != nil {
-					return nil, err
-				}
-				encoded, err = json.Marshal(fields)
-				if err != nil {
-					return nil, err
-				}
-			}
-		}
-		input = append(input, encoded)
-	}
-	return json.Marshal(struct {
-		wire
-		Input []json.RawMessage `json:"input"`
-	}{wire: wire(request), Input: input})
 }
 
 type ResponsesReasoningConfig struct {

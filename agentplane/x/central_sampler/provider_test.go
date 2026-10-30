@@ -69,7 +69,7 @@ func TestResponsesRequestUsesCodexToolsAndPreservesOpaqueContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	tools := map[string]ResponsesAdditionalTool{}
-	for _, tool := range body.Input[0].Tools {
+	for _, tool := range body.Input[0].(ResponsesItem).Tools {
 		tools[tool.Name] = tool
 	}
 	if exec := tools["exec"]; exec.Type != "custom" || exec.Format == nil || exec.Format.Type != "grammar" || exec.Format.Syntax != "lark" {
@@ -111,17 +111,24 @@ func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				encoded, err := json.Marshal(body)
+				if err != nil {
+					t.Fatal(err)
+				}
 				var wire map[string]json.RawMessage
-				if err := json.Unmarshal(mustJSON(body), &wire); err != nil {
+				if err := json.Unmarshal(encoded, &wire); err != nil {
 					t.Fatal(err)
 				}
 				tools := body.Tools
 				if mode == "lite" {
-					tools = body.Input[0].Tools
+					tools = body.Input[0].(ResponsesItem).Tools
 					if _, present := wire["tools"]; present {
 						t.Fatal("Lite declares top-level tools")
 					}
 				} else {
+					if string(wire["input"]) != "[]" {
+						t.Fatalf("empty standard input: %s", wire["input"])
+					}
 					for _, private := range []string{"client_metadata", "reasoning", "include"} {
 						if _, present := wire[private]; present {
 							t.Fatalf("standard request includes %s", private)
@@ -158,7 +165,7 @@ func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
 					_, _ = w.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n"))
 				}))
 				defer server.Close()
-				if _, err := Sample(context.Background(), server.Client(), server.URL, "fixture", body, nil, nil, false); err != nil {
+				if _, err := Sample(context.Background(), server.Client(), server.URL, "fixture", body, config.Responses, nil, nil, false); err != nil {
 					t.Fatal(err)
 				}
 			})
@@ -170,13 +177,18 @@ func TestStandardResponsesSerializesTextAndAsyncNotifications(t *testing.T) {
 	call := ResponsesToolCall{Type: ResponsesItemFunctionCall, Name: "exec", CallID: "call"}
 	output := call.OutputItem([]ResponsesContentPart{{Type: "input_text", Text: "result"}})
 	notification := ResponsesItem{Type: ResponsesItemCustomToolOutput, CallID: "call", Output: []ResponsesContentPart{{Type: "input_text", Text: "later"}}}
-	body, err := RequestBody("fixture", "session", []ResponsesItem{
+	items := []ResponsesItem{
 		{Type: ResponsesItemFunctionCall, Name: "exec", CallID: "call", Arguments: `{"code":"text(1)"}`}, output, notification,
-	}, nil, nil, ModelConfig{API: "responses", Responses: ResponsesConfig{Dialect: "standard"}, ExecEncoding: "json"})
+	}
+	body, err := RequestBody("fixture", "session", items, nil, nil, ModelConfig{API: "responses", Responses: ResponsesConfig{Dialect: "standard"}, ExecEncoding: "json"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	encoded := string(mustJSON(body))
+	encodedBytes, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded := string(encodedBytes)
 	for _, expected := range []string{`"output":"result"`, `"role":"developer"`, `Asynchronous output from exec call call:\nlater`} {
 		if !strings.Contains(encoded, expected) {
 			t.Fatalf("missing %s in %s", expected, encoded)
@@ -185,7 +197,7 @@ func TestStandardResponsesSerializesTextAndAsyncNotifications(t *testing.T) {
 	if strings.Contains(encoded, "custom_tool_call_output") {
 		t.Fatal("standard notification became a duplicate tool output")
 	}
-	if body.Input[2].Type != ResponsesItemCustomToolOutput {
+	if items[2].Type != ResponsesItemCustomToolOutput {
 		t.Fatal("request encoding mutated durable context")
 	}
 }
