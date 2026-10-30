@@ -4,31 +4,31 @@ How `bb remote` works end-to-end, from CLI invocation to Bazel execution on the
 runner. Bare source paths refer to the
 [BuildBuddy source](https://github.com/buildbuddy-io/buildbuddy).
 
+Configuration behavior checked on 2026-10-30 against the repo-pinned CLI
+**5.0.466** (`nix/packages/bb.nix`) and upstream commit
+[`d84e5dfd`](https://github.com/buildbuddy-io/buildbuddy/tree/d84e5dfd97439eeefbbf247681de47f3960adc11).
+CLI behavior and hosted-service behavior have separate versions; upstream server
+source does not establish which revision the hosted service runs.
+
 ## End-to-end flow
 
-### 1. CLI arg processing (local, no rc expansion)
+### 1. CLI arg processing (local, no Bazel rc expansion)
 
 Source: `cli/cmd/bb/bb.go`, `cli/parser/parser.go`,
 `cli/remotebazel/remotebazel.go`
 
-`bb remote` is a **bb CLI command**, dispatched (`interpretAsBBCliCommand`)
-_before_ the `ResolveArgs` path that reads rc files and expands `--config`
-flags. So **`bb remote` reads NO rc files locally** (`.bazelrc`,
-`~/.bazelrc`, `/etc/bazel.bazelrc`) **and expands NO `--config=X` flags
-locally** — `--config=rbe` in `~/.config/bazel/buildbuddy.bazelrc` has no
-effect on `bb remote` invocations. The only local processing is
-`CanonicalizeArgs` (flag format normalization, e.g. `--flag value` →
-`--flag=value`); all `--config` flags pass through literally to the runner.
+`bb remote` is a **bb CLI command**. Its local dispatch expands **`.bbrc`**
+settings through `resolveBBCliCommandArgs` / `ResolveBBArgs`, including
+`--runner_exec_properties` and `--bb_config` (see Configuration below).
+It does **not** expand local **Bazel rc files** (`.bazelrc`, `~/.bazelrc`,
+`/etc/bazel.bazelrc`) or Bazel `--config=X` flags. Those arguments pass to
+Bazel on the hosted runner. A config present only in the caller's home rc
+therefore has no effect there.
 
-> **Contrast with `bb build`/`bb test`** (direct local Bazel): those go through
-> `ResolveArgs` — reads all rc files locally, expands configs, appends
-> `--nohome_rc --noworkspace_rc --nosystem_rc`. Those `--no*_rc` flags make
-> Bazel's legacy transition check (`option_processor.cc`) warn that `.bazelrc`
-> is "no longer being read" — harmless for command-level directives, which `bb`
-> already inlined, but **`startup` directives are silently dropped** — bites
-> `startup --host_jvm_args=…` users (notably Claude sessions: the
-> session-installed trust store never loads). Workaround + proper shim fix:
-> <bb_bazelrc_startup.md>.
+Direct local `bb build` / `bb test` instead expand both `.bbrc` and Bazel rc
+files locally. The current parser forwards startup directives and adds
+`--ignore_all_rc_files` to prevent Bazel loading those files a second time.
+The older startup-option loss is historical; see <bb_bazelrc_startup.md>.
 
 **bb remote flags**: `bb help remote` lists the current set. Two matter for
 git-state sync: `--skip_auto_checkout` skips the runner's automatic GitHub
@@ -87,8 +87,10 @@ The runner VM receives the `RunRequest` and:
    --bazelrc=buildbuddy.bazelrc --noworkspace_rc --bazelrc=.bazelrc
    ```
 
-   `buildbuddy.bazelrc` gets highest priority; the workspace `.bazelrc` is
-   loaded explicitly, with `--noworkspace_rc` preventing a double load.
+   The workspace `.bazelrc` is explicitly loaded **after** the generated rc,
+   giving its directives higher file precedence. `--noworkspace_rc` prevents
+   a double load. These flags do not disable the runner's system or home rc.
+   Explicit command-line flags and config expansion also affect final values.
 
 ### 4. Bazel execution on the runner
 
@@ -96,8 +98,11 @@ Bazel on the runner reads `buildbuddy.bazelrc` then `.bazelrc` and expands all
 `--config` flags — `--config=rbe` from the workspace `.bazelrc`,
 `--config=buildbuddy_*` from `buildbuddy.bazelrc`.
 
-**If you don't pass `--config=rbe` explicitly, RBE is not enabled** — the
-runner builds everything locally in linux-sandbox on the runner VM.
+Remote execution requires `--remote_executor`, supplied directly or through
+rc/config expansion. In this repo, the workspace `.bazelrc` imports
+`devinfra/bazel/rbe.bazelrc`, which enables `--config=rbe` for build-like
+commands; callers need not repeat it. `bb remote` alone does not imply
+that nested Bazel actions execute remotely.
 
 ## Credential and locality boundary
 
@@ -335,12 +340,12 @@ workspace is hot-mounted per action: `MountWorkspace` RPC mounts `/dev/vdc` →
 
 ### `bb remote` only supports bazel commands, not bb commands
 
-`bb remote` dispatches recognized bazel subcommands (`build`, `test`, `query`,
-`cquery`, `aquery`, …) to the runner. Non-bazel commands like `mod` are not
-recognized — use `--script`:
+`bb remote` dispatches recognized Bazel subcommands, including `mod` and
+`vendor`, to the runner. For shell commands or bb-specific commands, use
+`--script` instead. For example:
 
 ```bash
-bb remote --script 'bazel mod explain protobuf'
+bb remote --script 'git --no-pager status --short'
 ```
 
 **Gotcha: `git` can page inside `--script`.** A `git diff` there stopped at `less`'s `:` prompt
@@ -362,8 +367,9 @@ finalize and writes raw bytes, no ANSI escapes.
 
 **Extracting clean output programmatically**:
 
-1. **Pipe stdout** — non-interactive mode activates when stdout is not a TTY,
-   producing clean bazel output on stdout with CLI noise on stderr:
+1. **Make stdin or stderr non-interactive** — piping stdout alone does not
+   disable the interactive renderer, which checks stdin and stderr. Redirecting
+   stderr in this example selects raw chunk output:
 
    ```bash
    RESULT=$(bb remote query 'deps(//foo)' 2>/dev/null)
@@ -479,32 +485,83 @@ The CLI tracks the execution over two parallel paths:
 The bespoke APIs exist because RE `WaitExecution` only provides `Operation`
 status updates, not live stdout or invocation-level metadata.
 
-## bb CLI configuration (non-Bazel-flag)
+## Configuration sources and precedence
 
-Source: `cli/storage/storage.go`, `cli/config/config.go`, `cli/login/login.go`
+### CLI options: `.bbrc`
 
-Dotfiles:
+Source: `cli/cmd/bb/bb.go` (`resolveBBCliCommandArgs`),
+`cli/parser/parser.go` (`consumeBBRCFileOptions`, `parseBBRCConfig`),
+`cli/parser/bbrc/bbrc.go`
 
-- `$BUILDBUDDY_CONFIG_DIR/buildbuddy.yaml` (default `~/.config/buildbuddy/`) —
-  plugins, local cache config
-- `<workspace>/buildbuddy.yaml` — same schema, higher precedence
-- `.git/config [buildbuddy]` section — API key (`api-key`), remote-bazel
-  remote name, default branch
+`bb remote` supports native repository and user configuration. `.bbrc` uses
+rc-style sections for **bb CLI options**, including outer runner properties:
 
-API key resolution order: `BUILDBUDDY_API_KEY` env → `.git/config` →
-interactive login.
+```text
+remote --runner_exec_properties=workload-isolation-type=firecracker
+remote --runner_exec_properties=recycle-runner=true
+remote:large --runner_exec_properties=EstimatedComputeUnits=8
+```
 
-Environment variables:
+Select the named section with `bb remote --bb_config=large build //target`.
+Bazel options belong in `.bazelrc`; Bazel named configs use `--config`, not
+`--bb_config`.
 
-- `BUILDBUDDY_API_KEY` — API key
-- `BUILDBUDDY_CONFIG_DIR` / `BUILDBUDDY_CACHE_DIR` — override config/cache dir
-- `BB_USE_BAZEL_VERSION` — override Bazel version (takes precedence over
-  `USE_BAZEL_VERSION`)
-- `BB_DISABLE_SIDECAR` — `1`/`true` disables the local sidecar; `CI` truthy
-  also disables it
-- `GIT_REPO_DEFAULT_BRANCH` — override default branch detection for
-  `bb remote`
-- `BAZELISK_SKIP_WRAPPER` — `true` makes bb behave as plain bazelisk
+Files are read in increasing precedence order:
 
-**None of these inject Bazel flags.** For `bb remote`, Bazel flags come only
-from the CLI command line and the workspace `.bazelrc` (loaded by ci_runner).
+1. Workspace `.bbrc`.
+2. Home `~/.bbrc` (higher precedence than workspace).
+3. Explicit, repeatable startup flags `--bbrc=PATH`, in argument order.
+
+Command-line options follow the default rc options. Repeatable options
+accumulate; precedence does not replace an entire property list. Named configs
+expand where selected. `--ignore_all_bb_rc_files` disables all these files;
+`--bbrc=/dev/null` stops subsequent explicit files, but does not disable the
+implicit workspace/home files.
+
+The repo currently uses `devinfra/bbr.json`, read by our `bbr` wrapper, to
+construct CLI flags. Native `bb` does not read that JSON. The GitHub
+`bb-remote` action independently constructs most flags and reads the clock
+workaround's `run-under` value from that JSON. `bb` also applies `.bbrc`
+when invoked by these wrappers.
+
+Validation with pinned 5.0.466: an explicit `.bbrc` containing
+`remote --timeout=cli-doc-audit-invalid-duration` caused the remote parser to
+reject that exact duration before submitting a remote run.
+
+### YAML configuration and Git settings
+
+Source: `cli/config/config.go`, `cli/storage/storage.go`, `cli/login/login.go`,
+`enterprise/server/workflow/config/config.go`
+
+- CLI YAML files are **`~/buildbuddy.yaml`** and
+  **`<workspace>/buildbuddy.yaml`**, loaded in that order. Their CLI schema
+  contains `plugins` and `local_cache`, not runner platform defaults.
+- `$BUILDBUDDY_CONFIG_DIR` controls CLI storage (default OS user config dir +
+  `/buildbuddy`), **not the location of that YAML file**.
+- Hosted BuildBuddy workflows use `actions` in `buildbuddy.yaml`. That server
+  schema includes per-action `platform_properties`, `container_image`, and
+  `resource_requests`; it is a separate consumer from `bb remote`.
+- `.git/config [buildbuddy]` stores API key (`api-key`), selected remote name,
+  and default branch.
+
+For `bb remote`, an API key supplied in the command's
+`--remote_header=x-buildbuddy-api-key=…` takes precedence over
+`BUILDBUDDY_API_KEY`, then `.git/config`, then interactive login. These are
+resolution sources, not instructions to copy credentials between environments.
+
+Other environment settings:
+
+- `BUILDBUDDY_CACHE_DIR` — overrides CLI cache storage.
+- `BB_USE_BAZEL_VERSION` — overrides Bazel version, ahead of `USE_BAZEL_VERSION`.
+- `BB_DISABLE_SIDECAR=1` or `true` — disables the local sidecar. `CI` or
+  `--build_metadata=ROLE=CI` instead enables synchronous sidecar writes when
+  needed; CI alone is not the explicit disable switch.
+- `GIT_REPO_DEFAULT_BRANCH` — overrides default branch detection for
+  `bb remote`.
+- `BUILDBUDDY_REMOTE_RUNNER` — overrides the `bb remote` runner endpoint.
+- `BAZELISK_SKIP_WRAPPER=true` — makes bb behave as plain Bazelisk.
+
+Bazel flags for `bb remote` are forwarded to the hosted Bazel process, which
+reads its own rc files, including the checked-out workspace `.bazelrc` and
+ci_runner's generated `buildbuddy.bazelrc`. Caller-local Bazel rc files are
+not implicitly copied there.
