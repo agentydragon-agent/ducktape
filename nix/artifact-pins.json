@@ -81,8 +81,8 @@
       "sha256": "75Z20KluoDj4kwQanWM2WZb5G9qC06JMRKJrrx/HieM="
     },
     "skill-cpap": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cpap-fd95b3c97664/cpap.skill",
-      "sha256": "/ZWzyXZkg0HNtNYcX85JXHd1zumDUN4LA+OQjz1TSO8="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cpap-cfcc08d6c631/cpap.skill",
+      "sha256": "z8wI1sYxxb5X6/jQGuFOH6PSfPqATbGsNX3WtHSjQp8="
     },
     "skill-buildbuddy_api": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-buildbuddy_api-eae9e9f4d7d9/buildbuddy_api.skill",
