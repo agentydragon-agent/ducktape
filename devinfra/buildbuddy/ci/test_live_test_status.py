@@ -40,7 +40,7 @@ def test_watch_publishes_failure_before_invocation_completes(monkeypatch: pytest
         token="gh-token",
         invocation_id="invocation-123",
         state="failure",
-        description="First failing test: //pkg:failed_test",
+        description="First failing ordinary test: //pkg:failed_test",
         state_path=args.state_file,
         github_api_url="https://github.example/api",
         buildbuddy_url="https://buildbuddy.example",
@@ -49,6 +49,53 @@ def test_watch_publishes_failure_before_invocation_completes(monkeypatch: pytest
 
 def _api_error(*_args: object) -> None:
     raise live_test_status.APIError("HTTP Error 500: Internal Server Error")
+
+
+def test_finish_retries_status_after_github_rejects_watch_post(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    state_file = tmp_path / "state.json"
+    live_test_status._write_state(state_file, "pending", "Watching BuildBuddy ordinary test invocation")
+    post_status = Mock(side_effect=[live_test_status.APIError("HTTP Error 500"), {}])
+    monkeypatch.setattr(live_test_status, "_json_request", post_status)
+    monkeypatch.setattr(live_test_status, "_credentials", lambda: ("bb-key", "gh-token", "owner/repo"))
+    monkeypatch.setattr(
+        live_test_status,
+        "_invocation",
+        lambda *_args: {"invocationStatus": "COMPLETE_INVOCATION_STATUS", "success": False},
+    )
+    args = Namespace(
+        invocation_id="invocation-123",
+        sha="abc123",
+        state_file=state_file,
+        pid_file=tmp_path / "watcher.pid",
+        buildbuddy_url="https://buildbuddy.example",
+        github_api_url="https://github.example/api",
+        remote_outcome="failure",
+    )
+
+    live_test_status._publish_status(
+        repo="owner/repo",
+        sha="abc123",
+        token="gh-token",
+        invocation_id="invocation-123",
+        state="failure",
+        description="Bazel ordinary test invocation failed",
+        state_path=state_file,
+        github_api_url=args.github_api_url,
+        buildbuddy_url=args.buildbuddy_url,
+    )
+    assert live_test_status._read_state(state_file) == {
+        "state": "pending",
+        "description": "Watching BuildBuddy ordinary test invocation",
+    }
+
+    live_test_status._finish(args)
+
+    assert post_status.call_count == 2
+    assert live_test_status._read_state(state_file) == {
+        "state": "failure",
+        "description": "Bazel ordinary test invocation failed",
+    }
+    assert post_status.call_args.kwargs["body"]["context"] == "BuildBuddy / Bazel ordinary tests (live)"
 
 
 @pytest.mark.parametrize(

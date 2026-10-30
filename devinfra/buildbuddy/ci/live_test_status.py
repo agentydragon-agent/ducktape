@@ -20,7 +20,7 @@ from devinfra.buildbuddy.cli import CLIError, run as bbapi
 
 DEFAULT_BUILDBUDDY_URL = "https://app.buildbuddy.io"
 DEFAULT_GITHUB_API_URL = "https://api.github.com"
-STATUS_CONTEXT = "BuildBuddy / Bazel tests (live)"
+STATUS_CONTEXT = "BuildBuddy / Bazel ordinary tests (live)"
 STOP = Event()
 
 
@@ -121,7 +121,8 @@ def _publish_status(
         # This status is additional feedback. The normal Test & Build job remains
         # authoritative, so an API hiccup should not interrupt CI.
         print(f"::warning::Could not publish live BuildBuddy status: {error}", file=sys.stderr, flush=True)
-    _write_state(state_path, state, body["description"])
+    else:
+        _write_state(state_path, state, body["description"])
 
 
 def _credentials() -> tuple[str, str, str]:
@@ -145,7 +146,7 @@ def _credentials() -> tuple[str, str, str]:
 def _watch(args: argparse.Namespace) -> None:
     api_key, token, repo = _credentials()
     target_url = _target_url(args.invocation_id, args.buildbuddy_url)
-    print(f"::notice::Watching BuildBuddy test invocation {args.invocation_id}: {target_url}", flush=True)
+    print(f"::notice::Watching BuildBuddy ordinary test invocation {args.invocation_id}: {target_url}", flush=True)
     while not STOP.is_set():
         try:
             invocation = _invocation(api_key, args.invocation_id, args.buildbuddy_url)
@@ -158,7 +159,7 @@ def _watch(args: argparse.Namespace) -> None:
                         token=token,
                         invocation_id=args.invocation_id,
                         state="failure",
-                        description=f"First failing test: {failed_test}",
+                        description=f"First failing ordinary test: {failed_test}",
                         state_path=args.state_file,
                         github_api_url=args.github_api_url,
                         buildbuddy_url=args.buildbuddy_url,
@@ -173,7 +174,9 @@ def _watch(args: argparse.Namespace) -> None:
                         token=token,
                         invocation_id=args.invocation_id,
                         state="success" if success else "failure",
-                        description="Bazel test invocation passed" if success else "Bazel test invocation failed",
+                        description="Bazel ordinary test invocation passed"
+                        if success
+                        else "Bazel ordinary test invocation failed",
                         state_path=args.state_file,
                         github_api_url=args.github_api_url,
                         buildbuddy_url=args.buildbuddy_url,
@@ -186,7 +189,7 @@ def _watch(args: argparse.Namespace) -> None:
                         token=token,
                         invocation_id=args.invocation_id,
                         state="error",
-                        description="BuildBuddy test invocation disconnected",
+                        description="BuildBuddy ordinary test invocation disconnected",
                         state_path=args.state_file,
                         github_api_url=args.github_api_url,
                         buildbuddy_url=args.buildbuddy_url,
@@ -247,20 +250,20 @@ def _finish(args: argparse.Namespace) -> None:
     if invocation is not None and invocation.get("invocationStatus") == "COMPLETE_INVOCATION_STATUS":
         success = bool(invocation.get("success"))
         state = "success" if success else "failure"
-        description = "Bazel test invocation passed" if success else "Bazel test invocation failed"
+        description = "Bazel ordinary test invocation passed" if success else "Bazel ordinary test invocation failed"
         if not success and previous and previous.get("state") == "failure":
             description = previous.get("description", description)
     elif invocation is not None and invocation.get("invocationStatus") == "DISCONNECTED_INVOCATION_STATUS":
-        state, description = "error", "BuildBuddy test invocation disconnected"
+        state, description = "error", "BuildBuddy ordinary test invocation disconnected"
     elif previous and previous.get("state") == "failure":
-        state, description = "failure", previous.get("description", "Bazel test invocation failed")
+        state, description = "failure", previous.get("description", "Bazel ordinary test invocation failed")
     elif invocation is None and not api_failed and args.remote_outcome == "success":
-        state, description = "success", "No Bazel test invocation was needed"
+        state, description = "success", "No Bazel ordinary test invocation was needed"
     elif invocation is None and not api_failed:
         state = "error"
-        description = f"Bazel CI ended ({args.remote_outcome}) before starting tests; see Test & Build job"
+        description = f"Bazel CI ended ({args.remote_outcome}) before starting ordinary tests; see Test & Build job"
     else:
-        state, description = "error", "Bazel test result unavailable; see Test & Build job"
+        state, description = "error", "Bazel ordinary test result unavailable; see Test & Build job"
 
     # Avoid a duplicate status when the watcher already reported the terminal
     # outcome. A first-failure status keeps its target-specific description.
