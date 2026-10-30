@@ -37,7 +37,9 @@ on:
         type: string
         default: ""
       bazel_test_invocation_id:
-        description: Deterministic test invocation id from a successful bazel-ci push.
+        description: >
+          Deterministic test invocation id from this bazel-ci push run. Passing
+          verdicts are reusable only when that test invocation succeeded.
         required: false
         type: string
         default: ""
