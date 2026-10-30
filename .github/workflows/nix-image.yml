@@ -1,9 +1,9 @@
 # Build one dockerTools image from the flake and publish it. Each image's own workflow keeps its
 # triggers and concurrency, and calls this with the flake output and the repository to push to.
 #
-# The archive is a dockerTools docker archive, so `skopeo copy docker-archive:`. Pushes run on
-# devel only: fork PRs do not receive the publish credentials, and only a merged image is one
-# anything pins.
+# The archive is a dockerTools docker archive, so `skopeo copy docker-archive:`. Publish runs on
+# devel pushes or manual devel runs. A caller may build trusted fork PRs with Attic access, but
+# this workflow never publishes from pull_request_target.
 name: Nix image
 
 on:
@@ -31,6 +31,21 @@ on:
         required: false
         type: boolean
         default: false
+      source_commit:
+        description: Exact commit to check out and build (defaults to the triggering commit).
+        required: false
+        type: string
+        default: ""
+      allow_unsafe_pr_checkout:
+        description: Allow a fork checkout after the caller establishes trust.
+        required: false
+        type: boolean
+        default: false
+      environment:
+        description: Protected GitHub Environment to gate the build (optional).
+        required: false
+        type: string
+        default: ""
     secrets:
       FORGEJO_IMAGES_USERNAME:
         required: false
@@ -43,11 +58,15 @@ jobs:
   image:
     name: Build & push ${{ inputs.attr }}
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || null }}
     timeout-minutes: 60
     env:
       IMAGE: ${{ inputs.image }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_commit || github.sha }}
+          allow-unsafe-pr-checkout: ${{ inputs.allow_unsafe_pr_checkout }}
 
       - uses: ./.github/actions/setup-nix-attic
         with:
@@ -62,7 +81,7 @@ jobs:
 
       # Before the cache upload: a cache failure must not withhold the image.
       - name: Push image
-        if: github.ref_name == 'devel'
+        if: github.event_name != 'pull_request_target' && github.ref_name == 'devel'
         env:
           FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
           FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
@@ -83,7 +102,7 @@ jobs:
           echo "pushed \`$ref\` as \`$IMAGE@$(cat "$RUNNER_TEMP/digest")\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Push to Attic
-        if: inputs.attic && github.ref_name == 'devel'
+        if: inputs.attic && github.event_name != 'pull_request_target' && github.ref_name == 'devel'
         run: |
           nix profile install nixpkgs#attic-client
           attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
