@@ -12,7 +12,6 @@ rust_binary(
     ],
     crate_root = "src/main.rs",
     edition = "2024",
-    disable_pipelining = True,
     rustc_flags = ["--cap-lints=allow"],
     deps = [
         "@codex//codex-rs/execpolicy",
@@ -34,7 +33,6 @@ rust_test(
     srcs = ["src/rules.rs"],
     crate_root = "src/rules.rs",
     edition = "2024",
-    disable_pipelining = True,
     rustc_flags = ["--cap-lints=allow"],
     deps = [
         "@codex//codex-rs/execpolicy",
