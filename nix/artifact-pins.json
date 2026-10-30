@@ -9,8 +9,8 @@
       "sha256": "32GiCcxF7P+QWbsE4BzB28K5ihKHFcraKipUu03rpIU="
     },
     "bbapi": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-3ce2cbf35e24/bbapi",
-      "sha256": "POLL814k0PehbwdMP1k02L1UPiOJlgd2PuhCBJyYxas="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-b1cb96df2bbe/bbapi",
+      "sha256": "scuW3yu+Gud0CazARX0/Vs8sqPWnNdVj+t1d56I3oyg="
     },
     "claude-statusline": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/claude-statusline-1667523c0d64/claude_statusline-0.1.0-py3-none-any.whl",
@@ -253,8 +253,8 @@
       "sha256": "xcA/mxVX0EX3Od3hUzazdednfRG1bUgcMiEXe1QWFk4="
     },
     "pr-visuals": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/pr-visuals-d86897b32fe8/pr_visuals-0.1.0-py3-none-any.whl",
-      "sha256": "2GiXsy/o23UrrGZQEpKpeEoeN4gCOL7khtxaFgdtxRU="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/pr-visuals-02a5db26656a/pr_visuals-0.1.0-py3-none-any.whl",
+      "sha256": "AqXbJmVq0JNEzzeBwd4ia2C0hG0zjK+j8HotrrdBjkU="
     },
     "skill-ci_reliability": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_reliability-1e5587a4a07a/ci_reliability.skill",
