@@ -47,6 +47,7 @@ on:
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-sandbox-image.yml"
       - ".github/workflows/nix-image.yml"
+      - ".github/workflows/trusted-fork-pr-context.yml"
       - "agentplane/cli/package.nix"
       - "agentplane/images/sandbox.nix"
       - "agentplane/images/tools.nix"
@@ -67,38 +68,17 @@ permissions:
   contents: read
 
 jobs:
-  resolve-merge-commit:
-    name: Resolve PR merge commit
-    if: >-
-      github.event_name == 'pull_request_target' &&
-      github.event.pull_request.head.repo.full_name != github.repository
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+  fork-context:
+    uses: ./.github/workflows/trusted-fork-pr-context.yml
     permissions:
       contents: read
       pull-requests: read
-    outputs:
-      sha: ${{ steps.resolve.outputs.sha }}
-    steps:
-      # pull_request_target loads this workflow from the base branch. Resolve the exact merge
-      # commit for this PR head before checking out any PR-controlled code.
-      - uses: actions/checkout@v7
-        with:
-          ref: devel
-          fetch-depth: 1
-      - name: Resolve the merge commit GitHub built for this PR head
-        id: resolve
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: python3 devinfra/ci/pr_mergeability.py resolve
 
   image:
-    needs: [resolve-merge-commit]
+    needs: [fork-context]
     if: >-
       always() &&
-      (github.event_name != 'pull_request_target' || needs.resolve-merge-commit.outputs.sha != '') &&
+      (github.event_name != 'pull_request_target' || needs.fork-context.outputs.source_commit != '') &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     uses: ./.github/workflows/nix-image.yml
     with:
@@ -106,16 +86,9 @@ jobs:
       image: git.allegedly.works/ducktape-ci/agentplane-sandbox
       registry: forgejo
       attic: true
-      source_commit: ${{ needs.resolve-merge-commit.outputs.sha }}
+      source_commit: ${{ needs.fork-context.outputs.source_commit }}
       allow_unsafe_pr_checkout: ${{ github.event_name == 'pull_request_target' }}
-      environment: >-
-        ${{
-          github.event_name == 'pull_request_target' &&
-          github.event.pull_request.head.repo.full_name != github.repository &&
-          github.event.pull_request.user.login != 'agentydragon-agent' &&
-          github.event.pull_request.user.login != 'agentydragon' &&
-          'fork-ci-review' || ''
-        }}
+      environment: ${{ needs.fork-context.outputs.environment }}
     secrets:
       FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
       FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
