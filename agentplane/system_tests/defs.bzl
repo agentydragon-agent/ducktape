@@ -33,8 +33,8 @@ _STACKS = {
 def k3s_suite(name, scenarios, stack, tags = []):
     """Collect named scenario libraries in one pytest process and one session-scoped stack.
 
-    Each scenario label owns the matching `.py` file, exported by its package. Explicit file
-    arguments collect these modules despite their non-test filenames and exclude adjacent unit
+    Each scenario label names its Python module. Explicit module arguments collect these
+    modules despite their non-test filenames and exclude adjacent unit
     tests from the transitive runfiles. The plugins select Pod/VM and scripted/live cases.
     """
     if not scenarios:
@@ -42,9 +42,9 @@ def k3s_suite(name, scenarios, stack, tags = []):
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
     config = _STACKS[stack]
-    sources = [scenario + ".py" for scenario in scenarios]
+    modules = [scenario.removeprefix("//").replace("/", ".").replace(":", ".") for scenario in scenarios]
     layouts = _MCP_LAYOUTS if stack == "mcp" else []
-    data = [config.fixture, K3S_BINARY, _CERT_MANAGER_INSTALL, _TRUST_MANAGER_INSTALL] + layouts + sources
+    data = [config.fixture, K3S_BINARY, _CERT_MANAGER_INSTALL, _TRUST_MANAGER_INSTALL] + layouts
     env = {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _CERT_MANAGER_INSTALL + ")",
@@ -74,7 +74,7 @@ def k3s_suite(name, scenarios, stack, tags = []):
         size = "enormous",
         main_module = "pytest_bazel",
         # Names such as scenarios/mcp.py must not shadow the installed mcp package.
-        args = ["--import-mode=importlib"] + ["$(rootpath " + source + ")" for source in sources],
+        args = ["--import-mode=importlib", "--pyargs"] + modules,
         data = data,
         env = env,
         exec_properties = K3S_EXEC_PROPERTIES | properties,

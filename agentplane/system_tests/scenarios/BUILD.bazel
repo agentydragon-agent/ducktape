@@ -10,13 +10,6 @@ package(
     ],
 )
 
-exports_files(
-    glob(["*.py"]),
-    visibility = [
-        "//agentplane/system_tests/suites:__pkg__",
-    ],
-)
-
 py_library(
     name = "agent_messaging",
     srcs = ["agent_messaging.py"],
