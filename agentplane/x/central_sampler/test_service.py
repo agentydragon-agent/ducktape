@@ -804,7 +804,9 @@ async def test_json_exec_runs_shell_resumes_and_recovers(
                 assert tools[0]["name"] == "exec"
                 assert tools[0]["strict"] is False
                 parameters = tools[0]["parameters"]
+                assert parameters["type"] == "object"
                 assert parameters["additionalProperties"] is False
+                assert not parameters.get("required")
                 assert set(parameters["properties"]) == {
                     "code",
                     "cell_id",
@@ -812,6 +814,13 @@ async def test_json_exec_runs_shell_resumes_and_recovers(
                     "max_output_tokens",
                     "terminate",
                 }
+                properties = parameters["properties"]
+                for name in ("code", "cell_id"):
+                    assert properties[name]["type"] == "string"
+                for name in ("yield_time_ms", "max_output_tokens"):
+                    assert properties[name]["type"] == "integer"
+                    assert properties[name]["minimum"] == 0
+                assert properties["terminate"]["type"] == "boolean"
                 assert body["reasoning"]["context"] == "all_turns"
                 headers = {name.lower(): value for name, value in exchange.headers.items()}
                 assert headers["x-openai-internal-codex-responses-lite"] == "true"

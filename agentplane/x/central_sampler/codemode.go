@@ -504,16 +504,18 @@ func (r *CodeMode) prepareCall(ctx context.Context, call ResponsesToolCall) (pre
 	}, nil
 }
 
+type jsonExecInput struct {
+	Code            *string `json:"code,omitempty"`
+	CellID          *string `json:"cell_id,omitempty"`
+	YieldTimeMS     *uint64 `json:"yield_time_ms,omitempty" jsonschema:"minimum=0"`
+	MaxOutputTokens *uint64 `json:"max_output_tokens,omitempty" jsonschema:"minimum=0"`
+	Terminate       *bool   `json:"terminate,omitempty"`
+}
+
 // JSON exec uses the same host operations and journal as the native freeform contract.
 // Resuming through exec keeps the compatibility surface to one function.
 func (r *CodeMode) prepareJSONCall(ctx context.Context, call ResponsesToolCall) (preparedCall, error) {
-	var input struct {
-		Code            *string `json:"code"`
-		CellID          *string `json:"cell_id"`
-		YieldTimeMS     *uint64 `json:"yield_time_ms"`
-		MaxOutputTokens *uint64 `json:"max_output_tokens"`
-		Terminate       *bool   `json:"terminate"`
-	}
+	var input jsonExecInput
 	if err := decodeToolInput([]byte(call.Input), &input); err != nil {
 		return preparedCall{}, err
 	}

@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/invopop/jsonschema"
 )
 
 // The codex/*.txt files are verbatim copies of Codex rust-v0.162.1
@@ -90,7 +92,7 @@ func execToolDescription(definitions []ResponsesCodeToolDefinition) (string, err
 	return strings.Join(sections, "\n\n"), nil
 }
 
-func jsonExecToolDefinition(description string) ResponsesAdditionalTool {
+func jsonExecToolDefinition(description string) (ResponsesAdditionalTool, error) {
 	description = strings.ReplaceAll(description,
 		"- Accepts raw JavaScript source text, not JSON, quoted strings, or markdown code fences.",
 		"- Pass JavaScript source in the JSON code field.")
@@ -102,11 +104,16 @@ func jsonExecToolDefinition(description string) ResponsesAdditionalTool {
 		"Resume only after exec reports Script running with cell ID. Each resume returns new output or completion. " +
 		"For a new cell, pass code and optional yield_time_ms (default 30000) and max_output_tokens (default 10000). " +
 		"Pass exactly one of code or cell_id; terminate is only valid with cell_id."
+	reflector := &jsonschema.Reflector{Anonymous: true, ExpandedStruct: true}
+	parameters, err := json.Marshal(reflector.Reflect(jsonExecInput{}))
+	if err != nil {
+		return ResponsesAdditionalTool{}, err
+	}
 	strict := false
 	return ResponsesAdditionalTool{
 		Type: "function", Name: "exec", Description: description, Strict: &strict,
-		Parameters: json.RawMessage(`{"type":"object","properties":{"code":{"type":"string"},"cell_id":{"type":"string"},"yield_time_ms":{"type":"integer","minimum":0},"max_output_tokens":{"type":"integer","minimum":0},"terminate":{"type":"boolean"}},"additionalProperties":false}`),
-	}
+		Parameters: parameters,
+	}, nil
 }
 
 // Codex rust-v0.162.1 core/src/tools/code_mode/wait_spec.rs create_wait_tool.

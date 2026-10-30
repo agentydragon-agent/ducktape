@@ -71,7 +71,11 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 		{Type: "function", Name: "wait", Description: waitToolDescription(), Strict: &strict, Parameters: waitToolParameters()},
 	}
 	if config.ExecEncoding == ExecEncodingJSON {
-		tools = []ResponsesAdditionalTool{jsonExecToolDefinition(description)}
+		tool, err := jsonExecToolDefinition(description)
+		if err != nil {
+			return ResponsesRequest{}, err
+		}
+		tools = []ResponsesAdditionalTool{tool}
 	}
 	if config.ExecEncoding == ExecEncodingJSON {
 		for index := range tools {
