@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -18,10 +19,6 @@ type blobDownload struct {
 }
 
 func writeBlob(c *client, item blobDownload) error {
-	body, err := c.fetchURL(c.bytestreamDownloadURL(item.InvocationID, item.URI))
-	if err != nil {
-		return err
-	}
 	parent := filepath.Dir(item.Destination)
 	if err := os.MkdirAll(parent, 0755); err != nil {
 		return err
@@ -31,7 +28,18 @@ func writeBlob(c *client, item blobDownload) error {
 		return err
 	}
 	defer os.Remove(temp.Name())
-	if _, err := temp.Write(body); err != nil {
+	err = c.consumeURL(c.bytestreamDownloadURL(item.InvocationID, item.URI), func(r io.Reader) error {
+		// Each retry replaces any bytes left by an interrupted response.
+		if err := temp.Truncate(0); err != nil {
+			return err
+		}
+		if _, err := temp.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+		_, err := io.Copy(temp, r)
+		return err
+	})
+	if err != nil {
 		temp.Close()
 		return err
 	}
