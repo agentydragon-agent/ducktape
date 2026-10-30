@@ -73,8 +73,18 @@ py_library(
     ],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":publication_test_verdicts",
+        ":publication_evidence",
         ":release_content_hash",
+        "//devinfra/buildbuddy/ci:bes",
+    ],
+)
+
+py_library(
+    name = "publication_evidence",
+    srcs = ["publication_evidence.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":publication_test_verdicts",
         "//devinfra/buildbuddy/ci:bes",
     ],
 )
@@ -135,7 +145,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":image_registry",
-        ":publication_test_verdicts",
+        ":publication_evidence",
         "//devinfra/buildbuddy/ci:bes",
         "//util:crane",
     ],
@@ -279,6 +289,7 @@ py_test(
     name = "test_publication_test_verdicts",
     srcs = ["test_publication_test_verdicts.py"],
     deps = [
+        ":publication_evidence",
         ":publication_test_verdicts",
         "//devinfra/buildbuddy/ci:bes",
         "//devinfra/buildbuddy/ci:invocation_ids",
