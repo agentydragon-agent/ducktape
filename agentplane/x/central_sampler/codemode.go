@@ -485,6 +485,10 @@ func (r *CodeMode) prepareCall(ctx context.Context, call ResponsesToolCall) (pre
 	if err != nil {
 		return preparedCall{}, err
 	}
+	return r.prepareExecute(call.CallID, source)
+}
+
+func (r *CodeMode) prepareExecute(callID string, source execSource) (preparedCall, error) {
 	yieldMS := defaultExecYieldTimeMS
 	if source.yieldTimeMS != nil {
 		yieldMS = *source.yieldTimeMS
@@ -497,7 +501,7 @@ func (r *CodeMode) prepareCall(ctx context.Context, call ResponsesToolCall) (pre
 	if err != nil {
 		return preparedCall{}, err
 	}
-	request := codeExecuteRequest{ToolCallID: call.CallID, Source: source.code, EnabledTools: definitions, YieldTimeMS: yieldMS, MaxOutputTokens: source.maxOutputTokens}
+	request := codeExecuteRequest{ToolCallID: callID, Source: source.code, EnabledTools: definitions, YieldTimeMS: yieldMS, MaxOutputTokens: source.maxOutputTokens}
 	return preparedCall{
 		operation: codeExecuteOperation{codeSessionOperation: codeSessionOperation{Method: "session/execute", SessionID: r.sessionID}, Request: request},
 		execute:   true, maxTokens: source.maxOutputTokens,
@@ -524,25 +528,30 @@ func (r *CodeMode) prepareJSONCall(ctx context.Context, call ResponsesToolCall) 
 	}
 	if input.CellID != nil {
 		terminate := input.Terminate != nil && *input.Terminate
-		return r.prepareWait(ctx, canonicalJSON(waitInput{
+		arguments, err := resolveWaitArguments(waitInput{
 			CellID: *input.CellID, YieldTimeMS: input.YieldTimeMS,
 			MaxTokens: input.MaxOutputTokens, Terminate: terminate,
-		}))
+		})
+		if err != nil {
+			return preparedCall{}, err
+		}
+		return r.prepareWaitArguments(ctx, arguments)
 	}
 	if input.Terminate != nil {
 		return preparedCall{}, errors.New("terminate requires cell_id")
 	}
-	// Use the native parser for the same bounds and defaults; source is JSON-escaped only
-	// on the provider wire and is never interpolated into executable wrapper code.
-	source := *input.Code
-	if strings.HasPrefix(strings.TrimSpace(source), execPragmaPrefix) {
-		return preparedCall{}, errors.New("JSON exec takes yield_time_ms and max_output_tokens as arguments, not a pragma")
+	if strings.TrimSpace(*input.Code) == "" {
+		return preparedCall{}, errors.New("exec requires non-empty code")
 	}
-	pragma := execPragma{YieldTimeMS: input.YieldTimeMS, MaxOutputTokens: input.MaxOutputTokens}
-	return r.prepareCall(ctx, ResponsesToolCall{
-		Type: ResponsesItemCustomToolCall, Name: "exec", CallID: call.CallID,
-		Input: execPragmaPrefix + " " + canonicalJSON(pragma) + "\n" + source,
-	})
+	yieldMS, err := safeIntegerArgument("yield_time_ms", input.YieldTimeMS)
+	if err != nil {
+		return preparedCall{}, err
+	}
+	maxTokens, err := safeIntegerArgument("max_output_tokens", input.MaxOutputTokens)
+	if err != nil {
+		return preparedCall{}, err
+	}
+	return r.prepareExecute(call.CallID, execSource{code: *input.Code, yieldTimeMS: yieldMS, maxOutputTokens: maxTokens})
 }
 
 type waitArguments struct {
@@ -560,6 +569,10 @@ func parseWaitArguments(input string) (waitArguments, error) {
 	if err := decodeToolInput([]byte(input), &arguments); err != nil {
 		return waitArguments{}, err
 	}
+	return resolveWaitArguments(arguments)
+}
+
+func resolveWaitArguments(arguments waitInput) (waitArguments, error) {
 	if arguments.CellID == "" {
 		return waitArguments{}, errors.New("wait requires a string cell_id")
 	}
@@ -583,6 +596,10 @@ func (r *CodeMode) prepareWait(ctx context.Context, input string) (preparedCall,
 	if err != nil {
 		return preparedCall{}, err
 	}
+	return r.prepareWaitArguments(ctx, arguments)
+}
+
+func (r *CodeMode) prepareWaitArguments(ctx context.Context, arguments waitArguments) (preparedCall, error) {
 	cellID := arguments.cellID
 	state, err := r.store.ExecutionState(ctx, r.owner)
 	if err != nil {

@@ -305,7 +305,7 @@ go_library(
     ],
     embedsrcs = [
         "codex/base_instructions.txt",
-        "codex/exec_description.txt",
+        "exec_description.txt",
         "codex/legacy_image_helper.txt",
         "codex/wait_description.txt",
         "schema/0001_sampler_state.sql",

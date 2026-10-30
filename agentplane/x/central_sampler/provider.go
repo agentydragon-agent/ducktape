@@ -60,28 +60,23 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 	if err := config.Validate(); err != nil {
 		return ResponsesRequest{}, err
 	}
-	description, err := execToolDescription(toolDefinitions())
+	description, err := execToolDescription(toolDefinitions(), config)
 	if err != nil {
 		return ResponsesRequest{}, err
 	}
-	strict := false
-	tools := []ResponsesAdditionalTool{
-		// Codex rust-v0.162.1 core/src/tools/code_mode/execute_spec.rs create_code_mode_tool.
-		{Type: "custom", Name: "exec", Description: description, Format: &ResponsesToolFormat{Type: "grammar", Syntax: "lark", Definition: execFreeformGrammar}},
-		{Type: "function", Name: "wait", Description: waitToolDescription(), Strict: &strict, Parameters: waitToolParameters()},
-	}
+	var tools []ResponsesAdditionalTool
 	if config.ExecEncoding == ExecEncodingJSON {
 		tool, err := jsonExecToolDefinition(description)
 		if err != nil {
 			return ResponsesRequest{}, err
 		}
 		tools = []ResponsesAdditionalTool{tool}
-	}
-	if config.ExecEncoding == ExecEncodingJSON {
-		for index := range tools {
-			tools[index].Description = strings.ReplaceAll(tools[index].Description,
-				"immediately injects an extra `custom_tool_call_output` for the current `exec` call",
-				"queues an asynchronous developer message identifying the current `exec` call")
+	} else {
+		strict := false
+		tools = []ResponsesAdditionalTool{
+			// Codex rust-v0.162.1 core/src/tools/code_mode/execute_spec.rs create_code_mode_tool.
+			{Type: "custom", Name: "exec", Description: description, Format: &ResponsesToolFormat{Type: "grammar", Syntax: "lark", Definition: execFreeformGrammar}},
+			{Type: "function", Name: "wait", Description: waitToolDescription(), Strict: &strict, Parameters: waitToolParameters()},
 		}
 	}
 	input := make([]ResponsesItem, 0, len(items)+3)

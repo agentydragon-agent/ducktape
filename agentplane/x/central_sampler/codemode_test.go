@@ -25,7 +25,7 @@ type fakeCodeModePeer struct {
 }
 
 func TestJSONExecPreparesNativeCodeWithoutChangingSource(t *testing.T) {
-	source := "const value = `quotes: \" and ${1 + 2}`;\ntext(value);"
+	source := "// @exec: is just a JavaScript comment in JSON code\nconst value = `quotes: \" and ${1 + 2}`;\ntext(value);"
 	input := canonicalJSON(map[string]any{"code": source, "yield_time_ms": 0, "max_output_tokens": 123})
 	runtime := &CodeMode{sessionID: "fixture"}
 	prepared, err := runtime.prepareCall(context.Background(), ResponsesToolCall{Type: ResponsesItemFunctionCall, Name: "exec", CallID: "call", Input: input})
@@ -51,7 +51,7 @@ func TestJSONExecRejectsMalformedArgumentsBeforeDispatch(t *testing.T) {
 		`{}`, `{"code":"text(1)","cell_id":"cell"}`, `{"code":null}`, `{"code":123}`,
 		`{"code":"text(1)","unknown":true}`, `{"code":"text(1)","terminate":false}`,
 		`{"code":"text(1)","yield_time_ms":-1}`, `{"code":"text(1)","max_output_tokens":9007199254740992}`,
-		`{"code":"// @exec: {}\ntext(1)"}`, `{"code":""}`, `{"cell_id":123}`, `{"cell_id":"cell","terminate":null}`,
+		`{"code":""}`, `{"cell_id":123}`, `{"cell_id":"cell","terminate":null}`,
 	} {
 		t.Run(input, func(t *testing.T) {
 			if _, err := runtime.prepareCall(context.Background(), ResponsesToolCall{Type: ResponsesItemFunctionCall, Name: "exec", Input: input}); err == nil {
