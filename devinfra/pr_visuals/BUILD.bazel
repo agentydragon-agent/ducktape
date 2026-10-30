@@ -118,7 +118,6 @@ py_library(
         "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pygithub",
-        "@pypi//tenacity",
     ],
 )
 
@@ -261,7 +260,6 @@ py_wheel(
         "Pillow",
         "pydantic>=2.0",
         "PyGithub",
-        "tenacity",
     ],
     version = "0.1.0",
     visibility = ["//visibility:public"],

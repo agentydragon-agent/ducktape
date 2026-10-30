@@ -387,7 +387,6 @@ rec {
         pillow
         pydantic
         pygithub
-        tenacity
       ];
     }).overrideAttrs
       (old: {

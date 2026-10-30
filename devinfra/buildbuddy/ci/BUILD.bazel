@@ -12,6 +12,7 @@ py_library(
     name = "bes",
     srcs = ["bes.py"],
     visibility = ["//:__subpackages__"],
+    deps = ["//devinfra/buildbuddy:cli"],
 )
 
 py_library(
@@ -38,6 +39,7 @@ py_library(
     name = "live_test_status",
     srcs = ["live_test_status.py"],
     visibility = ["//:__subpackages__"],
+    deps = ["//devinfra/buildbuddy:cli"],
 )
 
 py_test(
@@ -48,12 +50,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
-)
-
-py_library(
-    name = "install_bb",
-    srcs = ["install_bb.py"],
-    visibility = ["//:__subpackages__"],
 )
 
 py_library(
@@ -91,6 +87,7 @@ py_test(
     srcs = ["test_bes.py"],
     deps = [
         ":bes",
+        "//devinfra/buildbuddy:cli",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -124,16 +121,6 @@ py_test(
 )
 
 py_test(
-    name = "test_install_bb",
-    srcs = ["test_install_bb.py"],
-    deps = [
-        ":install_bb",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_emit_remote_linkage",
     srcs = ["test_emit_remote_linkage.py"],
     deps = [
@@ -158,14 +145,4 @@ py_test(
 py_library(
     name = "cancel_invocations",
     srcs = ["cancel_invocations.py"],
-)
-
-py_test(
-    name = "test_cancel_invocations",
-    srcs = ["test_cancel_invocations.py"],
-    deps = [
-        ":cancel_invocations",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
 )

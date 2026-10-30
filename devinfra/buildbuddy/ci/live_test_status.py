@@ -16,6 +16,8 @@ from pathlib import Path
 from threading import Event
 from typing import Any, cast
 
+from devinfra.buildbuddy.cli import CLIError, run as bbapi
+
 DEFAULT_BUILDBUDDY_URL = "https://app.buildbuddy.io"
 DEFAULT_GITHUB_API_URL = "https://api.github.com"
 STATUS_CONTEXT = "BuildBuddy / Bazel tests (live)"
@@ -36,40 +38,25 @@ def _json_request(url: str, *, headers: dict[str, str], body: dict[str, Any] | N
         raise APIError(f"{url.split('?', maxsplit=1)[0]}: {error}") from error
 
 
-def _buildbuddy_call(
-    method: str, request: dict[str, Any], *, api_key: str, base_url: str = DEFAULT_BUILDBUDDY_URL
-) -> dict[str, Any]:
-    return _json_request(
-        f"{base_url.rstrip('/')}/rpc/BuildBuddyService/{method}",
-        headers={"Content-Type": "application/json", "x-buildbuddy-api-key": api_key},
-        body=request,
-    )
-
-
 def _invocation(api_key: str, invocation_id: str, base_url: str) -> dict[str, Any] | None:
-    # The public API answers an unknown id with an empty list. BuildBuddyService.GetInvocation
-    # instead fails the lookup, which its JSON gateway turns into an HTTP 500 like any other error.
-    response = _json_request(
-        f"{base_url.rstrip('/')}/api/v1/GetInvocation",
-        headers={"Content-Type": "application/json", "x-buildbuddy-api-key": api_key},
-        body={"selector": {"invocationId": invocation_id}},
-    )
+    try:
+        response = json.loads(
+            bbapi("invocation", "status", invocation_id, api_key=api_key, base_url=base_url, timeout=10)
+        )
+    except (CLIError, ValueError) as error:
+        raise APIError(str(error)) from error
     invocations = response.get("invocation") or []
     return invocations[0] if invocations else None
 
 
 def _first_failed_test(api_key: str, invocation_id: str, base_url: str) -> str | None:
-    # BuildBuddy reports a target as FAILED on its first non-passing TestResult,
-    # before the target summary or whole invocation is complete.
-    response = _buildbuddy_call(
-        "GetTarget", {"invocationId": invocation_id, "status": "FAILED"}, api_key=api_key, base_url=base_url
-    )
-    for group in response.get("targetGroups") or []:
-        for target in group.get("targets") or []:
-            label = (target.get("metadata") or {}).get("label")
-            if label:
-                return str(label)
-    return None
+    try:
+        response = json.loads(
+            bbapi("invocation", "first-failure", invocation_id, api_key=api_key, base_url=base_url, timeout=10)
+        )
+    except (CLIError, ValueError) as error:
+        raise APIError(str(error)) from error
+    return response.get("label") or None
 
 
 def _target_url(invocation_id: str, base_url: str) -> str:
@@ -233,7 +220,7 @@ def _stop_watcher(pid_file: Path) -> None:
             command = Path(f"/proc/{pid}/cmdline").read_bytes()
         except OSError:
             return
-        if b"live_test_status.py\0watch\0" in command:
+        if b"devinfra.buildbuddy.ci.live_test_status\0watch\0" in command:
             os.kill(pid, signal.SIGKILL)
 
 

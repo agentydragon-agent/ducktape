@@ -11,13 +11,11 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from collections import defaultdict
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
@@ -29,7 +27,6 @@ from github import Auth, Github
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from more_itertools import one
 from pydantic import BaseModel, Field
-from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.artifacts import ListedArtifact, Runner, list_ci_artifacts
@@ -205,19 +202,15 @@ class ReviewBundleMetadata(BaseModel):
     tests: list[ReviewTest]
 
 
-BUILDBUDDY_APP = "https://app.buildbuddy.io"
-BUILDBUDDY_RPC = f"{BUILDBUDDY_APP}/rpc/BuildBuddyService"
 REPO_URL = "https://github.com/agentydragon/ducktape"
 
-Fetcher = Callable[[urllib.request.Request], bytes]
-# Measured against BuildBuddy: 40 blobs took 2.3s at this width, so a commit's ~294
-# files land in under 20s. Raising it buys little and is less polite to the service.
-DOWNLOAD_WORKERS = 8
 INVOCATION_WAIT_SECONDS = 300
 INVOCATION_POLL_SECONDS = 2
 
 
-def search_ci_test_invocations(commit_sha: str, *, api_key: str, fetch: Fetcher) -> list[str]:
+def search_ci_test_invocations(
+    commit_sha: str, *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run
+) -> list[str]:
     """The CI test invocations BuildBuddy holds for `commit_sha`, full sweep first.
 
     A commit has several CI runs with different target sets — a `//...` devel sweep
@@ -225,32 +218,39 @@ def search_ci_test_invocations(commit_sha: str, *, api_key: str, fetch: Fetcher)
     Asking by commit finds whichever run actually did the testing; asking by the run
     that triggered this publish finds whichever one happens to have triggered it.
     """
-    request = urllib.request.Request(
-        f"{BUILDBUDDY_RPC}/SearchInvocation",
-        data=json.dumps(
-            {"query": {"repoUrl": REPO_URL, "commitSha": commit_sha, "command": "test", "role": ["CI"]}, "count": 25}
-        ).encode(),
-        headers={"Content-Type": "application/json", "x-buildbuddy-api-key": api_key},
+    result = run(
+        [
+            bbapi,
+            "--timeout",
+            "30s",
+            "invocation",
+            "list",
+            "--repo",
+            REPO_URL,
+            "--commit",
+            commit_sha,
+            "--command",
+            "test",
+            "--role",
+            "CI",
+            "--count",
+            "25",
+            "--json",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
     )
-    found = json.loads(fetch(request)).get("invocation", [])
+    if result.returncode != 0:
+        raise RuntimeError(f"bbapi invocation list failed: {result.stderr.strip()}")
+    found = json.loads(result.stdout).get("invocation", [])
     sweeps = [i["invocationId"] for i in found if i.get("pattern") == ["//..."]]
     return sweeps or [i["invocationId"] for i in found]
 
 
-def _is_transient(error: BaseException) -> bool:
-    if isinstance(error, urllib.error.HTTPError):
-        return error.code >= 500
-    return isinstance(error, urllib.error.URLError | TimeoutError)
-
-
-@retry(retry=retry_if_exception(_is_transient), stop=stop_after_attempt(4), wait=wait_exponential(max=8), reraise=True)
-def _read(request: urllib.request.Request) -> bytes:
-    with urllib.request.urlopen(request, timeout=30) as response:
-        body: bytes = response.read()
-    return body
-
-
-def find_test_invocations(*, run_id: str, run_attempt: str, commit_sha: str, api_key: str, fetch: Fetcher) -> list[str]:
+def find_test_invocations(
+    *, run_id: str, run_attempt: str, commit_sha: str, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run
+) -> list[str]:
     """Where this commit's test artifacts are, by commit if BuildBuddy knows, else by run.
 
     The by-run derivation (devinfra/buildbuddy/ci/invocation_ids.py) is what makes a *cancelled*
@@ -263,7 +263,7 @@ def find_test_invocations(*, run_id: str, run_attempt: str, commit_sha: str, api
     disagree across invocations, and mixing a sweep with an affected-set run invites
     exactly that.
     """
-    if found := search_ci_test_invocations(commit_sha, api_key=api_key, fetch=fetch):
+    if found := search_ci_test_invocations(commit_sha, bbapi=bbapi, run=run):
         return found
     return [str(invocation_id(run_id=run_id, attempt=run_attempt, role=role)) for role in ("test", "build")]
 
@@ -271,11 +271,11 @@ def find_test_invocations(*, run_id: str, run_attempt: str, commit_sha: str, api
 def wait_for_test_invocations(
     invocations: list[str],
     *,
-    api_key: str,
+    bbapi: Path = Path("bbapi"),
+    run: Runner = subprocess.run,
     workflow_succeeded: bool = False,
     allow_build_only: bool = False,
     build_invocation_id: str | None = None,
-    fetch: Fetcher = _read,
     monotonic: Callable[[], float] = time.monotonic,
     wait: Callable[[float], object] | None = None,
 ) -> Literal["complete", "absent", "incomplete"]:
@@ -288,12 +288,15 @@ def wait_for_test_invocations(
     """
 
     def status(invocation: str) -> str | None:
-        request = urllib.request.Request(
-            f"{BUILDBUDDY_APP}/api/v1/GetInvocation",
-            data=json.dumps({"selector": {"invocationId": invocation}}).encode(),
-            headers={"Content-Type": "application/json", "x-buildbuddy-api-key": api_key},
+        result = run(
+            [bbapi, "--timeout", "30s", "invocation", "status", invocation, "--json"],
+            check=False,
+            text=True,
+            capture_output=True,
         )
-        found = json.loads(fetch(request)).get("invocation") or []
+        if result.returncode != 0:
+            raise RuntimeError(f"bbapi invocation status for {invocation} failed: {result.stderr.strip()}")
+        found = json.loads(result.stdout).get("invocation") or []
         return found[0].get("invocationStatus") if found else None
 
     wait = wait or Event().wait
@@ -358,26 +361,44 @@ def target_slug(label: str) -> str:
     return f"{readable[:80]}-{digest}"
 
 
-def _download_artifact(download: _Download, *, api_key: str, fetch: Fetcher) -> None:
-    """Read one artifact's blob straight from the CAS, by the URI the listing gave.
+def _download_all(downloads: list[_Download], *, bbapi: Path, run: Runner) -> None:
+    """Download a batch of listed CAS blobs in one bbapi operation.
 
-    Deviation from `bbapi artifact download`, which resolves a `label/name` pattern
-    against the invocation's whole build event stream and so pays for that stream per
-    file — README.md § Gotcha: artifacts come from the CAS.
+    The manifest carries the URI BuildBuddy advertised and its exact destination, so the
+    CLI can download concurrently without resolving the invocation's event stream once
+    per file.
     """
-    download.destination.parent.mkdir(parents=True, exist_ok=True)
-    request = urllib.request.Request(
-        f"{BUILDBUDDY_APP}/file/download?bytestream_url={urllib.parse.quote(download.listed.artifact.file.uri, safe='')}",
-        headers={"x-buildbuddy-api-key": api_key},
-    )
-    download.destination.write_bytes(fetch(request))
-
-
-def _download_all(downloads: list[_Download], *, api_key: str, fetch: Fetcher) -> None:
-    with ThreadPoolExecutor(max_workers=DOWNLOAD_WORKERS) as pool:
-        pending = [pool.submit(_download_artifact, download, api_key=api_key, fetch=fetch) for download in downloads]
-    for download in pending:
-        download.result()
+    if not downloads:
+        return
+    for download in downloads:
+        download.destination.parent.mkdir(parents=True, exist_ok=True)
+    manifest = [
+        {
+            "uri": download.listed.artifact.file.uri,
+            "destination": str(download.destination),
+            "invocation_id": download.listed.invocation_id,
+        }
+        for download in downloads
+    ]
+    manifest_dir = downloads[0].destination.parent
+    manifest_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=manifest_dir, delete=False) as stream:
+        json.dump(manifest, stream)
+        manifest_path = Path(stream.name)
+    try:
+        result = run(
+            [bbapi, "--timeout", "30s", "blob", "download", "--manifest", str(manifest_path)],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"bbapi blob download failed: {result.stderr.strip()}")
+    finally:
+        manifest_path.unlink(missing_ok=True)
+    missing = [str(download.destination) for download in downloads if not download.destination.is_file()]
+    if missing:
+        raise RuntimeError(f"bbapi blob download did not create destinations: {', '.join(missing)}")
 
 
 def _merge_manifests(
@@ -426,13 +447,7 @@ def _merge_manifests(
 
 
 def download_visual_tests(
-    invocations: list[str],
-    destination: Path,
-    *,
-    api_key: str,
-    fetch: Fetcher = _read,
-    bbapi: Path = Path("bbapi"),
-    run: Runner = subprocess.run,
+    invocations: list[str], destination: Path, *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run
 ) -> list[DownloadedVisualTest]:
     artifacts = list_ci_artifacts(invocations, bbapi=bbapi, run=run)
     by_target: defaultdict[str, list[ListedArtifact]] = defaultdict(list)
@@ -471,7 +486,7 @@ def download_visual_tests(
 
     # Two waves rather than one, because the manifests are what name the assets: every
     # manifest has to land before any asset can be asked for.
-    _download_all([download for test in planned for download in test.manifests], api_key=api_key, fetch=fetch)
+    _download_all([download for test in planned for download in test.manifests], bbapi=bbapi, run=run)
 
     tests: list[DownloadedVisualTest] = []
     asset_downloads: list[_Download] = []
@@ -497,7 +512,7 @@ def download_visual_tests(
                 _Download(min(candidates, key=lambda item: item.invocation_id != declaring), test_dir / asset.path)
             )
         tests.append(DownloadedVisualTest(plan.target_label, plan.slug, manifest, test_dir))
-    _download_all(asset_downloads, api_key=api_key, fetch=fetch)
+    _download_all(asset_downloads, bbapi=bbapi, run=run)
     return tests
 
 
@@ -1256,20 +1271,15 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
-def _buildbuddy_api_key() -> str:
-    key = os.environ.get("BUILDBUDDY_API_KEY")
-    if not key:
-        raise ValueError("BUILDBUDDY_API_KEY is required to read this commit's test artifacts from BuildBuddy")
-    return key
-
-
-def _invocations_for(args: argparse.Namespace, *, api_key: str) -> list[str]:
+def _invocations_for(
+    args: argparse.Namespace, *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run
+) -> list[str]:
     return find_test_invocations(
-        run_id=args.ci_run_id, run_attempt=args.ci_run_attempt, commit_sha=args.sha, api_key=api_key, fetch=_read
+        run_id=args.ci_run_id, run_attempt=args.ci_run_attempt, commit_sha=args.sha, bbapi=bbapi, run=run
     )
 
 
-def publish_only(args: argparse.Namespace, *, github_token: str, api_key: str, details_url: str | None) -> None:
+def publish_only(args: argparse.Namespace, *, github_token: str, details_url: str | None) -> None:
     """Upload a superseded run's commit bundle, saying nothing about it.
 
     Deliberately does not call :func:`write_baseline_pointers`. Pointers are the
@@ -1292,14 +1302,12 @@ def publish_only(args: argparse.Namespace, *, github_token: str, api_key: str, d
         external_id=args.check_external_id,
         token=github_token,
     )
-    invocations = _invocations_for(args, api_key=api_key)
+    invocations = _invocations_for(args, run=subprocess.run)
     test_id = str(invocation_id(run_id=args.ci_run_id, attempt=args.ci_run_attempt, role="test"))
-    readiness = wait_for_test_invocations(
-        [test_id] if test_id in invocations else invocations, api_key=api_key, fetch=_read
-    )
+    readiness = wait_for_test_invocations([test_id] if test_id in invocations else invocations, run=subprocess.run)
     if readiness != "complete":
         print("Superseded invocation did not finish before publication; publishing available artifacts only.")
-    tests = download_visual_tests(invocations, args.work_dir / "tests", api_key=api_key)
+    tests = download_visual_tests(invocations, args.work_dir / "tests", run=subprocess.run)
     if tests:
         s3 = boto3.client("s3", endpoint_url=args.endpoint)
         bundle = build_bundle(
@@ -1316,7 +1324,6 @@ def main() -> None:
     github_token = os.environ.get("GITHUB_TOKEN")
     if not github_token:
         raise ValueError("GITHUB_TOKEN is required to publish the visual-review check run")
-    api_key = _buildbuddy_api_key()
     workflow_url = current_workflow_url()
 
     conclusion: Literal["success", "failure", "neutral"] = "neutral"
@@ -1338,7 +1345,7 @@ def main() -> None:
         # already streamed to BuildBuddy. Those are published: the commit bundle is
         # immutable and additive, and it is what lets a PR based on this commit resolve
         # an exact baseline instead of falling back to a pointer.
-        publish_only(args, github_token=github_token, api_key=api_key, details_url=details_url)
+        publish_only(args, github_token=github_token, details_url=details_url)
         return
 
     pull_request: int | None = None
@@ -1353,22 +1360,21 @@ def main() -> None:
                 print(summary)
                 return
             pull_request, base_sha = found.number, found.base_sha
-        invocations = _invocations_for(args, api_key=api_key)
+        invocations = _invocations_for(args, run=subprocess.run)
         test_id = str(invocation_id(run_id=args.ci_run_id, attempt=args.ci_run_attempt, role="test"))
         readiness = wait_for_test_invocations(
             [test_id] if test_id in invocations else invocations,
-            api_key=api_key,
             workflow_succeeded=args.ci_conclusion == "success" and test_id in invocations,
             allow_build_only=args.ci_conclusion in ("success", "failure") and test_id in invocations,
             build_invocation_id=str(invocation_id(run_id=args.ci_run_id, attempt=args.ci_run_attempt, role="build")),
-            fetch=_read,
+            run=subprocess.run,
         )
         if readiness == "incomplete":
             raise RuntimeError("Bazel test invocation did not complete before visual publication")
         if args.ci_conclusion != "success":
-            ci_failures = list_ci_failures(invocations)
+            ci_failures = list_ci_failures(invocations, run=subprocess.run)
         tests = (
-            download_visual_tests(invocations, args.work_dir / "tests", api_key=api_key)
+            download_visual_tests(invocations, args.work_dir / "tests", run=subprocess.run)
             if readiness == "complete"
             else []
         )
