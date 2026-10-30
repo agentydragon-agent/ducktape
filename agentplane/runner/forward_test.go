@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
+
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/control"
 	runner_execpb "github.com/agentydragon/ducktape/agentplane/runner/runner_execpb"
@@ -54,7 +56,7 @@ func testRunnerHealthAndFencing(t *testing.T, mode runnertransport.SecurityMode)
 		runnerSecurity.TLS, gatewaySecurity.TLS = &runnerTLS, &gatewayTLS
 	}
 	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
-	config.Control = RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnerSecurity}
+	config.Control = configuration.RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnerSecurity}
 	r := newLifecycleRunner(t, config)
 	listener, server, err := r.control.Listen(r.executorRelay)
 	if err != nil {
@@ -151,8 +153,8 @@ func TestRunnerRejectsControlCertificateForAnotherSandbox(t *testing.T) {
 	wrongTLS := ca.Issue(t, wrongURI)
 	config := Config{
 		StateDir: t.TempDir(),
-		Launch:   SandboxLaunch{Sandbox: SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}},
-		Control: RunnerControlConfiguration{
+		Launch:   configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}},
+		Control: configuration.RunnerControlConfiguration{
 			ListenAddress: "127.0.0.1:8090", Security: runnertransport.Security{Mode: runnertransport.MutualTLS, TLS: &wrongTLS},
 		},
 	}
@@ -172,7 +174,7 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 	runnerTLS := ca.Issue(t, runnerURI)
 	gatewayTLS := ca.Issue(t, runnertransport.GatewayURI)
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
-	config.Control = RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnertransport.Security{Mode: runnertransport.MutualTLS, TLS: &runnerTLS}}
+	config.Control = configuration.RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnertransport.Security{Mode: runnertransport.MutualTLS, TLS: &runnerTLS}}
 	r := newLifecycleRunner(t, config)
 	listener, server, err := r.control.Listen(r.executorRelay)
 	if err != nil {
@@ -302,7 +304,7 @@ func TestForwardRunnerBoundsDirectExecutorStreams(t *testing.T) {
 	runnerTLS := ca.Issue(t, runnerURI)
 	gatewayTLS := ca.Issue(t, runnertransport.GatewayURI)
 	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
-	config.Control = RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnertransport.Security{Mode: runnertransport.MutualTLS, TLS: &runnerTLS}}
+	config.Control = configuration.RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnertransport.Security{Mode: runnertransport.MutualTLS, TLS: &runnerTLS}}
 	r := newLifecycleRunner(t, config)
 	listener, server, err := r.control.Listen(r.executorRelay)
 	if err != nil {

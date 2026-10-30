@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
+
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	bootstrapcomponent "github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
@@ -810,8 +812,8 @@ func assertStillClosing(t *testing.T, closed <-chan error, stage string) {
 	}
 }
 
-func insecureControl() RunnerControlConfiguration {
-	return RunnerControlConfiguration{
+func insecureControl() configuration.RunnerControlConfiguration {
+	return configuration.RunnerControlConfiguration{
 		ListenAddress: "127.0.0.1:0", Security: runnertransport.Security{Mode: runnertransport.Insecure},
 	}
 }
@@ -821,7 +823,7 @@ func lifecycleConfig(t *testing.T, endpoint, workspace string, bootstrap *string
 	return Config{
 		StateDir:      filepath.Join(t.TempDir(), "state"),
 		Control:       insecureControl(),
-		Launch:        SandboxLaunch{Sandbox: SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}, Bootstrap: bootstrap},
+		Launch:        configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}, Bootstrap: bootstrap},
 		WorkspaceRoot: workspace, InitializationCwd: workspace,
 		Claude:     &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test-token"},
 		HTTPClient: http.DefaultClient,

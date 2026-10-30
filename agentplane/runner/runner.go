@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/configuration"
+
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
 	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
@@ -59,7 +61,7 @@ type Runner struct {
 }
 
 func New(config Config) (*Runner, error) {
-	if err := validateControlIdentity(config); err != nil {
+	if err := configuration.ValidateControlIdentity(config.Control, config.Launch.Sandbox); err != nil {
 		return nil, err
 	}
 	return newRunner(config, nil, nil)
