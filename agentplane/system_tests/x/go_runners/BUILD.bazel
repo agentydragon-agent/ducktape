@@ -7,8 +7,7 @@ package(
 
 py_binary(
     name = "host_bin",
-    srcs = ["host.py"],
-    main = "host.py",
+    main_module = "agentplane.system_tests.x.go_runners.host",
     deps = [":host"],
 )
 
