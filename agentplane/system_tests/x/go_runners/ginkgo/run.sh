@@ -8,7 +8,7 @@ unset XML_OUTPUT_FILE
 export GO_TEST_WRAP=0
 args=(--procs=3 --seed=1 --no-color --fail-on-empty --output-dir="$(dirname "$report")" --junit-report="$(basename "$report")")
 if [[ -n "${TESTBRIDGE_TEST_ONLY:-}" ]]; then
-    args+=(--focus="$TESTBRIDGE_TEST_ONLY")
+  args+=(--focus="$TESTBRIDGE_TEST_ONLY")
 fi
 # rules_go otherwise treats Bazel's spec filter as a filter for TestSharedStack itself.
 unset TESTBRIDGE_TEST_ONLY

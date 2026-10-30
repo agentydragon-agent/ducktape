@@ -14,10 +14,10 @@ case's scripted upstream using the Pod identity verified by LLM ingress. Cleanup
 case, captures diagnostics, suspends/deletes its Sandbox, checks unsettled model requests,
 and closes its Client. Stack teardown waits for every case's cleanup.
 
-| Target suffix | Go `testing` | Ginkgo 2 |
-| --- | --- | --- |
-| `:probe` | Six individually named subtests, at most three parallel | Six individually named specs across three processes |
-| `:vm` | Claude supervision, Codex turn, Codex tool OOM | The same three scenario bodies |
+| Target suffix | Go `testing`                                            | Ginkgo 2                                            |
+| ------------- | ------------------------------------------------------- | --------------------------------------------------- |
+| `:probe`      | Six individually named subtests, at most three parallel | Six individually named specs across three processes |
+| `:vm`         | Claude supervision, Codex turn, Codex tool OOM          | The same three scenario bodies                      |
 
 The VM targets are `manual` so ordinary CI does not duplicate the production VM suite.
 Both runners use `k3s_runtime("vm")` for the same images, manifests and RBE resources.
