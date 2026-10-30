@@ -291,6 +291,8 @@ async def _run_codex_tool_oom(
 @pytest.mark.vm_sandboxes
 @pytest.mark.scripted_model
 async def test_vm_sandbox_scenarios(client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream) -> None:
+    # pytest-asyncio runs parametrized cases sequentially. Schedule these explicitly so all three
+    # independent VM boots overlap while sharing one k3s stack and Pod-routed scripted server.
     harnesses = [runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX]
     offered_models = await models_offered_for(client, harnesses)
     async with asyncio.TaskGroup() as scenarios:
