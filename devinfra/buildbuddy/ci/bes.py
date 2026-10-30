@@ -122,25 +122,29 @@ def _invocation_from_export(document: object) -> Invocation:
     for output in document["outputs"]:
         file = output["file"]
         target = output["id"]["targetCompleted"]
-        outputs.append(Output(
-            label=target["label"],
-            path="/".join([*file.get("pathPrefix", []), file["name"]]),
-            uri=file.get("uri", ""),
-            digest=file.get("digest", ""),
-            size=int(file.get("length", 0)),
-            output_group=output["outputGroup"],
-            aspect=target.get("aspect", ""),
-        ))
+        outputs.append(
+            Output(
+                label=target["label"],
+                path="/".join([*file.get("pathPrefix", []), file["name"]]),
+                uri=file.get("uri", ""),
+                digest=file.get("digest", ""),
+                size=int(file.get("length", 0)),
+                output_group=output["outputGroup"],
+                aspect=target.get("aspect", ""),
+            )
+        )
     summaries = []
     for record in document["testSummaries"]:
         identity, summary = record["id"], record["summary"]
-        summaries.append(TestSummary(
-            label=identity["label"],
-            configuration_id=(identity.get("configuration") or {}).get("id", ""),
-            status=summary["overallStatus"],
-            attempt_count=summary["attemptCount"] if record["attemptCountPresent"] else None,
-            cached_count=summary["totalNumCached"] if record["cachedCountPresent"] else None,
-        ))
+        summaries.append(
+            TestSummary(
+                label=identity["label"],
+                configuration_id=(identity.get("configuration") or {}).get("id", ""),
+                status=summary["overallStatus"],
+                attempt_count=summary["attemptCount"] if record["attemptCountPresent"] else None,
+                cached_count=summary["totalNumCached"] if record["cachedCountPresent"] else None,
+            )
+        )
     return Invocation(
         outputs=outputs,
         test_status=dict(document["testStatus"]),
