@@ -36,7 +36,13 @@ import typer
 import yaml
 from pydantic import BaseModel, Field, StrictStr, ValidationError
 
-from cluster.rotators.attic_jwt_rotation.config import Config, Token
+from cluster.rotators.attic_jwt_rotation.config import (
+    Config,
+    KubernetesDestination,
+    MirroredDestination,
+    SopsDestination,
+    Token,
+)
 from devinfra.prettier_cli import prettier_format_yaml_in_place
 
 logger = logging.getLogger(__name__)
@@ -115,11 +121,8 @@ def _run_kubectl(description: str, args: list[str], *, input_text: str | None = 
     return result.stdout
 
 
-def _read_kubernetes_secret(token: Token) -> KubernetesSecret | None:
+def _read_kubernetes_secret(destination: KubernetesDestination | MirroredDestination) -> KubernetesSecret | None:
     """Read the configured Secret; missing means it was not provisioned by the owner."""
-    destination = token.kubernetes
-    if destination is None:
-        raise ValueError("Kubernetes Secret requested for a token without a Kubernetes destination")
     secret_destination = destination.secret
     output = _run_kubectl(
         "get Secret",
@@ -204,10 +207,9 @@ def _secret_rotation_reason(token: Token, secret: KubernetesSecret, rotate_below
     return None
 
 
-def _secret_patch(token: Token, jwt: str, expires: datetime) -> KubernetesSecret:
-    destination = token.kubernetes
-    if destination is None:
-        raise ValueError("Kubernetes Secret requested for a token without a Kubernetes destination")
+def _secret_patch(
+    token: Token, destination: KubernetesDestination | MirroredDestination, jwt: str, expires: datetime
+) -> KubernetesSecret:
     secret_destination = destination.secret
     patch = {
         "data": {secret_destination.key: base64.b64encode(jwt.encode("utf-8")).decode("ascii")},
@@ -232,16 +234,13 @@ def _secret_patch(token: Token, jwt: str, expires: datetime) -> KubernetesSecret
         ],
         input_text=json.dumps(patch),
     )
-    updated = _read_kubernetes_secret(token)
+    updated = _read_kubernetes_secret(destination)
     if updated is None or updated.jwt != jwt:
         raise RuntimeError(f"{token.name}: Kubernetes Secret patch did not persist the minted token")
     return updated
 
 
-def _notify_workspace(token: Token, secret: KubernetesSecret) -> None:
-    destination = token.kubernetes
-    if destination is None:
-        raise ValueError("Workspace notification requested for a token without a Kubernetes destination")
+def _notify_workspace(destination: KubernetesDestination | MirroredDestination, secret: KubernetesSecret) -> None:
     notification = destination.notification
     patch = {"metadata": {"annotations": {notification.annotation_key: f"{secret.uid}/{secret.resource_version}"}}}
     _run_kubectl(
@@ -326,7 +325,12 @@ def encrypt_sops_file(path: Path) -> None:
 
 
 def _write_sops_token(
-    token: Token, config: Config, jwt: str, expires: datetime, secret: KubernetesSecret | None = None
+    token: Token,
+    destination: SopsDestination | MirroredDestination,
+    config: Config,
+    jwt: str,
+    expires: datetime,
+    secret: KubernetesSecret | None = None,
 ) -> None:
     # `*_unencrypted` keys match SOPS's default unencrypted_suffix, so they stay
     # plaintext after encryption and can be checked without the in-cluster age key.
@@ -339,13 +343,13 @@ def _write_sops_token(
     if secret is not None:
         stamps[_SOPS_SECRET_UID_STAMP] = secret.uid
         stamps[_SOPS_SECRET_RESOURCE_VERSION_STAMP] = secret.resource_version
-    token.sops_file.parent.mkdir(parents=True, exist_ok=True)
-    token.sops_file.write_text(yaml.safe_dump(stamps, sort_keys=False, width=2**31))
+    destination.sops_file.parent.mkdir(parents=True, exist_ok=True)
+    destination.sops_file.write_text(yaml.safe_dump(stamps, sort_keys=False, width=2**31))
     try:
-        encrypt_sops_file(token.sops_file)
-        prettier_format_yaml_in_place(token.sops_file)
+        encrypt_sops_file(destination.sops_file)
+        prettier_format_yaml_in_place(destination.sops_file)
     except subprocess.CalledProcessError, OSError:
-        token.sops_file.unlink(missing_ok=True)
+        destination.sops_file.unlink(missing_ok=True)
         raise RuntimeError(f"{token.name}: failed to encrypt or format SOPS token output") from None
     logger.info("%s: wrote token expiring %s", token.name, _iso_expiry(expires))
 
@@ -359,11 +363,10 @@ def _sops_matches_secret(token: Token, stamps: dict[str, Any], secret: Kubernete
     )
 
 
-def _rotate_kubernetes_token(token: Token, config: Config) -> bool:
-    secret = _read_kubernetes_secret(token)
-    destination = token.kubernetes
-    if destination is None:
-        raise ValueError("Kubernetes rotation requested for a token without a Kubernetes destination")
+def _rotate_kubernetes_token(
+    token: Token, destination: KubernetesDestination | MirroredDestination, config: Config
+) -> bool:
+    secret = _read_kubernetes_secret(destination)
     if secret is None:
         raise RuntimeError(
             f"{token.name}: Kubernetes Secret {destination.secret.namespace}/{destination.secret.name} "
@@ -379,35 +382,41 @@ def _rotate_kubernetes_token(token: Token, config: Config) -> bool:
         if payload.get("sub") != token.sub:
             raise RuntimeError(f"{token.name}: minted JWT subject differs from configuration")
         expires = _jwt_expiry(payload, token.name)
-        secret = _secret_patch(token, jwt, expires)
+        secret = _secret_patch(token, destination, jwt, expires)
         if _secret_rotation_reason(token, secret, config.rotate_below_hours) is not None:
             raise RuntimeError(f"{token.name}: Kubernetes Secret does not match the minted token and configured scope")
-        sops_updated = True
     else:
         expires = _secret_expiry(secret)
         if expires is None or secret.jwt is None:
             raise RuntimeError(f"{token.name}: Kubernetes Secret changed while it was being validated")
         jwt = secret.jwt
-        stamps = unencrypted_stamps(token.sops_file)
-        sops_updated = not _sops_matches_secret(token, stamps, secret, expires)
 
     # This is intentionally retried on every run. The Workspace's annotation
     # watch is the trigger for the existing Crossplane GitOps sync.
-    _notify_workspace(token, secret)
+    _notify_workspace(destination, secret)
+
+    if not isinstance(destination, MirroredDestination):
+        return False
+    if reason is not None:
+        sops_updated = True
+    else:
+        stamps = unencrypted_stamps(destination.sops_file)
+        sops_updated = not _sops_matches_secret(token, stamps, secret, expires)
     if sops_updated:
         if reason is None:
             logger.info("%s: syncing SOPS output from the current Kubernetes Secret", token.name)
-        _write_sops_token(token, config, jwt, expires, secret)
+        _write_sops_token(token, destination, config, jwt, expires, secret)
     return sops_updated
 
 
 def rotate_one(token: Token, config: Config) -> bool:
     """Rotate one token; return whether the SOPS file needs the combined commit."""
-    if token.kubernetes is not None:
-        return _rotate_kubernetes_token(token, config)
+    destination = token.destination
+    if isinstance(destination, (KubernetesDestination, MirroredDestination)):
+        return _rotate_kubernetes_token(token, destination, config)
 
-    stamps = unencrypted_stamps(token.sops_file)
-    remaining = remaining_hours(token.sops_file)
+    stamps = unencrypted_stamps(destination.sops_file)
+    remaining = remaining_hours(destination.sops_file)
     drift = scope_drift(token, stamps)
     if remaining is not None and remaining > config.rotate_below_hours and drift is None:
         logger.info("%s: %.0fh remaining > %dh threshold; skipping", token.name, remaining, config.rotate_below_hours)
@@ -418,7 +427,7 @@ def rotate_one(token: Token, config: Config) -> bool:
     jwt = mint_attic_token(token, config)
     payload = jwt_payload(jwt)
     expires = _jwt_expiry(payload, token.name)
-    _write_sops_token(token, config, jwt, expires)
+    _write_sops_token(token, destination, config, jwt, expires)
     return True
 
 
@@ -450,8 +459,9 @@ def commit_and_push(repo: pygit2.Repository, config: Config, rotated: list[str],
     index = repo.index
     # Stage exactly the SOPS files for tokens that rotated this cycle (no full-tree add).
     for token_entry in config.tokens:
-        if token_entry.name in rotated:
-            index.add(str(token_entry.sops_file))
+        destination = token_entry.destination
+        if token_entry.name in rotated and isinstance(destination, (SopsDestination, MirroredDestination)):
+            index.add(str(destination.sops_file))
     index.write()
     tree_id = index.write_tree()
     if tree_id == repo.head.peel(pygit2.Commit).tree_id:
@@ -495,7 +505,7 @@ def rotate_cmd(
     rotated = [t.name for t in config.tokens if rotate_one(t, config)]
 
     if not rotated:
-        logger.info("no rotations needed this cycle")
+        logger.info("no SOPS changes to commit")
         return
     commit_and_push(repo, config, rotated, token)
 
