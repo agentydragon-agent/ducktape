@@ -7,6 +7,7 @@ expands and runs the requested coverage.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 from collections import Counter, defaultdict
@@ -103,53 +104,53 @@ def _push_invocation_problem(
     return None
 
 
-def verified_test_summaries(
-    invocation: Invocation | None,
-    *,
-    invocation_id_value: str,
-    source_commit: str,
-    current_commit: str,
-    run_id: str,
-    run_attempt: str,
-    event_name: str,
-    rbe_image: str | None,
-) -> tuple[Mapping[str, list[TestSummary]], str | None]:
-    """Validate the invocation once; return its unmerged summaries on success.
+@dataclasses.dataclass(frozen=True)
+class TestEvidence:
+    """Verified failures and reusable passes from one unmerged push-CI invocation."""
 
-    This proof is deliberately tied to the normal push workflow's deterministic
-    invocation id, checkout SHA, complete successful test command and exact RBE
-    image/config flags. Any missing or unfamiliar field disables reuse.
-    """
-    if invocation is None:
-        return {}, "test invocation is unavailable"
-    problem = _push_invocation_problem(
-        invocation,
-        invocation_id_value=invocation_id_value,
-        source_commit=source_commit,
-        current_commit=current_commit,
-        run_id=run_id,
-        run_attempt=run_attempt,
-        event_name=event_name,
-        rbe_image=rbe_image,
-    )
-    if problem is not None:
-        return {}, problem
-    if not invocation.finished or not invocation.successful:
-        return {}, "test invocation has no successful terminal BuildFinished event"
+    problem: str | None
+    summaries: Mapping[str, list[TestSummary]] = dataclasses.field(default_factory=dict)
+    failed_labels: frozenset[str] = frozenset()
 
-    summaries: dict[str, list[TestSummary]] = defaultdict(list)
-    for summary in invocation.test_summaries:
-        summaries[summary.label].append(summary)
-    return summaries, None
+    def already_failed(self, selector: str) -> tuple[bool, str]:
+        """Whether a literal test in one publication selector already failed in push CI on this source."""
+        failed = [label for label in dict.fromkeys(selector.split()) if label in self.failed_labels]
+        if failed:
+            return True, f"{', '.join(failed)} failed in bazel-ci on this source"
+        return False, "no recorded bazel-ci failure"
+
+    def is_covered(self, selector: str) -> tuple[bool, str]:
+        """Whether every literal test in one publication selector has one clean verdict."""
+        if self.problem is not None:
+            return False, self.problem
+        labels = selector.split()
+        if not labels or any(
+            not _LABEL.fullmatch(label) or "..." in label or any(c in label for c in "*?[]") for label in labels
+        ):
+            return False, "selector is not a list of literal workspace test labels"
+        for label in dict.fromkeys(labels):
+            matching = self.summaries.get(label, [])
+            if len(matching) != 1:
+                return False, f"{label} has {len(matching)} test summaries"
+            summary = matching[0]
+            if not summary.configuration_id:
+                return False, f"{label} has no configuration identity"
+            if summary.status != "PASSED":
+                return False, f"{label} has non-passing status {summary.status!r}"
+            if summary.attempt_count != 1:
+                return False, f"{label} has missing or repeated test attempts"
+            # A cached one-attempt pass is valid: its action key still includes the
+            # source and Bazel configuration that this decision checked above.
+            if summary.cached_count is not None and summary.cached_count > 1:
+                return False, f"{label} reports more cached results than test attempts"
+        return True, "every requested literal test has one passing attempt"
 
 
-# Verdicts a publication job's own `bazel test` of the same source and configuration repeats:
-# the test ran (or its build failed) deterministically. Infrastructure outcomes such as
-# REMOTE_FAILURE or INCOMPLETE keep the job's gate, which may succeed on retry.
+# Infrastructure failures keep the publication job's test gate enabled.
 _REPEATABLE_FAILURES = frozenset({"FAILED", "TIMEOUT", "FAILED_TO_BUILD"})
 
 
-def recorded_test_failures(
+def verify(
     invocation: Invocation | None,
     *,
     invocation_id_value: str,
@@ -159,14 +160,14 @@ def recorded_test_failures(
     run_attempt: str,
     event_name: str,
     rbe_image: str | None,
-) -> frozenset[str]:
-    """Literal test labels whose verified push-CI verdict on this source is a repeatable failure.
+) -> TestEvidence:
+    """Check provenance once, then distinguish reusable passes from recorded failures.
 
-    The invocation only needs to have finished, not succeeded: a failed sweep is exactly
-    when these verdicts matter. Identity and configuration checks are the ones reuse makes.
+    A failed terminal invocation can block publication of its failed tests. Only
+    a successful terminal invocation can supply reusable passing summaries.
     """
-    if invocation is None or not invocation.finished:
-        return frozenset()
+    if invocation is None:
+        return TestEvidence(problem="test invocation is unavailable")
     problem = _push_invocation_problem(
         invocation,
         invocation_id_value=invocation_id_value,
@@ -178,38 +179,17 @@ def recorded_test_failures(
         rbe_image=rbe_image,
     )
     if problem is not None:
-        return frozenset()
-    return frozenset(summary.label for summary in invocation.test_summaries if summary.status in _REPEATABLE_FAILURES)
-
-
-def selector_already_failed(selector: str, failed_labels: frozenset[str]) -> tuple[bool, str]:
-    """Whether a literal test in one publication selector already failed in push CI on this source."""
-    failed = [label for label in dict.fromkeys(selector.split()) if label in failed_labels]
-    if failed:
-        return True, f"{', '.join(failed)} failed in bazel-ci on this source"
-    return False, "no recorded bazel-ci failure"
-
-
-def selector_is_covered(selector: str, summaries: Mapping[str, list[TestSummary]]) -> tuple[bool, str]:
-    """Whether every literal test in one publication selector has one clean verdict."""
-    labels = selector.split()
-    if not labels or any(
-        not _LABEL.fullmatch(label) or "..." in label or any(c in label for c in "*?[]") for label in labels
-    ):
-        return False, "selector is not a list of literal workspace test labels"
-    for label in dict.fromkeys(labels):
-        matching = summaries.get(label, [])
-        if len(matching) != 1:
-            return False, f"{label} has {len(matching)} test summaries"
-        summary = matching[0]
-        if not summary.configuration_id:
-            return False, f"{label} has no configuration identity"
-        if summary.status != "PASSED":
-            return False, f"{label} has non-passing status {summary.status!r}"
-        if summary.attempt_count != 1:
-            return False, f"{label} has missing or repeated test attempts"
-        # A cached one-attempt pass is valid: its action key still includes the
-        # source and Bazel configuration that this decision checked above.
-        if summary.cached_count is not None and summary.cached_count > 1:
-            return False, f"{label} reports more cached results than test attempts"
-    return True, "every requested literal test has one passing attempt"
+        return TestEvidence(problem=problem)
+    if not invocation.finished:
+        return TestEvidence(problem="test invocation has no terminal BuildFinished event")
+    failures = frozenset(
+        summary.label for summary in invocation.test_summaries if summary.status in _REPEATABLE_FAILURES
+    )
+    if not invocation.successful:
+        return TestEvidence(
+            problem="test invocation has no successful terminal BuildFinished event", failed_labels=failures
+        )
+    summaries: dict[str, list[TestSummary]] = defaultdict(list)
+    for summary in invocation.test_summaries:
+        summaries[summary.label].append(summary)
+    return TestEvidence(problem=None, summaries=summaries, failed_labels=failures)

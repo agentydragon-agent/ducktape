@@ -43,15 +43,9 @@ import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
-from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, fetch_blob, merge, read
+from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, fetch_blob
+from devinfra.ci import publication_evidence
 from devinfra.ci.image_registry import DIGEST_SUFFIX, Registry, registry_digest, repo_for
-from devinfra.ci.publication_test_verdicts import (
-    effective_rbe_image,
-    recorded_test_failures,
-    selector_already_failed,
-    selector_is_covered,
-    verified_test_summaries,
-)
 from util.crane import Crane
 
 
@@ -206,19 +200,6 @@ def _write_github_output(**values: str) -> None:
         f.writelines(f"{key}={value}\n" for key, value in values.items())
 
 
-def _read_invocations(ids: list[str], test_invocation_id: str) -> tuple[Invocation | None, Invocation | None]:
-    """Merge output evidence and retain the original test invocation separately."""
-    readable = {}
-    for invocation_id in ids:
-        try:
-            readable[invocation_id] = read(invocation_id)
-        except (BuildBuddyError, KeyError, TypeError, ValueError, IndexError) as e:
-            print(
-                f"::warning::could not read invocation {invocation_id} ({e}); pushing more than needed", file=sys.stderr
-            )
-    return merge(readable.values()), readable.get(test_invocation_id) if test_invocation_id in ids else None
-
-
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -239,35 +220,13 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     images = load_images(args.spec)
 
-    # bazel-ci runs `bazel test` then `bazel build`, so it reports more than one
-    # invocation; merge them rather than guess which one holds a given output.
-    invocation_ids = [i for i in args.invocations.split(",") if i]
-    if not invocation_ids:
-        print("::warning::no bazel-ci invocation to read; pushing everything", file=sys.stderr)
-    merged, test_invocation = _read_invocations(invocation_ids, args.test_invocation_id)
-    digests = local_digests(images, merged, fetch_blob)
-
-    summaries, evidence_problem = verified_test_summaries(
-        test_invocation,
-        invocation_id_value=args.test_invocation_id,
+    evidence = publication_evidence.load(
+        [value for value in args.invocations.split(",") if value],
+        test_invocation_id=args.test_invocation_id,
         source_commit=args.test_source_commit,
-        current_commit=os.environ.get("GITHUB_SHA", ""),
-        run_id=os.environ.get("GITHUB_RUN_ID", ""),
-        run_attempt=os.environ.get("GITHUB_RUN_ATTEMPT", ""),
-        event_name=os.environ.get("GITHUB_EVENT_NAME", ""),
-        rbe_image=effective_rbe_image(args.rbe_container_image),
+        rbe_container_image=args.rbe_container_image,
     )
-
-    failed_labels = recorded_test_failures(
-        test_invocation,
-        invocation_id_value=args.test_invocation_id,
-        source_commit=args.test_source_commit,
-        current_commit=os.environ.get("GITHUB_SHA", ""),
-        run_id=os.environ.get("GITHUB_RUN_ID", ""),
-        run_attempt=os.environ.get("GITHUB_RUN_ATTEMPT", ""),
-        event_name=os.environ.get("GITHUB_EVENT_NAME", ""),
-        rbe_image=effective_rbe_image(args.rbe_container_image),
-    )
+    digests = local_digests(images, evidence.outputs, fetch_blob)
 
     crane = Crane(args.crane)
     decisions = plan(images, lambda image: decide(image, digests, crane), args.workers)
@@ -277,14 +236,12 @@ def main(argv: list[str] | None = None) -> None:
         selector = decision.image.test
         if not decision.needs_push or not selector:
             continue
-        blocked, why = selector_already_failed(selector, failed_labels)
+        blocked, why = evidence.tests.already_failed(selector)
         if blocked:
             blocked_tests.add(selector)
             print(f"::warning::{decision.image.name}: not pushed, {why}", file=sys.stderr)
             continue
-        covered, reason = (
-            selector_is_covered(selector, summaries) if evidence_problem is None else (False, evidence_problem)
-        )
+        covered, reason = evidence.tests.is_covered(selector)
         if covered:
             reusable_tests.add(selector)
             print(f"::notice::{decision.image.name}: reusing the verified bazel-ci test verdict", file=sys.stderr)
