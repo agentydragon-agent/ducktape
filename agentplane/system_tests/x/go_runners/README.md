@@ -1,7 +1,8 @@
 # Shared k3s runner spikes
 
 Compare Go `testing` parallel subtests with Ginkgo 2 parallel specs. These are experiments;
-the production suites still use pytest and TaskGroups.
+the production suites still use pytest and TaskGroups. See the
+[evaluation and measurements](../../debug/go_runner_spikes.md).
 
 Both runners launch `:host_bin`, a Bazel Python executable which owns the existing k3s
 stack and unchanged VM scenario bodies. Go owns case selection, scheduling, deadlines,
