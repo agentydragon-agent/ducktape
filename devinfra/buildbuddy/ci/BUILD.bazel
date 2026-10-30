@@ -1,6 +1,14 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
+    name = "fetch_build_outputs",
+    srcs = ["fetch_build_outputs.py"],
+    deps = [
+        ":bes",
+    ],
+)
+
+py_library(
     name = "bes",
     srcs = ["bes.py"],
     visibility = ["//:__subpackages__"],
