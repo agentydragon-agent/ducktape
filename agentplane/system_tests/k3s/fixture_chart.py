@@ -102,7 +102,7 @@ from cluster.cdk8s.agentplane.environment import (
     OrchestrationProps,
     ReplicaProfile,
 )
-from cluster.cdk8s.model_selections import HarnessRoutes, model_configs
+from cluster.cdk8s.agentplane.model_selections import HarnessRoutes, model_configs
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
 from cluster.cdk8s.providers.cert_manager.bundle import Bundle

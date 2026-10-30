@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest_bazel
 
-from cluster.cdk8s.model_selections import RUNNER_CONTEXT_OVERRIDES, HarnessRoutes, model_configs
+from cluster.cdk8s.agentplane.model_selections import RUNNER_CONTEXT_OVERRIDES, HarnessRoutes, model_configs
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, OLLAMA_QWEN_IQ4XS_128K, OLLAMA_QWEN_IQ4XS_256K, Model
 
 

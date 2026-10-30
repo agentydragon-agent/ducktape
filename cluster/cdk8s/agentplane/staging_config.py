@@ -48,7 +48,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     GOOGLE_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
 )
-from cluster.cdk8s.model_selections import HarnessRoutes
+from cluster.cdk8s.agentplane.model_selections import HarnessRoutes
 from cluster.cdk8s.monitoring.grafana_instance import GRAFANA_BASE_URL, TEMPO_DATASOURCE_UID
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, OLLAMA_QWEN_IQ4XS_256K
 from util.urls import HttpEndpointUrl

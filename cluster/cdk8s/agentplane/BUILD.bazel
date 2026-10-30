@@ -287,7 +287,7 @@ py_library(
         ":codex_upstream_models",
     ],
     deps = [
-        "//cluster/cdk8s:model_selections",
+        "//cluster/cdk8s/agentplane:model_selections",
         "//model_catalog:catalog",
         "//util/bazel:runfiles",
     ],
@@ -301,7 +301,7 @@ py_test(
     deps = [
         ":codex_models",
         "//:conftest",
-        "//cluster/cdk8s:model_selections",
+        "//cluster/cdk8s/agentplane:model_selections",
         "//model_catalog:catalog",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
@@ -626,7 +626,7 @@ py_library(
         "//agentplane/app:settings",
         "//agentplane/runner:harness",
         "//cluster/cdk8s:agent_access_profiles",
-        "//cluster/cdk8s:model_selections",
+        "//cluster/cdk8s/agentplane:model_selections",
         "//model_catalog:catalog",
     ],
 )
@@ -673,7 +673,7 @@ py_library(
         "//agentplane/app:settings",
         "//agentplane/runner:harness",
         "//cluster/cdk8s:agent_access_profiles",
-        "//cluster/cdk8s:model_selections",
+        "//cluster/cdk8s/agentplane:model_selections",
         "//cluster/cdk8s/monitoring:grafana_instance",
         "//model_catalog:catalog",
     ],
@@ -810,7 +810,7 @@ py_library(
         "//cluster/cdk8s:ha_mcp",
         "//cluster/cdk8s:kubectl_passthrough_mcp",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:model_selections",
+        "//cluster/cdk8s/agentplane:model_selections",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/external_secrets:single_secret_store",
@@ -1339,5 +1339,29 @@ py_library(
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "model_selections",
+    srcs = ["model_selections.py"],
+    visibility = [
+        "//agentplane/system_tests/k3s:__pkg__",
+        "//cluster/cdk8s:__pkg__",
+    ],
+    deps = [
+        "//agentplane/llm_ingress:models",
+        "//model_catalog:catalog",
+    ],
+)
+
+py_test(
+    name = "test_model_selections",
+    srcs = ["test_model_selections.py"],
+    deps = [
+        ":model_selections",
+        "//:conftest",
+        "//model_catalog:catalog",
+        "@pypi//pytest_bazel",
     ],
 )

@@ -27,7 +27,7 @@ from cluster.cdk8s.agentplane.egress import (
     PACKAGES_POLICY,
     PUBLIC_CODER_VISUALS_POLICY,
 )
-from cluster.cdk8s.model_selections import HarnessRoutes
+from cluster.cdk8s.agentplane.model_selections import HarnessRoutes
 from model_catalog.catalog import Provider, Route
 from util.urls import HttpEndpointUrl
 
