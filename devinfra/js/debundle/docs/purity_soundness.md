@@ -162,21 +162,6 @@ binding writes and unsupported operations remain conservative. This changes
 only the native write premise: ordinary effects, exceptions, loader return
 reads, accessor hazards and callback execution retain their existing analysis.
 
-## Local receiver identity
-
-The canonical collector separately retains a bounded [local receiver identity
-proof](../SPEC.md#inferred-local-receiver-identity). An unconditional initializer
-can establish a fresh direct receiver before a later or other-branch global
-alias assignment to the same activation-local binding. Source-positioned
-definitions prevent that later origin from flowing backward to the earlier
-write. Reaching or captured rebinding and unsupported control flow keep the
-union fallback. An ordinary function with no explicit return yields its fresh
-allocation on successful direct construction; an exact direct-return wrapper
-preserves that result. This is a result-identity fact, independent of purity,
-and does not certify descendants or global-slot descriptors. Discharged census
-sites retain their initializer and producer provenance in
-`native_receiver_certificates`.
-
 ## Ordinary own-property inspection and descriptor application
 
 The canonical index recognizes exact ordinary object-literal shapes with
@@ -381,9 +366,9 @@ writes to those exact slots; unknown receivers or keys remain visible and are
 covered by the explicit premise. Alias and reflective writes with a
 source-known target still contradict it.
 
-This input does not mint `NativeCallIdentity` or native-integrity facts. It
-consumes the existing exact native model only at the selected call span, and
-its report records the author provenance at that site. A `promise_resolve`
+This input sets only its asserted slots' integrity flags, and only at the
+selected call span; the existing exact native model consumes them there, and
+the report records the author provenance at that site. A `promise_resolve`
 input is effective only together with the matching independent
 `host_behavior.reentry_free_operations` entry; the pair satisfies the exact Promise timing check
 without changing other native guards or Promise call sites. Other calls still
@@ -892,7 +877,7 @@ The prepared canonical native index validates these field constructor identities
 before the class certificate reaches purity or synchronous execution. It rejects
 shadowed/replaced bindings, dynamic scopes and recognized writes to the native
 family or global object, including mutations supplied by the existing
-whole-program `NativeIntegrity` census. A11 remains the external integrity
+whole-program native write census. A11 remains the external integrity
 premise; source-visible checks strengthen this composed proof without making
 purity catalogue admissions unconditional under native replacement.
 

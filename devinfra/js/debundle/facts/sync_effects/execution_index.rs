@@ -4,7 +4,6 @@ mod callback_arguments;
 mod prototype_properties;
 
 use super::namespace_wrapper::{self, NamespaceWrapperCandidate};
-use super::receiver_identity::ReceiverIdentityFacts;
 use super::value_model::{
     ArrayElement, ArrayIteration, ArrayIterationMethod, CallSite, ClassSurface, ClassValueFacts,
     FromEntriesMappedProof, NamespaceValueFacts, OwnPropertyDescriptorSyntax, OwnPropertyShape,
@@ -18,6 +17,9 @@ use crate::analysis_inputs::{
     ValueInputEvidence, ValueInputRef,
 };
 use crate::facts::abstract_domain::builtins::{self, IntrinsicOp, Invocation, Row};
+use crate::facts::abstract_domain::integrity::{
+    IntegrityFlags, IntrinsicIntact, IntrinsicSlot, PrototypeWrites,
+};
 use crate::facts::abstract_domain::value::Kind;
 use crate::facts::at_init_fallback::{
     is_no_sync_callback_member_call, is_static_event_listener_registration,
@@ -32,7 +34,8 @@ use crate::facts::lazy_boundary::visit_eager_member_parts;
 use crate::facts::local_effect_targets::{MetadataDecorateCall, metadata_decorate_call};
 use crate::facts::semantic_inference::{
     DescriptorCopyCallCandidate as SemanticDescriptorCopyCallCandidate, NativeBindingContext,
-    SemanticFact, SemanticFacts, SemanticKey, SemanticRules,
+    NativeCallee, NativePremise, NativePremises, SemanticFact, SemanticFacts, SemanticKey,
+    SemanticRules, native_premise,
 };
 use crate::facts::statement_facts::{
     CallbackFactoryCallArgumentWitness, CallbackFactoryWriteWitness, StatementFacts,
@@ -46,8 +49,7 @@ use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
     NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativePrototypeMutation,
-    NativePrototypeMutationKind, NativeReceiverCertificate, NativeReceiverOrigin,
-    NativeReceiverPath, NativeWriteSlot, SourceLocation,
+    NativePrototypeMutationKind, NativeReceiverPath, NativeWriteSlot, SourceLocation,
 };
 use source_identity::SourceUnitOrdinal;
 use spec::{BuiltinGlobalRoot, ReentryFreeOperation};
@@ -983,10 +985,12 @@ enum CallKind {
     DeepDestructuringProtocol,
 }
 
+/// The builtin row a direct call or construction names, with its callee
+/// spelling. Identity and slot integrity are proved separately.
 fn native_call_identity_key(
     kind: CallKind,
     callee: &ValueExpr,
-) -> Option<(&'static Row, SemanticKey)> {
+) -> Option<(&'static Row, NativeCallee)> {
     let invocation = match kind {
         CallKind::Call => Invocation::Call,
         CallKind::New => Invocation::Construct,
@@ -1017,9 +1021,8 @@ fn native_call_identity_key(
     let row = builtins::lookup(receiver, member, invocation)?;
     Some((
         row,
-        SemanticKey::NativeCallIdentity {
+        NativeCallee {
             binding: binding.clone(),
-            intrinsic: row.requires,
             global_this_qualified,
         },
     ))
@@ -1675,36 +1678,6 @@ fn native_mutation_roots(mut roots: IntrinsicRoots) -> IntrinsicRoots {
     roots
 }
 
-fn locate_receiver_certificate(
-    certificate: &mut NativeReceiverCertificate,
-    mut locate: impl FnMut(Span) -> Option<SourceLocation>,
-) {
-    certificate.source_location = locate(certificate.span);
-    certificate.initializer_location = locate(certificate.initializer_span);
-    for origin in &mut certificate.origins {
-        match origin {
-            NativeReceiverOrigin::ObjectLiteral => {}
-            NativeReceiverOrigin::Constructor {
-                source_location,
-                span,
-                ..
-            } => {
-                *source_location = locate(*span);
-            }
-            NativeReceiverOrigin::Wrapper {
-                source_location,
-                constructor_location,
-                span,
-                constructor_span,
-                ..
-            } => {
-                *source_location = locate(*span);
-                *constructor_location = locate(*constructor_span);
-            }
-        }
-    }
-}
-
 struct ReceiverRootProjection {
     prior_roots: IntrinsicRoots,
     effective_roots: IntrinsicRoots,
@@ -1989,10 +1962,12 @@ fn source_slot_overlap<'a>(
     }
 }
 
+/// The own-data property of the unshadowed global `Object` an exact member
+/// read names, as the `%Object.<property>%` slot spells it.
 pub(super) fn object_own_data_read_property(
     value: &ValueExpr,
     is_declared: impl Fn(&Id) -> bool,
-) -> Option<&str> {
+) -> Option<&'static str> {
     let ValueExpr::Member(receiver, Some(property), true) = value else {
         return None;
     };
@@ -2004,8 +1979,8 @@ pub(super) fn object_own_data_read_property(
     }
     crate::purity::PURE_STATIC_FUNCTION_REFS
         .iter()
-        .any(|&(root, member)| root == "Object" && member == property)
-        .then_some(property.as_str())
+        .find(|&&(root, member)| root == "Object" && member == property)
+        .map(|&(_, member)| member)
 }
 
 fn receiver_uses_intrinsic_alias(
@@ -3811,9 +3786,8 @@ fn property_key_evidence<'a>(
 struct IntrinsicWriteTarget {
     owner: SourceUnitOrdinal,
     activation_callable: Option<u32>,
-    /// Only direct member operations retain the activation whose receiver read
-    /// precedes the key/RHS. Destructuring and reflective calls stay opaque.
-    receiver_callable: Option<u32>,
+    /// The constructor whose `this` a direct member operation writes.
+    /// Destructuring and reflective calls stay opaque.
     constructor_this: Option<u32>,
     span: Span,
     operation: NativeMutationOperation,
@@ -3890,8 +3864,6 @@ fn intrinsic_write_target(
     IntrinsicWriteTarget {
         owner,
         activation_callable,
-        receiver_callable: receiver_callable
-            .filter(|_| matches!(member.obj.unwrap_parens(), Expr::Ident(_))),
         constructor_this: receiver_callable
             .filter(|_| matches!(member.obj.unwrap_parens(), Expr::This(_))),
         span: member.span,
@@ -3907,7 +3879,6 @@ pub(crate) struct NativeWriteCensus {
     unconditional: IntrinsicRoots,
     prototype_mutations: Arc<Vec<NativePrototypeMutation>>,
     witnesses: Arc<Vec<NativeMutationWitness>>,
-    certificates: Arc<Vec<NativeReceiverCertificate>>,
     conditional: Vec<ConditionalIntrinsicWrite>,
 }
 
@@ -4067,12 +4038,6 @@ pub(crate) fn resolve_native_integrity<'a>(
         ),
         mutated,
         witnesses: Arc::new(witnesses),
-        certificates: Arc::new(
-            censuses
-                .iter()
-                .flat_map(|census| census.certificates.iter().cloned())
-                .collect(),
-        ),
         value_input_evidence,
         consumed_value_inputs,
     }
@@ -5213,7 +5178,6 @@ fn stored_global_alias(
 struct ExecutionIndex {
     retained_record_factories: BTreeSet<String>,
     owner: SourceUnitOrdinal,
-    receiver_identity: ReceiverIdentityFacts,
     current: Option<u32>,
     allowed_local_member_receiver: Option<u32>,
     past_await: bool,
@@ -5231,6 +5195,12 @@ struct ExecutionIndex {
     local_class_construction_shapes: LocalClassConstructionShapes,
     local_class_construction_proof: LocalClassConstructionProof,
     semantic_facts: Option<Arc<SemanticFacts>>,
+    /// Slot flags of the completed census and validated inputs; set with
+    /// `semantic_facts`.
+    integrity: IntegrityFlags,
+    /// Exact top-level own-data reads of the global `Object` by initializer
+    /// start, with the property each reads.
+    native_own_data_reads: BTreeMap<u32, &'static str>,
     class_values: BTreeMap<u32, ClassValueFacts>,
     class_owners: BTreeMap<u32, SourceUnitOrdinal>,
     class_bindings: BTreeMap<u32, Id>,
@@ -5263,7 +5233,6 @@ struct ExecutionIndex {
     mutated_intrinsic_roots: IntrinsicRoots,
     native_integrity_witnesses: Arc<Vec<NativeMutationWitness>>,
     native_prototype_mutations: Arc<Vec<NativePrototypeMutation>>,
-    native_receiver_certificates: Arc<Vec<NativeReceiverCertificate>>,
     source_chunk_id: Option<String>,
     native_point_effects: BTreeMap<(SourceUnitOrdinal, Option<u32>), NativePointEffects>,
     initial_native_point_effects: NativePointEffects,
@@ -5386,7 +5355,6 @@ impl Default for ExecutionIndex {
         Self {
             retained_record_factories: BTreeSet::new(),
             owner: SourceUnitOrdinal(0),
-            receiver_identity: ReceiverIdentityFacts::default(),
             current: None,
             allowed_local_member_receiver: None,
             past_await: false,
@@ -5404,6 +5372,8 @@ impl Default for ExecutionIndex {
             local_class_construction_shapes: LocalClassConstructionShapes::default(),
             local_class_construction_proof: LocalClassConstructionProof::default(),
             semantic_facts: None,
+            integrity: IntegrityFlags::default(),
+            native_own_data_reads: BTreeMap::new(),
             class_values: BTreeMap::new(),
             class_owners: BTreeMap::new(),
             class_bindings: BTreeMap::new(),
@@ -5434,7 +5404,6 @@ impl Default for ExecutionIndex {
             mutated_intrinsic_roots: IntrinsicRoots::new(),
             native_integrity_witnesses: Arc::default(),
             native_prototype_mutations: Arc::default(),
-            native_receiver_certificates: Arc::default(),
             source_chunk_id: None,
             native_point_effects: BTreeMap::new(),
             initial_native_point_effects: NativePointEffects::default(),
@@ -5567,15 +5536,127 @@ impl ExecutionIndex {
     /// identity and integrity proofs as local-class fields.
     fn completed_native_rules(&self) -> SemanticRules {
         SemanticRules {
-            native_census_complete: true,
-            mutated_intrinsics: self.mutated_intrinsic_roots.clone(),
+            native: NativePremises {
+                integrity: self.integrity.clone(),
+                bindings: NativeBindingContext::default(),
+            },
             dynamic_scope: !self.dynamic_scope_owners.is_empty(),
-            native_dependencies: crate::analysis_inputs::ProofDependencies {
+            ..SemanticRules::default()
+        }
+    }
+
+    /// The completed census as slot flags, with the `IntrinsicIntact` axioms
+    /// of every validated native input.
+    pub(super) fn integrity_flags(&self) -> IntegrityFlags {
+        IntegrityFlags::new(
+            self.dynamic_scope_owners.is_empty(),
+            self.mutated_intrinsic_roots.clone(),
+            crate::analysis_inputs::ProofDependencies {
                 value_inputs: self.native_integrity_value_input_refs.clone(),
                 ..Default::default()
             },
-            ..SemanticRules::default()
-        }
+            self.intrinsic_axioms(),
+            PrototypeWrites::new(
+                self.native_prototype_mutations
+                    .iter()
+                    .map(|mutation| mutation.properties.as_ref()),
+            ),
+        )
+    }
+
+    /// Each validated input asserts the slots its operation reads, at the
+    /// exact site its consumer queries: the call for a callee identity, the
+    /// constructor for a Set, the member read for an own-data read and the
+    /// initializer for an array spread.
+    fn intrinsic_axioms(&self) -> BTreeMap<u32, IntrinsicIntact> {
+        use IntrinsicSlot::{
+            ArrayIteratorPrototype, Global, Prototype, SetIteratorPrototype, Static,
+        };
+        use NativeIntrinsic::{Array, Object, Promise, Set, Symbol};
+        use spec::{NativeCallIdentityKind as Callee, NativeOperationKind as Operation};
+        const SET_FROM_ARRAY: &[IntrinsicSlot] = &[
+            Global(Set),
+            Prototype(Set),
+            Prototype(Array),
+            ArrayIteratorPrototype,
+        ];
+        self.resolved_native_operation_inputs
+            .iter()
+            .filter_map(|input| {
+                let (site, slots): (Span, Vec<IntrinsicSlot>) = match input.evidence.operation {
+                    // The builtin `Symbol` / `Symbol.for` rows at the call. A
+                    // single literal-string `Symbol.for` argument also makes
+                    // the source unit pure (`symbol_for_literal_proof`).
+                    NativeInputKind::Operation(Operation::Symbol) => {
+                        (input.call_span, vec![Global(Symbol)])
+                    }
+                    NativeInputKind::Operation(Operation::SymbolFor) => {
+                        (input.call_span, vec![Global(Symbol), Static(Symbol, "for")])
+                    }
+                    // The host Promise timing check, only with the matching
+                    // `reentry_free_operations` entry.
+                    NativeInputKind::Operation(Operation::PromiseResolve) => (
+                        input.call_span,
+                        vec![Global(Promise), Static(Promise, "resolve")],
+                    ),
+                    // A fresh Set value-flow origin and Set-content allocation
+                    // cell at the constructor, and constructor purity. A
+                    // spread additionally needs the certified seed interval
+                    // (`certify_stable_set_spreads`). Later Set methods and
+                    // iteration keep their own checks.
+                    NativeInputKind::Operation(Operation::SetFromPrimitiveArray) => {
+                        (input.call_span, SET_FROM_ARRAY.to_vec())
+                    }
+                    NativeInputKind::Operation(Operation::SetFromSetSpread) => (
+                        input.call_span,
+                        [SET_FROM_ARRAY, &[SetIteratorPrototype]].concat(),
+                    ),
+                    // Purity, timing and heap ordering at the read; calling the
+                    // read function keeps ordinary call analysis.
+                    NativeInputKind::Operation(Operation::ObjectOwnDataFunctionRead) => {
+                        let [declaration] = self
+                            .binding_declaration_writes
+                            .get(&input.binding)?
+                            .as_slice()
+                        else {
+                            return None;
+                        };
+                        let property = object_own_data_read_property(
+                            declaration.initializer.as_ref()?,
+                            |id| self.declared_bindings().contains(id),
+                        )?;
+                        (
+                            input.initializer_span,
+                            vec![Global(Object), Static(Object, property)],
+                        )
+                    }
+                    // The spread of the co-located primitive-array interval.
+                    NativeInputKind::Operation(Operation::ArraySpreadFromPrimitiveArrays) => (
+                        input.initializer_span,
+                        vec![Prototype(Array), ArrayIteratorPrototype],
+                    ),
+                    // The `Object.freeze` row at that call. A fresh plain-data
+                    // literal argument also drops the call's opaque heap
+                    // barrier; the returned value gains no value-flow origin.
+                    NativeInputKind::CallIdentity(Callee::ObjectFreeze) => (
+                        input.call_span,
+                        vec![Global(Object), Static(Object, "freeze")],
+                    ),
+                    // The empty-collection premise of the local-class proof;
+                    // `Set.prototype` methods are not asserted.
+                    NativeInputKind::CallIdentity(Callee::SetEmptyPrivateField) => {
+                        (input.call_span, vec![Global(Set)])
+                    }
+                };
+                Some((
+                    site.lo.0,
+                    IntrinsicIntact {
+                        slots: slots.into_iter().collect(),
+                        reference: input.evidence.reference.clone(),
+                    },
+                ))
+            })
+            .collect()
     }
 
     pub(crate) fn prepare_semantic_facts(
@@ -5615,126 +5696,36 @@ impl ExecutionIndex {
                 continue;
             };
             if row.allocates.is_some_and(Kind::is_keyed_collection) {
-                collection_bindings.insert(binding, row.requires);
+                collection_bindings.insert(binding, row);
             }
         }
-
-        let native_call_identity_candidates: BTreeSet<_> = self
-            .top_calls
-            .iter()
-            .flatten()
-            .chain(self.callables.values().flat_map(|callable| &callable.calls))
-            .filter_map(|call| {
-                native_call_identity_key(call.kind, &call.callee).map(|(_, key)| key)
-            })
-            .chain(callables.records.values().filter_map(|candidate| {
-                native_call_identity_key(
-                    CallKind::New,
-                    &ValueExpr::Binding(candidate.constructor.clone()),
-                )
-                .map(|(_, key)| key)
-            }))
-            .chain(collection_bindings.iter().map(|(binding, intrinsic)| {
-                SemanticKey::NativeCallIdentity {
-                    binding: binding.clone(),
-                    intrinsic: *intrinsic,
-                    global_this_qualified: false,
-                }
-            }))
-            .chain(callables.namespace_wrappers.values().map(|candidate| {
-                SemanticKey::NativeCallIdentity {
-                    binding: candidate.object.clone(),
-                    intrinsic: NativeIntrinsic::Object,
-                    global_this_qualified: false,
-                }
-            }))
-            .collect();
-        let declared_bindings = native_call_identity_candidates
-            .iter()
-            .filter_map(|key| match key {
-                SemanticKey::NativeCallIdentity { binding, .. } => Some(binding.clone()),
-                _ => None,
-            })
-            .chain(collection_bindings.keys().cloned())
+        // Rules read binding identity only for these candidate callees.
+        let declared_bindings = collection_bindings
+            .keys()
+            .chain(
+                callables
+                    .namespace_wrappers
+                    .values()
+                    .map(|candidate| &candidate.object),
+            )
             .filter(|binding| flow.is_declared(binding))
+            .cloned()
             .collect();
-        let author_empty_set_fields = self
-            .native_operation_input_evidence
-            .iter()
-            .filter(|(_, evidence)| {
-                evidence.operation
-                    == NativeInputKind::CallIdentity(
-                        spec::NativeCallIdentityKind::SetEmptyPrivateField,
-                    )
-            })
-            .map(|(site, evidence)| (site.allocation_id(), evidence.clone()))
-            .collect();
-        let native_own_data_reads = self
-            .binding_declaration_writes
-            .values()
-            .filter(|writes| writes.len() == 1)
-            .flat_map(|writes| writes.iter())
-            .filter(|write| write.direct_top_level && write.simple_identifier)
-            .filter_map(|write| {
-                object_own_data_read_property(write.initializer.as_ref()?, |id| {
-                    flow.is_declared(id)
-                })?;
-                let span = write.initializer_span?;
-                let premise = self
-                    .native_operation_input_evidence
-                    .get(&CallSite::from(span))
-                    .filter(|evidence| {
-                        evidence.operation
-                            == NativeInputKind::Operation(
-                                spec::NativeOperationKind::ObjectOwnDataFunctionRead,
-                            )
-                    })
-                    .map(|evidence| {
-                        super::super::semantic_inference::NativeOwnDataReadPremise::Author(
-                            evidence.reference.clone(),
-                        )
-                    })
-                    .unwrap_or(
-                        super::super::semantic_inference::NativeOwnDataReadPremise::SourceIntegrity,
-                    );
-                // The candidate is an exact original own-data slot. The
-                // inference rule decides whether source integrity or the
-                // selected author premise establishes its runtime identity.
-                Some((span.lo.0, premise))
-            })
-            .collect();
-
+        let completed = self.completed_native_rules();
         Arc::new(SemanticFacts::solve_with_source(
             SemanticRules {
                 classes,
                 sets,
                 array_spreads: array_spreads.by_initializer.keys().copied().collect(),
-                array_spread_inputs: self
-                    .resolved_native_operation_inputs
-                    .iter()
-                    .filter_map(|input| {
-                        (input.evidence.operation
-                            == NativeInputKind::Operation(
-                                spec::NativeOperationKind::ArraySpreadFromPrimitiveArrays,
-                            )
-                            && array_spreads
-                                .by_initializer
-                                .contains_key(&input.initializer_span.lo.0))
-                        .then_some((
-                            input.initializer_span.lo.0,
-                            input.evidence.reference.clone(),
-                        ))
-                    })
-                    .collect(),
                 collection_bindings,
-                author_empty_set_fields,
-                binding_context: NativeBindingContext {
-                    declared_bindings,
-                    shadowed_globals: shadowed.clone(),
-                    global_object_names: self.global_object_names.clone(),
+                native: NativePremises {
+                    bindings: NativeBindingContext {
+                        declared_bindings,
+                        shadowed_globals: shadowed.clone(),
+                        global_object_names: self.global_object_names.clone(),
+                    },
+                    ..completed.native
                 },
-                native_call_identity_candidates,
-                native_own_data_reads,
                 descriptor_copy_providers: self.descriptor_copy_factories.clone(),
                 descriptor_copy_calls: self
                     .descriptor_copy_calls
@@ -5770,7 +5761,8 @@ impl ExecutionIndex {
                     })
                     .collect(),
                 callables,
-                ..self.completed_native_rules()
+                dynamic_scope: completed.dynamic_scope,
+                ..SemanticRules::default()
             },
             source_facts,
         ))
@@ -6800,7 +6792,7 @@ impl ExecutionIndex {
                 let Some((row, _)) = native_call_identity_key(CallKind::Call, callee) else {
                     return Some("does not resolve through the exact native Symbol call row");
                 };
-                (row.requires == NativeIntrinsic::Symbol)
+                (row.family() == NativeIntrinsic::Symbol)
                     .then_some(())
                     .is_none()
                     .then_some("selected an unsupported native Symbol call row")
@@ -7813,60 +7805,6 @@ impl ExecutionIndex {
                 .filter_map(|reference| index.value_input_evidence.get(reference).cloned())
                 .collect();
             let roots = projection.effective_roots.clone();
-            // Receiver identity certificates are source-only. Do not let an
-            // author-conditioned direct or descendant fact discharge them.
-            if projection.value_input_refs.is_empty()
-                && !roots.is_empty()
-                && index.dynamic_scope_owners.is_empty()
-                && let Some(proof) = index.receiver_identity.receiver(
-                    write.receiver_callable,
-                    &write.receiver,
-                    write.span,
-                )
-            {
-                use super::receiver_identity::ReceiverOrigin;
-                let origins = proof
-                    .origins
-                    .into_iter()
-                    .map(|origin| match origin {
-                        ReceiverOrigin::ObjectLiteral => NativeReceiverOrigin::ObjectLiteral,
-                        ReceiverOrigin::Constructor { binding, span } => {
-                            NativeReceiverOrigin::Constructor {
-                                binding: binding.0.to_string(),
-                                source_location: None,
-                                span,
-                            }
-                        }
-                        ReceiverOrigin::Wrapper {
-                            binding,
-                            span,
-                            constructor,
-                            constructor_span,
-                        } => NativeReceiverOrigin::Wrapper {
-                            binding: binding.0.to_string(),
-                            source_location: None,
-                            constructor: constructor.0.to_string(),
-                            constructor_location: None,
-                            span,
-                            constructor_span,
-                        },
-                    })
-                    .collect();
-                Arc::make_mut(&mut index.native_write_census.certificates).push(
-                    NativeReceiverCertificate {
-                        chunk_id: String::new(),
-                        statement_ordinal: write.owner,
-                        source_location: None,
-                        receiver_binding: proof.binding.0.to_string(),
-                        initializer_location: None,
-                        previously_affected_roots: native_mutation_roots(roots),
-                        origins,
-                        span: write.span,
-                        initializer_span: proof.initializer,
-                    },
-                );
-                continue;
-            }
             let witness = NativeMutationWitness {
                 chunk_id: String::new(),
                 statement_ordinal: write.owner,
@@ -7971,11 +7909,6 @@ impl ExecutionIndex {
                 .as_ref()
                 .map(|integrity| integrity.prototype_mutations.clone())
                 .unwrap_or_default(),
-            certificates: hints
-                .native_integrity
-                .as_ref()
-                .map(|integrity| integrity.certificates.clone())
-                .unwrap_or_default(),
             witnesses: hints
                 .native_integrity
                 .as_ref()
@@ -7992,13 +7925,11 @@ impl ExecutionIndex {
         let mutated_intrinsics = if let Some(integrity) = &hints.native_integrity {
             index.native_integrity_witnesses = integrity.witnesses.clone();
             index.native_prototype_mutations = integrity.prototype_mutations.clone();
-            index.native_receiver_certificates = integrity.certificates.clone();
             resolve_native_integrity_roots(&censuses)
         } else {
             let integrity = resolve_native_integrity(censuses);
             index.native_integrity_witnesses = integrity.witnesses;
             index.native_prototype_mutations = integrity.prototype_mutations;
-            index.native_receiver_certificates = integrity.certificates;
             integrity.mutated
         };
         index.mutated_intrinsic_roots = mutated_intrinsics.clone();
@@ -8803,10 +8734,29 @@ impl ExecutionIndex {
         self.all_native_point_effects = all;
     }
 
-    fn native_integrity_is_proven(&self, root: NativeIntrinsic) -> bool {
-        self.semantic_facts
-            .as_ref()
-            .is_some_and(|facts| facts.fact(&SemanticKey::NativeIntegrity(root)).is_some())
+    /// An exact top-level `Object.<property>` own-data read: the original
+    /// `%Object%` binding and `%Object.<property>%` slot, intact or asserted at
+    /// that read.
+    fn native_own_data_read_premise(&self, span: Span) -> Option<NativePremise> {
+        let property = self.native_own_data_reads.get(&span.lo.0)?;
+        native_premise(
+            &self.integrity,
+            &[
+                IntrinsicSlot::Global(NativeIntrinsic::Object),
+                IntrinsicSlot::Static(NativeIntrinsic::Object, property),
+            ],
+            Some(span.lo.0),
+            crate::reports::schema::InferenceRule::NativeOwnDataRead,
+        )
+    }
+
+    /// `new Map()` runs no user code: the census keeps `%Map%` intact.
+    fn map_integrity(&self) -> bool {
+        matches!(
+            self.integrity
+                .require(&[IntrinsicSlot::Global(NativeIntrinsic::Map)], None),
+            crate::facts::abstract_domain::integrity::Integrity::Intact(_)
+        )
     }
 
     pub(crate) fn locate_native_integrity_witnesses(
@@ -8827,17 +8777,6 @@ impl ExecutionIndex {
         for mutation in Arc::make_mut(&mut self.native_prototype_mutations) {
             if mutation.chunk_id.is_empty() {
                 mutation.source_location = locate(mutation.span);
-            }
-        }
-        if self
-            .native_receiver_certificates
-            .iter()
-            .any(|certificate| certificate.chunk_id.is_empty())
-        {
-            for certificate in Arc::make_mut(&mut self.native_receiver_certificates) {
-                if certificate.chunk_id.is_empty() {
-                    locate_receiver_certificate(certificate, &mut locate);
-                }
             }
         }
     }
@@ -8976,13 +8915,6 @@ impl ExecutionIndex {
     fn with_callable(&mut self, span: Span, params: Vec<Parameter>, visit: impl FnOnce(&mut Self)) {
         let key = span.lo.0;
         self.callable_spans.insert(key, span);
-        self.receiver_identity.callable(
-            key,
-            params
-                .iter()
-                .filter_map(|parameter| parameter.binding.clone())
-                .collect(),
-        );
         let created_after_parent_await = self
             .current
             .and_then(|parent| self.callables.get(&parent))
@@ -9360,7 +9292,6 @@ impl ExecutionIndex {
     }
 
     fn visit_may_skip<N: VisitWith<Self>>(&mut self, node: &N) {
-        self.receiver_identity.unsupported(self.current);
         let before = self.past_await;
         self.may_skip_await_depth += 1;
         self.conditional_depth += 1;
@@ -9503,7 +9434,6 @@ impl Visit for ExecutionIndex {
         // SWC, so their bodies lack a per-Callable prefix summary.
         // Accessor bodies retain the enclosing callable here; source order
         // cannot distinguish their deferred captured writes from local writes.
-        self.receiver_identity.unsupported(self.current);
         self.unindexed_accessor_owners.insert(self.owner);
         self.setter_owners
             .entry(static_property_name(&setter.key))
@@ -9516,7 +9446,6 @@ impl Visit for ExecutionIndex {
         self.callable_spans.insert(getter.span.lo.0, getter.span);
         // Accessor bodies retain the enclosing callable here; source order
         // cannot distinguish their deferred captured writes from local writes.
-        self.receiver_identity.unsupported(self.current);
         self.unindexed_accessor_owners.insert(self.owner);
         getter.visit_children_with(self);
     }
@@ -9789,7 +9718,6 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_fn_decl(&mut self, declaration: &FnDecl) {
-        let parent = self.current;
         self.property_key_declarations
             .insert(declaration.ident.to_id());
         self.property_key_assignments
@@ -9822,44 +9750,6 @@ impl Visit for ExecutionIndex {
             }
         }
         declaration.visit_children_with(self);
-        let function = &declaration.function;
-        if !function.is_async
-            && !function.is_generator
-            && function.decorators.is_empty()
-            && function
-                .params
-                .iter()
-                .all(|param| param.decorators.is_empty())
-            && function.body.is_some()
-        {
-            let returned_construction = function
-                .body
-                .as_ref()
-                .and_then(sole_return_expression)
-                .and_then(|expression| match expression.unwrap_parens() {
-                    Expr::New(construction)
-                        if construction
-                            .args
-                            .as_deref()
-                            .unwrap_or_default()
-                            .iter()
-                            .all(|argument| argument.spread.is_none()) =>
-                    {
-                        match construction.callee.unwrap_parens() {
-                            Expr::Ident(binding) => Some(binding.to_id()),
-                            _ => None,
-                        }
-                    }
-                    _ => None,
-                });
-            self.receiver_identity.function(
-                declaration.ident.to_id(),
-                parent,
-                function.span,
-                self.callables[&function.span.lo.0].returns.is_empty(),
-                returned_construction,
-            );
-        }
     }
 
     fn visit_class_decl(&mut self, declaration: &ClassDecl) {
@@ -10014,7 +9904,6 @@ impl Visit for ExecutionIndex {
         self.visit_may_skip(node);
     }
     fn visit_labeled_stmt(&mut self, node: &LabeledStmt) {
-        self.receiver_identity.unsupported(self.current);
         node.visit_children_with(self);
     }
     fn visit_do_while_stmt(&mut self, node: &DoWhileStmt) {
@@ -10142,9 +10031,6 @@ impl Visit for ExecutionIndex {
             .map(|param| Parameter::from_pattern(&param.pat))
             .collect();
         self.with_callable(function.span, params, |index| {
-            if function.is_async || function.is_generator {
-                index.receiver_identity.unsupported(index.current);
-            }
             index
                 .callables
                 .get_mut(&function.span.lo.0)
@@ -10191,9 +10077,6 @@ impl Visit for ExecutionIndex {
         }
         let params = arrow.params.iter().map(Parameter::from_pattern).collect();
         self.with_callable(arrow.span, params, |index| {
-            if arrow.is_async {
-                index.receiver_identity.unsupported(index.current);
-            }
             for parameter in &arrow.params {
                 index.invalidate_property_key_pattern(parameter);
             }
@@ -10464,17 +10347,6 @@ impl Visit for ExecutionIndex {
                 &ValueExpr::from_expr(init),
                 &mut assignments,
             );
-            for (binding, _) in &assignments {
-                self.receiver_identity.definition(
-                    binding.clone(),
-                    self.current,
-                    declarator.span,
-                    (self.current.is_some()
-                        && matches!(declarator.name, Pat::Ident(_))
-                        && self.conditional_depth == 0)
-                        .then_some(init.as_ref()),
-                );
-            }
             if let Some(key) = self.current {
                 self.callables
                     .get_mut(&key)
@@ -10604,10 +10476,6 @@ impl Visit for ExecutionIndex {
             }
             _ => {}
         }
-        for (binding, _) in assignments {
-            self.receiver_identity
-                .definition(binding, self.current, head.span(), None);
-        }
         if let ForHead::Pat(pattern) = head {
             self.invalidate_property_key_pattern(pattern);
         }
@@ -10641,10 +10509,6 @@ impl Visit for ExecutionIndex {
         }
         self.reassigned_bindings
             .extend(assigned.iter().map(|(binding, _)| binding.clone()));
-        for (binding, _) in assigned {
-            self.receiver_identity
-                .definition(binding, self.current, assignment.span, None);
-        }
         match &assignment.left {
             AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => self
                 .property_key_assignments
@@ -10853,8 +10717,6 @@ impl Visit for ExecutionIndex {
     fn visit_update_expr(&mut self, expression: &UpdateExpr) {
         if let Expr::Ident(ident) = expression.arg.unwrap_parens() {
             self.reassigned_bindings.insert(ident.to_id());
-            self.receiver_identity
-                .definition(ident.to_id(), self.current, expression.span, None);
             self.property_key_assignments
                 .entry(ident.to_id())
                 .or_default()
@@ -10869,7 +10731,6 @@ impl Visit for ExecutionIndex {
             self.intrinsic_writes.push(IntrinsicWriteTarget {
                 owner: self.owner,
                 activation_callable: self.current,
-                receiver_callable: None,
                 constructor_this: None,
                 span: expression.span,
                 operation: NativeMutationOperation::Update,
@@ -11069,7 +10930,6 @@ impl Visit for ExecutionIndex {
                 IntrinsicWriteTarget {
                     owner: self.owner,
                     activation_callable: self.current,
-                    receiver_callable: None,
                     constructor_this: None,
                     span: call.span,
                     operation: NativeMutationOperation::MutationCall,
@@ -11087,7 +10947,6 @@ impl Visit for ExecutionIndex {
                 IntrinsicWriteTarget {
                     owner: self.owner,
                     activation_callable: self.current,
-                    receiver_callable: None,
                     constructor_this: None,
                     span: call.span,
                     operation: NativeMutationOperation::MutationCall,
@@ -11729,10 +11588,6 @@ impl PreparedCallableCapabilities {
             mutation.chunk_id = chunk_id.to_owned();
             mutation.source_location = source_location(mutation.span);
         }
-        for certificate in Arc::make_mut(&mut self.index.native_write_census.certificates) {
-            certificate.chunk_id = chunk_id.to_owned();
-            locate_receiver_certificate(certificate, source_location);
-        }
     }
 
     pub(crate) fn native_writes(&self) -> &NativeWriteCensus {
@@ -11821,6 +11676,7 @@ pub(crate) fn infer_callable_capabilities(
     } = prepared;
     index.mutated_intrinsic_roots = integrity.mutated.clone();
     index.native_integrity_value_input_refs = integrity.consumed_value_inputs.clone();
+    index.integrity = index.integrity_flags();
     let mut result = InferredCallableCapabilities {
         map_integrity: false,
         stable_providers: BTreeSet::new(),
@@ -11879,12 +11735,8 @@ pub(crate) fn infer_callable_capabilities(
         );
         result.returned_records = infer_returned_records(&index, &exported_locals);
         result.namespace_wrappers = infer_namespace_wrappers(&index, &exported_locals);
-    } else {
-        index.semantic_facts = Some(Arc::new(SemanticFacts::solve(
-            index.completed_native_rules(),
-        )));
     }
-    result.map_integrity = index.native_integrity_is_proven(NativeIntrinsic::Map);
+    result.map_integrity = index.map_integrity();
     result
 }
 
