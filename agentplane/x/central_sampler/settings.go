@@ -18,7 +18,8 @@ const APIStyleResponses APIStyle = "responses"
 type ResponsesDialect string
 
 const (
-	ResponsesDialectLite ResponsesDialect = "lite"
+	ResponsesDialectLite     ResponsesDialect = "lite"
+	ResponsesDialectStandard ResponsesDialect = "standard"
 )
 
 type ExecEncoding string
@@ -47,8 +48,8 @@ func (c ModelConfig) Validate() error {
 	if c.API != APIStyleResponses {
 		return errors.New("model api must be responses")
 	}
-	if c.Responses.Dialect != ResponsesDialectLite {
-		return errors.New("responses.dialect must be lite")
+	if c.Responses.Dialect != ResponsesDialectLite && c.Responses.Dialect != ResponsesDialectStandard {
+		return errors.New("responses.dialect must be lite or standard")
 	}
 	if c.ExecEncoding != ExecEncodingFreeform && c.ExecEncoding != ExecEncodingJSON {
 		return errors.New("exec_encoding must be freeform or json")

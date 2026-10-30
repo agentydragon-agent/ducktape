@@ -17,7 +17,7 @@ Run JavaScript code to orchestrate/compose tool calls
 - `generatedImage(result: { image_url: string; output_hint?: string })`: Appends an image-generation result and its optional output hint. HTTP(S) URLs are not supported.
 - `store(key: string, value: any)`: stores a serializable value under a string key for later `exec` calls in the same session.
 - `load(key: string)`: returns the stored value for a string key, or `undefined` if it is missing.
-- `notify(value: string | number | boolean | undefined | null)`: {{ notification_behavior }}. Values are stringified like `text(...)`.
+- `notify(value: string | number | boolean | undefined | null)`: Queues a message for the current active turn, delivered after the current step. Does not interrupt work or start a turn. Nonblank messages fail when no turn is active; blank messages are a no-op. Messages arriving as the turn ends may only be saved to history; interrupted or failed turns discard queued messages. Values are stringified like `text(...)`.
 - `setTimeout(callback: () => void, delayMs?: number)`: schedules a callback to run later and returns a timeout id. Pending timeouts do not keep `exec` alive by themselves; await an explicit promise if you need to wait for one.
 - `clearTimeout(timeoutId?: number)`: cancels a timeout created by `setTimeout`.
 - `ALL_TOOLS`: metadata for the enabled nested tools as `{ name, description }` entries.
