@@ -2,7 +2,8 @@
 # hook and build tools) and push it to the Forgejo registry, through nix-image.yml. The archive also
 # goes to the Attic cache. The tools include released executables (bb, bbr, gazelle, ...), so any
 # artifact pin bump rebuilds it. The runner and `agentplane` are not in the image: they come from
-# the runner disk image.
+# the runner disk image. Fork PR builds use pull_request_target with the trusted-fork review gate;
+# the reusable workflow never publishes from that event.
 name: Runner Ducktape Image
 
 on:
@@ -19,6 +20,7 @@ on:
       - "agentplane/runner/ducktape_image_smoke.sh"
       - "agentplane/runner/ducktape_tools_check.nix"
       - "agentplane/runner/image.nix"
+      - "devinfra/ci/pr_mergeability.py"
       - "flake.lock"
       - "flake.nix"
       - "nix/artifact-pins.json"
@@ -28,7 +30,8 @@ on:
       - "nix/packages/**"
       - "ruff.toml"
       # keep-sorted end
-  # Build-only on PRs, so a change to the image is proven to build before it merges.
+  # Same-repository PRs build directly. Forks use pull_request_target below because this build
+  # needs the Attic token; the fork build remains unable to publish.
   pull_request:
     paths:
       # keep-sorted start
@@ -41,6 +44,32 @@ on:
       - "agentplane/runner/ducktape_image_smoke.sh"
       - "agentplane/runner/ducktape_tools_check.nix"
       - "agentplane/runner/image.nix"
+      - "devinfra/ci/pr_mergeability.py"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/artifact-pins.json"
+      - "nix/flake/devtools.nix"
+      - "nix/flake/packages.nix"
+      - "nix/lib/nix-ld-image.nix"
+      - "nix/packages/**"
+      - "ruff.toml"
+      # keep-sorted end
+  # Fork PRs use pull_request_target so the build can read the Attic cache. The caller resolves
+  # GitHub's merge commit and gates non-allowlisted authors with fork-ci-review before checkout.
+  pull_request_target:
+    branches: [devel]
+    paths:
+      # keep-sorted start
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/agentplane-runner-ducktape-image.yml"
+      - ".github/workflows/nix-image.yml"
+      - ".pre-commit-config.yaml"
+      - "agentplane/images/sandbox.nix"
+      - "agentplane/images/tools.nix"
+      - "agentplane/runner/ducktape_image_smoke.sh"
+      - "agentplane/runner/ducktape_tools_check.nix"
+      - "agentplane/runner/image.nix"
+      - "devinfra/ci/pr_mergeability.py"
       - "flake.lock"
       - "flake.nix"
       - "nix/artifact-pins.json"
@@ -53,14 +82,47 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: runner-ducktape-image-${{ github.ref }}
+  # Keep a skipped fork pull_request run from canceling its trusted pull_request_target run.
+  group: runner-ducktape-image-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
+  resolve-merge-commit:
+    name: Resolve PR merge commit
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      # pull_request_target loads this workflow from the base branch. Resolve the exact merge
+      # commit for this PR head before checking out any PR-controlled code.
+      - uses: actions/checkout@v7
+        with:
+          ref: devel
+          fetch-depth: 1
+      - name: Resolve the merge commit GitHub built for this PR head
+        id: resolve
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 devinfra/ci/pr_mergeability.py resolve
+
   image:
+    needs: [resolve-merge-commit]
+    if: >-
+      always() &&
+      (github.event_name != 'pull_request_target' || needs.resolve-merge-commit.outputs.sha != '') &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     uses: ./.github/workflows/nix-image.yml
     with:
       attr: runner-ducktape-image
@@ -71,6 +133,16 @@ jobs:
       # checks the repository tools. Nothing here runs a turn, and the system tests run a Bazel-built
       # runner image of their own: this image's first turn is on staging.
       smoke: bash agentplane/runner/ducktape_image_smoke.sh
+      source_commit: ${{ needs.resolve-merge-commit.outputs.sha }}
+      allow_unsafe_pr_checkout: ${{ github.event_name == 'pull_request_target' }}
+      environment: >-
+        ${{
+          github.event_name == 'pull_request_target' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          github.event.pull_request.user.login != 'agentydragon-agent' &&
+          github.event.pull_request.user.login != 'agentydragon' &&
+          'fork-ci-review' || ''
+        }}
     secrets:
       FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
       FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
