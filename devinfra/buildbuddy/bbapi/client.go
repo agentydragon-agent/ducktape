@@ -114,7 +114,6 @@ func (c *client) resolveGroupID(repo string) (string, error) {
 	return "", fmt.Errorf("no invocations found for repo %s; cannot determine group_id", repo)
 }
 
-// fetchURL does a GET with the API key header, returning raw bytes.
 type httpError struct {
 	status int
 	body   string
@@ -125,6 +124,18 @@ func (e *httpError) Error() string { return fmt.Sprintf("HTTP %d: %s", e.status,
 // readResponse retries idempotent reads on transient failures. Mutation RPCs
 // such as CancelExecutions are sent once so retries cannot duplicate effects.
 func (c *client) readResponse(req *http.Request, retry bool) ([]byte, error) {
+	var body []byte
+	err := c.consumeResponse(req, retry, func(r io.Reader) error {
+		var err error
+		body, err = io.ReadAll(r)
+		return err
+	})
+	return body, err
+}
+
+// consumeResponse may invoke consume again after a partial response; consumers
+// must reset any output from the previous attempt.
+func (c *client) consumeResponse(req *http.Request, retry bool, consume func(io.Reader) error) error {
 	attempts := 1
 	if retry {
 		attempts += c.retries
@@ -135,49 +146,65 @@ func (c *client) readResponse(req *http.Request, retry bool) ([]byte, error) {
 		if req.GetBody != nil {
 			body, err := req.GetBody()
 			if err != nil {
-				return nil, err
+				return err
 			}
 			next.Body = body
 		}
-		body, err := c.readResponseOnce(next)
+		err := c.consumeResponseOnce(next, consume)
 		if err == nil {
-			return body, nil
+			return nil
 		}
 		last = err
+		// Retrying cannot fix local destination failures.
+		var local *os.PathError
+		if errors.As(err, &local) {
+			return err
+		}
 		var status *httpError
 		if errors.As(err, &status) && status.status != 408 && status.status != 425 && status.status != 429 && status.status < 500 {
-			return nil, err
+			return err
 		}
 		if attempt+1 < attempts {
 			time.Sleep(time.Second * time.Duration(1<<attempt))
 		}
 	}
-	return nil, last
+	return last
 }
 
-func (c *client) readResponseOnce(req *http.Request) ([]byte, error) {
+func (c *client) consumeResponseOnce(req *http.Request, consume func(io.Reader) error) error {
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
+		return fmt.Errorf("http request: %w", err)
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
-	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, &httpError{status: resp.StatusCode, body: string(body)}
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		if err != nil {
+			return fmt.Errorf("read response: %w", err)
+		}
+		return &httpError{status: resp.StatusCode, body: string(body)}
 	}
-	return body, nil
+	return consume(resp.Body)
 }
 
+// fetchURL does a GET with the API key header, returning raw bytes.
 func (c *client) fetchURL(url string) ([]byte, error) {
+	var body []byte
+	err := c.consumeURL(url, func(r io.Reader) error {
+		var err error
+		body, err = io.ReadAll(r)
+		return err
+	})
+	return body, err
+}
+
+func (c *client) consumeURL(url string, consume func(io.Reader) error) error {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+		return fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("x-buildbuddy-api-key", c.apiKey)
-	return c.readResponse(req, true)
+	return c.consumeResponse(req, true, consume)
 }
 
 // bytestreamDownloadURL includes invocation_id because BuildBuddy's legacy

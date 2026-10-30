@@ -9,10 +9,6 @@ each output. Resolve OCI layouts from their target's advertised files instead of
 searching the local output tree by basename. Keep registry credentials on the
 GitHub runner.
 
-Before fetching large OCI layers, stream blob responses to the downloader's
-atomic temporary file. `bbapi blob download` currently buffers each complete blob
-in memory, with eight concurrent downloads.
-
 The Nix artifact gate already uses the batch-fetch path. Track the remaining
 publication consumers and the upstream download investigation in
 <../buildbuddy/debug/bb_remote_peers_exhausted.md>.

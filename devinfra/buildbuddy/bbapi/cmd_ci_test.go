@@ -168,3 +168,89 @@ func TestReadRPCRetriesWithoutDroppingRequestBody(t *testing.T) {
 		t.Fatalf("calls=%d", calls)
 	}
 }
+
+// readerFunc lets the response observe the download before returning more bytes.
+type readerFunc func([]byte) (int, error)
+
+func (f readerFunc) Read(p []byte) (int, error) { return f(p) }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestBlobDownloadStreamsBeforeReplacingDestination(t *testing.T) {
+	root := t.TempDir()
+	destination := filepath.Join(root, "artifact")
+	if err := os.WriteFile(destination, []byte("old"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	reads := 0
+	body := readerFunc(func(p []byte) (int, error) {
+		reads++
+		if reads == 1 {
+			return copy(p, "prefix"), nil
+		}
+		if reads == 2 {
+			files, err := filepath.Glob(filepath.Join(root, ".bbapi-blob-*"))
+			if err != nil || len(files) != 1 {
+				t.Fatalf("temporary file during response: %v %v", files, err)
+			}
+			if got, err := os.ReadFile(files[0]); err != nil || string(got) != "prefix" {
+				t.Fatalf("response was buffered instead of streamed: %q %v", got, err)
+			}
+			if got, err := os.ReadFile(destination); err != nil || string(got) != "old" {
+				t.Fatalf("destination replaced before completion: %q %v", got, err)
+			}
+			return copy(p, "suffix"), nil
+		}
+		return 0, io.EOF
+	})
+	c := &client{baseURL: "https://example.test", http: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(body), Header: make(http.Header)}, nil
+	})}}
+	if err := writeBlob(c, blobDownload{URI: "bytestream://host/blobs/a/12", Destination: destination}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(destination); err != nil || string(got) != "prefixsuffix" {
+		t.Fatalf("completed download: %q %v", got, err)
+	}
+}
+
+func TestBlobDownloadRetriesPartialResponses(t *testing.T) {
+	for _, recover := range []bool{false, true} {
+		t.Run(map[bool]string{false: "exhausted", true: "recovered"}[recover], func(t *testing.T) {
+			root := t.TempDir()
+			destination := filepath.Join(root, "artifact")
+			if err := os.WriteFile(destination, []byte("old"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if calls == 2 && recover {
+					_, _ = io.WriteString(w, "ok")
+					return
+				}
+				w.Header().Set("Content-Length", "100")
+				_, _ = io.WriteString(w, "partial response")
+			}))
+			defer s.Close()
+			c := &client{baseURL: s.URL, http: s.Client(), retries: 1}
+			err := writeBlob(c, blobDownload{URI: "bytestream://host/blobs/a/100", Destination: destination})
+			if (err == nil) != recover || calls != 2 {
+				t.Fatalf("download error %v after %d requests", err, calls)
+			}
+			want := "old"
+			if recover {
+				want = "ok"
+			}
+			if got, err := os.ReadFile(destination); err != nil || string(got) != want {
+				t.Fatalf("download: %q, want %q: %v", got, want, err)
+			}
+			files, err := filepath.Glob(filepath.Join(root, ".bbapi-blob-*"))
+			if err != nil || len(files) != 0 {
+				t.Fatalf("leaked temporary files: %v %v", files, err)
+			}
+		})
+	}
+}
