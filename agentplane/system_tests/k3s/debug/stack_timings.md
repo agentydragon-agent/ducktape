@@ -256,3 +256,36 @@ first VM case took 281.848 seconds including shared stack startup, and its sandb
 These are single samples with uncontrolled worker/cache state, and the candidate was rebased onto
 `e2d26f48`, which also changed model routing. They establish passing coverage and observed execution
 costs, not an isolated causal estimate or a reliable CI latency improvement.
+
+## Concurrent Pod and MCP harness pairs, 2026-10-30
+
+Two uncached runs per suite compared sequential harness cases at `ba7d657f` with seven Pod pairs
+and four MCP pairs using TaskGroups. The baseline is
+[`ff06ed1e`](https://app.buildbuddy.io/invocation/ff06ed1e-5845-44a5-9e65-b143d0deccc2).
+The passing Pod candidate at `8c026141` is
+[`14bf838e`](https://app.buildbuddy.io/invocation/14bf838e-7721-4b37-8e36-edb3e37a3cef);
+the passing MCP candidate at `96cbd44e` is
+[`6b324d31`](https://app.buildbuddy.io/invocation/6b324d31-8ac7-4d51-b7d2-5b05708c2612).
+The latter invocation's Pod runs failed on deployment-wide command-ID collisions; the final
+candidate gives independent thread-stream commands unique IDs while retaining intentional retries.
+
+| Suite | Baseline action seconds | Candidate action seconds | Mean change |
+| ----- | ----------------------: | -----------------------: | ----------: |
+| Pod   |            526.6, 599.9 |             485.0, 592.7 |       −4.3% |
+| MCP   |            498.8, 525.5 |             372.6, 377.0 |      −26.8% |
+
+These are Bazel test-action durations, including startup and teardown. The MCP stack-ready mean
+fell from 199.9 to 69.9 seconds, accounting for most of its apparent improvement. Pod stack-ready
+time increased from 93.3 to 118.4 seconds on average. Unchanged storage cases also varied widely.
+
+Summing the affected pytest cases, and deducting shared stack-ready time from the first Pod case,
+gives 290.4 → 265.2 seconds for Pod (−8.7%) and 220.6 → 209.1 seconds for MCP (−5.2%). These figures
+still include per-case setup and cleanup. For example, the launcher pair took about 114 seconds
+concurrently versus 110 seconds summed across sequential harnesses. The measurements support modest
+observed savings in the changed scenarios, not a twofold improvement from parallel execution.
+
+Each candidate suite passed twice without test-result caching. The helper's overlap and peer
+cancellation tests also passed twice in `6b324d31`. Worker/snapshot state was uncontrolled, and the
+candidate base includes intervening devel changes, including kvm-clock restoration work. These
+samples do not isolate a causal CI latency improvement. Alternative runner compatibility results
+are recorded in [the framework evaluation](../../debug/concurrent_runners.md).
