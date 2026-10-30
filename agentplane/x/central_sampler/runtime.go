@@ -714,24 +714,17 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if conversation, err = r.store.RecordEnvironmentContext(ctx, owner); err != nil {
 		return "", err
 	}
-	body, err := RequestBody(session.Model, conversation.ID, conversation.Context(), conversation.Instructions, state, r.settings.Models[session.Model])
-	if err != nil {
-		return "", err
-	}
-	if body.Reasoning != nil {
-		body.Reasoning.Effort = session.Effort
-	} else if session.Effort != "" {
-		body.Reasoning = &ResponsesReasoningConfig{Effort: session.Effort}
-		body.Include = []string{"reasoning.encrypted_content"}
-	}
 	metadata, err := r.store.ProviderMetadata(ctx, owner)
 	if err != nil {
 		return "", err
 	}
-	if body.ClientMetadata != nil {
-		body.ClientMetadata = &ResponsesClientMetadata{SessionID: metadata.SessionID, ThreadID: metadata.ThreadID, TurnID: metadata.TurnID}
+	body, err := BuildResponsesRequest(ResponsesRequestParams{
+		Model: session.Model, Effort: session.Effort, Attribution: metadata,
+		Items: conversation.Context(), Instructions: conversation.Instructions, ExecutionState: state,
+	}, r.settings.Models[session.Model])
+	if err != nil {
+		return "", err
 	}
-	body.PromptCacheKey = metadata.SessionID
 	credential, err := r.settings.ReadCredential()
 	if err != nil {
 		return "", err
@@ -780,9 +773,6 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 }
 
 func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error {
-	if r.settings.Models[model].Responses.Dialect != ResponsesDialectLite {
-		return &KnownFailureError{Evidence: map[string]any{"reason": "compaction requires a Responses Lite route; standard Responses compaction is not supported"}}
-	}
 	state, err := r.store.ExecutionState(ctx, owner)
 	if err != nil {
 		return err
@@ -801,17 +791,17 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 	if err := checkPairs(original); err != nil {
 		return err
 	}
-	body, err := RequestBody(model, conversation.ID, original, conversation.Instructions, state, r.settings.Models[model])
-	if err != nil {
-		return err
-	}
 	metadata, err := r.store.ProviderMetadata(ctx, owner)
 	if err != nil {
 		return err
 	}
-	body.ClientMetadata = &ResponsesClientMetadata{SessionID: metadata.SessionID, ThreadID: metadata.ThreadID, TurnID: metadata.TurnID}
-	body.PromptCacheKey = metadata.SessionID
-	body.Input = append(body.Input, ResponsesItem{Type: ResponsesItemCompactionTrigger})
+	body, err := BuildResponsesCompactionRequest(ResponsesRequestParams{
+		Model: model, Attribution: metadata,
+		Items: original, Instructions: conversation.Instructions, ExecutionState: state,
+	}, r.settings.Models[model])
+	if err != nil {
+		return err
+	}
 	credential, err := r.settings.ReadCredential()
 	if err != nil {
 		return err

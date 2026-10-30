@@ -56,7 +56,18 @@ func toolDefinitions() []ResponsesCodeToolDefinition {
 	}
 }
 
-func RequestBody(model, conversationID string, items []ResponsesItem, instructions *string, executionState *ExecutionState, config ModelConfig) (ResponsesRequest, error) {
+// ResponsesRequestParams contains the runtime inputs needed to build a complete wire request.
+// It is not serialized to the upstream API.
+type ResponsesRequestParams struct {
+	Model          string
+	Effort         string
+	Attribution    SessionAttribution
+	Items          []ResponsesItem
+	Instructions   *string
+	ExecutionState *ExecutionState
+}
+
+func BuildResponsesRequest(params ResponsesRequestParams, config ModelConfig) (ResponsesRequest, error) {
 	if err := config.Validate(); err != nil {
 		return ResponsesRequest{}, err
 	}
@@ -79,24 +90,24 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 			{Type: "function", Name: "wait", Description: waitToolDescription(), Strict: &strict, Parameters: waitToolParameters()},
 		}
 	}
-	input := make([]ResponsesInput, 0, len(items)+3)
+	input := make([]ResponsesInput, 0, len(params.Items)+3)
 	if config.Responses.Dialect == ResponsesDialectLite {
 		input = append(input, ResponsesItem{Type: ResponsesItemAdditionalTools, Role: "developer", Tools: tools})
 	}
-	if instructions != nil && *instructions != "" {
-		item, err := newResponsesMessage("developer", *instructions)
+	if params.Instructions != nil && *params.Instructions != "" {
+		item, err := newResponsesMessage("developer", *params.Instructions)
 		if err != nil {
 			return ResponsesRequest{}, err
 		}
 		input = append(input, item)
 	}
-	if executionState != nil && (len(executionState.Processes) > 0 || len(executionState.Cells) > 0) {
-		cells := make([]ResponsesActiveCell, 0, len(executionState.Cells))
-		for _, cell := range executionState.Cells {
+	if params.ExecutionState != nil && (len(params.ExecutionState.Processes) > 0 || len(params.ExecutionState.Cells) > 0) {
+		cells := make([]ResponsesActiveCell, 0, len(params.ExecutionState.Cells))
+		for _, cell := range params.ExecutionState.Cells {
 			cells = append(cells, ResponsesActiveCell{CellID: cell.ID, Status: cell.Status})
 		}
-		processes := make([]ResponsesActiveProcess, 0, len(executionState.Processes))
-		for _, process := range executionState.Processes {
+		processes := make([]ResponsesActiveProcess, 0, len(params.ExecutionState.Processes))
+		for _, process := range params.ExecutionState.Processes {
 			if process.ModelSessionID == nil {
 				continue
 			}
@@ -114,22 +125,38 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 		}
 		input = append(input, item)
 	}
-	adapted, err := buildResponsesInput(items, config)
+	adapted, err := buildResponsesInput(params.Items, config)
 	if err != nil {
 		return ResponsesRequest{}, err
 	}
 	input = append(input, adapted...)
 	body := ResponsesRequest{
-		Model: model, Instructions: baseInstructions, Input: input, Stream: true, Store: false,
-		PromptCacheKey: conversationID,
+		Model: params.Model, Instructions: baseInstructions, Input: input, Stream: true, Store: false,
+		PromptCacheKey: params.Attribution.SessionID,
 	}
 	if config.Responses.Dialect == ResponsesDialectLite {
-		body.Reasoning = &ResponsesReasoningConfig{Summary: codexReasoningSummary, Context: "all_turns"}
+		body.Reasoning = &ResponsesReasoningConfig{Effort: params.Effort, Summary: codexReasoningSummary, Context: "all_turns"}
 		body.Include = []string{"reasoning.encrypted_content"}
-		body.ClientMetadata = &ResponsesClientMetadata{SessionID: conversationID, ThreadID: conversationID, TurnID: conversationID}
+		body.ClientMetadata = &ResponsesClientMetadata{SessionID: params.Attribution.SessionID, ThreadID: params.Attribution.ThreadID, TurnID: params.Attribution.TurnID}
 	} else {
 		body.Tools = tools
+		if params.Effort != "" {
+			body.Reasoning = &ResponsesReasoningConfig{Effort: params.Effort}
+			body.Include = []string{"reasoning.encrypted_content"}
+		}
 	}
+	return body, nil
+}
+
+func BuildResponsesCompactionRequest(params ResponsesRequestParams, config ModelConfig) (ResponsesRequest, error) {
+	if config.Responses.Dialect != ResponsesDialectLite {
+		return ResponsesRequest{}, &KnownFailureError{Evidence: map[string]any{"reason": "compaction requires a Responses Lite route; standard Responses compaction is not supported"}}
+	}
+	body, err := BuildResponsesRequest(params, config)
+	if err != nil {
+		return ResponsesRequest{}, err
+	}
+	body.Input = append(body.Input, ResponsesItem{Type: ResponsesItemCompactionTrigger})
 	return body, nil
 }
 

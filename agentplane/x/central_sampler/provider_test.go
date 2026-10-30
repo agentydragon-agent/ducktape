@@ -57,7 +57,7 @@ func TestResponsesRequestUsesCodexToolsAndPreservesOpaqueContext(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"type":"reasoning","encrypted_content":"opaque","provider_sequence":9007199254740993}`), &item); err != nil {
 		t.Fatal(err)
 	}
-	body, err := RequestBody("fixture-model", "fixture-session", []ResponsesItem{item}, nil, nil, ModelConfig{API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform, ReasoningEfforts: []string{"", "high"}})
+	body, err := BuildResponsesRequest(ResponsesRequestParams{Model: "fixture-model", Attribution: SessionAttribution{SessionID: "fixture-session"}, Items: []ResponsesItem{item}}, ModelConfig{API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform, ReasoningEfforts: []string{"", "high"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,12 +102,66 @@ func TestResponsesRequestUsesCodexToolsAndPreservesOpaqueContext(t *testing.T) {
 	}
 }
 
+func TestResponsesRequestBuildsReasoningAndAttribution(t *testing.T) {
+	for _, dialect := range []ResponsesDialect{ResponsesDialectLite, ResponsesDialectStandard} {
+		for _, effort := range []string{"", "high"} {
+			t.Run(string(dialect)+"/"+effort, func(t *testing.T) {
+				attribution := SessionAttribution{SessionID: "session", ThreadID: "thread", TurnID: "turn"}
+				params := ResponsesRequestParams{Model: "fixture", Effort: effort, Attribution: attribution}
+				config := ModelConfig{API: APIStyleResponses, Responses: ResponsesConfig{Dialect: dialect}, ExecEncoding: ExecEncodingJSON, ReasoningEfforts: []string{"", "high"}}
+				body, err := BuildResponsesRequest(params, config)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if body.PromptCacheKey != attribution.SessionID {
+					t.Fatalf("prompt cache key = %q", body.PromptCacheKey)
+				}
+				if dialect == ResponsesDialectLite {
+					want := ResponsesClientMetadata{SessionID: "session", ThreadID: "thread", TurnID: "turn"}
+					if body.ClientMetadata == nil || *body.ClientMetadata != want {
+						t.Fatalf("client metadata = %+v", body.ClientMetadata)
+					}
+				} else if body.ClientMetadata != nil {
+					t.Fatal("standard request includes private metadata")
+				}
+				if dialect == ResponsesDialectLite || effort != "" {
+					if body.Reasoning == nil || body.Reasoning.Effort != effort || !slices.Equal(body.Include, []string{"reasoning.encrypted_content"}) {
+						t.Fatalf("reasoning = %+v, include = %v", body.Reasoning, body.Include)
+					}
+					wantContext, wantSummary := "", ""
+					if dialect == ResponsesDialectLite {
+						wantContext, wantSummary = "all_turns", codexReasoningSummary
+					}
+					if body.Reasoning.Context != wantContext || body.Reasoning.Summary != wantSummary {
+						t.Fatalf("reasoning dialect settings = %+v", body.Reasoning)
+					}
+				} else if body.Reasoning != nil || len(body.Include) != 0 {
+					t.Fatal("standard request without effort includes reasoning configuration")
+				}
+				compaction, err := BuildResponsesCompactionRequest(params, config)
+				if dialect == ResponsesDialectStandard {
+					if err == nil {
+						t.Fatal("standard compaction accepted")
+					}
+				} else {
+					if err != nil {
+						t.Fatal(err)
+					}
+					if compaction.Input[len(compaction.Input)-1].(ResponsesItem).Type != ResponsesItemCompactionTrigger || *compaction.ClientMetadata != *body.ClientMetadata {
+						t.Fatalf("compaction request = %+v", compaction)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
 	for _, mode := range []ResponsesDialect{ResponsesDialectStandard, ResponsesDialectLite} {
 		for _, encoding := range []ExecEncoding{ExecEncodingJSON, ExecEncodingFreeform} {
 			t.Run(string(mode)+"/"+string(encoding), func(t *testing.T) {
 				config := ModelConfig{API: APIStyleResponses, Responses: ResponsesConfig{Dialect: mode}, ExecEncoding: encoding, ReasoningEfforts: []string{"", "high"}}
-				body, err := RequestBody("fixture", "session", nil, nil, nil, config)
+				body, err := BuildResponsesRequest(ResponsesRequestParams{Model: "fixture", Attribution: SessionAttribution{SessionID: "session"}}, config)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -137,6 +191,17 @@ func TestResponsesDialectAndExecEncodingAreIndependent(t *testing.T) {
 					if strings.Contains(string(wire["input"]), "additional_tools") {
 						t.Fatal("standard request includes additional_tools")
 					}
+				}
+				execDescription := tools[0].Description
+				if strings.Contains(execDescription, "{{") {
+					t.Fatal("unresolved exec description template")
+				}
+				wantAsync := mode == ResponsesDialectStandard || encoding == ExecEncodingJSON
+				if strings.Contains(execDescription, "asynchronous developer message") != wantAsync {
+					t.Fatal("exec description has wrong notification contract")
+				}
+				if strings.Contains(execDescription, "// @exec:") != (encoding == ExecEncodingFreeform) {
+					t.Fatal("exec description has wrong input contract")
 				}
 				if encoding == ExecEncodingJSON {
 					if len(tools) != 1 || tools[0].Name != "exec" || tools[0].Type != "function" {
@@ -183,7 +248,7 @@ func TestStandardResponsesSerializesTextAndAsyncNotifications(t *testing.T) {
 	items := []ResponsesItem{
 		{Type: ResponsesItemFunctionCall, Name: "exec", CallID: "call", Arguments: `{"code":"text(1)"}`}, output, notification,
 	}
-	body, err := RequestBody("fixture", "session", items, nil, nil, ModelConfig{API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectStandard}, ExecEncoding: ExecEncodingJSON, ReasoningEfforts: []string{"", "high"}})
+	body, err := BuildResponsesRequest(ResponsesRequestParams{Model: "fixture", Attribution: SessionAttribution{SessionID: "session"}, Items: items}, ModelConfig{API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectStandard}, ExecEncoding: ExecEncodingJSON, ReasoningEfforts: []string{"", "high"}})
 	if err != nil {
 		t.Fatal(err)
 	}
