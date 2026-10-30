@@ -219,3 +219,40 @@ Sharing reduced aggregate execution but increased the longest target. The candid
 was `test_pod`; its messaging cases took 239 s for Claude and 90 s for Codex, including the target's
 first stack setup. `test_mcp` took 584 s, with its first case including 280 s of stack setup. Further
 latency work should measure these cases and suite balance separately from aggregate setup savings.
+
+## Four shared stacks and ordinary VM supervision, 2026-10-30
+
+The Pod sampler shares MCP's stack; the VM sampler shares the credential group's stack and runs
+alongside its two guests. Private supervisor checks run during the existing Claude guest's boot,
+while both harnesses check workspace ownership, credentials, resource limits and descendant cleanup
+through ordinary Session setup. This leaves four k3s stacks and six independent VM boots, with at
+most three VMs running at once.
+
+Passing full CI invocations before ([`0e2a2d5f`](https://app.buildbuddy.io/invocation/0e2a2d5f-5370-5abb-b42f-2629caa2bb47),
+`c70cebc9`) and after ([`0a0a3a5b`](https://app.buildbuddy.io/invocation/0a0a3a5b-11c3-58e9-b983-01dbf08d10dc),
+PR head `7ba1d438`) recorded these Bazel `TestResult` durations. All listed suites executed without
+test-result cache hits; other tests in these CI invocations could use the cache.
+
+| Metric                          | Seven stacks | Four stacks | Change |
+| ------------------------------- | -----------: | ----------: | -----: |
+| Sum of suite execution, seconds |     2968.011 |    2093.900 | −29.5% |
+| VM suite, seconds               |      618.727 |     510.875 | −17.4% |
+| Longest suite (Pod), seconds    |      726.915 |     751.619 |  +3.4% |
+| Bazel test invocation, seconds  |      780.287 |     798.831 |  +2.4% |
+
+The new VM suite also includes the sampler and supervisor checks that previously had separate
+targets. Its action took 8.5 minutes; MCP took 10.8 minutes, Pod 12.5 minutes and Dispatcher 3.0
+minutes. The Pod suite remains the longest target. Consolidation reduced aggregate execution in
+these samples; it did not reduce full CI latency.
+
+A separate uncached focused comparison also passed every suite:
+[`83882cff`](https://app.buildbuddy.io/invocation/83882cff-d0ff-4f78-ab39-b316bc5b194e)
+versus [`a2a03f15`](https://app.buildbuddy.io/invocation/a2a03f15-d398-4a0f-947c-68a4b730d8a3).
+Aggregate execution fell from 3084.474 to 2087.000 seconds (−32.3%); the longest target fell from
+803.810 seconds (VM) to 736.298 seconds (Pod). The final VM suite took 509.579 seconds. Pytest's
+first VM case took 281.848 seconds including shared stack startup, and its sandbox/OOM case took
+197.677 seconds including both harnesses' Session setup checks and the private supervisor checks.
+
+These are single samples with uncontrolled worker/cache state, and the candidate was rebased onto
+`e2d26f48`, which also changed model routing. They establish passing coverage and observed execution
+costs, not an isolated causal estimate or a reliable CI latency improvement.
