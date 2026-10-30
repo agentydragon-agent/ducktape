@@ -10,10 +10,10 @@ import pytest_bazel
 
 # gazelle:include_dep @pypi//protobuf
 from agentplane.app.testing.client import Client
-from agentplane.proto import runner_pb2
 from agentplane.system_tests.agent import TURN_SECONDS
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
+from agentplane.system_tests.harness_pair import run_harness_pair
 from agentplane.system_tests.sandbox import Sandboxes
 from agentplane.system_tests.scenarios import (
     agent_messaging,
@@ -51,43 +51,37 @@ def storage_layout() -> storage.StorageLayout:
 
 @pytest.mark.scripted_model
 async def test_an_agent_messages_another_which_reads_and_acknowledges_it(
-    cluster: Cluster,
-    client: Client,
-    sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
-    offered_model: str,
-    scripted: ScriptedUpstream,
+    cluster: Cluster, client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
 ) -> None:
-    await agent_messaging.an_agent_messages_another_which_reads_and_acknowledges_it(
-        cluster, client, sandbox, harness, offered_model, scripted
+    await run_harness_pair(
+        client,
+        lambda harness, offered_model: agent_messaging.an_agent_messages_another_which_reads_and_acknowledges_it(
+            cluster, client, sandbox, harness, offered_model, scripted
+        ),
     )
 
 
 @pytest.mark.scripted_model
 async def test_a_policy_granted_after_the_sandbox_is_running_takes_effect(
-    cluster: Cluster,
-    client: Client,
-    sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
-    offered_model: str,
-    scripted: ScriptedUpstream,
+    cluster: Cluster, client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
 ) -> None:
-    await egress.a_policy_granted_after_the_sandbox_is_running_takes_effect(
-        cluster, client, sandbox, harness, offered_model, scripted
+    await run_harness_pair(
+        client,
+        lambda harness, offered_model: egress.a_policy_granted_after_the_sandbox_is_running_takes_effect(
+            cluster, client, sandbox, harness, offered_model, scripted
+        ),
     )
 
 
 @pytest.mark.scripted_model
 async def test_the_model_call_itself_goes_through_the_proxy(
-    cluster: Cluster,
-    client: Client,
-    sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
-    offered_model: str,
-    scripted: ScriptedUpstream,
+    cluster: Cluster, client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
 ) -> None:
-    await egress.the_model_call_itself_goes_through_the_proxy(
-        cluster, client, sandbox, harness, offered_model, scripted
+    await run_harness_pair(
+        client,
+        lambda harness, offered_model: egress.the_model_call_itself_goes_through_the_proxy(
+            cluster, client, sandbox, harness, offered_model, scripted
+        ),
     )
 
 
@@ -105,27 +99,31 @@ async def test_cert_manager_reissues_a_deleted_tls_secret(cluster: Cluster) -> N
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
 async def test_pod_mtls_session_survives_replacement_and_keeps_history(
-    cluster: Cluster,
-    client: Client,
-    sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
-    offered_model: str,
-    scripted: ScriptedUpstream,
+    cluster: Cluster, client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
 ) -> None:
-    await runner_credentials.pod_mtls_session_survives_replacement_and_keeps_history(
-        cluster, client, sandbox, harness, offered_model, scripted
+    await run_harness_pair(
+        client,
+        lambda harness, offered_model: runner_credentials.pod_mtls_session_survives_replacement_and_keeps_history(
+            cluster, client, sandbox, harness, offered_model, scripted
+        ),
     )
 
 
 @pytest.mark.scripted_model
 async def test_the_standing_instruction_reaches_the_model_and_only_in_its_own_session(
-    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
+    client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
 ) -> None:
-    await session_instructions.the_standing_instruction_reaches_the_model_and_only_in_its_own_session(
-        client, sandbox, harness, offered_model, scripted
+    await run_harness_pair(
+        client,
+        lambda harness, offered_model: (
+            session_instructions.the_standing_instruction_reaches_the_model_and_only_in_its_own_session(
+                client, sandbox, harness, offered_model, scripted
+            )
+        ),
     )
 
 
+# This scenario requires an empty Sandbox inventory and changes shared storage configuration.
 async def test_fresh_workspace_storage_survives_replacement(
     cluster: Cluster, client: Client, executor: Executor, storage_layout: storage.StorageLayout
 ) -> None:
@@ -154,29 +152,29 @@ async def test_an_unknown_thread_is_not_found(http: httpx.AsyncClient) -> None:
 
 @pytest.mark.scripted_model
 async def test_every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event(
-    client: Client,
-    http: httpx.AsyncClient,
-    sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
-    offered_model: str,
-    scripted: ScriptedUpstream,
+    client: Client, http: httpx.AsyncClient, sandbox: Sandboxes, scripted: ScriptedUpstream
 ) -> None:
-    await thread_stream.every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event(
-        client, http, sandbox, harness, offered_model, scripted
+    await run_harness_pair(
+        client,
+        lambda harness, offered_model: (
+            thread_stream.every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event(
+                client, http, sandbox, harness, offered_model, scripted
+            )
+        ),
     )
 
 
 @pytest.mark.scripted_model
 async def test_turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn(
-    client: Client,
-    http: httpx.AsyncClient,
-    sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
-    offered_model: str,
-    scripted: ScriptedUpstream,
+    client: Client, http: httpx.AsyncClient, sandbox: Sandboxes, scripted: ScriptedUpstream
 ) -> None:
-    await thread_stream.turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn(
-        client, http, sandbox, harness, offered_model, scripted
+    await run_harness_pair(
+        client,
+        lambda harness, offered_model: (
+            thread_stream.turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn(
+                client, http, sandbox, harness, offered_model, scripted
+            )
+        ),
     )
 
 

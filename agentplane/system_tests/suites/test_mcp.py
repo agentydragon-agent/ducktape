@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import httpx
@@ -15,6 +15,7 @@ from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
+from agentplane.system_tests.harness_pair import run_harness_pair
 from agentplane.system_tests.k3s.stack import Stack
 from agentplane.system_tests.operator_login import (
     LoginBlockedError,
@@ -30,12 +31,12 @@ from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 
 
 @pytest.fixture
-def policy_objects(cluster: Cluster) -> Iterator[mcp.PolicyObjects]:
+async def policy_objects(cluster: Cluster) -> AsyncIterator[mcp.PolicyObjects]:
     objects = mcp.PolicyObjects(cluster=cluster)
     try:
         yield objects
     finally:
-        objects.delete_all()
+        await objects.delete_all()
 
 
 @pytest.fixture
@@ -84,14 +85,14 @@ async def test_deployed_discovery_and_registration(pytestconfig: pytest.Config, 
 
 @pytest.mark.scripted_model
 async def test_agent_executes_mcp_action(
-    client: Client,
-    sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
-    offered_model: str,
-    scripted: ScriptedUpstream,
-    policy_objects: mcp.PolicyObjects,
+    client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream, policy_objects: mcp.PolicyObjects
 ) -> None:
-    await mcp.agent_executes_mcp_action(client, sandbox, harness, offered_model, scripted, policy_objects)
+    await run_harness_pair(
+        client,
+        lambda harness, offered_model: mcp.agent_executes_mcp_action(
+            client, sandbox, harness, offered_model, scripted, policy_objects
+        ),
+    )
 
 
 @pytest.mark.scripted_model
@@ -100,12 +101,13 @@ async def test_agent_mcp_bff_decision(
     operator_credentials: OperatorCredentials,
     client: Client,
     sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
-    offered_model: str,
     scripted: ScriptedUpstream,
 ) -> None:
-    await mcp.agent_mcp_bff_decision(
-        operator_bff, operator_credentials, client, sandbox, harness, offered_model, scripted
+    await run_harness_pair(
+        client,
+        lambda harness, offered_model: mcp.agent_mcp_bff_decision(
+            operator_bff, operator_credentials, client, sandbox, harness, offered_model, scripted
+        ),
     )
 
 
@@ -115,16 +117,18 @@ async def test_launcher_drives_only_the_sandbox_it_launched(
     operator_bff: httpx.AsyncClient,
     client: Client,
     sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
-    offered_model: str,
     scripted: ScriptedUpstream,
     policy_objects: mcp.PolicyObjects,
 ) -> None:
-    await mcp.launcher_drives_only_the_sandbox_it_launched(
-        cluster, operator_bff, client, sandbox, harness, offered_model, scripted, policy_objects
+    await run_harness_pair(
+        client,
+        lambda harness, offered_model: mcp.launcher_drives_only_the_sandbox_it_launched(
+            cluster, operator_bff, client, sandbox, harness, offered_model, scripted, policy_objects
+        ),
     )
 
 
+# Both harnesses change the same operator/server OAuth linkage, so keep these cases sequential.
 @pytest.mark.scripted_model
 async def test_operator_links_oauth_mcp_server(
     operator_bff: httpx.AsyncClient,
@@ -146,13 +150,14 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
     operator_bff: httpx.AsyncClient,
     client: Client,
     sandbox: Sandboxes,
-    harness: runner_pb2.Harness,
-    offered_model: str,
     scripted: ScriptedUpstream,
     policy_objects: mcp.PolicyObjects,
 ) -> None:
-    await mcp.policy_binding_auto_approves_the_bound_sandbox(
-        operator_bff, client, sandbox, harness, offered_model, scripted, policy_objects
+    await run_harness_pair(
+        client,
+        lambda harness, offered_model: mcp.policy_binding_auto_approves_the_bound_sandbox(
+            operator_bff, client, sandbox, harness, offered_model, scripted, policy_objects
+        ),
     )
 
 

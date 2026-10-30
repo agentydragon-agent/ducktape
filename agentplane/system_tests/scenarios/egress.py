@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import subprocess
 import textwrap
 from datetime import UTC, datetime
 
@@ -194,7 +193,7 @@ async def the_model_call_itself_goes_through_the_proxy(
     )
 
 
-def _kubectl_create_binding(cluster: Cluster, sandbox: SandboxView, policy_set: str) -> None:
+async def _kubectl_create_binding(cluster: Cluster, sandbox: SandboxView, policy_set: str) -> None:
     body = {
         "apiVersion": f"{GROUP}/{VERSION}",
         "kind": "PolicyBinding",
@@ -206,19 +205,13 @@ def _kubectl_create_binding(cluster: Cluster, sandbox: SandboxView, policy_set: 
         },
         "spec": {"subject": sandbox.service_account.model_dump(), "policySets": [policy_set]},
     }
-    subprocess.run(cluster.command("create", "-f", "-"), input=json.dumps(body), text=True, check=True)
+    await cluster.kubectl("create", "-f", "-", body=body)
 
 
-def _granted_request(cluster: Cluster) -> tuple[str, str]:
+async def _granted_request(cluster: Cluster) -> tuple[str, str]:
     """The host and path the fixture's runtime-grant PolicySet admits."""
-    result = subprocess.run(
-        cluster.command("get", "policyset", runtime_grant.POLICY_SET, "-o", "json"),
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=20,
-    )
-    rule = json.loads(result.stdout)["spec"]["rules"][0]
+    result = await cluster.kubectl("get", "policyset", runtime_grant.POLICY_SET, "-o", "json", timeout_s=20)
+    rule = json.loads(result)["spec"]["rules"][0]
     return rule["hosts"][0], rule["paths"][0]
 
 
@@ -231,7 +224,7 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
     scripted: ScriptedUpstream,
 ) -> None:
     """Binding at runtime is a live grant, not a restart: one sandbox, refused and then admitted."""
-    host, path = _granted_request(cluster)
+    host, path = await _granted_request(cluster)
     view = await sandbox(f"systest-bind-{harness}")
     assert view.pod is not None
     model = scripted.model(view.pod.name, harness)
@@ -244,7 +237,7 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
 
     # The app's grant route needs an operator login, which this agent-token suite does not hold, so
     # the binding is written as an operator would with kubectl, owned by the Sandbox.
-    _kubectl_create_binding(cluster, view, runtime_grant.POLICY_SET)
+    await _kubectl_create_binding(cluster, view, runtime_grant.POLICY_SET)
     # Observe the read-only request, not one replica's acknowledgement of the binding.
     async for attempt in AsyncRetrying(stop=stop_after_delay(BINDING_SECONDS), wait=wait_fixed(1), reraise=True):
         with attempt:
