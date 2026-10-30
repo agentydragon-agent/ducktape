@@ -10,7 +10,7 @@ from pydantic_settings import SettingsConfigDict
 class ResponsesConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    dialect: Literal["lite"]
+    dialect: Literal["lite", "standard"]
 
 
 class ModelConfig(BaseModel):

@@ -67,6 +67,8 @@ func execToolDescription(definitions []ResponsesCodeToolDefinition, config Model
 			"- To resume a yielded cell, pass cell_id instead of code, with optional yield_time_ms (default 10000), max_output_tokens (default 10000), and terminate: true.\n" +
 			"- Resume only after exec reports Script running with cell ID. Each resume returns new output or completion.\n" +
 			"- Pass exactly one of code or cell_id; terminate is only valid with cell_id."
+	}
+	if config.Responses.Dialect == ResponsesDialectStandard || config.ExecEncoding == ExecEncodingJSON {
 		notificationBehavior = "queues an asynchronous developer message identifying the current `exec` call"
 	}
 	description := strings.NewReplacer(

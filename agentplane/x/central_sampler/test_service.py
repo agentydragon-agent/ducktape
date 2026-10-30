@@ -9,7 +9,7 @@ import shlex
 import textwrap
 from contextlib import AsyncExitStack
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import grpc
 import pytest
@@ -61,6 +61,12 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
             update={"reasoning_efforts": {"high"}}
         )
         config.models["compatible-model"] = config.models["test-model"].model_copy(update={"reasoning_efforts": {""}})
+        config.models["standard-model"] = ModelConfig(
+            reasoning_efforts={"", "high"},
+            api="responses",
+            responses=ResponsesConfig(dialect="standard"),
+            exec_encoding="json",
+        )
         async with service(config) as stub:
             request = open_request(tmp_path)
             request.spec.model = "unknown-model"
@@ -84,6 +90,7 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
                 for model, code in (
                     ("unknown-model", grpc.StatusCode.INVALID_ARGUMENT),
                     ("restricted-model", grpc.StatusCode.INVALID_ARGUMENT),
+                    ("standard-model", grpc.StatusCode.FAILED_PRECONDITION),
                 ):
                     with pytest.raises(grpc.aio.AioRpcError) as rejected:
                         await stub.ChangeModel(
@@ -764,8 +771,14 @@ def tool_outputs(body: dict[str, Any]) -> list[tuple[str, list[str]]]:
     ]
 
 
+@pytest.mark.parametrize("dialect", ["lite", "standard"])
 async def test_json_exec_runs_shell_resumes_and_recovers(
-    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    database_url: str,
+    executor_url: str,
+    codex_binary: str,
+    code_mode_host: str,
+    tmp_path: Path,
+    dialect: Literal["lite", "standard"],
 ) -> None:
     async with Endpoint() as endpoint:
         config = settings(
@@ -777,7 +790,7 @@ async def test_json_exec_runs_shell_resumes_and_recovers(
                     "test-model": ModelConfig(
                         reasoning_efforts={"", "high"},
                         api="responses",
-                        responses=ResponsesConfig(dialect="lite"),
+                        responses=ResponsesConfig(dialect=dialect),
                         exec_encoding="json",
                     )
                 }
@@ -798,7 +811,7 @@ async def test_json_exec_runs_shell_resumes_and_recovers(
 
             async with await endpoint.next() as exchange:
                 body = exchange.request.body
-                tools = body["input"][0]["tools"]
+                tools = body["input"][0]["tools"] if dialect == "lite" else body["tools"]
                 assert len(tools) == 1
                 assert tools[0]["type"] == "function"
                 assert tools[0]["name"] == "exec"
@@ -821,9 +834,16 @@ async def test_json_exec_runs_shell_resumes_and_recovers(
                     assert properties[name]["type"] == "integer"
                     assert properties[name]["minimum"] == 0
                 assert properties["terminate"]["type"] == "boolean"
-                assert body["reasoning"]["context"] == "all_turns"
                 headers = {name.lower(): value for name, value in exchange.headers.items()}
-                assert headers["x-openai-internal-codex-responses-lite"] == "true"
+                if dialect == "lite":
+                    assert body["reasoning"]["context"] == "all_turns"
+                    assert headers["x-openai-internal-codex-responses-lite"] == "true"
+                else:
+                    assert "reasoning" not in body
+                    assert "include" not in body
+                    assert "client_metadata" not in body
+                    assert not any(item["type"] == "additional_tools" for item in body["input"])
+                    assert "x-openai-internal-codex-responses-lite" not in headers
 
                 code = textwrap.dedent(
                     """\
@@ -856,8 +876,12 @@ async def test_json_exec_runs_shell_resumes_and_recovers(
                     if item["type"] == "function_call_output" and item["call_id"] == "json-exec"
                 ]
                 assert len(call_outputs) == 1
-                assert isinstance(call_outputs[0]["output"], list)
-                call_output_text = "\n".join(part["text"] for part in call_outputs[0]["output"])
+                if dialect == "lite":
+                    assert isinstance(call_outputs[0]["output"], list)
+                    call_output_text = "\n".join(part["text"] for part in call_outputs[0]["output"])
+                else:
+                    assert isinstance(call_outputs[0]["output"], str)
+                    call_output_text = call_outputs[0]["output"]
                 assert "Script running with cell ID" in call_output_text
                 cell_id_match = re.search(r"cell ID ([A-Za-z0-9_:-]+)", call_output_text)
                 assert cell_id_match is not None
@@ -895,8 +919,12 @@ async def test_json_exec_runs_shell_resumes_and_recovers(
                     if item["type"] == "function_call_output" and item["call_id"] == "json-resume"
                 ]
                 assert len(resumed) == 1
-                assert isinstance(resumed[0]["output"], list)
-                resumed_text = "\n".join(part["text"] for part in resumed[0]["output"])
+                if dialect == "lite":
+                    assert isinstance(resumed[0]["output"], list)
+                    resumed_text = "\n".join(part["text"] for part in resumed[0]["output"])
+                else:
+                    assert isinstance(resumed[0]["output"], str)
+                    resumed_text = resumed[0]["output"]
                 assert "Script completed" in resumed_text
                 assert 'quoted argument: "value"' in resumed_text
                 assert "json-shell-output" in resumed_text
@@ -914,8 +942,12 @@ async def test_json_exec_runs_shell_resumes_and_recovers(
                     if item["type"] == "function_call_output" and item["call_id"] == "json-error"
                 ]
                 assert len(failed) == 1
-                assert isinstance(failed[0]["output"], list)
-                failed_text = "\n".join(part["text"] for part in failed[0]["output"])
+                if dialect == "lite":
+                    assert isinstance(failed[0]["output"], list)
+                    failed_text = "\n".join(part["text"] for part in failed[0]["output"])
+                else:
+                    assert isinstance(failed[0]["output"], str)
+                    failed_text = failed[0]["output"]
                 assert "Script failed" in failed_text
                 assert "recoverable script error" in failed_text
                 await exchange.send(

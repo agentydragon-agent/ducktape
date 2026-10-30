@@ -79,8 +79,10 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 			{Type: "function", Name: "wait", Description: waitToolDescription(), Strict: &strict, Parameters: waitToolParameters()},
 		}
 	}
-	input := make([]ResponsesItem, 0, len(items)+3)
-	input = append(input, ResponsesItem{Type: ResponsesItemAdditionalTools, Role: "developer", Tools: tools})
+	input := make([]ResponsesInput, 0, len(items)+3)
+	if config.Responses.Dialect == ResponsesDialectLite {
+		input = append(input, ResponsesItem{Type: ResponsesItemAdditionalTools, Role: "developer", Tools: tools})
+	}
 	if instructions != nil && *instructions != "" {
 		item, err := newResponsesMessage("developer", *instructions)
 		if err != nil {
@@ -121,19 +123,22 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 		Model: model, Instructions: baseInstructions, Input: input, Stream: true, Store: false,
 		PromptCacheKey: conversationID,
 	}
-	body.Reasoning = ResponsesReasoningConfig{Summary: codexReasoningSummary, Context: "all_turns"}
-	body.Include = []string{"reasoning.encrypted_content"}
-	body.ClientMetadata = ResponsesClientMetadata{SessionID: conversationID, ThreadID: conversationID, TurnID: conversationID}
-
+	if config.Responses.Dialect == ResponsesDialectLite {
+		body.Reasoning = &ResponsesReasoningConfig{Summary: codexReasoningSummary, Context: "all_turns"}
+		body.Include = []string{"reasoning.encrypted_content"}
+		body.ClientMetadata = &ResponsesClientMetadata{SessionID: conversationID, ThreadID: conversationID, TurnID: conversationID}
+	} else {
+		body.Tools = tools
+	}
 	return body, nil
 }
 
 // buildResponsesInput adapts durable observations before the wire request is serialized.
-// It retains native items and converts JSON exec notifications into developer messages.
-func buildResponsesInput(items []ResponsesItem, config ModelConfig) ([]ResponsesItem, error) {
-	input := make([]ResponsesItem, 0, len(items))
+// It retains native items, and converts notifications and public text tool results.
+func buildResponsesInput(items []ResponsesItem, config ModelConfig) ([]ResponsesInput, error) {
+	input := make([]ResponsesInput, 0, len(items))
 	answered := map[string]bool{}
-	adaptNotifications := config.ExecEncoding == ExecEncodingJSON
+	adaptNotifications := config.Responses.Dialect == ResponsesDialectStandard || config.ExecEncoding == ExecEncodingJSON
 	for _, item := range items {
 		if adaptNotifications && item.IsToolOutput() {
 			if answered[item.CallID] {
@@ -150,7 +155,19 @@ func buildResponsesInput(items []ResponsesItem, config ModelConfig) ([]Responses
 			}
 			answered[item.CallID] = true
 		}
-
+		if config.Responses.Dialect == ResponsesDialectStandard && item.Type == ResponsesItemFunctionOutput {
+			texts := make([]string, 0, len(item.Output))
+			for _, part := range item.Output {
+				if part.Type != "input_text" {
+					break
+				}
+				texts = append(texts, part.Text)
+			}
+			if len(texts) == len(item.Output) {
+				input = append(input, ResponsesTextToolOutput{Type: item.Type, ID: item.ID, CallID: item.CallID, Output: strings.Join(texts, "\n")})
+				continue
+			}
+		}
 		input = append(input, item)
 	}
 	return input, nil
@@ -200,7 +217,9 @@ func Sample(ctx context.Context, client *http.Client, proxyURL, credential strin
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer "+credential)
-	request.Header.Set("x-openai-internal-codex-responses-lite", "true")
+	if responses.Dialect == ResponsesDialectLite {
+		request.Header.Set("x-openai-internal-codex-responses-lite", "true")
+	}
 	for name, value := range attribution {
 		request.Header.Set(name, value)
 	}
