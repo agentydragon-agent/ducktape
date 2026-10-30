@@ -1,13 +1,5 @@
 # CI TODOs
 
-## Consolidate Bazel invocation-role plumbing
-
-`bazel-ci.yml` repeats the test, build, and race roles across ID generation,
-linkage, and environment forwarding. Define their role-to-ID mapping once and
-derive the other representations from it. Preserve all IDs for diagnostics and
-cancellation, while keeping race-configured outputs out of the ordinary test
-and build evidence used by release and image publication.
-
 ## Fetch publication artifacts explicitly from BuildBuddy
 
 Image publication and the release-artifact action still rely on `bb remote build`'s
