@@ -19,9 +19,7 @@ from uuid import uuid4
 STORAGE_CLASS = "agentplane-test-loop-block"
 CLAIM_CAPACITY = "10Gi"
 _CLAIM_CAPACITY_BYTES = 10 * 1024**3
-# The VM suite creates one workspace per harness plus the Codex OOM workspace. Retained static PVs
-# stay Released after their claim is deleted and cannot bind another test's fresh claim.
-_PV_COUNT = 3
+# Retained static PVs remain Released after claim deletion. Each new Sandbox needs a fresh PV.
 
 _LOOP_CTL_GET_FREE = 0x4C82
 _LOOP_SET_FD = 0x4C00
@@ -120,7 +118,8 @@ class _LoopDevice:
 class BlockStorage:
     """A single-node pool for VM workspace claims in one disposable k3s stack."""
 
-    def __init__(self, work: Path) -> None:
+    def __init__(self, work: Path, *, volume_count: int) -> None:
+        self.volume_count = volume_count
         self.work = work / "raw-block"
         self.suffix = uuid4().hex[:10]
         self.devices: list[_LoopDevice] = []
@@ -131,7 +130,7 @@ class BlockStorage:
         if self.devices:
             raise RuntimeError("raw block storage was already prepared")
         self.work.mkdir()
-        for index in range(_PV_COUNT):
+        for index in range(self.volume_count):
             backing_file = self.work / f"workspace-{index}.img"
             with backing_file.open("xb") as backing:
                 backing.truncate(_CLAIM_CAPACITY_BYTES)
@@ -141,7 +140,7 @@ class BlockStorage:
         return self.objects(node_name="env")
 
     def objects(self, *, node_name: str) -> list[dict[str, object]]:
-        if len(self.devices) != _PV_COUNT:
+        if len(self.devices) != self.volume_count:
             raise RuntimeError("raw block storage must be prepared before creating PVs")
         storage_class: dict[str, object] = {
             "apiVersion": "storage.k8s.io/v1",

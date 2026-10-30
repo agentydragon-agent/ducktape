@@ -346,11 +346,6 @@ py_library(
 )
 
 py_library(
-    name = "executor_environment",
-    srcs = ["executor_environment.py"],
-    deps = [
-        ":agent",
-        ":conftest",
-        "@pypi//pytest",
-    ],
+    name = "executor",
+    srcs = ["executor.py"],
 )

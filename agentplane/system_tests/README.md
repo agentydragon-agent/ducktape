@@ -21,16 +21,22 @@ it through `AGENTPLANE_SYSTEM_TEST_{URL,TOKEN,NAMESPACE,SERVICE_ACCOUNT}`
 
 The shared stack cuts setup and image-import work, while each target now has a coarser cache key: a
 changed scenario reruns its suite. Scenario modules live in [`scenarios/`](scenarios/) as ordinary
-libraries. Python entrypoints in `suites/test_*.py` explicitly import their scenario tests and
-local fixtures; Gazelle derives their dependencies, and `k3s_suite` configures the stack. Only
-those entrypoints are collected, so offline helper tests
-such as `test_agent.py` and `test_operator_login.py` are not collected into a live stack. Scenarios
-use function-scoped fixtures and create/clean up only their own Sandboxes and resources.
+libraries. Entry points in `suites/test_*.py` contain ordinary pytest tests, marks, and
+parametrization. Each test passes its fixture values explicitly to a plain scenario function.
+Gazelle derives Python dependencies; `k3s_suite` supplies stack artifacts and execution settings.
 
-Shared sampler, storage, and suspend/resume scenarios receive an `executor_environment` fixture
-selected by the suite. Pod and VM suites import only their applicable tests; collection does not
-filter execution platforms. VM suites retain the `vm_sandboxes` marker for tracing and diagnostics.
-The sampler's VM execution probe still checks systemd, UID, and executor cgroup placement.
+The session-scoped `deployment` fixture yields the running stack. Suite client fixtures depend on
+it directly, and executor fixtures select an available SandboxTemplate and working directory from
+that deployment. Storage layouts and sampler execution probes remain owned by their respective
+scenario modules. VM probes retain the systemd, UID, and cgroup assertions. VM test markers enable
+tracing and diagnostics; they do not select deployment configuration.
+
+The build supplies complete service and guest image lists. The pytest adapter resolves these and
+the rendered deployment once into `StackInputs`; stack startup does not discover image layouts by
+scanning runfiles. Existing Kubernetes helpers still use the published kubeconfig and namespace.
+Per-test fixtures create and clean up their own Sandboxes and resources. VM suites declare their
+total workspace-volume demand: retained static PVs cannot bind another Sandbox after deletion,
+so `test_vm` needs five volumes for its two sequential concurrent groups, despite a peak of three guests.
 
 The Dispatcher suite remains separate because replica coverage changes the shared Runner Gateway
 Deployment and deletes a recorded Pod while checking controller behavior.

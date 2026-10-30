@@ -8,7 +8,6 @@ import json
 from typing import Any
 from uuid import UUID, uuid4
 
-import pytest
 from tenacity import AsyncRetrying, retry_if_exception_type, retry_if_result, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
@@ -151,7 +150,7 @@ async def _open_agent(
     return agent
 
 
-async def test_cert_manager_reissues_a_deleted_tls_secret() -> None:
+async def cert_manager_reissues_a_deleted_tls_secret() -> None:
     name = f"test-reissue-{uuid4().hex[:8]}"
     await kubectl(
         "apply",
@@ -192,9 +191,7 @@ async def test_cert_manager_reissues_a_deleted_tls_secret() -> None:
     assert replacement["data"]["tls.crt"] != original["data"]["tls.crt"]
 
 
-@pytest.mark.scripted_model
-@pytest.mark.timeout(600)
-async def test_pod_mtls_session_survives_replacement_and_keeps_history(
+async def pod_mtls_session_survives_replacement_and_keeps_history(
     client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
 ) -> None:
     view = await sandbox(f"systest-runner-pod-{uuid4().hex[:8]}", template=POD_TEMPLATE)
@@ -271,10 +268,7 @@ async def _run_vm_mtls_certificate_authenticates_a_session(
     assert (current_pod_uid, current_credential_id) == (pod_uid, credential_id)
 
 
-@pytest.mark.vm_sandboxes
-@pytest.mark.scripted_model
-@pytest.mark.timeout(600)
-async def test_vm_mtls_certificates_authenticate_both_harnesses(
+async def vm_mtls_certificates_authenticate_both_harnesses(
     client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
 ) -> None:
     # pytest-asyncio serializes parametrized cases; explicit tasks overlap the independent boots
@@ -292,3 +286,6 @@ async def test_vm_mtls_certificates_authenticate_both_harnesses(
                     ),
                 )
             )
+
+
+# gazelle:include_dep @pypi//protobuf

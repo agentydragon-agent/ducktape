@@ -2,7 +2,9 @@
 
 import asyncio
 import json
+from collections.abc import Callable
 from contextlib import aclosing
+from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
@@ -22,12 +24,49 @@ from agentplane.system_tests.central_sampler import (
     central_stack,
 )
 from agentplane.system_tests.cluster import kubectl
-from agentplane.system_tests.executor_environment import ExecutorEnvironment
+from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Reasoning, ShellCall, Text
 from agentplane.x.central_sampler import sampler_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
+
+
+def _verify_pod_executor(output: str) -> None:
+    assert "prepared-on-executor\n" in output
+    assert "tool-on-executor\n" in output
+    assert "CENTRAL_EXECUTOR_OK\n" in output
+
+
+def _verify_vm_executor(output: str) -> dict[str, str | int]:
+    assert "prepared-on-executor\n" in output
+    assert "VM_PID1 systemd\n" in output
+    assert "VM_EXECUTOR_UID 107\n" in output
+    (cgroup_line,) = [line for line in output.splitlines() if line.startswith("VM_EXECUTOR_CGROUP ")]
+    executor_cgroup = cgroup_line.removeprefix("VM_EXECUTOR_CGROUP ")
+    assert executor_cgroup.startswith("/agentplane.slice/agentplane-executors.slice/agentplane-native-"), (
+        executor_cgroup
+    )
+    assert executor_cgroup.count("/") == 3, executor_cgroup
+    assert executor_cgroup.endswith(".service"), executor_cgroup
+    return {"pid1": "systemd", "uid": 107, "executor_cgroup": executor_cgroup}
+
+
+@dataclass(frozen=True)
+class ExecutionProbe:
+    command_prefix: str
+    verify: Callable[[str], dict[str, str | int] | None]
+
+
+POD_EXECUTION = ExecutionProbe(command_prefix="", verify=_verify_pod_executor)
+VM_EXECUTION = ExecutionProbe(
+    command_prefix=(
+        "printf 'VM_PID1 %s\\n' \"$(cat /proc/1/comm)\"; "
+        "printf 'VM_EXECUTOR_UID %s\\n' \"$(id -u)\"; "
+        "printf 'VM_EXECUTOR_CGROUP %s\\n' \"$(awk -F: '$1 == 0 {print $3}' /proc/self/cgroup)\"; "
+    ),
+    verify=_verify_vm_executor,
+)
 
 
 async def _capture_session_diagnostics(
@@ -179,13 +218,10 @@ async def _wait_for_turn_status(
         events.cancel()
 
 
-@pytest.mark.scripted_model
-@pytest.mark.timeout(600)
-async def test_dispatcher_central_setup_tool_and_retained_answer(
-    k3s_deployment: None, tmp_path: Path, scripted: ScriptedUpstream, executor_environment: ExecutorEnvironment
+async def dispatcher_central_setup_tool_and_retained_answer(
+    tmp_path: Path, scripted: ScriptedUpstream, executor: Executor, execution_probe: ExecutionProbe
 ) -> None:
-    del k3s_deployment  # Only valid on a disposable stack, never against staging.
-    template, cwd = executor_environment.template, executor_environment.cwd
+    template, cwd = executor.template, executor.cwd
     session_id, command_id = str(uuid4()), str(uuid4())
     interrupted_session_id, interrupted_command_id = str(uuid4()), str(uuid4())
     prompt = "Read the setup marker and report the result."
@@ -318,7 +354,7 @@ async def test_dispatcher_central_setup_tool_and_retained_answer(
         assert prompt in request.user_texts
         tool_command = (
             "set -eu; sleep 10; "
-            + executor_environment.sampler_probe
+            + execution_probe.command_prefix
             + "cat prepared.txt; printf 'tool-on-executor\\n' | tee result.txt; "
             "printf 'CENTRAL_EXECUTOR_OK\\n'"
         )
@@ -348,7 +384,7 @@ async def test_dispatcher_central_setup_tool_and_retained_answer(
             (tool_output,) = request.tool_outputs
             output = "\n".join(tool_output.blocks)
             assert "CENTRAL_EXECUTOR_OK" in output
-            vm_execution = executor_environment.verify_sampler_output(output)
+            vm_execution = execution_probe.verify(output)
             assert any(item.encrypted_content for item in request.native.reasoning)
             await model.reply(request, Text(answer))
         except Exception as error:

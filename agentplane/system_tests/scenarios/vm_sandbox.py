@@ -7,7 +7,6 @@ import json
 import re
 from typing import Any
 
-import pytest
 from opentelemetry import trace
 from pydantic import BaseModel
 
@@ -287,9 +286,7 @@ async def _run_codex_tool_oom(
         (undeclared_outputs_dir() / "vm-codex-oom.json").write_text(json.dumps(evidence, indent=2) + "\n")
 
 
-@pytest.mark.vm_sandboxes
-@pytest.mark.scripted_model
-async def test_vm_sandbox_scenarios(client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream) -> None:
+async def vm_sandbox_scenarios(client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream) -> None:
     # pytest-asyncio runs parametrized cases sequentially. Schedule these explicitly so all three
     # independent VM boots overlap while sharing one k3s stack and Pod-routed scripted server.
     harnesses = [runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX]
@@ -308,3 +305,6 @@ async def test_vm_sandbox_scenarios(client: Client, sandbox: Sandboxes, scripted
                 _run_codex_tool_oom(client, sandbox, offered_models[runner_pb2.HARNESS_CODEX], scripted),
             )
         )
+
+
+# gazelle:include_dep @pypi//protobuf

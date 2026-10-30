@@ -21,7 +21,6 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-import pytest
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
@@ -99,17 +98,6 @@ async def tab(http: httpx.AsyncClient, thread_id: UUID, *, last_event_id: int | 
         yield Tab(response.aiter_lines())
 
 
-@pytest.fixture
-async def http(base_url: str, token: str) -> AsyncIterator[httpx.AsyncClient]:
-    """The app as a browser reaches it: its raw responses and server-sent events."""
-    async with httpx.AsyncClient(
-        base_url=base_url.rstrip("/"),
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=httpx.Timeout(REQUEST_SECONDS, read=TURN_SECONDS),
-    ) as opened:
-        yield opened
-
-
 async def _open(client: Client, view: SandboxView, harness: runner_pb2.Harness, model: str) -> UUID:
     """A Thread whose runner feed is attached, so a tab's first frame is `attached`."""
     thread_id = (await Agent.open(client, sandbox=view.name, harness=harness, model=model)).thread_id
@@ -181,7 +169,7 @@ def _admitted(frames: list[Frame]) -> list[str]:
     ]
 
 
-async def test_an_unknown_thread_is_not_found(http: httpx.AsyncClient) -> None:
+async def an_unknown_thread_is_not_found(http: httpx.AsyncClient) -> None:
     unknown = "/threads/00000000-0000-0000-0000-000000000000"
     assert (await http.get(f"{unknown}/events/stream")).status_code == 404
     assert (
@@ -190,8 +178,7 @@ async def test_an_unknown_thread_is_not_found(http: httpx.AsyncClient) -> None:
     assert (await http.post(f"{unknown}/submit-input", json={"commandId": "test-x"})).status_code == 422
 
 
-@pytest.mark.scripted_model
-async def test_every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event(
+async def every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event(
     client: Client,
     http: httpx.AsyncClient,
     sandbox: Sandboxes,
@@ -255,8 +242,7 @@ async def test_every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_
         assert await reconnected.next() == following
 
 
-@pytest.mark.scripted_model
-async def test_turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn(
+async def turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn(
     client: Client,
     http: httpx.AsyncClient,
     sandbox: Sandboxes,
@@ -303,3 +289,6 @@ async def test_turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_nex
     assert recovered[-1].data["event"]["turnCompleted"]["turnId"] != failed[-1].data["event"]["turnCompleted"]["turnId"]
     assert _admitted(recovered) == [follow_up.command_id]
     assert _texts(recovered) == ["AFTER_HTTP_ERROR_OK"]
+
+
+# gazelle:include_dep @pypi//protobuf

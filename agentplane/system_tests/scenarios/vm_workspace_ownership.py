@@ -7,7 +7,6 @@ import json
 import shlex
 from uuid import UUID, uuid4
 
-import pytest
 from google.protobuf.json_format import MessageToDict
 
 from agentplane.app.testing.client import Client
@@ -58,8 +57,7 @@ async def _run_setup(
     raise AssertionError(f"setup for Session {session_id} emitted no finished event")
 
 
-@pytest.mark.vm_sandboxes
-async def test_fresh_vm_session_workspace_is_created_for_harness_identity(client: Client, sandbox: Sandboxes) -> None:
+async def fresh_vm_session_workspace_is_created_for_harness_identity(client: Client, sandbox: Sandboxes) -> None:
     """Check absence before opening, then use the ordinary Session setup and Git paths."""
     view = await sandbox(f"systest-vm-workspace-{uuid4().hex[:10]}", template=VM_TEMPLATE)
     harness = runner_pb2.HARNESS_CODEX
@@ -146,3 +144,6 @@ async def test_fresh_vm_session_workspace_is_created_for_harness_identity(client
     }
     output_path = undeclared_outputs_dir() / "vm-workspace-ownership.json"
     output_path.write_text(json.dumps(evidence, indent=2) + "\n")
+
+
+# gazelle:include_dep @pypi//protobuf

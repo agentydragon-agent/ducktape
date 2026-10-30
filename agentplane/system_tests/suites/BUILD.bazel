@@ -1,4 +1,5 @@
 load("//agentplane/system_tests:defs.bzl", "k3s_suite")
+load("//devinfra/python:defs.bzl", "py_library")
 
 # gazelle:map_kind py_test k3s_suite //agentplane/system_tests:defs.bzl
 
@@ -13,9 +14,15 @@ k3s_suite(
     srcs = ["test_pod.py"],
     stack = "pod",
     deps = [
+        ":conftest",
         "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/system_tests:agent",
         "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests:executor_environment",
+        "//agentplane/system_tests:executor",
+        "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/system_tests/k3s:stack",
         "//agentplane/system_tests/scenarios:agent_messaging",
         "//agentplane/system_tests/scenarios:egress",
         "//agentplane/system_tests/scenarios:launch_presets",
@@ -24,6 +31,9 @@ k3s_suite(
         "//agentplane/system_tests/scenarios:storage",
         "//agentplane/system_tests/scenarios:suspend_resume",
         "//agentplane/system_tests/scenarios:thread_stream",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -34,9 +44,11 @@ k3s_suite(
     srcs = ["test_dispatcher.py"],
     stack = "pod",
     deps = [
+        ":conftest",
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/scenarios:dispatcher",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -46,10 +58,19 @@ k3s_suite(
     srcs = ["test_mcp.py"],
     stack = "mcp",
     deps = [
+        ":conftest",
         "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests:operator_login",
+        "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/system_tests/k3s:stack",
         "//agentplane/system_tests/scenarios:dcr",
         "//agentplane/system_tests/scenarios:mcp",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -59,9 +80,14 @@ k3s_suite(
     name = "test_vm",
     srcs = ["test_vm.py"],
     stack = "vm",
+    # Retained static PVs are consumed per Sandbox, including sequential scenarios.
+    workspace_volumes = 5,
     deps = [
+        ":conftest",
         "//:conftest",
+        "//agentplane/app/testing:client",
         "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests:scripted_upstream",
         "//agentplane/system_tests/scenarios:runner_credentials",
         "//agentplane/system_tests/scenarios:vm_sandbox",
         "@pypi//pytest",
@@ -73,10 +99,14 @@ k3s_suite(
     name = "test_vm_systemd",
     srcs = ["test_vm_systemd.py"],
     stack = "vm_systemd",
+    # Retained static PVs are consumed per Sandbox, including sequential scenarios.
+    workspace_volumes = 1,
     deps = [
+        ":conftest",
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/scenarios:runner_systemd",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -86,10 +116,14 @@ k3s_suite(
     srcs = ["test_sampler_pod.py"],
     stack = "sampler_pod",
     deps = [
+        ":conftest",
         "//:conftest",
         "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests:executor_environment",
+        "//agentplane/system_tests:executor",
+        "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/system_tests/k3s:stack",
         "//agentplane/system_tests/scenarios:central_sampler",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -98,10 +132,15 @@ k3s_suite(
     name = "test_sampler_vm",
     srcs = ["test_sampler_vm.py"],
     stack = "sampler_vm",
+    # Retained static PVs are consumed per Sandbox, including sequential scenarios.
+    workspace_volumes = 1,
     deps = [
+        ":conftest",
         "//:conftest",
         "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests:executor_environment",
+        "//agentplane/system_tests:executor",
+        "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/system_tests/k3s:stack",
         "//agentplane/system_tests/scenarios:central_sampler",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -113,10 +152,16 @@ k3s_suite(
     srcs = ["test_vm_manual.py"],
     stack = "vm",
     tags = ["manual"],
+    # Retained static PVs are consumed per Sandbox, including sequential scenarios.
+    workspace_volumes = 3,
     deps = [
+        ":conftest",
         "//:conftest",
+        "//agentplane/app/testing:client",
         "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests:executor_environment",
+        "//agentplane/system_tests:executor",
+        "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/system_tests/k3s:stack",
         "//agentplane/system_tests/scenarios:storage",
         "//agentplane/system_tests/scenarios:suspend_resume",
         "//agentplane/system_tests/scenarios:vm_workspace_ownership",
@@ -130,10 +175,25 @@ k3s_suite(
     srcs = ["test_real_model.py"],
     stack = "real_model",
     deps = [
+        ":conftest",
         "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/scenarios:egress",
         "//agentplane/system_tests/scenarios:session_instructions",
+        "@pypi//protobuf",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//agentplane/system_tests/k3s:stack",
+        "@pypi//pytest",
     ],
 )

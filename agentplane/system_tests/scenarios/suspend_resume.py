@@ -9,7 +9,6 @@ import subprocess
 from dataclasses import dataclass, field
 from uuid import UUID, uuid4
 
-import pytest
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import Client
@@ -20,7 +19,7 @@ from agentplane.runner.harness import Harness
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests.agent import TURN_SECONDS, WORKING_DIRECTORY, Agent, Turn, runner_startup_retries
 from agentplane.system_tests.conftest import POD_TEMPLATE, Sandboxes, wait_until_running
-from agentplane.system_tests.executor_environment import ExecutorEnvironment
+from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Text
@@ -268,12 +267,11 @@ def _marker(harness: runner_pb2.Harness) -> str:
     return f"{runner_pb2.Harness.Name(harness)}-{uuid4().hex}"
 
 
-@pytest.mark.scripted_model
-async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
-    client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream, executor_environment: ExecutorEnvironment
+async def two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
+    client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream, executor: Executor
 ) -> None:
     """One replacement of the Sandbox's Pod, or of a VM's launcher, exercises both native stores."""
-    template, cwd = executor_environment.template, executor_environment.cwd
+    template, cwd = executor.template, executor.cwd
     run = await _ResumeRun.start(client, sandbox, template=template)
     markers = {harness: _marker(harness) for harness in (runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX)}
     models = {harness: scripted.model(run.pod_name, harness) for harness in markers}
@@ -302,8 +300,7 @@ async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resu
     run.save()
 
 
-@pytest.mark.scripted_model
-async def test_codex_standing_instructions_after_suspend_and_compact(
+async def codex_standing_instructions_after_suspend_and_compact(
     client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
 ) -> None:
     standing = "SESSION_STANDING_ORDER: consult Agentplane before declaring access unavailable."

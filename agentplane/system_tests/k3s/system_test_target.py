@@ -22,7 +22,7 @@ from agentplane.system_tests import operator_login
 from agentplane.system_tests.conftest import BASE_URL, MCP_EDGE_URL, NAMESPACE, TOKEN
 from agentplane.system_tests.k3s import guest_logs, rendered_fixture
 from agentplane.system_tests.k3s.rendered_fixture import Backend, LocalModel, PublicLiteLLM
-from agentplane.system_tests.k3s.stack import Timeline, node_ip, running_stack
+from agentplane.system_tests.k3s.stack import Stack, StackInputs, Timeline, node_ip, running_stack
 from util.bazel.runfiles import get_required_path
 from util.net import Listener, listen_tcp
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -44,8 +44,19 @@ def scripted_listener() -> Iterator[Listener]:
         yield listener
 
 
-def _models(listener: Listener) -> rendered_fixture.Models:
-    match rendered_fixture.read(get_required_path(os.environ["K3S_FIXTURE_RLOCATION"])).backend:
+@pytest.fixture(scope="session")
+def stack_inputs() -> StackInputs:
+    return StackInputs(
+        fixture=rendered_fixture.read(get_required_path(os.environ["K3S_FIXTURE_RLOCATION"])),
+        workspace_volumes=int(os.environ["K3S_WORKSPACE_VOLUMES"]),
+        binary=get_required_path(os.environ["K3S_BINARY_RLOCATION"]),
+        image_layouts=tuple(get_required_path(path) for path in os.environ["K3S_IMAGE_LAYOUTS"].split()),
+        guest_image_layouts=tuple(get_required_path(path) for path in os.environ["K3S_GUEST_IMAGE_LAYOUTS"].split()),
+    )
+
+
+def _models(inputs: StackInputs, listener: Listener) -> rendered_fixture.Models:
+    match inputs.fixture.backend:
         case Backend.LOCAL_MODEL:
             return LocalModel(url=f"http://{listener.host}:{listener.port}")
         case Backend.PUBLIC_LITELLM:
@@ -53,13 +64,14 @@ def _models(listener: Listener) -> rendered_fixture.Models:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def k3s_deployment(
-    pytestconfig: pytest.Config, request: pytest.FixtureRequest, scripted_listener: Listener
-) -> Iterator[None]:
+def deployment(
+    pytestconfig: pytest.Config, request: pytest.FixtureRequest, scripted_listener: Listener, stack_inputs: StackInputs
+) -> Iterator[Stack]:
     timeline = pytestconfig.stash[TIMELINE] = Timeline()
     with (
         running_stack(
-            models=_models(scripted_listener),
+            stack_inputs,
+            models=_models(stack_inputs, scripted_listener),
             timeline=timeline,
             validate_vm_shutdown=lambda: request.session.testsfailed == 0,
         ) as stack,
@@ -81,4 +93,4 @@ def k3s_deployment(
                 f"/api/v1/namespaces/{stack.namespace}/secrets/{stack.mcp_fixtures.operator_secret}",
             )
             environment.setenv(MCP_EDGE_URL, stack.mcp_fixtures.mcp_edge_url)
-        yield
+        yield stack

@@ -29,7 +29,6 @@ import subprocess
 import textwrap
 from datetime import UTC, datetime
 
-import pytest
 from pydantic import BaseModel, ConfigDict, Field
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
@@ -123,8 +122,7 @@ async def _decision_for(client: Client, sandbox: str, host: str, *, after: datet
     raise AssertionError("unreachable: reraise=True either returns a decision or raises")
 
 
-@pytest.mark.real_model
-async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
+async def a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
     client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, model: str
 ) -> None:
     """The whole path in one turn: the agent asks what it may reach, uses the credential it is told
@@ -157,8 +155,7 @@ async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
     assert refused.reason == "no-rule", f"{refused!r}"
 
 
-@pytest.mark.scripted_model
-async def test_the_model_call_itself_goes_through_the_proxy(
+async def the_model_call_itself_goes_through_the_proxy(
     client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
 ) -> None:
     """The runner holds only an inert placeholder, not the LiteLLM key, so a turn happens at all only
@@ -221,8 +218,7 @@ def _granted_request() -> tuple[str, str]:
     return rule["hosts"][0], rule["paths"][0]
 
 
-@pytest.mark.scripted_model
-async def test_a_policy_granted_after_the_sandbox_is_running_takes_effect(
+async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
     client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
 ) -> None:
     """Binding at runtime is a live grant, not a restart: one sandbox, refused and then admitted."""
@@ -248,3 +244,6 @@ async def test_a_policy_granted_after_the_sandbox_is_running_takes_effect(
             admitted = await _decision_for(client, view.name, host, after=after)
             assert admitted.outcome is Outcome.ALLOW, f"{admitted!r}\n{turn.transcript}"
             assert admitted.policy == runtime_grant.POLICY_SET, f"{admitted!r}"
+
+
+# gazelle:include_dep @pypi//protobuf

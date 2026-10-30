@@ -408,9 +408,7 @@ async def _replace_owner_with_peer(
                 await kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
 
 
-@pytest.mark.timeout(600)
-@pytest.mark.parametrize("replica_failover", [False, True], ids=["queue", "replicas"])
-async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission(replica_failover: bool) -> None:
+async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(replica_failover: bool) -> None:
     deployment = json.loads(await kubectl("get", "deployment", WORKLOAD, "-o", "json"))
     assert deployment["status"].get("readyReplicas") == 1, "the Dispatcher is not Ready"
     assert deployment["spec"]["replicas"] == 1
@@ -644,8 +642,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
     path.write_text(json.dumps(evidence, indent=2) + "\n")
 
 
-@pytest.mark.timeout(600)
-async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notification_sends() -> None:
+async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notification_sends() -> None:
     deployments: dict[str, object] = {}
     for name in (WORKLOAD, "sandbox-controller", "app", "notifications"):
         deployment = json.loads(await kubectl("get", "deployment", name, "-o", "json"))
@@ -923,3 +920,6 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
         await cleanup_without_masking(failure, lambda: cleanup(failure))
     evidence["cleanup_complete"] = True
     path.write_text(json.dumps(evidence, indent=2) + "\n")
+
+
+# gazelle:include_dep @pypi//protobuf

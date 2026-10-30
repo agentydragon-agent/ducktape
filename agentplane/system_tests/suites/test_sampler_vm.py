@@ -1,14 +1,39 @@
-"""System scenarios sharing one sampler_vm k3s stack."""
+"""Executable sampler_vm scenarios sharing one k3s stack."""
+
+from __future__ import annotations
+
+from pathlib import Path
 
 import pytest
 import pytest_bazel
 
-from agentplane.system_tests.executor_environment import vm_executor as executor_environment
-from agentplane.system_tests.scenarios.central_sampler import test_dispatcher_central_setup_tool_and_retained_answer
+from agentplane.system_tests.executor import Executor
+from agentplane.system_tests.k3s.stack import Stack
+from agentplane.system_tests.scenarios import central_sampler
+from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 
 pytestmark = pytest.mark.vm_sandboxes
 
-__all__ = ["executor_environment", "test_dispatcher_central_setup_tool_and_retained_answer"]
+
+@pytest.fixture
+def executor(deployment: Stack) -> Executor:
+    return deployment.executor("runner-vm", cwd="/state/workspaces/accept")
+
+
+@pytest.fixture
+def execution_probe() -> central_sampler.ExecutionProbe:
+    return central_sampler.VM_EXECUTION
+
+
+@pytest.mark.scripted_model
+@pytest.mark.timeout(600)
+async def test_dispatcher_central_setup_tool_and_retained_answer(
+    tmp_path: Path, scripted: ScriptedUpstream, executor: Executor, execution_probe: central_sampler.ExecutionProbe
+) -> None:
+    await central_sampler.dispatcher_central_setup_tool_and_retained_answer(
+        tmp_path, scripted, executor, execution_probe
+    )
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

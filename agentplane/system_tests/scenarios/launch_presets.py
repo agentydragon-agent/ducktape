@@ -7,8 +7,6 @@ import asyncio
 import time
 from uuid import uuid4
 
-import pytest
-
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
@@ -25,8 +23,7 @@ from agentplane.testing.scripted_model import ShellCall, Text
 INSTRUCTIONS = "Test instructions that override the preset's for this session."
 
 
-@pytest.mark.scripted_model
-async def test_a_preset_launches_an_initialized_editable_codex_thread(
+async def a_preset_launches_an_initialized_editable_codex_thread(
     client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
 ) -> None:
     configured = {preset.name: preset for preset in await client.presets()}
@@ -123,3 +120,6 @@ async def test_a_preset_launches_an_initialized_editable_codex_thread(
     local = await client.wait_for_thread_feed(local_id, timeout_s=RUNNER_ANSWERS_SECONDS)
     assert inherited.model == preset.session_defaults.model
     assert local.model == local_model
+
+
+# gazelle:include_dep @pypi//protobuf

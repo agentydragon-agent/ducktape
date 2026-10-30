@@ -1,10 +1,18 @@
-"""System scenarios sharing one vm_systemd k3s stack."""
+"""Executable vm_systemd scenarios sharing one k3s stack."""
 
+from __future__ import annotations
+
+import pytest
 import pytest_bazel
 
-from agentplane.system_tests.scenarios.runner_systemd import test_real_systemd_supervision
+from agentplane.system_tests.conftest import Sandboxes
+from agentplane.system_tests.scenarios import runner_systemd
 
-__all__ = ["test_real_systemd_supervision"]
+
+@pytest.mark.vm_sandboxes
+async def test_real_systemd_supervision(sandbox: Sandboxes) -> None:
+    await runner_systemd.real_systemd_supervision(sandbox)
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

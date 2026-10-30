@@ -25,7 +25,6 @@ py_library(
         "@pypi//more_itertools",
         "@pypi//protobuf",
         "@pypi//pydantic",
-        "@pypi//pytest",
     ],
 )
 
@@ -41,7 +40,7 @@ py_library(
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
         "//agentplane/system_tests:central_sampler",
         "//agentplane/system_tests:cluster",
-        "//agentplane/system_tests:executor_environment",
+        "//agentplane/system_tests:executor",
         "//agentplane/system_tests:scripted_upstream",
         "//agentplane/testing:codex_model",
         "//agentplane/testing:scripted_model",
@@ -82,6 +81,7 @@ py_library(
         "//util/testing:undeclared_outputs",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pyyaml",
     ],
@@ -103,8 +103,8 @@ py_library(
         "//agentplane/system_tests:runtime_grant",
         "//agentplane/system_tests:scripted_upstream",
         "//agentplane/testing:scripted_model",
+        "@pypi//protobuf",
         "@pypi//pydantic",
-        "@pypi//pytest",
         "@pypi//tenacity",
     ],
 )
@@ -123,7 +123,7 @@ py_library(
         "//agentplane/system_tests:launch_preset",
         "//agentplane/system_tests:scripted_upstream",
         "//agentplane/testing:scripted_model",
-        "@pypi//pytest",
+        "@pypi//protobuf",
     ],
 )
 
@@ -170,7 +170,7 @@ py_library(
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests:scripted_upstream",
         "//agentplane/testing:scripted_model",
-        "@pypi//pytest",
+        "@pypi//protobuf",
         "@pypi//tenacity",
     ],
 )
@@ -181,7 +181,6 @@ py_library(
     deps = [
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/k3s:guest_logs",
-        "@pypi//pytest",
         "@pypi//tenacity",
     ],
 )
@@ -196,7 +195,7 @@ py_library(
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests:scripted_upstream",
         "//agentplane/testing:scripted_model",
-        "@pypi//pytest",
+        "@pypi//protobuf",
     ],
 )
 
@@ -209,7 +208,7 @@ py_library(
         "//agentplane/app/testing:client",
         "//agentplane/system_tests:cluster",
         "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests:executor_environment",
+        "//agentplane/system_tests:executor",
         "//agentplane/system_tests/k3s:block_storage",
         "//agentplane/system_tests/k3s:guest_logs",
         "//util/testing:undeclared_outputs",
@@ -231,13 +230,12 @@ py_library(
         "//agentplane/runner:harness",
         "//agentplane/system_tests:agent",
         "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests:executor_environment",
+        "//agentplane/system_tests:executor",
         "//agentplane/system_tests:scripted_upstream",
         "//agentplane/testing:codex_model",
         "//agentplane/testing:scripted_model",
         "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
-        "@pypi//pytest",
         "@pypi//tenacity",
     ],
 )
@@ -257,7 +255,7 @@ py_library(
         "//agentplane/system_tests:scripted_upstream",
         "//agentplane/testing:scripted_model",
         "@pypi//httpx",
-        "@pypi//pytest",
+        "@pypi//protobuf",
         "@pypi//tenacity",
     ],
 )
@@ -278,8 +276,8 @@ py_library(
         "//agentplane/testing:scripted_model",
         "//util/testing:undeclared_outputs",
         "@pypi//opentelemetry_api",
+        "@pypi//protobuf",
         "@pypi//pydantic",
-        "@pypi//pytest",
     ],
 )
 
@@ -293,6 +291,5 @@ py_library(
         "//agentplane/system_tests:conftest",
         "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
-        "@pypi//pytest",
     ],
 )

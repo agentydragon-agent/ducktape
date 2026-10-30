@@ -34,6 +34,7 @@ import yaml
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.conftest import AGENT_SERVICE_ACCOUNT, AUDIENCE
+from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.k3s import block_storage, certificates, guest_logs, rendered_fixture, vm_sandboxes
 from agentplane.system_tests.k3s.bootstrap import Bootstrap
 from agentplane.system_tests.k3s.iptables_rule import ensure_rule
@@ -384,12 +385,27 @@ class McpFixtureAccess:
 
 
 @dataclass(frozen=True)
+class StackInputs:
+    fixture: rendered_fixture.RenderedFixture
+    binary: Path
+    image_layouts: tuple[Path, ...]
+    guest_image_layouts: tuple[Path, ...]
+    workspace_volumes: int
+
+
+@dataclass(frozen=True)
 class Stack:
     k3s: K3s
     namespace: str
     base_url: str
     token: str
     mcp_fixtures: McpFixtureAccess | None
+    templates: frozenset[str]
+
+    def executor(self, template: str, *, cwd: str) -> Executor:
+        if template not in self.templates:
+            raise ValueError(f"SandboxTemplate {template!r} is not available; offered: {sorted(self.templates)}")
+        return Executor(template=template, cwd=cwd)
 
 
 def _mcp_inputs(work: Path, dex_host: str) -> rendered_fixture.McpInputs:
@@ -469,41 +485,31 @@ def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
 
 @contextlib.contextmanager
 def running_stack(
-    *, models: rendered_fixture.Models, timeline: Timeline, validate_vm_shutdown: Callable[[], bool]
+    inputs: StackInputs,
+    *,
+    models: rendered_fixture.Models,
+    timeline: Timeline,
+    validate_vm_shutdown: Callable[[], bool],
 ) -> Iterator[Stack]:
     """The stack with every Deployment Available, LLM ingress forwarding to `models`, each step of
     bringing it up marked on `timeline`.
 
-    The manifest is the build's rendering for `models`' backend, `K3S_FIXTURE_RLOCATION`. A rendering
-    with the MCP fixtures takes their image layouts from `K3S_EXTRA_IMAGE_LAYOUTS`, space-separated
-    runfiles paths of `.rloc` files. A rendering with VM Sandboxes also runs what they need
-    (`vm_sandboxes`) and the test guest's images.
+    All deployment and image inputs are resolved once by the suite's session fixture.
     """
     crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
-    fixture = rendered_fixture.read(get_required_path(os.environ["K3S_FIXTURE_RLOCATION"]))
-    fixture_layouts = sorted(get_required_path("_main/agentplane/system_tests/k3s").glob("*_layout.rloc"))
-    if runner_layout_rloc := os.environ.get("K3S_RUNNER_LAYOUT_RLOCATION"):
-        fixture_layouts.append(get_required_path(runner_layout_rloc))
-    elif not fixture.vm_sandboxes:
-        raise ValueError("non-VM system test is missing K3S_RUNNER_LAYOUT_RLOCATION")
-    if fixture.mcp_fixtures is not None:
-        fixture_layouts.extend(get_required_path(path) for path in os.environ["K3S_EXTRA_IMAGE_LAYOUTS"].split())
-    fixture_images = {_ci_image(rloc): rloc for rloc in fixture_layouts}
-    guest_images: dict[str, Path] = {}
-    if fixture.vm_sandboxes:
-        guest_layouts = [
-            get_required_path("_main/agentplane/system_tests/k3s/guest/vm_guest_boot_layout.rloc"),
-            get_required_path(os.environ["K3S_VM_GUEST_ROOT_RLOCATION"]),
-        ]
-        guest_images = {_ci_image(rloc): rloc for rloc in guest_layouts}
+    fixture = inputs.fixture
+    fixture_images = {_ci_image(rloc): rloc for rloc in inputs.image_layouts}
+    guest_images = {_ci_image(rloc): rloc for rloc in inputs.guest_image_layouts}
+    if fixture.vm_sandboxes != bool(guest_images):
+        raise ValueError("VM deployment and guest image inputs do not match")
 
     work = Path(tempfile.mkdtemp())
-    k3s = K3s(work, get_required_path(os.environ["K3S_BINARY_RLOCATION"]))
+    k3s = K3s(work, inputs.binary)
     # A VM stack's layers would leave too little memory for its guests (README § Image layers in memory).
     process = k3s.start(layers_in_memory=not fixture.vm_sandboxes)
     timeline.mark("node Ready")
     with contextlib.ExitStack() as cleanup:
-        raw_block = block_storage.BlockStorage(work)
+        raw_block = block_storage.BlockStorage(work, volume_count=inputs.workspace_volumes)
 
         def remove_work() -> None:
             if raw_block.closed:
@@ -629,7 +635,14 @@ def running_stack(
                     validate_shutdown=validate_vm_shutdown,
                 )
             )
-        yield Stack(k3s=k3s, namespace=fixture.namespace, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
+        yield Stack(
+            k3s=k3s,
+            namespace=fixture.namespace,
+            base_url=fixture.app_origin,
+            token=token,
+            mcp_fixtures=access,
+            templates=frozenset(obj["metadata"]["name"] for obj in fixture.objects if obj["kind"] == "SandboxTemplate"),
+        )
         print(k3s.report(fixture.namespace))
         if fixture.vm_sandboxes:
             (undeclared_outputs_dir() / "vm-sandboxes.txt").write_text(

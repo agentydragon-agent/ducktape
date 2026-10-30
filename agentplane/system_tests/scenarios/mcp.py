@@ -8,10 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import shlex
 import subprocess
-from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
@@ -34,16 +32,8 @@ from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.proto import runner_pb2
 from agentplane.system_tests import mcp_servers
 from agentplane.system_tests.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, WORKING_DIRECTORY, Agent
-from agentplane.system_tests.conftest import POD_TEMPLATE, Sandboxes, namespace, suspend_and_delete, wait_until_running
-from agentplane.system_tests.operator_login import (
-    LoginBlockedError,
-    OperatorCredentials,
-    app_origin,
-    follow_dex_authorization,
-    login_operator,
-    read_operator_credentials,
-    verify_action_federation,
-)
+from agentplane.system_tests.conftest import POD_TEMPLATE, Sandboxes, suspend_and_delete, wait_until_running
+from agentplane.system_tests.operator_login import LoginBlockedError, OperatorCredentials, follow_dex_authorization
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
@@ -238,17 +228,7 @@ class PolicyObjects:
             self._kubectl("delete", plural, name, "--ignore-not-found")
 
 
-@pytest.fixture
-def policy_objects() -> Iterator[PolicyObjects]:
-    objects = PolicyObjects(namespace=namespace())
-    try:
-        yield objects
-    finally:
-        objects.delete_all()
-
-
-@pytest.mark.scripted_model
-async def test_agent_executes_mcp_action(
+async def agent_executes_mcp_action(
     client: Client,
     sandbox: Sandboxes,
     harness: runner_pb2.Harness,
@@ -268,8 +248,7 @@ async def test_agent_executes_mcp_action(
     _assert_echoed(receipt.execution.result, marker)
 
 
-@pytest.mark.scripted_model
-async def test_operator_links_oauth_mcp_server(
+async def operator_links_oauth_mcp_server(
     operator_bff: httpx.AsyncClient,
     operator_credentials: OperatorCredentials,
     client: Client,
@@ -314,41 +293,6 @@ async def test_operator_links_oauth_mcp_server(
     _assert_echoed(receipt.execution.result, marker)
 
 
-@pytest.fixture
-def operator_credentials(pytestconfig: pytest.Config) -> OperatorCredentials:
-    if pytestconfig.option.showlocals:
-        pytest.fail("BLOCKED: disable pytest local-variable dumps before reading operator credentials", pytrace=False)
-    try:
-        return read_operator_credentials()
-    except LoginBlockedError as exc:
-        pytest.fail(str(exc), pytrace=False)
-
-
-@pytest.fixture
-async def operator_bff(base_url: str, operator_credentials: OperatorCredentials) -> AsyncIterator[httpx.AsyncClient]:
-    """A real app-issued session. No credential injection, fabricated cookies, or DB writes."""
-    # HTTP debug logging includes cookie/token headers and callback query strings. Suppress it
-    # throughout this client lifetime (including failed assertions/teardown), even under --log-cli-level.
-    previous_logging = logging.root.manager.disable
-    logging.disable(logging.CRITICAL)
-    try:
-        origin = str(app_origin(base_url)).rstrip("/")
-        async with httpx.AsyncClient(base_url=origin, timeout=30, follow_redirects=False) as http:
-            try:
-                await login_operator(http, operator_credentials)
-            except LoginBlockedError as exc:
-                pytest.fail(str(exc), pytrace=False)
-            except httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError:
-                pytest.fail("BLOCKED: OIDC transport or response invalid; auth details withheld", pytrace=False)
-            http.headers["Origin"] = origin
-            await verify_action_federation(http)
-            yield http
-    except LoginBlockedError as exc:
-        pytest.fail(str(exc), pytrace=False)
-    finally:
-        logging.disable(previous_logging)
-
-
 def _bff_request(response: httpx.Response) -> action_service_pb2.ActionRequest:
     """Decode an Actions facade response to its generated request; never render identity details."""
     __tracebackhide__ = True
@@ -375,8 +319,7 @@ def _bff_decision(response: httpx.Response) -> action_service_pb2.ActionRequest:
         pytest.fail("BFF returned an invalid decision response; response body withheld", pytrace=False)
 
 
-@pytest.mark.scripted_model
-async def test_agent_mcp_bff_decision(
+async def agent_mcp_bff_decision(
     operator_bff: httpx.AsyncClient,
     operator_credentials: OperatorCredentials,
     client: Client,
@@ -515,8 +458,7 @@ async def _decide_pending(
     return receipt
 
 
-@pytest.mark.scripted_model
-async def test_policy_binding_auto_approves_the_bound_sandbox(
+async def policy_binding_auto_approves_the_bound_sandbox(
     operator_bff: httpx.AsyncClient,
     client: Client,
     sandbox: Sandboxes,
@@ -612,8 +554,7 @@ async def _launcher_approved(
     assert decided.decision.policy_evidence.matched.policy_set == f"{sandbox}.launcher"
 
 
-@pytest.mark.scripted_model
-async def test_launcher_drives_only_the_sandbox_it_launched(
+async def launcher_drives_only_the_sandbox_it_launched(
     operator_bff: httpx.AsyncClient,
     client: Client,
     sandbox: Sandboxes,
@@ -778,3 +719,6 @@ async def test_launcher_drives_only_the_sandbox_it_launched(
     finally:
         if not deleted:
             await suspend_and_delete(client, name, UUID(target["uid"]))
+
+
+# gazelle:include_dep @pypi//protobuf

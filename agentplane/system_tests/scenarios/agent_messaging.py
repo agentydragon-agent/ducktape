@@ -20,7 +20,6 @@ import shlex
 from typing import Any
 from uuid import UUID, uuid4
 
-import pytest
 from google.protobuf.json_format import ParseDict
 from google.protobuf.message import Message
 from more_itertools import one
@@ -87,8 +86,7 @@ async def _follow(agent: Agent, model: ScriptedModel[Any], message_id: str) -> n
     return _parsed(turn.tool_outputs[-1], notifications_pb2.Message())
 
 
-@pytest.mark.scripted_model
-async def test_an_agent_messages_another_which_reads_and_acknowledges_it(
+async def an_agent_messages_another_which_reads_and_acknowledges_it(
     client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
 ) -> None:
     async with asyncio.TaskGroup() as starting:
@@ -146,3 +144,6 @@ async def test_an_agent_messages_another_which_reads_and_acknowledges_it(
     followed = await _follow(sender_agent, sender_model, sent.id)
     assert followed.covered, followed
     assert followed.acknowledged, f"the recipient acknowledged its inbox through the message: {followed}"
+
+
+# gazelle:include_dep @pypi//protobuf

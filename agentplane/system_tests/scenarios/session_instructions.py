@@ -18,8 +18,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.system_tests.agent import Agent
@@ -45,8 +43,7 @@ INSTRUCTIONS = (
 PROMPT = "In one short sentence, say what a checksum is. Do not use any tool."
 
 
-@pytest.mark.real_model
-async def test_the_model_obeys_the_standing_instruction_its_session_was_opened_with(
+async def the_model_obeys_the_standing_instruction_its_session_was_opened_with(
     client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, model: str
 ) -> None:
     """The instruction reaches the model, and the marker is the model's own doing rather than its
@@ -72,8 +69,7 @@ async def test_the_model_obeys_the_standing_instruction_its_session_was_opened_w
     )
 
 
-@pytest.mark.scripted_model
-async def test_the_standing_instruction_reaches_the_model_and_only_in_its_own_session(
+async def the_standing_instruction_reaches_the_model_and_only_in_its_own_session(
     client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
 ) -> None:
     """Two sessions on one sandbox, as in the real-model scenario: what each sends the model shows
@@ -99,3 +95,6 @@ async def test_the_standing_instruction_reaches_the_model_and_only_in_its_own_se
         request = await model.request()
         assert INSTRUCTIONS not in request.system_text, request.system_text
         await model.reply(request, Text("A checksum detects corrupted data."))
+
+
+# gazelle:include_dep @pypi//protobuf

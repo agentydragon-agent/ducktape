@@ -31,7 +31,7 @@ def _document(response: httpx.Response, status: int = 200) -> dict[str, Any]:
     return document
 
 
-async def test_deployed_discovery_and_registration(pytestconfig: pytest.Config) -> None:
+async def deployed_discovery_and_registration(pytestconfig: pytest.Config) -> None:
     if pytestconfig.option.showlocals:
         pytest.fail("Disable pytest local-variable dumps before DCR", pytrace=False)
     server = os.environ[MCP_EDGE_URL]
