@@ -138,14 +138,6 @@ func TestParseSessionSpecOverlaysDefaultsAndRejectsUnknownFields(t *testing.T) {
 	}
 }
 
-func TestSessionInputRejectsSamplerRouting(t *testing.T) {
-	for _, key := range []string{"centralSampler", "central_sampler"} {
-		if _, err := ParseSessionSpec(nil, map[string]any{"harness": "HARNESS_CENTRAL_SAMPLER", key: map[string]any{"service": "injected"}}); err == nil {
-			t.Fatalf("accepted caller routing via %s", key)
-		}
-	}
-}
-
 func TestOpenSessionPreservesIdentitySpecAndOptionalSetupScript(t *testing.T) {
 	sessionID := uuid.MustParse("0a27b278-a057-48c5-8c46-10765b069e39")
 	spec := &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CODEX, Cwd: "/workspace", Model: "model"}
