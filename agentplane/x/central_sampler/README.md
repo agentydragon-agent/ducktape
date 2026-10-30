@@ -66,14 +66,12 @@ container limits stop meeting the production resource contract.
 
 ## Agentplane opt in
 
-- Gateway `central_samplers` maps deployment-owned names to gRPC targets and rotating caller token
-  files. Its separate `executor_callers` allowlist authorizes sampler-to-executor access. Default
+- Gateway `central_sampler` configures one gRPC target and rotating caller token file. Its separate `executor_callers` allowlist authorizes sampler-to-executor access. Default
   empty settings preserve native operation and do not enable the new transport.
 - The sampler allows the Dispatcher account for admission. History explicitly allows the sampler
   account in `ingress.sampler_accounts`; it retains the distinct executor Sandbox identity.
 - The app's `HARNESS_CENTRAL_SAMPLER` model list offers **Central sampler** alongside Codex and Claude.
-  The Dispatcher's `central_sampler_service` setting chooses the runtime; app and Actions callers
-  do not supply service names or endpoints. A non-empty setup script runs once on the bound executor, in the resolved working directory,
+  App and Actions callers do not supply service names or endpoints. A non-empty setup script runs once on the bound executor, in the resolved working directory,
   before sampling starts. Its stdout, stderr and terminal outcome are retained in History.
 - LLM ingress must allow the sampler account in `central_sampler_accounts` to accept its
   `x-agentplane-session-id` claim. Ingress validates a canonical UUID and generates trusted
@@ -139,9 +137,9 @@ Standard requests send text-only function results as strings and multimodal resu
 arrays. Asynchronous `notify()` output becomes a developer message identifying its original call,
 so the public API receives only one tool result per call.
 
-Session creation accepts harness and model choices. The Dispatcher selects the central service
-from its deployment configuration and persists that binding; the app catalog, browser, and
-Actions inputs do not carry a service name or URL.
+Session creation accepts harness and model choices. The Dispatcher uses its one configured central
+sampler target; the app catalog, browser, Actions inputs and stored session specs carry no routing
+metadata.
 
 Staging offers official OpenAI ChatGPT routes through wrapped Codex and third-party coding models
 through the central sampler with standard Responses and JSON exec. Adding a third-party route to

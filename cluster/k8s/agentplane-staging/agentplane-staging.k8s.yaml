@@ -2841,7 +2841,6 @@ data:
   settings.json: |
     {
       "listen": "0.0.0.0:8080",
-      "service_name": "central-sampler",
       "llm_proxy_url": "http://llm-ingress.agentplane-staging.svc:8080",
       "credential_file": "/var/run/secrets/central-sampler/llm",
       "models": {

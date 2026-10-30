@@ -45,9 +45,8 @@ type config struct {
 	WatchLeaseSeconds           int                       `mapstructure:"dispatcher_watch_lease_seconds"`
 	RunnerTimeoutSeconds        int                       `mapstructure:"runner_request_timeout_seconds"`
 
-	CentralSamplerService string                              `mapstructure:"central_sampler_service"`
-	CentralSamplers       map[string]dispatcher.CentralTarget `mapstructure:"central_samplers"`
-	ExecutorCallers       []auth.Account                      `mapstructure:"executor_callers"`
+	CentralSampler  *dispatcher.CentralTarget `mapstructure:"central_sampler"`
+	ExecutorCallers []auth.Account            `mapstructure:"executor_callers"`
 }
 
 func defaultConfig() config {
@@ -127,16 +126,9 @@ func (c *config) validate() error {
 			return fmt.Errorf("wake caller %s/%s is not a Dispatcher caller", account.Namespace, account.Name)
 		}
 	}
-	for name, target := range c.CentralSamplers {
-		if name == "" || target.Target == "" || target.TokenFile == "" {
-			return errors.New("central_samplers requires named targets and token files")
-		}
+	if target := c.CentralSampler; target != nil && (target.Target == "" || target.TokenFile == "") {
+		return errors.New("central_sampler requires a target and token_file")
 	}
 
-	if c.CentralSamplerService != "" {
-		if _, ok := c.CentralSamplers[c.CentralSamplerService]; !ok {
-			return errors.New("central_sampler_service must name a configured central_samplers entry")
-		}
-	}
 	return nil
 }

@@ -185,17 +185,15 @@ func TestPodNameDefaultsToTheHostname(t *testing.T) {
 	}
 }
 
-func TestCentralSamplerSelectionMustNameConfiguredTarget(t *testing.T) {
-	path := writeSettings(t, requiredFile+`central_sampler_service: central
-central_samplers:
-  central: {target: sampler:8080, token_file: /run/token}
+func TestOptionalCentralSamplerTarget(t *testing.T) {
+	path := writeSettings(t, requiredFile+`central_sampler: {target: sampler:8080, token_file: /run/token}
 `)
 	c, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+path))
-	if err != nil || c.CentralSamplerService != "central" {
-		t.Fatalf("configured selection: %v %v", c.CentralSamplerService, err)
+	if err != nil || c.CentralSampler == nil || c.CentralSampler.Target != "sampler:8080" {
+		t.Fatalf("configured sampler: %v %v", c.CentralSampler, err)
 	}
-	c.CentralSamplerService = "missing"
+	c.CentralSampler.TokenFile = ""
 	if err := c.validate(); err == nil {
-		t.Fatal("accepted unconfigured default")
+		t.Fatal("accepted target without token file")
 	}
 }

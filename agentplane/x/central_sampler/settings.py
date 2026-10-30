@@ -32,7 +32,6 @@ class Settings(BaseModel):
 
     database_url: str | None = None
     listen: str
-    service_name: str
     llm_proxy_url: str
     credential: SecretStr | None = None
     credential_file: Path | None = None

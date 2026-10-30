@@ -115,8 +115,8 @@ py_test(
     name = "test_model_rosters",
     srcs = ["test_model_rosters.py"],
     deps = [
-        "//cluster/cdk8s/agentplane:model_selections",
         "//:conftest",
+        "//cluster/cdk8s/agentplane:model_selections",
         "//cluster/cdk8s/litellm:config",
         "//model_catalog:catalog",
         "//model_catalog:policies",

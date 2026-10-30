@@ -44,16 +44,15 @@ type RunnerCommands interface {
 
 type Service struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
-	Store          *Store
-	Auth           *auth.Resolver
-	Callers        map[auth.Account]struct{}
-	WakeCallers    map[auth.Account]struct{}
-	Sandboxes      SandboxReader
-	Runner         RunnerCommands
-	Hub            *WatchHub
-	WatchLease     time.Duration
-	CentralService string
-	CentralTargets map[string]CentralTarget
+	Store         *Store
+	Auth          *auth.Resolver
+	Callers       map[auth.Account]struct{}
+	WakeCallers   map[auth.Account]struct{}
+	Sandboxes     SandboxReader
+	Runner        RunnerCommands
+	Hub           *WatchHub
+	WatchLease    time.Duration
+	CentralTarget *CentralTarget
 }
 
 // maxFilterCommands bounds DispatchFilter.command_ids, the size of a Session's queue.
@@ -315,11 +314,7 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 	if err := required(request.GetSessionId(), request.GetSandbox()); err != nil {
 		return nil, err
 	}
-	spec, err := s.bindSessionRuntime(ctx, request.GetSessionId(), request.GetSpec())
-	if err != nil {
-		return nil, err
-	}
-	if err := ValidateRuntime(spec, request.SetupScript, s.CentralTargets); err != nil {
+	if err := ValidateRuntime(request.GetSpec(), request.SetupScript, s.CentralTarget); err != nil {
 		return nil, err
 	}
 	current, err := s.sandbox(ctx, request.GetSandbox())
@@ -327,7 +322,7 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 		return nil, err
 	}
 	row, err := s.Store.OpenSession(ctx, request.GetSessionId(), request.GetSandbox(), current.UID,
-		spec, request.SetupScript, wake)
+		request.GetSpec(), request.SetupScript, wake)
 	if err != nil {
 		return nil, apiError(err)
 	}

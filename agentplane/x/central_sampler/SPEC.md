@@ -4,9 +4,8 @@
 
 `Sampler` is a separate authenticated gRPC API. `OpenSession` binds a canonical public Session UUID
 to a central `SessionSpec`, caller ServiceAccount UID and fixed `SandboxDestination` plus expected
-incarnation UID. The Dispatcher selects the named service from deployment configuration and persists
-it as internal session metadata. Browser, Actions, and Dispatcher opening inputs do not accept a
-service selection. Model and effort must be server-configured. Every RPC
+incarnation UID. The Dispatcher uses its one configured central sampler target. Session specs,
+including browser, Actions, and Dispatcher opening inputs, contain no service selection. Model and effort must be server-configured. Every RPC
 uses TokenReview and the allowed-account policy; Session UUID knowledge grants no authority.
 Reusing an identifier with a different payload conflicts. The integration app owns neither this
 admission nor the continuation database.

@@ -176,13 +176,10 @@ class RunnerGateway(Construct):
         central_sampler_account = ServiceAccountRef(namespace=namespace, name=central_sampler.NAME)
         central_sampler_settings = (
             {
-                "central_sampler_service": central_sampler.NAME,
-                "central_samplers": {
-                    central_sampler.NAME: CentralSamplerTarget(
-                        target=central_sampler.target(namespace),
-                        token_file=Path("/var/run/secrets/agentplane-runner-gateway/central-sampler"),
-                    )
-                },
+                "central_sampler": CentralSamplerTarget(
+                    target=central_sampler.target(namespace),
+                    token_file=Path("/var/run/secrets/agentplane-runner-gateway/central-sampler"),
+                ),
                 "executor_callers": [_account(central_sampler_account)],
             }
             if env.central_sampler is not None

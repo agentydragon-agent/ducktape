@@ -286,11 +286,6 @@ func ParseSessionSpec(defaults *runnerpb.SessionSpec, fields map[string]any) (*r
 		defaults = &runnerpb.SessionSpec{}
 	}
 	merged := proto.Clone(defaults).(*runnerpb.SessionSpec)
-	for _, name := range []string{"centralSampler", "central_sampler"} {
-		if _, supplied := fields[name]; supplied {
-			return nil, &MalformedMessageError{Cause: errors.New("central sampler routing is configured by the Dispatcher")}
-		}
-	}
 	encoded, err := json.Marshal(fields)
 	if err != nil {
 		return nil, &MalformedMessageError{Cause: err}

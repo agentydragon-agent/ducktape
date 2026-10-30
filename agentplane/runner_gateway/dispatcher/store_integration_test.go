@@ -1242,7 +1242,7 @@ func TestWorkerSerializesCommandsPerSession(t *testing.T) {
 func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+callerToken))
 	store := testStore(t, 3)
-	spec := &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, CentralSampler: &runnerpb.CentralSamplerConfig{Service: "central"}}
+	spec := &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER}
 	opening, err := store.OpenSession(ctx, "central-unready-session", "sandbox-api", sandboxUID, spec, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -1269,37 +1269,30 @@ func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
 	}
 }
 
-func TestCentralOpeningBindsConfiguredServiceWithoutCallerRouting(t *testing.T) {
+func TestCentralOpeningUsesConfiguredSampler(t *testing.T) {
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+callerToken))
 	store := testStore(t, 3)
-	service := &Service{Store: store, Auth: callerResolver(t), Callers: map[auth.Account]struct{}{caller: {}}, Sandboxes: blockedSandbox{}, CentralService: "central", CentralTargets: map[string]CentralTarget{"central": {Target: "configured", TokenFile: "configured"}, "next": {Target: "next", TokenFile: "next"}}}
+	service := &Service{Store: store, Auth: callerResolver(t), Callers: map[auth.Account]struct{}{caller: {}}, Sandboxes: blockedSandbox{}, CentralTarget: &CentralTarget{Target: "configured", TokenFile: "configured"}}
 	request := &dispatcherpb.OpenSessionRequest{SessionId: "central-configured-session", Sandbox: "sandbox-api", Spec: &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test"}}
 	if _, err := service.OpenSession(ctx, request); err != nil {
 		t.Fatal(err)
 	}
-	if request.Spec.GetCentralSampler() != nil {
-		t.Fatal("mutated caller input")
+	// Simulate a pre-upgrade stored spec containing retired field 6.
+	legacy := proto.Clone(request.Spec).(*runnerpb.SessionSpec)
+	legacy.ProtoReflect().SetUnknown([]byte{0x32, 0x00})
+	encoded, err := wire(legacy)
+	if err != nil {
+		t.Fatal(err)
 	}
-	opening, err := store.GetOpening(ctx, request.SessionId)
-	if err != nil || opening.Spec.GetCentralSampler().GetService() != "central" {
-		t.Fatalf("stored binding: %v %v", opening, err)
+	if _, err := store.DB.ExecContext(ctx, "UPDATE session_opening SET spec=$1 WHERE session_id=$2", encoded, request.SessionId); err != nil {
+		t.Fatal(err)
 	}
-	service.CentralService = "next"
 	if _, err := service.OpenSession(ctx, request); err != nil {
-		t.Fatalf("retry after default changed: %v", err)
+		t.Fatalf("retry with retired metadata: %v", err)
 	}
-	opening, err = store.GetOpening(ctx, request.SessionId)
-	if err != nil || opening.Spec.GetCentralSampler().GetService() != "central" {
-		t.Fatalf("retry changed stored binding: %v %v", opening, err)
-	}
-	request.Spec.CentralSampler = &runnerpb.CentralSamplerConfig{Service: "central"}
-	if _, err := service.OpenSession(ctx, request); status.Code(err) != codes.InvalidArgument {
-		t.Fatalf("caller routing accepted: %v", err)
-	}
-	request.Spec.CentralSampler = nil
+	service.CentralTarget = nil
 	request.SessionId = "central-disabled-session"
-	service.CentralService = ""
 	if _, err := service.OpenSession(ctx, request); status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("missing configuration accepted: %v", err)
+		t.Fatalf("disabled sampler accepted: %v", err)
 	}
 }

@@ -27,8 +27,8 @@ from cluster.cdk8s.agentplane.egress import (
     agent_api,
 )
 from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY, PLAID_PGWEB_CREDENTIAL
-from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS
+from cluster.cdk8s.clickhouse import client
 from model_catalog.catalog import OLLAMA_QWEN_IQ4XS_256K
 
 

@@ -104,7 +104,6 @@ def settings(database_url: str, endpoint: str, executor_url: str, codex_binary: 
     return Settings(
         database_url=database_url,
         listen="127.0.0.1:0",
-        service_name="test-sampler",
         llm_proxy_url=endpoint,
         credential=SecretStr("test-key"),
         models={
@@ -137,12 +136,7 @@ def settings(database_url: str, endpoint: str, executor_url: str, codex_binary: 
 def open_request(cwd: Path) -> sampler_pb2.OpenSessionRequest:
     return sampler_pb2.OpenSessionRequest(
         session_id="079bd706-77b3-4b71-8c7e-605a7e19324c",
-        spec=runner_pb2.SessionSpec(
-            harness=runner_pb2.HARNESS_CENTRAL_SAMPLER,
-            cwd=str(cwd),
-            model="test-model",
-            central_sampler=runner_pb2.CentralSamplerConfig(service="test-sampler"),
-        ),
+        spec=runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CENTRAL_SAMPLER, cwd=str(cwd), model="test-model"),
         executor=sandboxes_pb2.SandboxDestination(
             owner=sandboxes_pb2.ServiceAccount(namespace="test", name="executor"),
             sandbox="test-sandbox",

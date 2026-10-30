@@ -61,7 +61,6 @@ type Settings struct {
 	Models             map[string]ModelConfig `json:"models"`
 	DatabaseURL        string                 `json:"database_url"`
 	Listen             string                 `json:"listen"`
-	ServiceName        string                 `json:"service_name"`
 	LLMProxyURL        string                 `json:"llm_proxy_url"`
 	Credential         string                 `json:"credential"`
 	CredentialFile     string                 `json:"credential_file"`
@@ -123,7 +122,7 @@ func decodeSettings(reader io.Reader) (Settings, error) {
 }
 
 func (s Settings) Validate() error {
-	for name, value := range map[string]string{"database_url": s.DatabaseURL, "listen": s.Listen, "service_name": s.ServiceName, "audience": s.Audience, "code_mode_host": s.CodeModeHost, "executor_codex": s.ExecutorCodex, "logs": s.Logs} {
+	for name, value := range map[string]string{"database_url": s.DatabaseURL, "listen": s.Listen, "audience": s.Audience, "code_mode_host": s.CodeModeHost, "executor_codex": s.ExecutorCodex, "logs": s.Logs} {
 		if value == "" {
 			return fmt.Errorf("%s is required", name)
 		}

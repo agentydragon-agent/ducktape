@@ -74,7 +74,6 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     }
     config = json.loads(_resource(staging_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
     assert "database_url" not in config
-    assert config["service_name"] == central_sampler.NAME
     assert config["audience"] == central_sampler.TOKEN_AUDIENCE
     props = staging.ENV.central_sampler
     assert props is not None
@@ -85,8 +84,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     gateway = yaml.safe_load(
         _resource(staging_manifests, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
     )
-    assert gateway["central_sampler_service"] == central_sampler.NAME
-    target = gateway["central_samplers"][central_sampler.NAME]
+    target = gateway["central_sampler"]
     assert target == {
         "target": central_sampler.target(namespace),
         "token_file": "/var/run/secrets/agentplane-runner-gateway/central-sampler",

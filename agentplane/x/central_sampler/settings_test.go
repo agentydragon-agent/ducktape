@@ -10,7 +10,7 @@ import (
 
 func fixtureSettings() Settings {
 	return Settings{
-		Models: map[string]ModelConfig{"test-model": {API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform, ReasoningEfforts: []string{"", "high"}}}, DatabaseURL: "postgresql://fixture.invalid/sampler", Listen: "127.0.0.1:0", ServiceName: "fixture", LLMProxyURL: "https://model.invalid", Credential: "test-credential", Audience: "test-sampler", AllowedAccounts: []string{"test/client"}, CodeModeHost: "/fixture/host", ExecutorCodex: "/fixture/codex", Logs: "/fixture/logs", DirectExecutorURL: "ws://executor.invalid", MaxLiveSessions: 2, TurnTimeoutSeconds: 40, RPCTimeoutSeconds: 10, LeaseSeconds: 60,
+		Models: map[string]ModelConfig{"test-model": {API: APIStyleResponses, Responses: ResponsesConfig{Dialect: ResponsesDialectLite}, ExecEncoding: ExecEncodingFreeform, ReasoningEfforts: []string{"", "high"}}}, DatabaseURL: "postgresql://fixture.invalid/sampler", Listen: "127.0.0.1:0", LLMProxyURL: "https://model.invalid", Credential: "test-credential", Audience: "test-sampler", AllowedAccounts: []string{"test/client"}, CodeModeHost: "/fixture/host", ExecutorCodex: "/fixture/codex", Logs: "/fixture/logs", DirectExecutorURL: "ws://executor.invalid", MaxLiveSessions: 2, TurnTimeoutSeconds: 40, RPCTimeoutSeconds: 10, LeaseSeconds: 60,
 	}
 }
 

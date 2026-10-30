@@ -27,7 +27,6 @@ func openSessionForStore(t *testing.T, store *Store, setup string) *Session {
 		SessionId: uuid.NewString(),
 		Spec: &runnerpb.SessionSpec{
 			Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
-			CentralSampler: &runnerpb.CentralSamplerConfig{Service: "fixture"},
 		},
 		SetupScript: &setup,
 	}
@@ -691,7 +690,6 @@ func TestDescribePreservesSessionConfigurationAndUpdatesModel(t *testing.T) {
 	spec := &runnerpb.SessionSpec{
 		Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
 		ReasoningEffort: "high", Instructions: "stored instructions",
-		CentralSampler: &runnerpb.CentralSamplerConfig{Service: "fixture"},
 	}
 	executor := &sandboxespb.SandboxDestination{
 		Owner:   &sandboxespb.ServiceAccount{Namespace: "fixture", Name: "executor"},
@@ -997,5 +995,22 @@ func TestPendingInterruptTakesPrecedenceOverSteering(t *testing.T) {
 	admitInput(t, store, session.ID, "steer", "too late")
 	if drained, err := store.DrainSteeringInput(t.Context(), owner, session.ID); err != nil || drained {
 		t.Fatalf("drain during pending interrupt=%v err=%v", drained, err)
+	}
+}
+
+func TestStoreReopeningIgnoresRetiredSessionRouting(t *testing.T) {
+	store := newTestStore(t)
+	request := &samplerpb.OpenSessionRequest{SessionId: uuid.NewString(), Spec: &runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model"}}
+	legacy := proto.Clone(request).(*samplerpb.OpenSessionRequest)
+	legacy.Spec.ProtoReflect().SetUnknown([]byte{0x32, 0x00})
+	if _, err := store.OpenSession(t.Context(), legacy, "fixture-account"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.OpenSession(t.Context(), request, "fixture-account"); err != nil {
+		t.Fatalf("reopening with retired metadata: %v", err)
+	}
+	request.Spec.Model = "different"
+	if _, err := store.OpenSession(t.Context(), request, "fixture-account"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("changed session spec accepted: %v", err)
 	}
 }

@@ -92,11 +92,11 @@ idempotent application and concurrent migrations.
 
 ## Optional central sampler
 
-`central_samplers` maps named runtimes to server-owned gRPC targets and rotating token files.
-`central_sampler_service` selects the service for new central Sessions. Callers supply harness
-and model choices, never routing metadata. The Dispatcher persists its chosen binding and retains
-it on retries, even if the default changes. Dispatcher routes central Session opens and commands directly there; wrapped native Sessions
-continue through ProxyRunner. Central controls bypass executor readiness/wake checks after open.
+The optional `central_sampler` configures one gRPC target and rotating caller token file.
+Omitting it disables central Session admission. Callers supply harness and model choices;
+session specs contain no routing metadata. The Dispatcher sends central opens and commands
+to this target; wrapped native Sessions continue through ProxyRunner. Central controls bypass
+executor readiness/wake checks after open.
 The existing Sandbox UID/incarnation binding is fixed; v1 requires the bound Sandbox object.
 
 The separate, default-empty `executor_callers` policy enables `ExecutorGateway.Connect` for trusted

@@ -594,7 +594,6 @@ func TestCentralSamplerWriterAndExecutorAreSeparate(t *testing.T) {
 	announcement := &runneringresspb.SamplerAnnouncement{
 		Session: &runnerpb.Attached{SessionId: sessionID, Spec: &runnerpb.SessionSpec{
 			Harness: runnerpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test-workspace",
-			CentralSampler: &runnerpb.CentralSamplerConfig{Service: "test-sampler"},
 		}},
 		Executor: &sandboxespb.SandboxDestination{
 			Sandbox: "test-execution-sandbox", SandboxUid: executorUID,

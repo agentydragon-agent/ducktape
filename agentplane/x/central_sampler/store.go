@@ -371,7 +371,11 @@ func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionR
 			if existing.AccountUID != ownerUID {
 				return ErrForbidden
 			}
-			if !bytes.Equal(existing.Configuration, wire) {
+			previous := &samplerpb.OpenSessionRequest{}
+			if err := (proto.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(existing.Configuration, previous); err != nil {
+				return err
+			}
+			if !proto.Equal(previous, request) {
 				return ErrConflict
 			}
 			opened = existing
