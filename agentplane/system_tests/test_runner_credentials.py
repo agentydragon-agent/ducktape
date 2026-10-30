@@ -278,6 +278,8 @@ async def _run_vm_mtls_certificate_authenticates_a_session(
 async def test_vm_mtls_certificates_authenticate_both_harnesses(
     client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream
 ) -> None:
+    # pytest-asyncio serializes parametrized cases; explicit tasks overlap the independent boots
+    # while sharing this stack and its Pod-routed scripted server.
     harnesses = [runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX]
     offered_models = await models_offered_for(client, harnesses)
     async with asyncio.TaskGroup() as scenarios:
