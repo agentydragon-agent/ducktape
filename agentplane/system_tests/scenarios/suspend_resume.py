@@ -19,19 +19,15 @@ from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.system_tests.agent import TURN_SECONDS, WORKING_DIRECTORY, Agent, Turn, runner_startup_retries
-from agentplane.system_tests.conftest import (
-    POD_TEMPLATE,
-    VM_TEMPLATE,
-    VM_WORKING_DIRECTORY,
-    Sandboxes,
-    wait_until_running,
-)
+from agentplane.system_tests.conftest import POD_TEMPLATE, Sandboxes, wait_until_running
+from agentplane.system_tests.executor_environment import ExecutorEnvironment
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Text
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# gazelle:include_dep @pypi//protobuf
 
 POD_TRANSITION_SECONDS = 300.0
 
@@ -273,17 +269,11 @@ def _marker(harness: runner_pb2.Harness) -> str:
 
 
 @pytest.mark.scripted_model
-@pytest.mark.parametrize(
-    ("template", "cwd"),
-    [
-        (POD_TEMPLATE, WORKING_DIRECTORY),
-        pytest.param(VM_TEMPLATE, VM_WORKING_DIRECTORY, marks=pytest.mark.vm_sandboxes),
-    ],
-)
 async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
-    client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream, template: str, cwd: str
+    client: Client, sandbox: Sandboxes, scripted: ScriptedUpstream, executor_environment: ExecutorEnvironment
 ) -> None:
     """One replacement of the Sandbox's Pod, or of a VM's launcher, exercises both native stores."""
+    template, cwd = executor_environment.template, executor_environment.cwd
     run = await _ResumeRun.start(client, sandbox, template=template)
     markers = {harness: _marker(harness) for harness in (runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX)}
     models = {harness: scripted.model(run.pod_name, harness) for harness in markers}

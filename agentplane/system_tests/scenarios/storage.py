@@ -9,7 +9,6 @@ import shlex
 from contextlib import AsyncExitStack
 from uuid import uuid4
 
-import pytest
 import yaml
 from kubernetes_asyncio import client as k8s
 
@@ -17,7 +16,8 @@ from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.cluster import api_client, kubectl
-from agentplane.system_tests.conftest import POD_TEMPLATE, VM_TEMPLATE, namespace
+from agentplane.system_tests.conftest import namespace
+from agentplane.system_tests.executor_environment import ExecutorEnvironment
 from agentplane.system_tests.k3s import guest_logs
 from agentplane.system_tests.k3s.block_storage import STORAGE_CLASS
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -226,22 +226,24 @@ async def _probe(client: Client, name: str, cwd: str, workspace_dir: str, marker
     raise AssertionError("storage probe ended without its setup result")
 
 
-@pytest.mark.parametrize("case", ["pod-directory", pytest.param("vm-raw", marks=pytest.mark.vm_sandboxes)])
-async def test_fresh_workspace_storage_survives_replacement(client: Client, case: str) -> None:
+async def test_fresh_workspace_storage_survives_replacement(
+    client: Client, executor_environment: ExecutorEnvironment
+) -> None:
+    case = executor_environment.storage_case
     controller = await _object("deployment", "sandbox-controller")
     assert controller["status"].get("readyReplicas") == 1
     controller_image = controller["spec"]["template"]["spec"]["containers"][0]["image"]
     existing = json.loads(await kubectl("get", f"sandboxes.{GROUP}", "-o", "json"))["items"]
     assert not existing, "serialize this scenario with the deployment's other Sandbox users"
-    vm = case.startswith("vm")
-    base = await _object(f"sandboxtemplates.{GROUP}", VM_TEMPLATE if vm else POD_TEMPLATE)
+    vm = executor_environment.vm
+    base = await _object(f"sandboxtemplates.{GROUP}", executor_environment.template)
     name = f"systest-storage-{case}-{uuid4().hex[:8]}"
     template = name
     spec = copy.deepcopy(base["spec"])
-    workspace_dir = "/state/workspaces" if vm else "/workspace"
+    workspace_dir = executor_environment.workspace_dir
     # The guest creates .home before starting its runner on a fresh disk. The runner requires a
     # child of its workspace root; the mount root itself is forbidden.
-    cwd = f"{workspace_dir}/.home" if vm else workspace_dir
+    cwd = executor_environment.storage_cwd
     if not vm:
         runner = next(container for container in spec["pod"]["spec"]["containers"] if container["name"] == "runner")
         runner["volumeMounts"].append({"name": "workspace", "mountPath": workspace_dir})

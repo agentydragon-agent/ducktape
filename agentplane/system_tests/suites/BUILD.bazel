@@ -15,6 +15,7 @@ k3s_suite(
     deps = [
         "//:conftest",
         "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests:executor_environment",
         "//agentplane/system_tests/scenarios:agent_messaging",
         "//agentplane/system_tests/scenarios:egress",
         "//agentplane/system_tests/scenarios:launch_presets",
@@ -63,6 +64,7 @@ k3s_suite(
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/scenarios:runner_credentials",
         "//agentplane/system_tests/scenarios:vm_sandbox",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -86,6 +88,7 @@ k3s_suite(
     deps = [
         "//:conftest",
         "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests:executor_environment",
         "//agentplane/system_tests/scenarios:central_sampler",
         "@pypi//pytest_bazel",
     ],
@@ -98,7 +101,9 @@ k3s_suite(
     deps = [
         "//:conftest",
         "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests:executor_environment",
         "//agentplane/system_tests/scenarios:central_sampler",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -111,9 +116,11 @@ k3s_suite(
     deps = [
         "//:conftest",
         "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests:executor_environment",
         "//agentplane/system_tests/scenarios:storage",
         "//agentplane/system_tests/scenarios:suspend_resume",
         "//agentplane/system_tests/scenarios:vm_workspace_ownership",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

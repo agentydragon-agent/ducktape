@@ -25,8 +25,14 @@ libraries. Python entrypoints in `suites/test_*.py` explicitly import their scen
 local fixtures; Gazelle derives their dependencies, and `k3s_suite` configures the stack. Only
 those entrypoints are collected, so offline helper tests
 such as `test_agent.py` and `test_operator_login.py` are not collected into a live stack. Scenarios
-use function-scoped fixtures and create/clean up only their own Sandboxes and resources. The
-Dispatcher suite remains separate because replica coverage changes the shared Runner Gateway
+use function-scoped fixtures and create/clean up only their own Sandboxes and resources.
+
+Shared sampler, storage, and suspend/resume scenarios receive an `executor_environment` fixture
+selected by the suite. Pod and VM suites import only their applicable tests; collection does not
+filter execution platforms. VM suites retain the `vm_sandboxes` marker for tracing and diagnostics.
+The sampler's VM execution probe still checks systemd, UID, and executor cgroup placement.
+
+The Dispatcher suite remains separate because replica coverage changes the shared Runner Gateway
 Deployment and deletes a recorded Pod while checking controller behavior.
 
 `test_vm` runs on a stack with KubeVirt emulating the guest CPU and the k3s test guest

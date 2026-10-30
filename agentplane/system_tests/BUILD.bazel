@@ -344,3 +344,13 @@ py_library(
     name = "runner_data_archive",
     srcs = ["runner_data_archive.py"],
 )
+
+py_library(
+    name = "executor_environment",
+    srcs = ["executor_environment.py"],
+    deps = [
+        ":agent",
+        ":conftest",
+        "@pypi//pytest",
+    ],
+)

@@ -22,7 +22,7 @@ from agentplane.system_tests.central_sampler import (
     central_stack,
 )
 from agentplane.system_tests.cluster import kubectl
-from agentplane.system_tests.conftest import POD_TEMPLATE, VM_TEMPLATE, VM_WORKING_DIRECTORY
+from agentplane.system_tests.executor_environment import ExecutorEnvironment
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Reasoning, ShellCall, Text
@@ -179,14 +179,18 @@ async def _wait_for_turn_status(
         events.cancel()
 
 
-async def _central_sampler_scenario(tmp_path: Path, scripted: ScriptedUpstream, *, template: str, cwd: str) -> None:
+@pytest.mark.scripted_model
+@pytest.mark.timeout(600)
+async def test_dispatcher_central_setup_tool_and_retained_answer(
+    k3s_deployment: None, tmp_path: Path, scripted: ScriptedUpstream, executor_environment: ExecutorEnvironment
+) -> None:
+    del k3s_deployment  # Only valid on a disposable stack, never against staging.
+    template, cwd = executor_environment.template, executor_environment.cwd
     session_id, command_id = str(uuid4()), str(uuid4())
     interrupted_session_id, interrupted_command_id = str(uuid4()), str(uuid4())
     prompt = "Read the setup marker and report the result."
     reasoning = "I will read the marker created during setup."
     answer = "The executor returned prepared-on-executor."
-    is_vm = template == VM_TEMPLATE
-    vm_execution: dict[str, str | int] | None = None
     async with central_stack(tmp_path, template=template) as deployed:
         model = scripted.model(deployed.sampler_pod_name, runner_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
@@ -313,17 +317,11 @@ async def _central_sampler_scenario(tmp_path: Path, scripted: ScriptedUpstream, 
         assert request.native.client_metadata.session_id == session_id
         assert prompt in request.user_texts
         tool_command = (
-            "set -eu; sleep 10; cat prepared.txt; printf 'tool-on-executor\\n' | tee result.txt; "
+            "set -eu; sleep 10; "
+            + executor_environment.sampler_probe
+            + "cat prepared.txt; printf 'tool-on-executor\\n' | tee result.txt; "
             "printf 'CENTRAL_EXECUTOR_OK\\n'"
         )
-        if is_vm:
-            tool_command = (
-                "set -eu; sleep 10; printf 'VM_PID1 %s\\n' \"$(cat /proc/1/comm)\"; "
-                "printf 'VM_EXECUTOR_UID %s\\n' \"$(id -u)\"; "
-                "printf 'VM_EXECUTOR_CGROUP %s\\n' \"$(awk -F: '$1 == 0 {print $3}' /proc/self/cgroup)\"; "
-                "cat prepared.txt; printf 'tool-on-executor\\n' | tee result.txt; "
-                "printf 'CENTRAL_EXECUTOR_OK\\n'"
-            )
         try:
             await model.reply(request, Reasoning(reasoning), ShellCall("read-prepared-marker", tool_command))
             # Require the executor process to be running before interrupting Session A; B's shell
@@ -350,22 +348,7 @@ async def _central_sampler_scenario(tmp_path: Path, scripted: ScriptedUpstream, 
             (tool_output,) = request.tool_outputs
             output = "\n".join(tool_output.blocks)
             assert "CENTRAL_EXECUTOR_OK" in output
-            if is_vm:
-                assert "prepared-on-executor\n" in output
-                assert "VM_PID1 systemd\n" in output
-                assert "VM_EXECUTOR_UID 107\n" in output
-                (cgroup_line,) = [line for line in output.splitlines() if line.startswith("VM_EXECUTOR_CGROUP ")]
-                executor_cgroup = cgroup_line.removeprefix("VM_EXECUTOR_CGROUP ")
-                assert executor_cgroup.startswith("/agentplane.slice/agentplane-executors.slice/agentplane-native-"), (
-                    executor_cgroup
-                )
-                assert executor_cgroup.count("/") == 3, executor_cgroup
-                assert executor_cgroup.endswith(".service"), executor_cgroup
-                vm_execution = {"pid1": "systemd", "uid": 107, "executor_cgroup": executor_cgroup}
-            else:
-                assert "prepared-on-executor\n" in output
-                assert "tool-on-executor\n" in output
-                assert "CENTRAL_EXECUTOR_OK\n" in output
+            vm_execution = executor_environment.verify_sampler_output(output)
             assert any(item.encrypted_content for item in request.native.reasoning)
             await model.reply(request, Text(answer))
         except Exception as error:
@@ -482,27 +465,6 @@ async def _central_sampler_scenario(tmp_path: Path, scripted: ScriptedUpstream, 
             )
             + "\n"
         )
-
-
-@pytest.mark.scripted_model
-@pytest.mark.timeout(600)
-async def test_dispatcher_central_setup_tool_and_retained_answer(
-    k3s_deployment: None, tmp_path: Path, scripted: ScriptedUpstream
-) -> None:
-    del k3s_deployment  # This scenario is only valid on its own disposable stack, never against staging.
-    await _central_sampler_scenario(
-        tmp_path, scripted, template=POD_TEMPLATE, cwd="/state/workspaces/central-acceptance"
-    )
-
-
-@pytest.mark.vm_sandboxes
-@pytest.mark.scripted_model
-@pytest.mark.timeout(600)
-async def test_dispatcher_central_setup_tool_and_retained_answer_vm(
-    k3s_deployment: None, tmp_path: Path, scripted: ScriptedUpstream
-) -> None:
-    del k3s_deployment  # This scenario is only valid on its own disposable stack, never against staging.
-    await _central_sampler_scenario(tmp_path, scripted, template=VM_TEMPLATE, cwd=VM_WORKING_DIRECTORY)
 
 
 # gazelle:include_dep @pypi//protobuf

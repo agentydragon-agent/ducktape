@@ -30,15 +30,6 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 TIMELINE = pytest.StashKey[Timeline]()
 
 
-def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """A stack rendered with VM Sandboxes runs the `vm_sandboxes` scenarios and only those; the other
-    target runs the rest on a stack without KubeVirt."""
-    vm_stack = rendered_fixture.read(get_required_path(os.environ["K3S_FIXTURE_RLOCATION"])).vm_sandboxes
-    other = [item for item in items if (item.get_closest_marker("vm_sandboxes") is not None) != vm_stack]
-    config.hook.pytest_deselected(items=other)
-    items[:] = [item for item in items if item not in other]
-
-
 def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter, config: pytest.Config) -> None:
     # Absent when no scenario was collected, so the stack never started.
     if (timeline := config.stash.get(TIMELINE, None)) is not None:

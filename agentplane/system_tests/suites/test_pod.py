@@ -2,6 +2,7 @@
 
 import pytest_bazel
 
+from agentplane.system_tests.executor_environment import pod_executor as executor_environment
 from agentplane.system_tests.scenarios.agent_messaging import (
     test_an_agent_messages_another_which_reads_and_acknowledges_it,
 )
@@ -14,7 +15,6 @@ from agentplane.system_tests.scenarios.launch_presets import test_a_preset_launc
 from agentplane.system_tests.scenarios.runner_credentials import (
     test_cert_manager_reissues_a_deleted_tls_secret,
     test_pod_mtls_session_survives_replacement_and_keeps_history,
-    test_vm_mtls_certificates_authenticate_both_harnesses,
 )
 from agentplane.system_tests.scenarios.session_instructions import (
     test_the_model_obeys_the_standing_instruction_its_session_was_opened_with,
@@ -33,6 +33,7 @@ from agentplane.system_tests.scenarios.thread_stream import (
 )
 
 __all__ = [
+    "executor_environment",
     "http",
     "test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else",
     "test_a_policy_granted_after_the_sandbox_is_running_takes_effect",
@@ -49,7 +50,6 @@ __all__ = [
     "test_the_standing_instruction_reaches_the_model_and_only_in_its_own_session",
     "test_turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn",
     "test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume",
-    "test_vm_mtls_certificates_authenticate_both_harnesses",
 ]
 
 if __name__ == "__main__":
