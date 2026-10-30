@@ -65,6 +65,7 @@ py_library(
 py_library(
     name = "dispatcher",
     srcs = ["dispatcher.py"],
+    data = ["//agentplane/system_tests:runner_data_archive_bin"],
     deps = [
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
@@ -75,7 +76,6 @@ py_library(
         "//agentplane/system_tests:cleanup_diagnostics",
         "//agentplane/system_tests:cluster",
         "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests:runner_data_archive",
         "//util:net",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",

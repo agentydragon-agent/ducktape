@@ -8,14 +8,13 @@ import pytest
 import pytest_bazel
 
 from agentplane.system_tests.executor import Executor
-from agentplane.system_tests.k3s.stack import Stack
 from agentplane.system_tests.scenarios import central_sampler
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 
 
 @pytest.fixture
-def executor(deployment: Stack) -> Executor:
-    return deployment.executor("runner", cwd="/state/workspaces/central-acceptance")
+def executor() -> Executor:
+    return Executor(template="runner", cwd="/state/workspaces/central-acceptance")
 
 
 @pytest.fixture

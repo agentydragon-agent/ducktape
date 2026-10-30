@@ -8,7 +8,6 @@ import pytest_bazel
 from agentplane.app.testing.client import Client
 from agentplane.system_tests.conftest import Sandboxes
 from agentplane.system_tests.executor import Executor
-from agentplane.system_tests.k3s.stack import Stack
 from agentplane.system_tests.scenarios import storage, suspend_resume, vm_workspace_ownership
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 
@@ -22,8 +21,8 @@ async def test_fresh_workspace_storage_survives_replacement(
 
 
 @pytest.fixture
-def executor(deployment: Stack) -> Executor:
-    return deployment.executor("runner-vm", cwd="/state/workspaces/accept")
+def executor() -> Executor:
+    return Executor(template="runner-vm", cwd="/state/workspaces/accept")
 
 
 @pytest.fixture

@@ -34,7 +34,6 @@ import yaml
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.conftest import AGENT_SERVICE_ACCOUNT, AUDIENCE
-from agentplane.system_tests.executor import Executor
 from agentplane.system_tests.k3s import block_storage, certificates, guest_logs, rendered_fixture, vm_sandboxes
 from agentplane.system_tests.k3s.bootstrap import Bootstrap
 from agentplane.system_tests.k3s.iptables_rule import ensure_rule
@@ -400,12 +399,6 @@ class Stack:
     base_url: str
     token: str
     mcp_fixtures: McpFixtureAccess | None
-    templates: frozenset[str]
-
-    def executor(self, template: str, *, cwd: str) -> Executor:
-        if template not in self.templates:
-            raise ValueError(f"SandboxTemplate {template!r} is not available; offered: {sorted(self.templates)}")
-        return Executor(template=template, cwd=cwd)
 
 
 def _mcp_inputs(work: Path, dex_host: str) -> rendered_fixture.McpInputs:
@@ -635,14 +628,7 @@ def running_stack(
                     validate_shutdown=validate_vm_shutdown,
                 )
             )
-        yield Stack(
-            k3s=k3s,
-            namespace=fixture.namespace,
-            base_url=fixture.app_origin,
-            token=token,
-            mcp_fixtures=access,
-            templates=frozenset(obj["metadata"]["name"] for obj in fixture.objects if obj["kind"] == "SandboxTemplate"),
-        )
+        yield Stack(k3s=k3s, namespace=fixture.namespace, base_url=fixture.app_origin, token=token, mcp_fixtures=access)
         print(k3s.report(fixture.namespace))
         if fixture.vm_sandboxes:
             (undeclared_outputs_dir() / "vm-sandboxes.txt").write_text(

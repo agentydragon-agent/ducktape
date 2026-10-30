@@ -230,7 +230,6 @@ py_library(
         ":rendered_fixture",
         ":vm_sandboxes",
         "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests:executor",
         "//agentplane/testing:tls",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",

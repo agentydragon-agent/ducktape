@@ -14,7 +14,6 @@ from agentplane.proto import runner_pb2
 from agentplane.system_tests.agent import TURN_SECONDS
 from agentplane.system_tests.conftest import Sandboxes
 from agentplane.system_tests.executor import Executor
-from agentplane.system_tests.k3s.stack import Stack
 from agentplane.system_tests.scenarios import (
     agent_messaging,
     egress,
@@ -40,8 +39,8 @@ async def http(base_url: str, token: str) -> AsyncIterator[httpx.AsyncClient]:
 
 
 @pytest.fixture
-def executor(deployment: Stack) -> Executor:
-    return deployment.executor("runner", cwd="/state/work")
+def executor() -> Executor:
+    return Executor(template="runner", cwd="/state/work")
 
 
 @pytest.fixture

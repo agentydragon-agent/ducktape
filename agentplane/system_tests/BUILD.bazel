@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # gazelle:resolve py agentplane.x.central_sampler.sampler_pb2_grpc //agentplane/x/central_sampler:sampler_pb2_grpc
 
@@ -343,6 +343,12 @@ py_library(
 py_library(
     name = "runner_data_archive",
     srcs = ["runner_data_archive.py"],
+)
+
+py_binary(
+    name = "runner_data_archive_bin",
+    main_module = "agentplane.system_tests.runner_data_archive",
+    deps = [":runner_data_archive"],
 )
 
 py_library(

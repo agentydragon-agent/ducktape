@@ -44,8 +44,7 @@ def scripted_listener() -> Iterator[Listener]:
         yield listener
 
 
-@pytest.fixture(scope="session")
-def stack_inputs() -> StackInputs:
+def load_stack_inputs() -> StackInputs:
     return StackInputs(
         fixture=rendered_fixture.read(get_required_path(os.environ["K3S_FIXTURE_RLOCATION"])),
         workspace_volumes=int(os.environ["K3S_WORKSPACE_VOLUMES"]),
@@ -65,13 +64,14 @@ def _models(inputs: StackInputs, listener: Listener) -> rendered_fixture.Models:
 
 @pytest.fixture(scope="session", autouse=True)
 def deployment(
-    pytestconfig: pytest.Config, request: pytest.FixtureRequest, scripted_listener: Listener, stack_inputs: StackInputs
+    pytestconfig: pytest.Config, request: pytest.FixtureRequest, scripted_listener: Listener
 ) -> Iterator[Stack]:
+    inputs = load_stack_inputs()
     timeline = pytestconfig.stash[TIMELINE] = Timeline()
     with (
         running_stack(
-            stack_inputs,
-            models=_models(stack_inputs, scripted_listener),
+            inputs,
+            models=_models(inputs, scripted_listener),
             timeline=timeline,
             validate_vm_shutdown=lambda: request.session.testsfailed == 0,
         ) as stack,

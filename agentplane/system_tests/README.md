@@ -26,8 +26,8 @@ parametrization. Each test passes its fixture values explicitly to a plain scena
 Gazelle derives Python dependencies; `k3s_suite` supplies stack artifacts and execution settings.
 
 The session-scoped `deployment` fixture yields the running stack. Suite client fixtures depend on
-it directly, and executor fixtures select an available SandboxTemplate and working directory from
-that deployment. Storage layouts and sampler execution probes remain owned by their respective
+it directly, and executor fixtures declare the suite's SandboxTemplate and working directory.
+Storage layouts and sampler execution probes remain owned by their respective
 scenario modules. VM probes retain the systemd, UID, and cgroup assertions. VM test markers enable
 tracing and diagnostics; they do not select deployment configuration.
 

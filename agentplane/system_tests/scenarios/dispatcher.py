@@ -23,7 +23,6 @@ from agentplane.grpc.calls import dial
 from agentplane.proto import runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
-from agentplane.system_tests import runner_data_archive
 from agentplane.system_tests.cleanup_diagnostics import capture_without_masking, cleanup_without_masking
 from agentplane.system_tests.cluster import api_client, kubectl
 from agentplane.system_tests.conftest import POD_TEMPLATE, namespace
@@ -176,9 +175,10 @@ async def _archive_runner_data(
         )
         + "\n"
     )
+    # A separate process lets timeout/cancellation stop SQLite backup and filesystem traversal
+    # before cleanup removes their sources; cancelling a worker thread would leave them running.
     process = await asyncio.create_subprocess_exec(
-        sys.executable,
-        str(Path(runner_data_archive.__file__)),
+        str(get_required_path("_main/agentplane/system_tests/runner_data_archive_bin")),
         str(plan_path),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
