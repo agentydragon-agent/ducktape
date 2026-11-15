@@ -1,8 +1,8 @@
 # Promtail → Alloy: staged node-by-node cutover
 
-**Preparatory configuration; no nodes are migrated by this PR. Live continuity
-verification and final Promtail retirement are pending.** Do not remove the old
-releases merely because Helm or render checks succeed. No deployment was performed.
+**BLOCKED retirement candidate. Merge only after the preparation is deployed and
+every node passes the live gates below.** The source removes both old releases;
+render/parser tests are insufficient evidence to apply it. No deployment was performed.
 
 Pod-file logs join the existing `alloy-node` process and its persistent host
 storage. A separate `alloy-journal` runs only on opted-in NixOS nodes: journal
@@ -130,11 +130,13 @@ window. Never run both against production streams to infer correctness from a
 higher rate. Restore the old label only after choosing and recording that replay
 window. Do not delete any state as part of rollback.
 
-After all nodes, including returning roaming nodes, pass the live checks in a
-separate operator-reviewed retirement change: delete `_promtail_values`,
-`_promtail_journal_values`, `_legacy_collector_affinity`, their two HelmRelease
-calls, `journal-scrape.yaml` and its Bazel data; remove only Promtail's Loki ingress
-rule and its roaming-test entries. Keep all Alloy/Vector/syslog/OTLP permissions,
+The retirement candidate removes the two Promtail HelmReleases, their values and
+affinity helpers, `journal-scrape.yaml`, its Bazel dependency, the Promtail-only
+Loki ingress rule, and obsolete roaming-test entries. Before merging, attach
+a per-node evidence roster confirming both applicable labels are `alloy`,
+verified positions/cursor import, all canaries, restart/rotation continuation,
+metrics WAL recovery and measured headroom. An offline or unverified node blocks
+retirement; no blanket exception for roaming nodes is safe. Keep all Alloy/Vector/syslog/OTLP permissions,
 node labels and both legacy snapshots until the rollback window closes. Do not
 move Loki or its persistent resources between Flux Kustomizations. Confirm the
 Helm uninstalls leave host checkpoint/log/WAL data intact, and check the same
