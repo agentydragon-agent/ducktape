@@ -33,6 +33,7 @@ go_library(
         "//agentplane/app/internal/migrations",
         "//agentplane/app/internal/sandboxes",
         "//agentplane/app/internal/sessionclient",
+        "//agentplane/app/internal/sessionwatch",
         "//agentplane/app/internal/settings",
         "//agentplane/app/internal/status",
         "//agentplane/app/internal/threads",

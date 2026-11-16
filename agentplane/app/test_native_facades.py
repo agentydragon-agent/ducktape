@@ -12,6 +12,7 @@ import grpc
 import httpx
 import pytest
 import pytest_bazel
+from google.protobuf.json_format import ParseDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -38,11 +39,33 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
         self.cancelled = asyncio.Event()
         self.reject_watch = False
         self.clean_eof = False
+        self.inventory_requests: list[session_dispatcher_pb2.WatchSessionsRequest] = []
+        self.inventory_updates: asyncio.Queue[session_dispatcher_pb2.Session] = asyncio.Queue()
+        self.inventory_cancelled = asyncio.Event()
 
     def record_authorization(self, context: grpc.aio.ServicerContext) -> None:
         self.authorization.extend(
             str(value) for key, value in (context.invocation_metadata() or ()) if key == "authorization"
         )
+
+    @override
+    async def WatchSessions(self, request, context):
+        self.inventory_requests.append(request)
+        session = session_dispatcher_pb2.Session(
+            session_id="10000000-0000-4000-8000-000000000031",
+            status=session_dispatcher_pb2.SessionStatus(
+                materialization=session_dispatcher_pb2.SessionStatus.SESSION_MATERIALIZATION_WAITING
+            ),
+        )
+        session.created_at.FromSeconds(1_700_000_000)
+        try:
+            yield session_dispatcher_pb2.WatchSessionsResponse(session=session, resume_token="test-snapshot-token")
+            yield session_dispatcher_pb2.WatchSessionsResponse(caught_up={}, resume_token="test-snapshot-token")
+            while True:
+                updated = await self.inventory_updates.get()
+                yield session_dispatcher_pb2.WatchSessionsResponse(session=updated, resume_token="test-update-token")
+        finally:
+            self.inventory_cancelled.set()
 
     @override
     async def ListDispatches(self, request, context):
@@ -219,6 +242,59 @@ async def test_unknown_facade_paths_are_not_forwarded(http: httpx.AsyncClient, p
     assert (await http.get("/upstream/dispatcher/v2/dispatches")).status_code == 404
     assert (await http.get("/upstream/dispatcher/v1/not-a-route")).status_code == 404
     assert not peer.service.requests
+
+
+async def test_session_inventory_shares_upstream_and_keeps_metadata_without_history(
+    http: httpx.AsyncClient, peer: Peer
+) -> None:
+    async def snapshot(lines: AsyncIterator[str]) -> dict[str, session_dispatcher_pb2.Session]:
+        sessions: dict[str, session_dispatcher_pb2.Session] = {}
+        async with asyncio.timeout(5):
+            async for line in lines:
+                frame = json.loads(line)["result"]
+                for value in frame.get("sessions", []):
+                    session = ParseDict(value, session_dispatcher_pb2.Session())
+                    sessions[session.session_id] = session
+                if frame.get("caughtUp"):
+                    assert frame["updatesConnected"]
+                    return sessions
+        raise AssertionError("inventory ended before CaughtUp")
+
+    path = "/upstream/app/v1/sessions:watch"
+    async with http.stream("GET", path) as first, http.stream("GET", path) as second:
+        assert first.status_code == second.status_code == 200
+        first_lines, second_lines = first.aiter_lines(), second.aiter_lines()
+        sessions = await snapshot(first_lines)
+        assert await snapshot(second_lines) == sessions
+        assert len(peer.service.inventory_requests) == 1
+        assert peer.service.inventory_requests[0].resume_token == ""
+        session_id = "10000000-0000-4000-8000-000000000031"
+        assert (
+            sessions[session_id].status.materialization
+            == session_dispatcher_pb2.SessionStatus.SESSION_MATERIALIZATION_WAITING
+        )
+        assert (await http.get(f"/upstream/history/v1/sessions/{session_id}/summary")).status_code == 404
+        renamed = await http.patch(f"/upstream/app/v1/threads/{session_id}", json={"name": "Test waiting Session"})
+        assert renamed.status_code == 200, renamed.text
+        assert renamed.json()["name"] == "Test waiting Session"
+        peer.service.inventory_updates.put_nowait(
+            session_dispatcher_pb2.Session(
+                session_id=session_id,
+                status=session_dispatcher_pb2.SessionStatus(
+                    materialization=session_dispatcher_pb2.SessionStatus.SESSION_MATERIALIZATION_FAILED
+                ),
+            )
+        )
+        for lines in (first_lines, second_lines):
+            async with asyncio.timeout(5):
+                frame = json.loads(await anext(lines))["result"]
+                assert frame["sessions"][0]["status"]["materialization"] == "SESSION_MATERIALIZATION_FAILED"
+        assert (await http.post("/auth/logout")).status_code == 303
+        for lines in (first_lines, second_lines):
+            async with asyncio.timeout(5):
+                assert [line async for line in lines] == []
+        # One browser's login ending must not cancel the replica's shared service watch.
+        assert not peer.service.inventory_cancelled.is_set()
 
 
 if __name__ == "__main__":

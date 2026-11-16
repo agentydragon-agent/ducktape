@@ -40,6 +40,7 @@ func TestOperatorStreamsAndProxyRoutesRejectWorkloadTokens(t *testing.T) {
 		"/upstream/actions/v1/items",
 		"/upstream/connections/v1/items",
 		"/upstream/egress/v1/credentials:watch",
+		"/upstream/app/v1/sessions:watch",
 		"/upstream/egress/v1/decisions:watch",
 	} {
 		t.Run(path, func(t *testing.T) {
@@ -376,5 +377,25 @@ func TestEnvironmentGetCancelsUpstreamWithRequest(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("EnvironmentService Get did not finish after request cancellation")
+	}
+}
+
+func TestSessionInventoryRequiresBrowserLogin(t *testing.T) {
+	authentication := newStreamTestAuth(t)
+	server := newHTTPServer(authentication.Auth)
+	streamhttp.RegisterRoutes(server, server.DrainDone(), streamhttp.Dependencies{
+		SessionInventory: http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Error("inventory served outside browser authorization") }),
+	})
+	request := httptest.NewRequest(http.MethodGet, "/upstream/app/v1/sessions:watch", nil)
+	response := httptest.NewRecorder()
+	server.Handler(authentication.Auth).ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatal(response.Code)
+	}
+	authentication.Authorize(request)
+	response = httptest.NewRecorder()
+	server.Handler(authentication.Auth).ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatal(response.Code)
 	}
 }

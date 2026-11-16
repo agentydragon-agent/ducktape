@@ -36,6 +36,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/internal/migrations"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/sessionclient"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/sessionwatch"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/status"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/threads"
 	upstreamproxy "github.com/agentydragon/ducktape/agentplane/app/internal/upstream"
@@ -136,6 +137,13 @@ func Run(ctx context.Context, config settings.Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Session Dispatcher: %w", err)
 	}
+	sessionWatchConnection, err := bearer.Dial(config.SessionDispatcherTarget, config.SessionDispatcherTokenFile,
+		time.Duration(config.SessionDispatcherRequestTimeoutSecs*float64(time.Second)), config.SessionDispatcherTLS)
+	if err != nil {
+		return fmt.Errorf("configure Session inventory watcher: %w", err)
+	}
+	defer sessionWatchConnection.Close()
+	sessionInventory := sessionwatch.New(session_dispatcherpb.NewSessionDispatcherClient(sessionWatchConnection), threadStore)
 	environmentPeer := config.EnvironmentServicePeer()
 	environmentTimeout := time.Duration(environmentPeer.RequestTimeoutSeconds * float64(time.Second))
 	environmentConn, err := bearer.Dial(environmentPeer.Target, environmentPeer.TokenFile, environmentTimeout, environmentPeer.TLS)
@@ -346,6 +354,7 @@ func Run(ctx context.Context, config settings.Config) error {
 		traceRelay: traceRelayHandler(), electric: electricHandler,
 		streams: streamhttp.Dependencies{
 			Auth:             appAuth,
+			SessionInventory: sessionInventory.Handler(),
 			SandboxNamespace: config.SandboxNamespace, Sandboxes: environments,
 			Federator:      federator,
 			DispatcherHTTP: dispatcherGateway, EnvironmentHTTP: environmentGateway, PolicyHTTP: policyGateway, EgressHTTP: egressGateway,
@@ -357,6 +366,7 @@ func Run(ctx context.Context, config settings.Config) error {
 		return err
 	}
 	workers := []processWorker{
+		{name: "dispatcher-sessions", run: sessionInventory.Run},
 		{name: "history-watch", run: historyWatch.Run},
 		{name: "history-sessions", run: historySessions.Run},
 	}

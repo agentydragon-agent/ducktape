@@ -72,6 +72,11 @@ service AppService {
     };
   }
 
+  // Replica-local fanout of the Dispatcher's Session inventory, behind operator login.
+  rpc WatchSessionInventory(WatchSessionInventoryRequest) returns (stream WatchSessionInventoryResponse) {
+    option (google.api.http) = {get: "/v1/sessions:watch"};
+  }
+
   // User-facing composition for the integration app's human frontend, not an API for
   // in-cluster services. Backend callers use SessionDispatcher directly with a complete
   // SessionSpec. The app resolves Sandbox presets, applies spec and setup-script overrides,
@@ -250,4 +255,15 @@ message GetEnvironmentRuntimeStatusRequest {
 
 message CreateSessionResponse {
   agentplane.runner_gateway.dispatcher.Session session = 1;
+}
+
+message WatchSessionInventoryRequest {}
+
+message WatchSessionInventoryResponse {
+  // Bounded batches of current Session upserts. Each browser connection starts at zero.
+  repeated agentplane.runner_gateway.dispatcher.Session sessions = 1;
+  // All retained upserts have been sent and the upstream snapshot has completed.
+  bool caught_up = 2;
+  // False retains the last view while the shared upstream reconnects.
+  bool updates_connected = 3;
 }

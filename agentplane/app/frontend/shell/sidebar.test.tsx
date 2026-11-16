@@ -218,6 +218,7 @@ async function render(
     const url = new URL(String(input), "http://test");
     if (new Headers(init?.headers).get("Accept") === "application/x-ndjson") {
       if (
+        url.pathname === "/upstream/app/v1/sessions:watch" ||
         url.pathname === "/upstream/app/v1/threads:watch" ||
         url.pathname === "/upstream/history/v1/session-summaries:watch"
       ) {
@@ -225,9 +226,11 @@ async function render(
         threadServed.push(watch);
         if (!reconnected(threadServed, watch)) {
           watch.send(
-            url.pathname === "/upstream/app/v1/threads:watch"
-              ? { changed: {}, updatesConnected: true }
-              : { changed: {} }
+            url.pathname === "/upstream/app/v1/sessions:watch"
+              ? { sessions: [], caughtUp: true, updatesConnected: true }
+              : url.pathname === "/upstream/app/v1/threads:watch"
+                ? { changed: {}, updatesConnected: true }
+                : { changed: {} }
           );
         }
         return Promise.resolve(watch.response);

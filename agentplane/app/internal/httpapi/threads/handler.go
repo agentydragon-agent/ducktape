@@ -166,13 +166,6 @@ func (h *Handler) RenameThread(ctx context.Context, request *apppb.RenameThreadR
 			name = &trimmed
 		}
 	}
-	summary, err := h.history.GetSummary(ctx, id)
-	if err != nil {
-		return nil, threadMutationRPCError(err)
-	}
-	if summary == nil {
-		return nil, status.Errorf(codes.NotFound, "no thread %s", id)
-	}
 	thread, err := h.store.Rename(ctx, id, name)
 	if err != nil {
 		return nil, threadMutationRPCError(err)

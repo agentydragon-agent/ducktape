@@ -1,0 +1,32 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+go_library(
+    name = "sessionwatch",
+    srcs = ["watch.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/sessionwatch",
+    deps = [
+        "//agentplane/app:app_service_go_proto",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "watch_test",
+    srcs = ["watch_test.go"],
+    embed = [":sessionwatch"],
+    deps = [
+        "//agentplane/app:app_service_go_proto",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_protobuf//encoding/protojson",
+    ],
+)

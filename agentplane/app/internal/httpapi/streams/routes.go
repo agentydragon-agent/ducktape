@@ -47,6 +47,7 @@ type Dependencies struct {
 	SandboxNamespace string
 	Sandboxes        SandboxInventory
 	Federator        Federator
+	SessionInventory http.Handler
 	DispatcherHTTP   Upstream
 	EnvironmentHTTP  Upstream
 	PolicyHTTP       Upstream
@@ -62,6 +63,7 @@ type Dependencies struct {
 // RegisterRoutes installs raw upstream facades and the console stream through the caller boundary.
 func RegisterRoutes(server httpapi.RouteRegistrar, drainDone <-chan struct{}, dependencies Dependencies) {
 	routes := newStreamingRoutes(drainDone, dependencies)
+	server.RegisterRawRoute("GET /upstream/app/v1/sessions:watch", http.HandlerFunc(routes.sessionInventory), true)
 	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete} {
 		server.RegisterRawRoute(method+" /upstream/environments/{path...}", http.HandlerFunc(routes.environmentFacade), false)
 	}
@@ -110,6 +112,20 @@ func (r *streamingRoutes) requestLifetime(request *http.Request) (context.Contex
 		}
 	}()
 	return ctx, cancel
+}
+
+func (r *streamingRoutes) sessionInventory(w http.ResponseWriter, request *http.Request) {
+	if r.deps.SessionInventory == nil {
+		httpapi.WriteDetailError(w, http.StatusServiceUnavailable, "Session inventory is unavailable")
+		return
+	}
+	ctx, cancel, err := r.operatorLifetime(request)
+	if err != nil {
+		httpapi.WriteDetailError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	defer cancel()
+	r.deps.SessionInventory.ServeHTTP(w, request.WithContext(ctx))
 }
 
 func (r *streamingRoutes) operatorLifetime(request *http.Request) (context.Context, context.CancelFunc, error) {

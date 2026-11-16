@@ -18,6 +18,21 @@ reads the current Sandbox-owned WorkloadCredential on demand and offers an expli
 empty record is not historical proof: older credentials are revoked, and the UI says this is not
 a complete history. The new-environment identity picker awaits the open creation-contract question.
 
+## Session inventory
+
+List membership, creation order, materialization and required Environment state come from the
+Dispatcher Session watch, including Sessions not yet recorded in History. The browser uses the
+operator-authenticated AppService JSON stream and protobuf-es; the App shares one native upstream
+watch per replica as `spiffe://agentplane/app`. An empty upstream token supplies the snapshot and
+`CaughtUp`; there is no separate ListSessions bootstrap. Browser reconnects rebuild their local
+inventory from the App cache, and upstream outages retain the previous view with stale health.
+
+Titles and archived state remain App metadata. History supplies conversation content and its
+existing runtime observations; current Environment observations continue to participate in
+running/idle marks. Materialization never establishes that a harness is running. A Session with
+no History summary appears with its materialization state. History-only records cannot add list
+members. Metadata and History watches refresh the joins without polling.
+
 ## Thread creation
 
 When Create thread is disabled, hovering it or focusing its wrapper shows the current reason:
