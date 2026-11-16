@@ -619,6 +619,7 @@ flowchart LR
     browser -->|HTML, assets and service worker| frontend
     browser -->|operator OIDC cookie: API + shape requests, same origin| app
     browser -->|generated ProtoJSON History reads| app
+    browser -->|AppService Session inventory JSON stream: protobuf-es| app
     app -->|App SVID mTLS: one shared WatchSessions per replica| dispatcher
     app -->|gRPC reads and watch| history
     app -->|proxied shape request| electric
@@ -634,10 +635,9 @@ flowchart LR
 ```
 
 The App authorizes the Session inventory stream at its operator-only browser login boundary and
-ends it on logout or expiry. One shared Dispatcher watch per App replica caches Session membership
-and materialization, bootstrapping with an empty watch token. App metadata supplies titles/archived
-state, and History supplies conversation and existing activity observations. The static frontend
-still derives list membership from History until its separate rollout adopts the App endpoint.
+ends it on logout or expiry. Its shared Dispatcher watch supplies membership and materialization;
+App metadata supplies titles/archived state, and History supplies conversation and existing activity
+observations. No browser connects directly to Dispatcher; there is no ListSessions bootstrap.
 
 The app initiates each Electric HTTP request and streams the shape response through to the browser.
 Generated History HTTP routes at the app's `/upstream/history/v1/` prefix let the browser call

@@ -30,7 +30,12 @@ ts_library(
     name = "app_service_client",
     srcs = ["app_service_client.ts"],
     tsconfig = "//agentplane/app/frontend:tsconfig",
-    deps = [":client"],
+    deps = [
+        ":client",
+        ":watch_stream",
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/app:app_service_pb",
+    ],
 )
 
 agentplane_vitest_test(

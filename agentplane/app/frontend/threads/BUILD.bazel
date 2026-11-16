@@ -703,6 +703,7 @@ ts_library(
         "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/history_service/api/history:history_service_pb",
         "//agentplane/proto:session_pb",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
     ],
 )
 
@@ -712,6 +713,7 @@ agentplane_vitest_test(
     deps = [
         ":client",
         ":thread_status",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/sandboxes:client",
@@ -721,6 +723,7 @@ agentplane_vitest_test(
         "//agentplane/history_service/api/history:history_service_pb",
         "//agentplane/proto:event_pb",
         "//agentplane/proto:session_pb",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
     ],
 )
 
@@ -923,12 +926,14 @@ ts_library(
         "//:node_modules/react-router",
         "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend:schema",
+        "//agentplane/app/frontend/transport:app_service_client",
         "//agentplane/app/frontend/transport:client",
         "//agentplane/app/frontend/transport:live",
         "//agentplane/app/frontend/transport:stream_reader",
         "//agentplane/app/frontend/transport:stream_status",
         "//agentplane/app/frontend/transport:watch_stream",
         "//agentplane/history_service/api/history:history_service_pb",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
     ],
 )
 
