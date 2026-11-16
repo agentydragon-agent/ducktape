@@ -1,4 +1,4 @@
-// Package threads stores the app-owned metadata for each History Session.
+// Package threads stores the app-owned titles and archived state for Sessions.
 package threads
 
 import (
@@ -19,8 +19,8 @@ const (
 // ErrNotFound means an app-owned thread row does not exist.
 var ErrNotFound = errors.New("thread not found")
 
-// Thread is the app-owned metadata for one History Session. The History Service remains the authority
-// for its Sandbox identity and folded activity.
+// Thread is the app-owned metadata for one Session. Dispatcher owns membership and placement;
+// History owns folded activity.
 type Thread struct {
 	ID        uuid.UUID
 	CreatedAt time.Time
@@ -50,7 +50,7 @@ type Store struct {
 // NewStore creates a thread metadata store.
 func NewStore(db *sql.DB) *Store { return &Store{db: db, now: time.Now} }
 
-// OpenThread creates the row before a newly opened History Session can receive a user message.
+// OpenThread creates metadata for a Session observed by a membership worker.
 // Reopening the same ID leaves the existing row unchanged.
 func (s *Store) OpenThread(ctx context.Context, id uuid.UUID) error {
 	return withTx(ctx, s.db, func(tx *sql.Tx) error {
@@ -71,7 +71,7 @@ func (s *Store) OpenThread(ctx context.Context, id uuid.UUID) error {
 	})
 }
 
-// GetThread returns the metadata row, or nil when the History Session has not been opened by the app.
+// GetThread returns the metadata row, or nil when the Session has not been opened by the app.
 func (s *Store) GetThread(ctx context.Context, id uuid.UUID) (*Thread, error) {
 	thread, err := scanThread(s.db.QueryRowContext(ctx, `
 		SELECT id, created_at, name, archived

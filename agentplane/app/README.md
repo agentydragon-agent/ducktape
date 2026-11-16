@@ -236,10 +236,10 @@ The app copies no runner events and folds none. Each runner pushes its Sessions'
 History Service's ingress, and the History Service folds them under per-Session leases
 ([History Service](../history_service/README.md)); the app reads both through the History Service.
 
-A Session gets its Thread from the History Service's watch, which names each Session it records
-on the runner's first push; every stream resumes after the last one the replica opened, and a new
-process starts from the first. Opening a Thread does not restart its harness. A composer may submit
-input to an eligible dormant Session; the Dispatcher wakes and admits the Session as needed. A
+The replica's shared Dispatcher Session watch opens an App metadata row before publishing each
+Session on the App inventory endpoint. The History Session-recording worker also creates metadata
+idempotently without changing titles or archived state. Opening a Thread does not restart its
+harness. A composer may submit input to an eligible dormant Session; the Dispatcher wakes and admits the Session as needed. A
 suspended Sandbox still follows its `wake_on_send` policy. Exact-turn interruption remains available
 while that turn is active.
 
@@ -360,6 +360,26 @@ Authentik forward-auth outpost's `x-authentik-username`, cannot be trusted: the 
 proxy also reaches the Service and forwards caller-supplied headers, so anyone with `services/proxy`
 on it could grant themselves egress. The outpost would also stall every SSE stream for 15 seconds,
 since its response writer implements no `Flush()`.
+
+## Dispatcher Session inventory endpoint
+
+The AppService exposes `/upstream/app/v1/sessions:watch` as a gRPC-Gateway JSON stream. The App
+enforces its operator-only caller policy and a current browser OIDC login before opening the stream; request cancellation, logout, expiry and drain end it. This
+is the global operator inventory, with no browser-selected Identity impersonation or filtering.
+The backend opens one shared native gRPC `WatchSessions` per App replica, authenticated as
+`spiffe://agentplane/app`. Dispatcher admits that exact service SVID using the existing service
+caller grant. Browsers never connect to Dispatcher directly.
+
+A replica starts that upstream watch with an empty token, consumes its snapshot through `CaughtUp`,
+and resumes using its last locally applied token on reconnect; it never bootstraps with `ListSessions`.
+The disposable in-memory cache fans out bounded upsert batches and connection health to browsers.
+Each browser connection receives a fresh cached snapshot and a caught-up marker; slow readers
+coalesce updates rather than accumulating a queue. Upstream disconnection keeps the last view and
+marks it stale. A new App process rebuilds the cache from Dispatcher.
+
+The static frontend continues to build its list from App metadata and History summaries. Its
+switch to this endpoint ships separately, after the receiver runs on both App replicas. The History
+membership worker and list filters remain until the frontend rollout and its separate cleanup.
 
 ## Sidebar inventory updates
 
