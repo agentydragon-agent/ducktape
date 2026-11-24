@@ -30,6 +30,19 @@ def test_editor_proposal_fragments(runfiles: Runfiles) -> None:
     assert names["generateRoughOptions"] == "packages/excalidraw/scene/shape"
     assert names["getCurvePathOps"] == "packages/utils/geometry/shape"
 
+    selected_constants = {
+        name
+        for unit in selected["units"]
+        if unit["owner"] == "packages/excalidraw/constants"
+        for name in unit.get("members", {}).values()
+    }
+    assert {
+        "DEFAULT_TRANSFORM_HANDLE_SPACING",
+        "SIDE_RESIZING_THRESHOLD",
+        "EPSILON",
+        "DEFAULT_COLLISION_THRESHOLD",
+    } <= selected_constants
+
     for full, retained in zip(canonical["units"], selected["units"], strict=True):
         assert full["ordinal"] == retained["ordinal"]
         if retained["owner"] is not None:
