@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   assertCertifiedResult,
+  browserProfileAssumptions,
   browserObservedAssumptions,
   lower,
   root,
@@ -44,6 +45,9 @@ assert.deepEqual(browserObservedAssumptions(run.verdict.assumptions), [
   "Symbol.iterator is the realm's well-known symbol throughout initialization",
   premise,
 ]);
+assert.deepEqual(browserProfileAssumptions(run.verdict.assumptions), [
+  "Symbol is the unmodified ECMAScript intrinsic throughout initialization",
+]);
 assert.deepEqual(method.run(...options, "--check-output"), run.verdict);
 
 const owner = path.join(method.out, "worker.mjs");
@@ -62,6 +66,7 @@ const shadow = fixture(
 const shadowRun = lower(shadow.sourceFile, shadow.specFile, shadow.out, options);
 assertCertifiedResult({ ...shadowRun, files: shadow, out: shadow.out }, 42);
 assert.deepEqual(browserObservedAssumptions(shadowRun.verdict.assumptions), []);
+assert.deepEqual(browserProfileAssumptions(shadowRun.verdict.assumptions), []);
 
 const accessors = fixture(
   "iterator-accessors",
@@ -81,6 +86,9 @@ assertCertifiedResult({ ...accessorRun, files: accessors, out: accessors.out }, 
 assert.deepEqual(browserObservedAssumptions(accessorRun.verdict.assumptions), [
   "Symbol.iterator is the realm's well-known symbol throughout initialization",
   premise,
+]);
+assert.deepEqual(browserProfileAssumptions(accessorRun.verdict.assumptions), [
+  "Symbol is the unmodified ECMAScript intrinsic throughout initialization",
 ]);
 
 const builtin = fixture(

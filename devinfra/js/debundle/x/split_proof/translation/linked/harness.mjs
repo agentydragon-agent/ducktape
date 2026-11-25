@@ -21,15 +21,16 @@ process.on("exit", () => {
 export const browserProfilePremises = [
   "Symbol is the unmodified ECMAScript intrinsic throughout initialization",
   "the browser page exposes the unchanged URL constructor throughout initialization",
-  "window, globalThis, and self denote the same page global object throughout initialization",
   "tagged template arrays use the page realm's Array iterator throughout initialization",
   "deferred standard constructors use the page realm's unchanged constructors throughout initialization",
 ];
 
 export function browserObservedAssumptions(assumptions) {
-  const profilePremises = assumptions.filter((assumption) => browserProfilePremises.includes(assumption)).sort();
-  assert.deepEqual(profilePremises, [...browserProfilePremises].sort());
   return assumptions.filter((assumption) => !browserProfilePremises.includes(assumption));
+}
+
+export function browserProfileAssumptions(assumptions) {
+  return assumptions.filter((assumption) => browserProfilePremises.includes(assumption));
 }
 
 export function caseShard() {

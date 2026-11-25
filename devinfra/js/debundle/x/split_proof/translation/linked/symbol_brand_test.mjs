@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   assertCertifiedResult,
+  browserProfileAssumptions,
   browserObservedAssumptions,
   lower,
   root,
@@ -36,6 +37,9 @@ assert.deepEqual(browserObservedAssumptions(run.verdict.assumptions), [
   "the ambient Symbol binding is the unmodified ECMAScript intrinsic throughout initialization",
   "Symbol returns the intrinsic Symbol function without observable effects throughout initialization",
 ]);
+assert.deepEqual(browserProfileAssumptions(run.verdict.assumptions), [
+  "Symbol is the unmodified ECMAScript intrinsic throughout initialization",
+]);
 assert.deepEqual(brand.run(...options, "--check-output"), run.verdict);
 
 const owner = path.join(brand.out, "worker.mjs");
@@ -58,6 +62,7 @@ const shadow = fixture(
 const shadowRun = lower(shadow.sourceFile, shadow.specFile, shadow.out, options);
 assertCertifiedResult({ ...shadowRun, files: shadow, out: shadow.out }, 42);
 assert.deepEqual(browserObservedAssumptions(shadowRun.verdict.assumptions), []);
+assert.deepEqual(browserProfileAssumptions(shadowRun.verdict.assumptions), []);
 
 const namedField = fixture(
   "computed-field-function-name",

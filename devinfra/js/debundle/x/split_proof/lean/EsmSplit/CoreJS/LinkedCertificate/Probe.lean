@@ -298,7 +298,10 @@ private def witnessFuel (profile : HostPremises) (source candidate : Program) : 
     if let some witness ← test limit then return witness
   throw ⟨.probeFuel, s!"linked initialization exhausted the fuel search budget ({limit})", none⟩
 
-/-- Collect host observations from both concrete executions to select the theorem's hypotheses. -/
+/-- Combine dynamic observations from both concrete executions with the premises needed by
+profile-directed lowering in either complete CoreJS tree. The latter remain required when
+the lowered operation is in an inactive branch or an uncalled function: the lowering rule
+already used that host description to encode the retained syntax. -/
 private inductive ProfileUse where
   | prim (operation : Prim)
   | unary (operation : UnOp)
@@ -393,9 +396,20 @@ private def recordedPrimitiveFacts (profile : HostProfile) (owner key : String) 
       else [])
   else []
 
+private def opaqueConstructorFacts (profile : HostProfile) (name : String) : List String :=
+  let named := (profile.layers.flatMap (·.opaqueConstructors)).filterMap fun entry =>
+    if entry.name == name then entry.premise else none
+  let standard :=
+    if profile.hasCapability .opaqueStandardConstructors && ECMAScriptHost.opaqueConstructorNames.contains name then
+      (profile.capabilityPremise? .opaqueStandardConstructors).toList
+    else []
+  named ++ standard
+
 private def factsForProfileUse (profile : HostProfile) : ProfileUse → List String
   | .unary .toString => (profile.capabilityPremise? .recordedStringConversion).toList
   | .unary _ => []
+  | .prim .freshSymbol | .prim (.wellKnownSymbol _) => (profile.capabilityPremise? .ambientSymbols).toList
+  | .prim (.opaqueConstructorRef name) => opaqueConstructorFacts profile name
   | .prim .log => recordedPrimitiveFacts profile "console" "log" .log
   | .prim .create => recordedPrimitiveFacts profile "Object" "create" .create
   | .prim .defineProperty => recordedPrimitiveFacts profile "Object" "defineProperty" .defineProperty

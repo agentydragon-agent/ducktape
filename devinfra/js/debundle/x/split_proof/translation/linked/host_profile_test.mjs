@@ -11,6 +11,7 @@ import {
   call,
   caseShard,
   conditional,
+  browserProfileAssumptions,
   exportNamed,
   expression,
   id,
@@ -90,6 +91,7 @@ for (const [binding, defaulted] of [
           "typeof window is object without observable effects throughout initialization",
         ]
   );
+  assert.deepEqual(browserProfileAssumptions(verdict.assumptions), []);
   assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
   // Supply the single observation promised by the profile in this Node realm.
   globalThis.window = {};
@@ -312,6 +314,9 @@ for (const pageSkipsError of [true, false]) {
     "window, globalThis, and self return the same page global object throughout initialization",
     "typeof window is object without observable effects throughout initialization",
   ]);
+  assert.deepEqual(browserProfileAssumptions(verdict.assumptions), [
+    "deferred standard constructors use the page realm's unchanged constructors throughout initialization",
+  ]);
   assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
   globalThis.window = {};
   try {
@@ -352,10 +357,55 @@ for (const active of [false, true]) {
   } else {
     assert.equal(status, "certified", reason);
     assert.deepEqual(browserObservedAssumptions(assumptions), []);
+    assert.deepEqual(browserProfileAssumptions(assumptions), [
+      "the browser page exposes the unchanged URL constructor throughout initialization",
+    ]);
     for (const file of [test.sourceFile, path.join(test.out, entry)]) {
       const mod = await import(pathToFileURL(file).href);
       assert.equal(mod.result, "help");
       assert.equal(mod.make(true).hostname, "example.org");
     }
   }
+}
+
+if (includesCase("profile-premise-sources")) {
+  const fixtureWithProfileUse = fixture(
+    "profile-premise-sources",
+    `if (false) console.log("must not run");
+    export const result = typeof window;`
+  );
+  const verdict = split({
+    source: fixtureWithProfileUse.sourceFile,
+    spec: fixtureWithProfileUse.specFile,
+    out: fixtureWithProfileUse.out,
+    hostContract: nodeProfile,
+  });
+  assert.equal(verdict.status, "certified", JSON.stringify(verdict));
+  assert.equal(verdict.hostProfile, "node-recording");
+
+  // These two facts justify profile-directed lowering of the retained .prim log,
+  // even though the branch is not taken. The remaining facts come from the reached
+  // typeof window observation in the source and candidate executions.
+  const loweringFacts = [
+    "console.log is the unmodified Node console method and appends formatted output to the recording",
+    "the recording harness uses the model's standard primitive handlers for listed calls",
+  ];
+  const observedFacts = [
+    "a global name absent from the ECMAScript and Node layers is undeclared throughout initialization",
+    "typeof window is undefined without observable effects throughout initialization",
+  ];
+  assert.deepEqual([...verdict.assumptions].sort(), [...loweringFacts, ...observedFacts].sort());
+
+  const capturedOutput = [];
+  const originalLog = console.log;
+  console.log = (...args) => capturedOutput.push(args);
+  try {
+    for (const file of [fixtureWithProfileUse.sourceFile, path.join(fixtureWithProfileUse.out, entry)]) {
+      const module = await import(pathToFileURL(file).href);
+      assert.equal(module.result, "undefined");
+    }
+  } finally {
+    console.log = originalLog;
+  }
+  assert.deepEqual(capturedOutput, []);
 }

@@ -539,6 +539,12 @@ comparison and debundle certification tests select the recorded Node profile fro
 [`model/node-recording.json`](model/node-recording.json); recorded values remain answers supplied
 by the test world.
 
+For linked certificates, this list combines facts observed while probing both executions, such as a
+reached `typeof` or host reference, with premises used by profile-directed lowering in either full
+CoreJS tree. A lowering premise stays listed when its operation is in an inactive branch or an
+uncalled function, because the lowered code still depends on that profile rule. Recorded values
+answered by the world add no premise on their own.
+
 - 157 accepted. All 157 print what the bundle prints. 95 of them run statements in a different order than the bundle.
 - 353 rejected. 325 really break in Node. 28 are harmless: the checker is conservative.
 
