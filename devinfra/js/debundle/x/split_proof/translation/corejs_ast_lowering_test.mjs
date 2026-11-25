@@ -31,6 +31,50 @@ function run(programs, ast) {
     .map((line) => JSON.parse(line));
 }
 
+// Census counts concrete refusals even if structural mode could retain the unit.
+const concreteCensusSource = `import { imported } from "./provider.mjs";
+  const a = 1, b = imported;
+  ${Array.from({ length: 25 }, (_, i) => `const f${i} = 2 ** 3;`).join("\n")}
+  const date = new Date();
+  export { a };`;
+const concretePath = file(
+  "concrete-census.json",
+  JSON.stringify(dumpSource(concreteCensusSource, { includeOpaqueCaptures: true }))
+);
+const concreteBrowserContract = file("concrete-browser.json", JSON.stringify({ profile: "browser-page" }));
+const concreteCensus = (args = []) =>
+  JSON.parse(execFileSync(process.env.COREJS, ["--moves-ast", concretePath, ...args], { encoding: "utf8" }));
+const concreteEmpty = concreteCensus();
+const concreteBrowser = concreteCensus(["--host-contract", concreteBrowserContract]);
+assert.equal(concreteEmpty.units, 28);
+assert.equal(concreteBrowser.units, concreteEmpty.units);
+assert.equal(concreteBrowser.lowering_refusals.length, 25);
+assert.equal(concreteEmpty.lowering_refusals.length, 26);
+assert.deepEqual(
+  concreteBrowser.lowering_refusals.map(({ unit }) => unit),
+  Array.from({ length: 25 }, (_, i) => i + 3)
+);
+assert.equal(concreteBrowser.unit_details.length, concreteBrowser.units);
+assert.equal(concreteBrowser.unit_details.filter(({ concrete_refusal }) => concrete_refusal !== null).length, 25);
+
+// A single report keeps the concrete reason even when opaque retention works,
+// then retries just that unit with its first blocker stubbed.
+const retryFile = file(
+  "census-retry.json",
+  JSON.stringify(
+    dumpSource('const value = console + missing; const lazy = () => import("./lazy.mjs");', {
+      includeOpaqueCaptures: true,
+    })
+  )
+);
+const retried = JSON.parse(execFileSync(process.env.COREJS, ["--moves-ast", retryFile], { encoding: "utf8" }));
+assert.deepEqual(retried.retries["host:console"], [{ unit: 0, reason: "unsupported global missing" }]);
+assert.deepEqual(retried.retries.ImportExpression, [{ unit: 1, reason: null }]);
+assert.equal(retried.unit_details[0].concrete_refusal, "unsupported global console");
+assert.equal(retried.unit_details[0].opaque, true);
+assert.equal(retried.unit_details[1].kind, "refused");
+assert.match(retried.unit_details[1].structural_refusal, /source-module/);
+
 async function nodeOutcome(url) {
   try {
     await import(url);

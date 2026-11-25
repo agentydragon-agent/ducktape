@@ -449,11 +449,41 @@ def program (source providers : Json) (scripts : Std.HashSet (Nat × Nat)) (entr
   let _ ← scopes p
   return p
 
-/-- Lower each executable source unit for a diagnostic census. This uses the same
-linked unit lowering as replay, falling back to the structural opaque lowering when
-that lowering refuses. It does not link providers or certify a split; refused units
-remain errors, including units that cannot safely be retained opaque. -/
-def censusUnits (source : Json) (profile : HostProfile := .empty) : Except String (Array (Nat × Except String Stmt)) := do
+structure CensusUnit where
+  ordinal : Nat
+  statement : Except String Stmt
+  concreteRefusal : Option String
+  retry : Option (String × Option String)
+
+/-- The retry is a diagnostic counterfactual, not an alternative lowering. -/
+private partial def censusStub (kind name : String) : Json → Json
+  | .obj fields =>
+    let typ := fields.get? "type"
+    if typ == some (.str kind) && kind != "host" then
+      Json.mkObj [("type", .str "Literal"), ("value", .null), ("lit", .str "null")]
+    else
+      Json.mkObj <| fields.toList.map fun (key, value) =>
+        if kind == "host" && typ == some (.str "Identifier") &&
+            fields.get? "k" == some (.str "G") && fields.get? "name" == some (.str name) && key == "k" then
+          (key, .str "T")
+        else (key, censusStub kind name value)
+  | .arr items => .arr (items.map (censusStub kind name))
+  | j => j
+
+private def censusRetry (why : String) : Option (String × String × String) :=
+  if why.startsWith "unsupported global " then
+    let name := (why.drop "unsupported global ".length).toString
+    some ("host:" ++ name, "host", name)
+  else if (why.splitOn "ImportExpression").length > 1 then
+    some ("ImportExpression", "ImportExpression", "")
+  else if (why.splitOn "MetaProperty").length > 1 then
+    some ("MetaProperty", "MetaProperty", "")
+  else none
+
+/-- Diagnose concrete and structural lowering in one pass over executable units.
+Providers are not linked. A retry stubs the first recognized blocker only to expose
+later refusals; it does not describe JavaScript behavior or certify a split. -/
+def censusUnits (source : Json) (profile : HostProfile := .empty) : Except String (Array CensusUnit) := do
   let nodes ← ESTreeUnits.nodes source
   let mut imports : List Name := []
   for j in nodes do
@@ -469,17 +499,22 @@ def censusUnits (source : Json) (profile : HostProfile := .empty) : Except Strin
       j.getObjVal? "declaration"
     else pure j
     if ast == .null then continue
-    let lowered : Except String Stmt := do
+    let lower (node : Json) : Except String Stmt := do
       if kind == "ExportDefaultDeclaration" then
-        return (← BodyFormat.lowerDefault (.recorded {}) profile imports i none ast).1
-      return (← BodyFormat.lower (.recorded {}) profile imports i none ast
+        return (← BodyFormat.lowerDefault (.recorded {}) profile imports i none node).1
+      return (← BodyFormat.lower (.recorded {}) profile imports i none node
         (kind == "ExportNamedDeclaration")).1
+    let lowered := lower ast
     let result := match lowered with
       | .ok stmt => .ok stmt
       | .error why => match OpaqueInput.unit i ast with
         | .ok stmt => .ok stmt
         | .error opaqueWhy => .error s!"{why}; opaque: {opaqueWhy}"
-    units := units.push (i, result)
+    let refusal := match lowered with | .error why => some why | .ok _ => none
+    let retry := refusal.bind fun why => (censusRetry why).map fun (label, kind, name) =>
+      let result := lower (censusStub kind name ast)
+      (label, match result with | .error why => some why | .ok _ => none)
+    units := units.push ⟨i, result, refusal, retry⟩
   return units
 
 /-- Public paths are the original module records, including unchanged dependencies.
