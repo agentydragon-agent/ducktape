@@ -5,7 +5,6 @@ load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 _SPLIT_PROOF = "//devinfra/js/debundle/x/split_proof"
 _TOOLS = [
-    _SPLIT_PROOF + "/lean:lower",
     ":real_split",
     ":summarize_real_splits",
 ]

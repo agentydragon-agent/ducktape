@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Measure the diagnostic checker on contiguous block splits. See experiments/README.md § 5.
+# Measure certified decisions on contiguous block splits. See experiments/README.md § 5.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -11,14 +11,13 @@ failed=0
 
 row() {
   local label=$1 bundle=$2 blocks=$3 copies=${4:-1}
-  local dir dimensions statements modules deployment status=0 verdict
+  local dir dimensions statements modules request status=0 verdict scope reason phases
   dir=$(mktemp -d "$work/row.XXXXXX")
   dimensions=$(
     node --input-type=module - "$bundle" "$blocks" "$copies" "$dir/spec.json" <<'JS'
 import { readFileSync, writeFileSync } from "node:fs";
 import { spec } from "../integration/library_splits/gen_spec.mjs";
 import { topLevelStatements } from "../translation/scope_metadata.mjs";
-import { writeDeployment } from "../translation/testing/deployment_manifest.mjs";
 import path from "node:path";
 
 const [bundle, blocks, copies, output] = process.argv.slice(2);
@@ -26,44 +25,103 @@ const program = JSON.parse(readFileSync(bundle, "utf8"));
 const statements = topLevelStatements(program).length * Number(copies);
 const placement = spec(statements, "blocks", [blocks]);
 writeFileSync(output, JSON.stringify(placement));
-console.log(statements, Object.keys(placement.modules).length, writeDeployment(bundle, output, path.join(path.dirname(output), "out")));
+const request = path.join(path.dirname(output), "request.json");
+writeFileSync(
+  request,
+  JSON.stringify({
+    ast: path.resolve(bundle),
+    spec: path.resolve(output),
+    out: path.join(path.dirname(output), "out"),
+    hostContract: null,
+    includeLogs: true,
+  })
+);
+console.log(statements, Object.keys(placement.modules).length, request);
 JS
   )
-  read -r statements modules deployment <<<"$dimensions"
+  read -r statements modules request <<<"$dimensions"
 
-  local -a command=("$lowersplit" --diagnostic "$deployment" "$dir/out")
-  local rejection="rejected; nothing written"
+  local mode=certified
+  local -a command=()
   if [[ $# -eq 4 ]]; then
     command=("${REPLICATE_PLAN:-../lean/.lake/build/bin/replicate_plan}" "$bundle" "$dir/spec.json" "$copies")
-    rejection="planner rejected"
+    mode=replicate
   fi
-  timeout 240 "${command[@]}" >"$dir/log" 2>&1 || status=$?
+  if [[ $mode == certified ]]; then
+    SPLIT_PROOF_TIMINGS=1 LOWERSPLIT="$lowersplit" timeout 240 node ../translation/testing/split_cli.mjs "$request" >"$dir/stdout" 2>"$dir/stderr" || status=$?
+  else
+    timeout 240 "${command[@]}" >"$dir/stdout" 2>"$dir/stderr" || status=$?
+  fi
   case "$status" in
-    0) verdict=accepted ;;
-    124) verdict="timed out" ;;
+    0)
+      if [[ $mode == certified ]]; then
+        IFS=$'\t' read -r verdict scope reason < <(
+          python3 - "$dir/stdout" <<'PY'
+import json, sys
+v = json.loads(open(sys.argv[1], encoding="utf-8").read().splitlines()[-1])
+print(v.get("status", "error"), v.get("scope") or "-", v.get("reason", "").replace("|", "\\|").replace("\n", " "))
+PY
+        )
+        if [[ $verdict == refused ]]; then
+          verdict=rejected
+          [[ ! -e $dir/out ]] || {
+            verdict="error (refusal published output)"
+            failed=1
+          }
+        elif [[ $verdict != certified ]]; then
+          verdict="error (invalid helper response)"
+          failed=1
+        fi
+        phases=$(
+          python3 - "$dir/stdout" <<'PY'
+import json, sys
+rows = []
+response = json.loads(open(sys.argv[1], encoding="utf-8").read().splitlines()[-1])
+for line in response.get("stderr", "").splitlines():
+    try:
+        item = json.loads(line)
+    except json.JSONDecodeError:
+        continue
+    if "phase" in item:
+        rows.append(f'{item["phase"]}={item["elapsed_ms"]}ms')
+print(", ".join(rows) or "-")
+PY
+        )
+      else
+        verdict=accepted
+        scope=-
+        reason=-
+        phases=-
+      fi
+      ;;
+    124)
+      verdict="timed out"
+      scope=-
+      reason=-
+      phases=-
+      ;;
     *)
-      if [[ $status -eq 1 ]] && grep -Fxq "$rejection" "$dir/log"; then
+      if [[ $status -eq 1 && $mode == replicate ]] && grep -Fxq "planner rejected" "$dir/stdout"; then
         verdict=rejected
+        scope=-
+        reason="planner rejected"
+        phases=-
       else
         verdict="error (exit $status)"
-        cat "$dir/log" >&2
+        scope=-
+        reason=-
+        phases=-
+        cat "$dir/stdout" "$dir/stderr" >&2
         failed=1
       fi
       ;;
   esac
-  awk -v label="$label" -v n="$statements" -v k="$modules" -v verdict="$verdict" '
-    /\[time\] read/ { json = $(NF - 1) }
-    /\[time\] footprints/ { fp = $(NF - 1) }
-    /\[time\] mkPlan/ { plan = $(NF - 1) }
-    /^ +(pass|FAIL) / && /ms\)/ { t[$2] = substr($3, 2); if ($1 == "FAIL") bad = bad " " $2; next }
-    /^ +FAIL/ { bad = bad " front-end rule" }
-    /\[time\] all checks/ { checks = $(NF - 1) }
-    END { printf "| %s | %d | %d | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", label, n, k, json, fp, plan, t["UniqueDefs"], t["ReadsClosed"], t["Faithful"], t["Linkable"], t["Hygienic"], t["Permutes"], t["OrderOk"], checks, verdict (verdict == "rejected" ? ":" bad : "") }' "$dir/log"
+  printf '| %s | %d | %d | %s | %s | %s | %s | %s |\n' "$label" "$statements" "$modules" "$mode" "$phases" "$scope" "$verdict" "$reason"
   rm -rf -- "$dir"
 }
 
-echo "| Input | Statements | Modules | JSON | Footprints | mkPlan | UniqueDefs | ReadsClosed | Faithful | Linkable | Hygienic | Permutes | OrderOk | All checks | Verdict |"
-echo "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+echo "| Input | Statements | Modules | Mode | Certified phase times | Scope | Verdict | Reason |"
+echo "| --- | --- | --- | --- | --- | --- | --- | --- |"
 if [[ ${1:-} == replicate ]]; then
   for copies in 1 2 4 8 16 32 64; do
     row "lodash x$copies" "$bundles/lodash.json" $((6 * copies)) "$copies"

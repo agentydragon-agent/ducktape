@@ -3,7 +3,7 @@
 debundle moves the top-level statements of a bundle into ES modules, as this project does, but without Lean.
 Its data-driven corpus is [`e2e/cases`](../../../e2e/cases): 184 case directories, 207 entries.
 An entry is a bundle (`main.js` or `static/app.js`), a spec, and the verdict debundle must give: `accept` with the expected stdout, or `reject` as `atomic_conflict`, `cycle` or a stderr text.
-`run_cases.mjs` turns each entry into a `lowersplit` run and compares the verdicts. A run takes about 10 s.
+`run_cases.mjs` defaults to certifying the saved accepted-case cohort. It reports a refusal without emitting that split. Use `--regression` to certify every corpus entry; accepted outputs are compared with Node, and refused plans are counted without a preview.
 
 Results: [`results/summary.md`](results/summary.md) (generated tables) and [`results/cases.jsonl`](results/cases.jsonl) (one line per entry).
 These reports record the current run and the per-case Lean coverage baseline. The historical analysis below describes the initial corpus run.
@@ -14,21 +14,21 @@ From the repository root, set `out` to an absolute output directory:
 
 ```sh
 p=//devinfra/js/debundle/x/split_proof
-bb run "$p/debundle_cases:debundle_cases" -- --out "$out/cases.jsonl"
-bb run "$p/debundle_cases:summarize_debundle_cases" -- "$out/cases.jsonl" > "$out/summary.md"
+bb run "$p/debundle_cases:debundle_cases" -- --out "$out/certificates.jsonl"
+bb run "$p/debundle_cases:summarize_debundle_cases" -- "$out/certificates.jsonl" > "$out/summary.md"
 ```
 
-Add `--regression` to fail after writing the report on an empty selection, a runner error, an invalid baseline, or an accepted split with a different observation. A case that previously received a Lean verdict must still get a verdict, and a case that reached the Lean syntax checker must still reach Lean. A full run also detects missing cases. Filtered runs compare the cases selected. Use a separate output file; review coverage changes before replacing the checked-in JSONL and regenerating the summary. For a different corpus, pass its report with `--baseline FILE`. Subprocess failures report the command, elapsed time, and a bounded output tail in the report and in regression failures.
+Use `--regression --out "$out/certificates.jsonl"` to run the full certified Node comparison. It records each plan as certified, refused, or unsupported; a refusal produces no modules. A previously accepted baseline case that is now unsupported fails the run. A certified output that differs from the original in Node also fails. A full run detects missing cases. Filtered runs compare the selected cases. Use a separate output file; review coverage changes before replacing checked-in results and regenerating the summary. For a different corpus, pass its report with `--baseline FILE`. Subprocess failures report the command, elapsed time, and a bounded output tail.
 
 Use `--filter <substring>` for a smaller run.
 
-`--keep <dir>` copies each translated entry (bundle, translated spec, emitted modules, checker output) to `<dir>/<id>`.
+`--keep <dir>` saves each selected fixture, translated plan, and any certified output under `<dir>/<id>`.
 
 For direct Node runs, first [install the translation dependencies](../translation/README.md#run-it). Then run from this directory:
 
 ```sh
 cp package.json.in package.json && npm ci --no-audit --no-fund
-DEBUNDLE_RESOLVER=/absolute/path/to/debundle_resolve_placement node run_cases.mjs --out "$out/cases.jsonl"
+DEBUNDLE_RESOLVER=/absolute/path/to/debundle_resolve_placement node run_cases.mjs --out "$out/certificates.jsonl"
 ```
 
 ## Which accepted cases have artifact certificates?
@@ -50,15 +50,16 @@ diagnostic runner's stdout observation, not every Rust export or probe assertion
 ```sh
 p=//devinfra/js/debundle/x/split_proof/debundle_cases
 bbr test "$p:pinned_certificates_test"
-bb run "$p:debundle_cases" -- --certify --out "$out/certificates.jsonl"
+bb run "$p:debundle_cases" -- --out "$out/certificates.jsonl"
 ```
 
 The test selects every certified case from the saved certificate report, independently of the
-diagnostic cohort. A refusal, failed disk check, runtime mismatch or missing case fails the pin.
-The census reuses the diagnostic owner plan but supplies the original JS to the normal certifying
+historical accepted-case report. A refusal, failed disk check, runtime mismatch or missing case fails the pin.
+The census reuses each resolved owner plan but supplies the original JS to the normal certifying
 CLI. It tries the structural checker first and the default checker on emission refusal. A published
 tree that fails recheck is an error. Review a new census before updating the report: keep existing
-successes and add newly certified cases.
+successes and add newly certified cases. The saved report checks the expected stdout observation, not every
+Rust export or probe assertion.
 
 ### What to do about the 11 refusals
 
@@ -80,9 +81,9 @@ These are first blockers, not claims that the splits are safe:
 2. The debundle spec becomes a `lowersplit` spec. The standalone Rust resolver solves the authored selectors. The adapter checks its source digest, chunk ID and unit census before using the returned owners. `import_order` becomes the import priority (`Spec.order`).
 3. Unclaimed statements follow `unassigned_mode`. With `inline_in_entry` they stay in the entry. With `catchall_file` the catchall module takes the unclaimed declarations, the unclaimed anonymous statements before its last statement, and everything when it is the only module.
    Later anonymous statements stay in the entry (debundle's rule: [`docs/design.md`](../../../docs/design.md)). An `export { … }` without a declaration always stays in the entry.
-4. `lowersplit --diagnostic … --force` derives its own source units from the annotated Program, checks the split, and writes an uncertified preview even when a check rejects it. This corpus compares diagnostic checker results with debundle's expected results; it does not certify the emitted files.
-5. The adapter copies declared runtime files for the current chunk beside the emitted entry, without replacing emitted files. Node runs the original chunk and the emitted entry. The adapter compares verdict and stdout with the entry's expectation.
-6. What the adapter cannot translate is `unsupported:<cause>` and is not forced.
+4. The certification helper uses the original JavaScript source and publishes only after a certificate. A refusal is counted and emits no modules.
+5. For certified plans, the adapter copies declared runtime files for the current chunk beside the emitted entry. Node runs the original chunk and emitted entry; accepted cases are checked against their expected output.
+6. What the adapter cannot translate is `unsupported:<cause>` and is reported without a preview.
 
 ## Initial outcomes
 

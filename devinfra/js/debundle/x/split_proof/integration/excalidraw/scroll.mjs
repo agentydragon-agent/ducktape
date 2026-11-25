@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { acorn, eslintScope } from "../../translation/parser.mjs";
 import { parseModule, topLevelStatements } from "../../translation/scope_metadata.mjs";
 import { walk } from "../../translation/syntax_inventory.mjs";
-import { writeDeployment } from "../../translation/testing/deployment_manifest.mjs";
 import { dumpParsed } from "../../translation/annotated_estree.mjs";
+import { split } from "../../translation/testing/split.mjs";
 
 const chunks = process.env.EXCALIDRAW_INPUTS.split(" ").find((file) => file.endsWith("/chunks"));
 assert(chunks);
@@ -157,40 +156,31 @@ writeFileSync(spec, JSON.stringify(strictPlacement, null, 2));
 const profile = path.join(artifacts, "host.json");
 writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
 const out = path.join(process.env.TEST_TMPDIR, "modules");
+const refusalCounts = { certified: 0, refused: 0 };
+const refusals = [];
 // Moving calculateScrollCenter as well as centerScrollOn would expose private
 // entry bindings through glue exports. Check the actual linked editor graph.
 if (strictSelection.length === 2) {
-  const pair = spawnSync(
-    process.env.LOWERSPLIT,
-    [
-      writeDeployment(strictSource, spec, out),
-      out,
-      "--structural",
-      "--host-contract",
-      profile,
-      "--deployment-origin",
-      "https://example.test",
-    ],
-    { encoding: "utf8" }
-  );
-  if (pair.error) throw pair.error;
-  assert.equal(pair.status, 1, pair.stdout + pair.stderr);
-  const refused = JSON.parse(pair.stdout.trimEnd().split("\n").at(-1));
-  assert.equal(refused.scope, "linked-structural");
-  assert.match(refused.reason, /; extra 3: .*; missing 0; retargeted 0$/);
-  report.entryMismatch = refused.reason;
+  const pair = split({
+    source: strictSource,
+    spec,
+    out,
+    structural: true,
+    hostContract: profile,
+    deploymentOrigin: "https://example.test",
+  });
+  assert.equal(pair.status, "refused", pair.log);
+  assert.equal(pair.scope, "linked-structural");
+  assert.match(pair.reason, /; extra 3: .*; missing 0; retargeted 0$/);
+  report.entryMismatch = pair.reason;
+  refusals.push({ moved: selected, verdict: pair.verdict });
+  refusalCounts.refused++;
   assert(!existsSync(out));
 }
 
-const run = spawnSync(
-  process.env.LOWERSPLIT,
-  [writeDeployment(strictSource, spec, out), out, "--require", "normal-completion", "--host-contract", profile],
-  { encoding: "utf8" }
-);
-if (run.error) throw run.error;
-assert.equal(run.signal, null);
-assert.equal(run.status, 1, run.stdout + run.stderr);
-const verdict = JSON.parse(run.stdout.trimEnd().split("\n").at(-1));
+const result = split({ source: strictSource, spec, out, require: "normal-completion", hostContract: profile });
+assert.equal(result.status, "refused", result.log);
+const verdict = result.verdict;
 const first = program.body[0];
 writeFileSync(
   path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "result.json"),
@@ -214,87 +204,12 @@ assert.equal(verdict.guarantee, null);
 assert.equal(verdict.scope, "linked-programs", JSON.stringify(verdict));
 assert.equal(verdict.reason, "statement 354: unsupported linked expression ImportExpression");
 assert(!existsSync(out), "a rejected trial published modules");
+refusalCounts.refused++;
+refusals.push({ moved: strictSelection, verdict });
+assert.equal(refusalCounts.refused, strictSelection.length === 2 ? 2 : 1);
 
-// The pinned editor exposes its public names through an export list. Read the actual
-// rendered entry independently of the planner; reject unhandled export syntax in the census.
-function publicNames(ast) {
-  const names = new Set();
-  for (const s of ast.body.filter((node) => node.type.startsWith("Export"))) {
-    assert.equal(s.type, "ExportNamedDeclaration");
-    assert.equal(s.declaration, null);
-    for (const sp of s.specifiers) names.add(sp.exported.name ?? sp.exported.value);
-  }
-  return names;
-}
-const originalNames = publicNames(parsed.ast);
-const surfaces = [];
-for (const moved of [selected, selected.slice(0, 1)]) {
-  const tag = moved.join("_");
-  const diagnostic = path.join(process.env.TEST_TMPDIR, "render-" + tag);
-  mkdirSync(path.join(diagnostic, path.dirname(scroll)), { recursive: true });
-  const candidate = path.join(process.env.TEST_TMPDIR, "candidate-" + tag + ".json");
-  writeFileSync(candidate, JSON.stringify(placement(moved)));
-  const plan = path.join(process.env.TEST_TMPDIR, "plan-" + tag + ".json");
-  const args = ["--diagnostic", writeDeployment(ast, candidate, diagnostic), diagnostic, "--force", "--plan", plan];
-  if (moved.length === 1) args.push("--all-conflicts");
-  const render = spawnSync(process.env.LOWERSPLIT, args, { encoding: "utf8" });
-  if (render.error) throw render.error;
-  assert([0, 1].includes(render.status), render.stdout + render.stderr);
-  const output = parseModule(readFileSync(path.join(diagnostic, entry), "utf8"), acorn.parse);
-  const names = publicNames(output.ast);
-  surfaces.push({
-    moved,
-    structuralStatus: render.status,
-    orderConflicts: JSON.parse(readFileSync(plan, "utf8")).orderConflicts,
-    failedChecks: render.stdout
-      .split("\n")
-      .map((line) => /^\s*FAIL\s+(\S+)/.exec(line)?.[1])
-      .filter(Boolean),
-    originalCount: originalNames.size,
-    extra: [...names].filter((n) => !originalNames.has(n)).sort(),
-    missing: [...originalNames].filter((n) => !names.has(n)).sort(),
-  });
-}
-writeFileSync(
-  path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "entry-exports.json"),
-  JSON.stringify(surfaces, null, 2)
-);
-const [pair, single] = surfaces;
-assert.deepEqual(pair.extra, ["Eb$1", "Lm", "qb$1"]);
-assert.deepEqual(pair.missing, []);
-if (report.entryMismatch) {
-  const witnesses = [...report.entryMismatch.matchAll(/"([^"]+)" \(candidate cell @\d+\.\d+\)/g)];
-  assert.deepEqual(witnesses.map((m) => m[1]).sort(), pair.extra);
-}
-assert.deepEqual(single.extra, []);
-assert.deepEqual(single.missing, []);
-const conflicts = single.orderConflicts.pairs;
-assert(Array.isArray(conflicts), "single-arrow plan must include all structural conflicts");
-assert.equal(conflicts.length, single.orderConflicts.count);
-assert.equal(conflicts.length, 259, "reinspect the single-arrow conflict set after an Excalidraw bundle update");
-assert(
-  conflicts.every((pair) => pair[1] === 1337),
-  "every inversion should cross moved statement #1337"
-);
-assert(conflicts.some(([earlier, later]) => earlier === firstUnit && later === 1337));
-
-// Keep the ordinary move-plan evidence. This replay records the exact source
-// order inversions created by moving unit #1337; linked-provider certification
-// now lives in the small source-file E2E cases rather than a replay-only CLI.
-assert(conflicts.every(([, later]) => later === 1337));
-const moveReport = {
-  moved: ["#1337"],
-  structuralConflictPairs: conflicts.length,
-  firstConflict: conflicts[0],
-  includesImportBoundaryConflict: conflicts.some(([earlier, later]) => earlier === firstUnit && later === 1337),
-};
-assert.equal(moveReport.structuralConflictPairs, 259);
-assert(moveReport.includesImportBoundaryConflict);
-report.moveReport = moveReport;
-writeFileSync(
-  path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "scroll-move-report.json"),
-  JSON.stringify({ summary: moveReport, conflicts }, null, 2)
-);
+report.refusalCounts = refusalCounts;
+report.refusals = refusals;
 writeFileSync(
   path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "import-boundary.json"),
   JSON.stringify(report, null, 2)
@@ -304,7 +219,7 @@ console.log(
     firstBody: report.firstBody,
     selectedUnits: report.selectedUnits,
     providerProbe: report.providerProbe,
-    moveReport: report.moveReport,
-    surfaces,
+    refusalCounts,
+    refusals,
   })
 );

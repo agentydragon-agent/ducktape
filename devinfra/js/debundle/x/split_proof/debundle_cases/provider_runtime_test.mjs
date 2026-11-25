@@ -10,5 +10,6 @@ execFileSync(path.resolve(process.env.CASE_RUNNER), ["--filter", id, "--out", re
 });
 const row = JSON.parse(readFileSync(result, "utf8"));
 assert.equal(row.id, id);
-assert.equal(row.outcome, "agree-accept");
-assert(!row.unchecked.includes("runtime_files"));
+assert.equal(row.outcome, "certified");
+assert.equal(row.original, true);
+assert.equal(row.emitted, true);

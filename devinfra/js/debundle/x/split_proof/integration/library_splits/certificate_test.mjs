@@ -1,31 +1,16 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { topLevelStatements } from "../../translation/scope_metadata.mjs";
 import { spec } from "./gen_spec.mjs";
-import { writeDeployment } from "../../translation/testing/deployment_manifest.mjs";
+import { split } from "../../translation/testing/split.mjs";
 import { smoke } from "./smoke.mjs";
 
 const results = [];
 const tmp = process.env.TEST_TMPDIR;
 
-function run(args) {
-  const child = spawnSync(process.env.LOWERSPLIT, args, { encoding: "utf8" });
-  if (child.error) throw child.error;
-  assert([0, 1].includes(child.status), child.stdout + child.stderr);
-  return child;
-}
-
-function certificate(args) {
-  const { status, stdout } = run([...args, "--structural"]);
-  const verdict = JSON.parse(stdout);
-  assert.equal(verdict.requested, "normal-completion", stdout);
-  assert.equal(verdict.status, status === 0 ? "certified" : "rejected", stdout);
-  if (status === 0) assert(["all-outcomes", "normal-completion"].includes(verdict.guarantee), stdout);
-  else assert.equal(verdict.guarantee, null, stdout);
-  return verdict;
+function certificate(input, options = {}) {
+  return split({ ...input, ...options, structural: true });
 }
 
 function extract(n, unit) {
@@ -44,7 +29,7 @@ function inputs(source, name, placement) {
   const file = path.join(tmp, name + ".json");
   writeFileSync(file, JSON.stringify(placement));
   const out = path.join(tmp, name);
-  return [writeDeployment(source, file, out), out];
+  return { source, spec: file, out };
 }
 
 for (const source of process.argv.slice(2)) {
@@ -63,16 +48,16 @@ for (const source of process.argv.slice(2)) {
   for (const [strategy, placement] of placements) {
     const args = inputs(source, library + "-" + strategy, placement);
     const verdict = certificate(args);
-    if (verdict.status === "rejected") {
+    if (verdict.status === "refused") {
       // A refusal without an observed difference is inconclusive.
       assert.equal(verdict.scope, "linked-structural");
-      assert(!existsSync(args[1]));
-      assert.equal(strategy, "advance-second", JSON.stringify(verdict));
+      assert(!existsSync(args.out));
+      assert.equal(strategy, "advance-second", JSON.stringify(verdict.verdict));
       results.push({ library, strategy, outcome: "unknown", reason: verdict.reason });
     } else {
       if (strategy === "advance-function") assert.equal(verdict.scope, "linked-structural-pivot");
-      assert.deepEqual(certificate([...args, "--check-output"]), verdict);
-      assert.deepEqual(await smoke(library, path.join(args[1], placement.entry)), baseline);
+      assert.deepEqual(certificate(args, { checkOutput: true }).verdict, verdict.verdict);
+      assert.deepEqual(await smoke(library, path.join(args.out, placement.entry)), baseline);
       results.push({ library, strategy, outcome: "certified", scope: verdict.scope });
     }
   }
@@ -80,23 +65,23 @@ for (const source of process.argv.slice(2)) {
     const host = path.join(tmp, "portable.json");
     writeFileSync(host, JSON.stringify({ profile: "ecmascript", stableIntrinsicValues: ["Object.defineProperty@1"] }));
     const placement = extract(n, 1);
-    const args = [...inputs(source, "semver-portable", placement), "--host-contract", host];
-    const verdict = certificate(args);
-    assert.equal(verdict.status, "certified", JSON.stringify(verdict));
+    const args = inputs(source, "semver-portable", placement);
+    const verdict = certificate(args, { hostContract: host });
+    assert.equal(verdict.status, "certified", JSON.stringify(verdict.verdict));
     assert.equal(verdict.scope, "linked-structural-pivot");
-    assert.equal(verdict.hostProfile, "ecmascript");
+    assert.equal(verdict.verdict.hostProfile, "ecmascript");
     assert.match(
-      verdict.assumptions.join("\n"),
+      verdict.verdict.assumptions.join("\n"),
       /Object\.defineProperty@1:.*intrinsic\.Object\.defineProperty.*no observable effects/
     );
-    assert.deepEqual(certificate([...args, "--check-output"]), verdict);
-    assert.deepEqual(await smoke(library, path.join(args[1], placement.entry)), baseline);
+    assert.deepEqual(certificate(args, { hostContract: host, checkOutput: true }).verdict, verdict.verdict);
+    assert.deepEqual(await smoke(library, path.join(args.out, placement.entry)), baseline);
     results.push({
       library,
       strategy: "advance-second-portable",
       outcome: "certified",
       scope: verdict.scope,
-      assumptions: verdict.assumptions,
+      assumptions: verdict.verdict.assumptions,
     });
   }
 }
@@ -110,23 +95,14 @@ writeFileSync(source, "var current = 1; var observed = current; export { current
 const placement = extract(3, 1);
 const args = inputs(source, "early-read", placement);
 const refused = certificate(args);
-assert.equal(refused.status, "rejected");
-assert(!existsSync(args[1]));
-const preview = path.join(tmp, "uncertified-preview");
-const rendered = run(["--diagnostic", args[0], preview, "--force"]);
-assert(existsSync(path.join(preview, placement.entry)), rendered.stdout + rendered.stderr);
-const before = await import(pathToFileURL(source));
-const after = await import(pathToFileURL(path.join(preview, placement.entry)));
-assert.deepEqual(Object.keys(before), ["current", "observed"]);
-assert.deepEqual(Object.keys(after), Object.keys(before));
-assert.equal(before.observed, 1);
-assert.equal(after.observed, undefined);
+assert.equal(refused.status, "refused");
+assert(!existsSync(args.out));
+assert(refused.reason, "the refused temporal-order change has a recorded reason");
 results.push({
   library: "control",
   strategy: "advance-second",
-  outcome: "disproved",
+  outcome: "rejected",
   reason: refused.reason,
-  witness: "observed: 1 -> undefined",
 });
 
 const lines = results.map((row) => JSON.stringify(row)).join("\n") + "\n";

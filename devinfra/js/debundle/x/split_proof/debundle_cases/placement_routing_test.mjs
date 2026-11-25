@@ -24,9 +24,9 @@ function run(args) {
     encoding: "utf8",
   });
 }
-const good = run(["--out", baseline, "--keep", keep]);
+const good = run(["--out", baseline, "--keep", keep, "--regression"]);
 assert.equal(good.status, 0, good.stderr);
-assert.equal(JSON.parse(readFileSync(baseline)).outcome, "agree-accept");
+assert.equal(JSON.parse(readFileSync(baseline)).outcome, "certified");
 const plan = JSON.parse(readFileSync(path.join(keep, "routing/spec/lean_spec.json")));
 assert.deepEqual(plan.order, ["scene_shape.mjs", "rest.mjs", "tail.mjs"]);
 assert.deepEqual(plan.modules["rest.mjs"], ["#1"]);
@@ -34,4 +34,4 @@ assert.deepEqual(plan.modules["rest.mjs"], ["#1"]);
 writeFileSync(specPath, spec.replace("name: a", "name: missing"));
 const lost = run(["--out", path.join(root, "broken.jsonl"), "--baseline", baseline, "--regression"]);
 assert.equal(lost.status, 1, lost.stderr);
-assert.match(lost.stderr, /routing\/spec: lost Lean coverage/);
+assert.match(lost.stderr, /routing\/spec: lost certification coverage/);

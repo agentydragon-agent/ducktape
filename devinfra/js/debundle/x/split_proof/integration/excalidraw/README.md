@@ -8,7 +8,7 @@ The goal is a runnable, Lean-certified split of the pinned bundle that recovers 
 | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [Checked-in editor subset](#browser-smoke)                                                    | Rust resolves the selected owners and import priority. Lean certifies the emitted modules and rechecks them from disk under the browser deployment contract. Chromium exercises the overlay. This is the baseline to extend.         |
 | [236-unit scroll proposal](proposals/scroll/README.md)                                        | Additional upstream groups passed emit, disk and Chromium checks with the recorded Lean order. The same owners were refused with the authored priority. The proposal and its order are separate from the checked-in smoke selection. |
-| [Full authored editor and main replay](#building-and-replaying-the-authored-excalidraw-specs) | Compares placement and execution order with the Rust reports and records refusals. It does not establish a certificate for the full split.                                                                                           |
+| [Full authored editor and main replay](#building-and-replaying-the-authored-excalidraw-specs) | Runs the certified command for each authored placement, rechecks emitted trees, and records refusals without writing previews.                                                                                                       |
 
 ## Diagnostic census
 
@@ -63,14 +63,16 @@ Only `editor` and `main` have named module assignments in the Excalidraw spec.
 The shared roughjs chunk stays in its entry. The vendor swap on the roughjs
 entry stub is a separate transformation.
 
-The replay gives Lean the generated specs and independently reads the Rust reports.
-It compares every original source unit's owner and evaluation position in Lean's
-plan with the Rust reports, including on rejection.
-Lean derives its own imports and exports and checks its own footprints. This
-measures agreement on placement and execution order; it does not validate the
-Rust emitter's JavaScript or vendor substitutions.
+The replay gives the certified command the original JavaScript files and generated
+specs. It independently reads the Rust reports to verify source unit ownership;
+certified outputs are checked again from disk and their retained source units are
+reparsed. A refusal is recorded with its reason and leaves module files absent.
+This does not validate the Rust emitter's JavaScript or vendor substitutions.
 
-| Chunk  | Units outside entry | Nonentry modules | Inversions in Rust order | Lean rejection                              |
+The table below is the historical diagnostic result; rerun the target to get
+the current certified/refused counts.
+
+| Chunk  | Units outside entry | Nonentry modules | Inversions in Rust order | Historical diagnostic refusal               |
 | ------ | ------------------: | ---------------: | -----------------------: | ------------------------------------------- |
 | Editor |        272 of 1,787 |               35 |                  295,384 | `OrderOk`                                   |
 | Main   |      1,628 of 1,628 |               43 |                  136,940 | Static imports 0–7 outside entry; `OrderOk` |
@@ -115,10 +117,10 @@ from `chunk-PN7KOLDJ.js`. This unit follows the moved scroll function in both
 orders. A behavioral proof must preserve the live export cells seen on re-entry
 and account for the promise returned by the loader.
 
-Both targets render two diagnostic placements with `--diagnostic … --force` into separate
-directories, reparses their entries and compares their public names against the editor's 611 names.
-Those outputs are uncertified previews. The `--plan` report counts source-order conflicts in
-Lean's structural checker; it is diagnostic evidence only.
+Both targets send the selected placements through the certified checker and record its refusals.
+The two-helper placement is refused because the generated entry would expose three extra public
+names; moving one helper is refused because the source contains a dynamic import outside the linked
+CoreJS fragment. Refusals publish no modules.
 
 | Units moved                         | Entry names added    | Entry names lost | Inverted conflicts | Failed check |
 | ----------------------------------- | -------------------- | ---------------: | -----------------: | ------------ |

@@ -53,15 +53,17 @@ BUNDLES_DIR="$out" "$p/lowering/scale.sh"
 BUNDLES_DIR="$out" "$p/lowering/scale.sh" replicate
 ```
 
-[`scale.sh`](../lowering/scale.sh) measures diagnostic checks on contiguous
-blocks. It derives unit counts from the staged ASTs and caps each run at 240 s.
-The normal mode includes lodash prefixes. The replication mode runs the [planner benchmark](../lean/Experiments/ReplicatePlan.lean)
-on renamed copies of the original footprints. It does not emit modules. The table distinguishes checker
-refusals, timeouts and execution errors. Override `LOWERSPLIT` or `REPLICATE_PLAN` to select a different binary.
+[`scale.sh`](../lowering/scale.sh) measures certified checks on contiguous
+blocks. It derives unit counts from the staged ASTs, records the certifier's phase
+timings, and caps each run at 240 s. A refusal must leave the output directory
+absent. The normal mode includes lodash prefixes. The replication mode runs the
+[planner benchmark](../lean/Experiments/ReplicatePlan.lean) on renamed copies of
+the original footprints. Override `LOWERSPLIT` or `REPLICATE_PLAN` to select a
+different binary.
 
 ### Historical results
 
-The tables below record the study's inputs and checker revisions.
+The tables below are historical results from the diagnostic structural checker; they record that study's inputs and checker revisions. The current script reports certified strategies and is not a direct rerun of those measurements.
 
 **The first version was slow in the wrong places.** The checks were plain statements (`∀ i ∈ range n, …`) and `decide` ran them as written.
 A profile of real bundles found the cost at once: a closure recomputed inside a loop, list scans for membership, and `B.stmt i`, which is a list lookup.
@@ -190,7 +192,7 @@ One mutant, forgetting a catch parameter is local, is on the safe side and is co
 The bundles also contain statements that assign to a top-level name (lodash 1, acorn 2, zod 7), which the model cannot place in another module.
 
 **End to end in one program.** [`LowerSplit.lean`](../lean/EsmSplit/LowerSplit.lean) (198 lines) takes the JSON and a spec, computes footprints in Lean,
-plans, checks, writes the modules, and in diagnostic mode with `--lean` writes a legacy Lean file for the kernel. On the example the modules are identical to the first prototype’s output
+plans, checks and writes the modules. The example's Lean source is now produced by the separate `--generate-instance` command, which computes its footprints without writing module previews. On the example the modules are identical to the first prototype’s output
 except the order of names inside two `export { … }` lists (Lean's JSON parser sorts object keys, so the spec's file order is lost).
 The generated certificate is accepted by the kernel; its axioms are `propext`, `Classical.choice` and `Quot.sound`. Whole run, compiled: 2 ms.
 
@@ -223,9 +225,9 @@ Compare their footprints with `bb run "$p/lowering:compare_footprints" -- "$out/
 
 `bbr test "$p/integration/library_splits:library_certificate_test"` runs the structural certificate on the pinned Acorn and semver bundles. It cuts each bundle in half, tries advancing its second unit, and moves its first noninitial function declaration if present. The checker receives the original JavaScript and a placement. Each certified split must also pass `--check-output` and match the original library's Node API smoke.
 
-The test writes `certificates.jsonl` to the test outputs. A refused library placement is **unknown**: a refusal alone establishes no difference. The **disproved** control executes an uncertified preview of the refused placement under Node: advancing an initializer changes the exported value from `1` to `undefined`. The larger sweeps below use diagnostic mode.
+The test writes `certificates.jsonl` to the test outputs. A refused library placement is **unknown**: a refusal alone establishes no difference. The **disproved** control executes an uncertified preview of the refused placement under Node: advancing an initializer changes the exported value from `1` to `undefined`. The historical sweep results below came from diagnostic previews; current sweeps use the certified command.
 
-A bundle cannot be cut anywhere. This section runs the checker on 2,892 splits of six real bundles and runs each result in Node.
+A bundle cannot be cut anywhere. The historical diagnostic study below ran 2,892 splits of six real bundles and ran every preview in Node. Current sweeps use certification and run Node smoke only for certified outputs; refusals are recorded without output.
 Each bundle has an opt-in Bazel test, with the same strategies as the full sweep.
 Run one library variant or the whole corpus from the repository root:
 
@@ -237,11 +239,10 @@ bbr test "$p/integration/library_splits:real_split_sweep"
 ```
 
 The other labels are `real_split_acorn_test`, `real_split_acorn_min_test`,
-`real_split_lodash_test`, and `real_split_semver_test`. Each test consumes its bundle and AST from a cacheable build action, computes
-its footprints once, and publishes JSONL and a summary as Bazel test outputs. Use `--test_arg=--sample` for one halves split instead of all strategies.
+`real_split_lodash_test`, and `real_split_semver_test`. Each test consumes its bundle and AST from a cacheable build action and publishes certified results and refusal reasons as JSONL and a summary in Bazel test outputs. Use `--test_arg=--sample` for one halves split instead of all strategies.
 
-For every split, the diagnostic invocation `lowersplit --diagnostic … --force` checks it and writes an uncertified preview even when a check rejects it. Then [`smoke.mjs`](../integration/library_splits/smoke.mjs) calls the
-entry module's exported API and prints the result as JSON. The split behaves like the bundle when that line equals the bundle's own.
+In the historical study, `lowersplit --diagnostic … --force` checked every split and wrote an uncertified preview even when a check rejected it. Then [`smoke.mjs`](../integration/library_splits/smoke.mjs) called the
+entry module's exported API and printed the result as JSON. The current sweep records a certificate refusal without running Node, and compares Node output only for certified files.
 The calls: lodash `chunk`, `get`, `set`, `merge`, `cloneDeep`, `groupBy`, `sortBy`, `uniqBy`; acorn `parse` of ES2022 programs, tokens and four syntax errors;
 semver `valid`, `compare`, `satisfies`, `inc`, `coerce`, `Range`; zod `parse` and the issues for bad input.
 One JSON line per split is in [split results](../integration/library_splits/results); [`results/summary.md`](../integration/library_splits/results/summary.md) has the per-bundle table.
@@ -271,7 +272,7 @@ One JSON line per split is in [split results](../integration/library_splits/resu
 
 ## 8. How a proof is produced
 
-**The shape.** `lowersplit --diagnostic … --lean` writes a Lean file with bundle data and a proof about the plan based on the supplied footprints. The example is [`Instance.lean`](../lean/EsmSplit/Instance.lean).
+**The shape.** `lowersplit --generate-instance deployment.json Instance.lean` writes a Lean file with bundle data and a proof about the plan based on the supplied footprints. This mode generates only Lean source; it does not write module previews. The example is [`Instance.lean`](../lean/EsmSplit/Instance.lean).
 
 ```lean
 def bundle : Bundle := [
@@ -384,7 +385,7 @@ bbr test //devinfra/js/debundle/x/split_proof/es_order:es_order_sweep_test  # 50
 ## 11. debundle's e2e cases
 
 debundle does the same job without Lean. Its corpus ([`e2e/cases`](../../../e2e/cases)) has 207 entries: a bundle, a spec, and the verdict debundle must give.
-[`debundle_cases/run_cases.mjs`](../debundle_cases/run_cases.mjs) translates each spec, runs `lowersplit --diagnostic … --force`, runs the original and the emitted entry in Node, and compares. The emitted modules are diagnostic previews, not certified output.
+[`debundle_cases/run_cases.mjs`](../debundle_cases/run_cases.mjs) defaults to certifying the saved accepted-case cohort and records refused plans without output. Its `--regression` mode certifies every corpus entry, compares certified output with Node, and counts refusals without producing previews.
 Run it with the [Bazel corpus commands](../debundle_cases/README.md#run-it). Details, causes and the plan: [`debundle_cases/README.md`](../debundle_cases/README.md), [`PLAN.md`](../PLAN.md).
 
 | Outcome                                                                                    | Entries |

@@ -1,64 +1,48 @@
 // Run debundle's file-backed e2e cases (devinfra/js/debundle/e2e/cases) against the Lean checker.
 //
-//   node run_cases.mjs [--cases <dir>] [--filter <substring>] [--out results/cases.jsonl] [--keep <dir>]
+//   node run_cases.mjs [--regression] [--cases <dir>] [--filter <substring>] [--out results.jsonl] [--keep <dir>]
 //
-// `--keep <dir>` copies each translated case (bundle, translated spec, emitted modules, checker output) to `<dir>/<id>`.
-//
+// `--keep` saves each selected fixture, translated plan, and any certified output under `<dir>/<id>`.
 // A case is `main.js` (one ESM chunk), a spec, and `expect.yaml` (accept or reject per spec). For every spec entry:
 //   1. translate the spec to a `lowersplit` spec: the Rust resolver supplies authored source-unit owners,
 //      unclaimed statements follow `unassigned_mode`, `import_order` becomes the import priority;
-//   2. `lowersplit --diagnostic --force` checks the split and writes the modules even when it rejects them;
-//   3. run the original and the emitted entry in Node;
-//   4. compare with the expectation.
-// What the adapter cannot translate is reported as `unsupported:<cause>`, not forced. One JSON line per spec entry.
+//   2. certify the proposed split; a refusal is recorded without emitted files;
+//   3. compare certified output with the original in Node. `--regression` runs every corpus entry and reports refusals
+//      and unsupported cases; the default checks the saved accepted-case cohort. One JSON line per selected entry.
 import { certify } from "./certify.mjs";
-import { classify, coverageLosses, rejectKind, wanted } from "./verdict.mjs";
+import { rejectKind, wanted } from "./verdict.mjs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import {
-  constants,
-  copyFileSync,
-  cpSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { acorn, eslintScope } from "../translation/parser.mjs";
 import { parse as parseYaml } from "yaml";
 import { dumpParsed } from "../translation/annotated_estree.mjs";
-import { writeDeployment } from "../translation/testing/deployment_manifest.mjs";
 import { parseModule, topLevelStatements } from "../translation/scope_metadata.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const resolver = path.resolve(
   process.env.DEBUNDLE_RESOLVER ?? "bazel-bin/devinfra/js/debundle/debundle_resolve_placement"
 );
-const lowersplit = path.resolve(process.env.LOWERSPLIT ?? path.join(here, "../lean/.lake/build/bin/lowersplit"));
 const args = process.argv.slice(2);
 const option = (name, fallback) => {
   const at = args.indexOf(`--${name}`);
   return at < 0 ? fallback : args[at + 1];
 };
+const defaultCasesRoot = path.resolve(here, "../../../e2e/cases");
 const casesRoot = path.resolve(here, option("cases", "../../../e2e/cases"));
 const filter = option("filter", "");
 const checkCertificates = args.includes("--check-certificates");
-const certification = checkCertificates || args.includes("--certify");
+const regression = args.includes("--regression");
+const keepDir = option("keep", null) && path.resolve(option("keep", null));
 const outFile = path.resolve(
   option(
     "out",
-    certification
-      ? path.join(process.env.TEST_TMPDIR ?? ".", "certification.jsonl")
-      : path.join(here, "results/cases.jsonl")
+    path.join(process.env.TEST_TMPDIR ?? ".", regression ? "full-corpus-certification.jsonl" : "certification.jsonl")
   )
 );
-const keepDir = option("keep", null) && path.resolve(option("keep", null));
 
 // ---------------------------------------------------------------- source analysis
 
@@ -367,124 +351,47 @@ function runCase(dir, specName, expected, id) {
       path.join(stage, "lean_spec.json"),
       JSON.stringify({ entry: plan.entry, modules: plan.modules, order: plan.order })
     );
-    if (certification) {
-      return {
-        id,
-        ...certify({
-          stage,
-          chunkFile,
-          plan,
-          want: wanted(expected),
-          providers: Object.values(expected.accept.runtime_files ?? {}),
-          run,
-          lowersplit,
-          nodeRun,
-        }),
-      };
-    }
-    const checkerArgs = [
-      "--diagnostic",
-      writeDeployment(path.join(stage, "bundle.json"), path.join(stage, "lean_spec.json"), path.join(stage, "split")),
-      path.join(stage, "split"),
-      "--force",
-    ];
-    const checked = run(lowersplit, checkerArgs);
-    if (checked.code === 3)
-      return unsupported("statement kind the model rejects", checked.stderr.trim().split("\n").pop());
-    if (checked.code !== 0 && checked.code !== 1)
-      return {
-        ...record,
-        outcome: "error:lowersplit",
-        detail: checked.failure ?? checked.stderr.trim().split("\n").pop(),
-        processFailure: {
-          ...describeProcessFailure("lowersplit", lowersplit, checkerArgs, stage, checked),
-          stdoutTail: checked.stdout.trimEnd().slice(-2048),
-        },
-      };
-    const failed = [...checked.stdout.matchAll(/^\s+FAIL\s+(.*)$/gm)].map(
-      ([, what]) =>
-        what.match(/^statement \d+ is an `(Import|Export)/)?.[1].concat("OutsideEntry") ?? what.split(/\s+/)[0]
-    );
-    const mine = { verdict: checked.code === 0 ? "accept" : "reject", failed };
-    const placed = Object.entries(plan.modules).filter(([file]) => file !== plan.entry);
-    const split = {
-      statements: analysis.statements.length,
-      modules: placed.filter(([, held]) => held.length > 0).length,
-      moved: placed.reduce((sum, [, held]) => sum + held.length, 0),
-    };
-
-    // The adapter writes one flat chunk into split/. Debundle's runtime_files
-    // destinations are rooted at the chunk (e.g. main/provider.js).
-    const runtimeFiles = Object.entries(expected.accept?.runtime_files ?? {});
-    for (const [dest, src] of runtimeFiles) {
-      if (!dest.startsWith(chunk + "/")) continue;
-      const relative = dest.slice(chunk.length + 1);
-      if (
-        [relative, src].some(
-          (file) => path.isAbsolute(file) || file.split("/").some((part) => !part || part === "." || part === "..")
-        )
-      ) {
-        throw new Error(`invalid runtime fixture: ${dest}: ${src}`);
-      }
-      const file = path.join(stage, "split", relative);
-      mkdirSync(path.dirname(file), { recursive: true });
-      copyFileSync(path.join(dir, src), file, constants.COPYFILE_EXCL);
-    }
-
+    const certified = certify({
+      stage,
+      chunkFile,
+      plan,
+      want: "accept" in expected ? wanted(expected) : null,
+      providers: Object.values(expected.accept?.runtime_files ?? {}),
+      nodeRun,
+    });
     if (keepDir) {
-      writeFileSync(path.join(stage, "checker_output.txt"), checked.stdout + checked.stderr);
-      cpSync(stage, path.join(keepDir, id), { recursive: true });
+      const kept = path.join(keepDir, id);
+      mkdirSync(path.dirname(kept), { recursive: true });
+      cpSync(stage, kept, { recursive: true });
     }
-    const original = nodeRun("original", chunkFile, stage);
-    const emitted = nodeRun("emitted", path.join(stage, "split", plan.entry), stage);
-    const node = { original, emitted };
-    const want = "accept" in expected ? wanted(expected) : null;
-    const outcome = classify(expected, mine, node);
     return {
       ...record,
-      outcome,
-      processFailure: original.processFailure ?? emitted.processFailure,
-      mine,
-      split,
-      node: {
-        originalMatchesExpect: want === null ? null : original.stdout === want,
-        emittedMatchesExpect: want === null ? null : emitted.stdout === want,
-        emittedMatchesOriginal: emitted.stdout === original.stdout,
-        originalCode: original.code,
-        emittedCode: emitted.code,
-        originalFailure: original.failure,
-        emittedFailure: emitted.failure,
-        emittedError: emitted.error,
-      },
-      unchecked:
-        "accept" in expected
-          ? Object.keys(expected.accept).filter(
-              (k) =>
-                ["source", "exports", "probes", "check_all_js"].includes(k) ||
-                (k === "runtime_files" && runtimeFiles.some(([dest]) => !dest.startsWith(chunk + "/")))
-            )
-          : [],
+      ...certified,
     };
   } finally {
     rmSync(stage, { recursive: true, force: true });
   }
 }
 
-const regression = args.includes("--regression");
-const baselinePath = path.resolve(
-  option("baseline", path.join(here, checkCertificates ? "results/certificates.jsonl" : "results/cases.jsonl"))
+const baselineOption = option("baseline", null);
+const baselinePath = baselineOption
+  ? path.resolve(baselineOption)
+  : casesRoot === defaultCasesRoot
+    ? path.join(here, checkCertificates ? "results/certificates.jsonl" : "results/cases.jsonl")
+    : null;
+if (checkCertificates && !baselinePath) throw new Error("--check-certificates requires a certificate baseline");
+if (baselinePath && outFile === baselinePath) throw new Error("--out must differ from its baseline");
+if (regression && checkCertificates)
+  throw new Error("--regression runs the full corpus, not the pinned certificate cohort");
+const baseline = baselinePath
+  ? readFileSync(baselinePath, "utf8")
+      .trimEnd()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+  : [];
+let selected = baseline.filter((r) =>
+  checkCertificates ? r.outcome === "certified" : ["agree-accept", "certified"].includes(r.outcome)
 );
-if ((regression || certification) && outFile === baselinePath)
-  throw new Error("--regression needs an --out distinct from its baseline");
-const baseline =
-  regression || certification
-    ? readFileSync(baselinePath, "utf8")
-        .trimEnd()
-        .split("\n")
-        .map((line) => JSON.parse(line))
-    : [];
-if (certification && regression) throw new Error("diagnostic --regression and --certify are separate runs");
-let selected = baseline.filter((r) => r.outcome === (checkCertificates ? "certified" : "agree-accept"));
 if (checkCertificates && process.env.TEST_SHARD_STATUS_FILE) {
   writeFileSync(process.env.TEST_SHARD_STATUS_FILE, "");
   selected = selected.filter(
@@ -492,7 +399,9 @@ if (checkCertificates && process.env.TEST_SHARD_STATUS_FILE) {
   );
 }
 const cohort = new Set(selected.map((r) => r.id));
+const baselineAccepted = new Set(cohort);
 mkdirSync(path.dirname(outFile), { recursive: true });
+if (keepDir) mkdirSync(keepDir, { recursive: true });
 const lines = [];
 for (const dir of discover()) {
   const expectations = parseYaml(readFileSync(path.join(dir, "expect.yaml"), "utf8"));
@@ -500,30 +409,33 @@ for (const dir of discover()) {
     const id = `${path.relative(casesRoot, dir)}/${specName}`;
     if (filter && !id.includes(filter)) continue;
     const key = caseId(dir, specName);
-    if (certification && !cohort.delete(key)) continue;
+    if (!regression && !cohort.delete(key)) continue;
+    if (regression) cohort.delete(key);
     try {
       lines.push(runCase(dir, specName, expected, key));
     } catch (error) {
-      if (!certification) throw error;
       lines.push({ id: key, outcome: "error:runner", detail: error.message });
     }
   }
 }
 writeFileSync(outFile, `${lines.map((row) => JSON.stringify(row)).join("\n")}\n`);
 console.log(`${lines.length} cases -> ${outFile}`);
-if (certification) {
-  if (!filter && cohort.size) throw new Error("missing cohort cases: " + [...cohort].join(", "));
-  const failures = lines.filter((r) => r.outcome !== "certified" && (checkCertificates || r.outcome !== "rejected"));
-  for (const row of failures) console.error(JSON.stringify(row));
-  if (!lines.length || failures.length) process.exitCode = 1;
-}
-if (regression) {
-  const failures = lines.filter(({ outcome }) => outcome.startsWith("error:") || outcome === "unsound-accept");
-  console.log(`${lines.filter(({ outcome }) => outcome.startsWith("unsupported:")).length} unsupported`);
-  if (!lines.length) console.error("No cases selected.");
-  for (const { id, outcome, processFailure } of failures)
-    console.error(JSON.stringify({ id, outcome, processFailure }));
-  const lost = coverageLosses(baseline, lines, { filtered: Boolean(filter) });
-  for (const message of lost) console.error(message);
-  if (!lines.length || failures.length || lost.length) process.exitCode = 1;
-}
+if (!filter && cohort.size) throw new Error("missing cohort cases: " + [...cohort].join(", "));
+const certified = lines.filter((r) => r.outcome === "certified").length;
+const refused = lines.filter((r) => r.outcome === "rejected").length;
+const unsupported = lines.filter((r) => r.outcome === "refusal-test" || r.outcome.startsWith("unsupported:")).length;
+const failures = lines.filter((r) => {
+  if (r.outcome === "certified" || (!checkCertificates && r.outcome === "rejected")) return false;
+  if (regression && !checkCertificates && (r.outcome === "refusal-test" || r.outcome.startsWith("unsupported:")))
+    return false;
+  return true;
+});
+const lostBaselineCases = regression
+  ? lines.filter(
+      (r) => baselineAccepted.has(r.id) && (r.outcome === "refusal-test" || r.outcome.startsWith("unsupported:"))
+    )
+  : [];
+console.log(`${certified} certified, ${refused} refused, ${unsupported} unsupported`);
+for (const row of [...failures, ...lostBaselineCases]) console.error(JSON.stringify(row));
+for (const row of lostBaselineCases) console.error(`${row.id}: lost certification coverage (${row.outcome})`);
+if (!lines.length || failures.length || lostBaselineCases.length) process.exitCode = 1;

@@ -11,6 +11,7 @@ _RUNNER_DATA = [
     "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
     "//devinfra/js/debundle/x/split_proof/translation:parser",
     "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
+    "//devinfra/js/debundle/x/split_proof/translation/testing:split",
 ]
 
 _RUNNER_ENV = {
