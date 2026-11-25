@@ -387,7 +387,7 @@ if (includesCase("profile-premise-sources")) {
   // even though the branch is not taken. The remaining facts come from the reached
   // typeof window observation in the source and candidate executions.
   const loweringFacts = [
-    "console.log is the unmodified Node console method and appends formatted output to the recording",
+    "Node's console.log binding is the unmodified console method throughout initialization; additionally, console.log is the unmodified Node console method and appends formatted output to the recording",
     "the recording harness uses the model's standard primitive handlers for listed calls",
   ];
   const observedFacts = [
