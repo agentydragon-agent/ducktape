@@ -155,7 +155,7 @@ private def observedOperationHasPremise (profile : HostProfile) (name premise : 
 #guard HostProfile.recordedPrim .nodeRecording "Object" "setPrototypeOf" == some .setPrototypeOf
 #guard (HostProfile.recordedPrim .browserPage "Object" "create").isNone
 #guard observedOperationHasPremise .nodeRecording "console.log"
-  "console.log is the unmodified Node console method and appends formatted output to the recording"
+  "Node's console.log binding is the unmodified console method throughout initialization; additionally, console.log is the unmodified Node console method and appends formatted output to the recording"
 
 #guard ECMAScriptHost.opaqueConstructorNames.all fun name =>
   HostProfile.opaqueConstructor .browserPage name

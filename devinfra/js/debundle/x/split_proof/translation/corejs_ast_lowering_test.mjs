@@ -120,7 +120,9 @@ const emptyPath = contract("empty", { profile: "empty" });
 assert.deepEqual(censusFor(["--host-contract", emptyPath]), emptyCensus);
 const ecmaPath = contract("ecma", { profile: "ecmascript" });
 const ecmaCensus = censusFor(["--host-contract", ecmaPath]);
-assert.deepEqual([ecmaCensus.hostProfile, ecmaCensus.allocate, ecmaCensus.opaque], ["ecmascript", 0, 1]);
+// The shared ECMAScript layer supplies both standard bindings, so neither read
+// falls back to an opaque statement.
+assert.deepEqual([ecmaCensus.hostProfile, ecmaCensus.allocate, ecmaCensus.opaque], ["ecmascript", 0, 0]);
 const browserPath = contract("browser", { profile: "browser-page" });
 const browserCensus = censusFor(["--host-contract", browserPath]);
 assert.deepEqual([browserCensus.hostProfile, browserCensus.allocate, browserCensus.opaque], ["browser-page", 0, 0]);

@@ -134,7 +134,7 @@ def premisesForRef (profile : HostProfile) : HostRef → List String
 
 def premiseForOperation (profile : HostProfile) (name : String) : Option String := Id.run do
   if let some entry := profile.globalEntry? name then return entry.premise
-  for entry in profile.layers.flatMap (·.members) do
+  for entry in profile.resolvedMembers do
     if s!"{entry.owner}.{entry.key}" == name then return entry.premise
   return none
 

@@ -263,7 +263,7 @@ macro "verify_ordered_linked_programs " fuel:num source:ident candidate:ident pr
        let specialized := HostPremises.specialize $premises w
        constructor
        · rw [run_after_link $fuel (($source specialized).get (by rfl))]
-         first | cbv <;> rfl | rfl
+         first | rfl | cbv <;> rfl
        · check_ordered_linked_runs $fuel $source $candidate specialized
      · verify_linked_exports_from $source $candidate))
 
