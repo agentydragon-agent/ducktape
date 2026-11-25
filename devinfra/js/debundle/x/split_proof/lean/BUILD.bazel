@@ -491,6 +491,13 @@ lean_binary(
     deps = [":corejs_runtime"],
 )
 
+lean_test(
+    name = "host_profile_test",
+    srcs = ["EsmSplit/CoreJS/HostProfileExamples.lean"],
+    entry = "EsmSplit/CoreJS/HostProfileExamples.lean",
+    deps = [":corejs_runtime"],
+)
+
 # The CoreJS model. `model/differential.mjs` runs it against Node.
 lean_binary(
     name = "corejs",
