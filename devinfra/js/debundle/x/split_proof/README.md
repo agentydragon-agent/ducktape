@@ -102,7 +102,7 @@ property `defineProperty` must return the same method reference. Both reads must
 state. Deployments that replace the method or install an observable getter can violate the premise.
 The contract grants no behavior for invoking the method and does not require browser globals.
 
-Given the JSON from `debundle spec resolve-placement`, pass it directly to the checker:
+Given the JSON from `debundle_resolve_placement`, pass it directly to the checker:
 
 ```sh
 lowersplit app.mjs resolved.json out --resolved-placement app --structural

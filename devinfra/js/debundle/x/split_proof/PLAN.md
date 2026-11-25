@@ -430,9 +430,7 @@ Steps are independent PRs. Steps 2–5 touch different Lean files and can run in
 
 ### 1. Use Rust selector resolution in the corpus adapter
 
-The Excalidraw browser smoke already uses Rust's `spec resolve-placement` output to bind the source digest, requested owners and authored import priority to one input. Lean computes and checks the resulting schedule. The [corpus adapter](debundle_cases/run_cases.mjs) still matches binding selectors and hole-free templates itself. The saved baseline has 54 comparable entries in this group and 12 refusal tests.
-
-Reuse the resolver output for corpus entries with holes, alpha-renaming, ranges or dataflow selectors; keep the refusal tests distinct. Measure the cost of resolving one entry and check that the adapter maps resolved units to the same declarators before relying on the results. See the [selector semantics](../../docs/selector_resolution.md) and the remaining [production handoff work](TODO.md).
+The Excalidraw browser smoke and the [corpus adapter](debundle_cases/run_cases.mjs) use the standalone Rust `debundle_resolve_placement` binary. Both consume ownership indexed by source-unit ordinal; Lean computes and checks the resulting schedule. See the [selector semantics](../../docs/selector_resolution.md) and the remaining [production handoff work](TODO.md).
 
 ### 2. Declarator granularity in the adapter, and repeated `var` (6 comparable entries: 3 not run, 3 `strict-but-runs`; 2 more are refusal tests)
 

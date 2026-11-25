@@ -558,7 +558,7 @@ for structural atoms, conservative effects, and the accepted lazy-cycle case.
 
 ### Assemble selector proposals for an independent checker
 
-`spec resolve-placement --chunk CHUNK` accepts repeated
+`debundle_resolve_placement --chunk CHUNK` accepts repeated
 `--proposal-fragment OWNER=FILE.yaml` arguments. Each file contains a nonempty
 `source_matches` list using the ordinary module-file syntax. Use a canonical,
 chunk-local owner path. Claims append to an existing module or create a new

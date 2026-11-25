@@ -9,7 +9,6 @@ use command_output::{infallible, write_report};
 use graph_provenance::CurrentRoots;
 use graph_provenance::VerifiedGraphSourceContext;
 use peel::OutputFormat;
-use resolved_placement::ResolvePlacementArgs;
 use transform_command::{ProjectAnalysisArgs, ProjectApplyArgs};
 
 use selector_codemod::match_selector::{
@@ -173,8 +172,6 @@ enum SpecNsCommand {
     /// them unchanged.
     #[command(name = "project-analysis")]
     ProjectAnalysis(ProjectAnalysisArgs),
-    /// Resolve canonical ownership selectors and export one chunk's source-unit assignment.
-    ResolvePlacement(ResolvePlacementArgs),
     /// Internal Bazel action API for canonical apply inputs.
     #[command(hide = true)]
     ProjectApply(ProjectApplyArgs),
@@ -536,7 +533,6 @@ pub(super) fn run(
         SpecNsCommand::AuditContracts(a) => run_audit_contracts(stderr, a, output),
         SpecNsCommand::Lint(args) => crate::spec_lint::run(stderr, args, output),
         SpecNsCommand::ProjectAnalysis(args) => args.run(stderr),
-        SpecNsCommand::ResolvePlacement(args) => args.run(stderr),
         SpecNsCommand::ProjectApply(args) => args.run(),
         SpecNsCommand::ProposeCommutations(p) => crate::propose_commutations::run(
             p,

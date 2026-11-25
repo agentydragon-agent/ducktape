@@ -32,11 +32,14 @@ an ambiguous run.
 
 ## Exporting resolved ownership
 
-Use `debundle spec resolve-placement --chunk CHUNK --out resolved.json` with the
-ordinary `--spec` or tree inputs to feed an independent split checker. The
-Bazel rule `debundle_resolve_placement` invokes the standalone
-`//devinfra/js/debundle:debundle_resolve_placement` binary with the same flags.
-Both entry points solve the canonical selectors jointly across all configured chunks.
+Use the standalone resolver with a flat spec or the ordinary tree inputs:
+
+```sh
+bb run //devinfra/js/debundle:debundle_resolve_placement -- --spec spec.yaml --chunk CHUNK --out resolved.json
+```
+
+The `debundle_resolve_placement` Bazel rule invokes the same binary. It solves
+the canonical selectors jointly across all configured chunks.
 An optional `--ownership-subset FILE` retains named modules, readable members,
 and authored anonymous statement indices **after** resolution. Unknown,
 ambiguous and conflicting claims fail the command even if the subset omits

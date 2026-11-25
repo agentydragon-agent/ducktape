@@ -167,7 +167,7 @@ compared the original and certified editor in Chromium.
 To change the placement, edit the subset's module paths and readable member names. To identify a new owner,
 read the pinned upstream declaration and its uses, then match the production
 bundle as described in the [spec authoring instructions](../../../../excalidraw/AGENTS.md).
-Rust's `spec resolve-placement` solves selectors in the full spec before applying
+Rust's `debundle_resolve_placement` solves selectors in the full spec before applying
 the subset. It exports the source hash, one requested owner per source unit,
 and the author's import priority. The browser test checks the source hash and
 compares each selected owner with the full resolution. Unselected units stay in

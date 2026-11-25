@@ -1684,7 +1684,6 @@ rust_library(
         ":pipeline",
         ":prepare_chunks",
         ":report_io",
-        ":resolved_placement",
         ":selector_codemod",
         ":selector_debt",
         ":selector_outcome",
