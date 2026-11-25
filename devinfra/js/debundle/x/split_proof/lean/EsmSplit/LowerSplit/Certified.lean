@@ -107,6 +107,46 @@ private def probeRefusal (refusal : CoreJS.LinkedBehavior.Refusal) : Certificati
     reasonCode := some refusal.code.label
     observation := refusal.observation }
 
+private def decodedForSlice (profile : CoreJS.HostProfile) (source providers files : Json)
+    (P : Plan) : Except CertificationRefusal
+      { deployment : CoreJS.LinkedInput.DecodedDeployment //
+        CoreJS.LinkedInput.decodeSingleton source providers files P profile = .ok deployment } := do
+  match decoded : CoreJS.LinkedInput.decodeSingleton source providers files P profile with
+  | .error reason => throw { reason, reasonCode := some "linked_input" }
+  | .ok deployment => pure ⟨deployment, decoded⟩
+
+private def probeForSlice (profile : CoreJS.HostProfile)
+    (deployment : CoreJS.LinkedInput.DecodedDeployment) : Except CertificationRefusal
+      { witness : CoreJS.HostPremises × Nat //
+        CoreJS.LinkedBehavior.probeWitness profile deployment.before deployment.after = .ok witness } := do
+  match probed : CoreJS.LinkedBehavior.probeWitness profile deployment.before deployment.after with
+  | .error refusal => throw (probeRefusal refusal)
+  | .ok witness => pure ⟨witness, probed⟩
+
+private def prepareSliceEligibility (profile : CoreJS.HostProfile) (source providers files : Json)
+    (P : Plan) (timings : Bool) : IO (Except CertificationRefusal
+      (SliceEligibility profile source providers files P)) := do
+  let decoded ← timePhase timings "linked_lowering" fun _ =>
+    IO.lazyPure fun _ => decodedForSlice profile source providers files P
+  match decoded with
+  | .error refusal => pure (.error refusal)
+  | .ok ⟨deployment, decodedSingleton⟩ => do
+    let probed ← timePhase timings "compiled_slice_probe" fun _ =>
+      IO.lazyPure fun _ => probeForSlice profile deployment
+    match probed with
+    | .error refusal => pure (.error refusal)
+    | .ok ⟨witness, probeSucceeded⟩ => do
+      let decodedPair : CoreJS.LinkedInput.decodePair source providers files P profile =
+          .ok (deployment.before, deployment.after) := by
+        simp [CoreJS.LinkedInput.decodePair, CoreJS.LinkedInput.DecodedDeployment.programs, decodedSingleton]
+      pure (.ok {
+        deployment := deployment
+        decodedSingleton := decodedSingleton
+        decodedPair := decodedPair
+        probe := witness
+        probeSucceeded := probeSucceeded
+      })
+
 private def profileFields (profile : CoreJS.HostProfile) : List (String × Json) :=
   if profile == .empty then [] else [("hostProfile", toJson profile.label)]
 

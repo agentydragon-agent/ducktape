@@ -349,18 +349,31 @@ def SliceStatement (profile : CoreJS.HostProfile) (source providers files : Json
     (P : EsmSplit.Plan) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) : Prop :=
   ∃ kind : SliceKind, SliceStatementFor profile source providers files P B S kind
 
+/-- Inputs already checked by the linked path. The assignment and decoded programs
+come from one `decodeSingleton` result; the projected pair and successful probe
+are retained as evidence for the selector and slice theorem. -/
+structure SliceEligibility (profile : CoreJS.HostProfile) (source providers files : Json)
+    (P : EsmSplit.Plan) where
+  deployment : CoreJS.LinkedInput.DecodedDeployment
+  decodedSingleton : CoreJS.LinkedInput.decodeSingleton source providers files P profile = .ok deployment
+  decodedPair : CoreJS.LinkedInput.decodePair source providers files P profile =
+    .ok (deployment.before, deployment.after)
+  probe : CoreJS.HostPremises × Nat
+  probeSucceeded : CoreJS.LinkedBehavior.probeWitness profile deployment.before deployment.after = .ok probe
+
 /-- Decide one of the four compiled slice proofs against the exact output ASTs
-already decoded by `LinkedInput`. The returned theorem names both decodePair's
+already checked by the linked path. The returned theorem names both decodePair's
 sparse programs and the checked dense post-processing used by this strategy. -/
 def certifySlice (profile : CoreJS.HostProfile) (source providers files : Json)
-    (P : EsmSplit.Plan) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) :
+    (P : EsmSplit.Plan) (B : EsmSplit.Bundle) (S : EsmSplit.Spec)
+    (eligibility : SliceEligibility profile source providers files P) :
     Except CertificationRefusal (SliceKind × PLift (SliceStatement profile source providers files P B S)) := do
-  match decoded : CoreJS.LinkedInput.decodePair source providers files P profile with
-  | .error reason => throw { reason, reasonCode := some "linked_input" }
-  | .ok (original, candidate) =>
-    match denseDecoded : densePair source P B original candidate with
-    | .error reason => throw { reason, reasonCode := some "slice_dense_input" }
-    | .ok dense => do
+  let original := eligibility.deployment.before
+  let candidate := eligibility.deployment.after
+  let decoded := eligibility.decodedPair
+  match denseDecoded : densePair source P B original candidate with
+  | .error reason => throw { reason, reasonCode := some "slice_dense_input" }
+  | .ok dense => do
       let denseOriginal := dense.original
       let denseCandidate := dense.candidate
       let sourceModule := dense.sourceModule
