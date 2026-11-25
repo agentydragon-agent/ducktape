@@ -94,17 +94,19 @@ private def reference (imports : List Name) (inFunction : Bool) (j : Json)
     unless imports.contains x do throw s!"unlinked imported name {x}"
     return .var x
   | "G" =>
-    if profile.recordedHostValue x then return .host x
-    if (profile.bindingIdentity x).isSome then return .prim (.globalRef x) []
+    let entry := profile.globalEntry? x
+    if entry.any (·.recordedValue) then return .host x
+    if entry.bind (·.identity) |>.isSome then return .prim (.globalRef x) []
     -- A successful typeof guard does not establish what a direct lookup would do.
-    if profile.opaqueBinding x then
+    if entry.any fun value => value.opaqueRef && value.identity.isNone then
       return .prim (.opaqueAmbientRef x) []
     match x with
     | "undefined" => return .undef
     | "Infinity" => return .num Num.inf
     | "NaN" => return .num Num.nan
     | _ =>
-      if profile.undeclaredGlobal x then return .var x
+      if entry.any (·.undeclared) ||
+          (profile.hasCapability .undeclaredNames && entry.isNone) then return .var x
       throw s!"unsupported global {x}"
   | k => throw s!"unsupported binding class {k}"
 

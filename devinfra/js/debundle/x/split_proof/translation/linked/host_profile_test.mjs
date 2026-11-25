@@ -35,18 +35,18 @@ const entry = "entry.mjs";
 const includesCase = caseShard();
 
 const nodeProfileFixture = fixture(
-  "unsupported-node-recording-profile",
+  "node-recording-profile",
   "const moved = 1; const kept = 2; export const result = moved + kept;"
 );
-const unsupportedProfile = split({
+const nodeProfileVerdict = split({
   source: nodeProfileFixture.sourceFile,
   spec: nodeProfileFixture.specFile,
   out: nodeProfileFixture.out,
   hostContract: nodeProfile,
 });
-assert.equal(unsupportedProfile.status, "refused", unsupportedProfile.log);
-assert.match(unsupportedProfile.reason, /unsupported host contract/);
-assert(!existsSync(nodeProfileFixture.out));
+assert.equal(nodeProfileVerdict.status, "certified", nodeProfileVerdict.log);
+assert.equal(nodeProfileVerdict.verdict.hostProfile, "node-recording");
+assert(existsSync(nodeProfileFixture.out));
 
 for (const [binding, defaulted] of [
   ["ambient", false],

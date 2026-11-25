@@ -109,16 +109,9 @@ def valid (profile : HostProfile) : Bool := Id.run do
 
 def premises (profile : HostProfile) : List String := Id.run do
   let mut result : List String := []
-  let modelPrimitives := profile.hasCapability .recordedModelPrimitives
   for layer in profile.layers do
-    for entry in layer.globals do
-      if entry.undeclared then
-        if let some premise := entry.premise then result := result ++ [premise]
     for entry in layer.opaqueConstructors do
       if let some premise := entry.premise then result := result ++ [premise]
-    for entry in layer.members do
-      if entry.primitive == some .log || (modelPrimitives && entry.primitive.isSome) then
-        if let some premise := entry.premise then result := result ++ [premise]
     for entry in layer.capabilities do
       if let some premise := entry.premise then result := result ++ [premise]
   return result.eraseDups
@@ -168,17 +161,12 @@ def recordedPrim (profile : HostProfile) (owner key : String) : Option Prim := d
   let primitive ← (profile.memberEntry? owner key).bind (·.primitive)
   if primitive == .log || profile.hasCapability .recordedModelPrimitives then some primitive else none
 
-/-- Read a supported deployment profile. -/
-def read (j : Lean.Json) : Except String HostProfile := do
-  unless j == Lean.Json.mkObj [("profile", .str "browser-page")] do
-    throw "unsupported host contract (expected the browser-page profile)"
-  return browserPage
-
 def aliases := ["window", "globalThis", "self"]
 
 def bindingType (profile : HostProfile) (name : String) : Option String :=
-  (profile.globalEntry? name).bind (·.typeTag) <|>
-    if profile.undeclaredGlobal name then some "undefined" else none
+  match profile.globalEntry? name with
+  | some entry => entry.typeTag <|> if entry.undeclared then some "undefined" else none
+  | none => if profile.hasCapability .undeclaredNames then some "undefined" else none
 
 def opaqueBinding (profile : HostProfile) (name : String) : Bool :=
   (profile.globalEntry? name).any fun entry => entry.opaqueRef && entry.identity.isNone
@@ -188,17 +176,19 @@ Page-only globals already carry their explicit `window.*` identities. -/
 private def presentedIdentity (_profile : HostProfile) (identity : String) : String := identity
 
 def bindingIdentity (profile : HostProfile) (name : String) : Option String :=
-  if profile.recordedHostValue name then none
-  else (profile.globalEntry? name).bind (·.identity) |>.map (profile.presentedIdentity)
+  match profile.globalEntry? name with
+  | some entry => if entry.recordedValue then none else entry.identity.map profile.presentedIdentity
+  | none => none
 
 def memberValue? (profile : HostProfile) (owner key : String) : Option HostValue := do
   let entry ← profile.memberEntry? owner key
   entry.dataValue.orElse fun _ => entry.identity.map HostValue.identity
 
 def valueForRef? (profile : HostProfile) : HostRef → Option HostValue
-  | .binding name => if profile.recordedHostValue name then none
-      else HostValue.identity <$> profile.bindingIdentity name
-  | .property "window" name => HostValue.identity <$> profile.bindingIdentity name
+  | .binding name | .property "window" name => do
+    let entry ← profile.globalEntry? name
+    if entry.recordedValue then none
+    else HostValue.identity <$> (entry.identity.map profile.presentedIdentity)
   | .property receiver key => do
     match ← profile.memberValue? (ownerName receiver) key with
     | .identity name => some (.identity (profile.presentedIdentity name))
@@ -370,6 +360,9 @@ def assumptions (p : HostPremises) : List String :=
 for every world satisfying just the observations made by the two initializers. -/
 def observations (profile : HostProfile) : World where
   σ := HostPremises
+  -- Capabilities and opaque-constructor allowances select profile-wide lowering
+  -- rules. Global and member facts are added only by the observations that use
+  -- their entries, avoiding both unused premises and a large proof-state list.
   init := { profileFacts := profile.premises }
   step := fun name this args st =>
     let st := match profile.premiseForOperation name with

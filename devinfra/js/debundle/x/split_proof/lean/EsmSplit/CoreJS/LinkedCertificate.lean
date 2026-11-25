@@ -110,8 +110,8 @@ private partial def expandedBytes (expr : Lean.Expr) : Nat :=
   | _ => 0
 
 /-- Reuse the compiled definitions for built-in layers in generated certificates.
-Author layers remain quoted as data, so certificates retain the exact selected
-profile without expanding the standard catalog into every proof module. -/
+The merged lookup tables are emitted from the already validated profile so AST
+rechecking does not rebuild the full catalog for each global lookup. -/
 private def hostLayerExpr (layer : HostLayer) : Lean.Expr :=
   if layer = ECMAScriptHost.layer then Lean.mkConst ``ECMAScriptHost.layer
   else if layer = NodeHost.layer then Lean.mkConst ``NodeHost.layer
@@ -124,7 +124,12 @@ private def hostProfileExpr (profile : HostProfile) : Lean.Expr := Id.run do
   let layers := profile.layers.foldr (fun layer tail =>
     Lean.mkApp3 (Lean.mkConst ``List.cons [0]) layerType (hostLayerExpr layer) tail)
     (Lean.mkApp (Lean.mkConst ``List.nil [0]) layerType)
-  return Lean.mkApp2 (Lean.mkConst ``HostProfile.fromLayers) (Lean.toExpr profile.name) layers
+  return Lean.mkAppN (Lean.mkConst ``HostProfile.mk) #[
+    Lean.toExpr profile.name,
+    layers,
+    Lean.toExpr profile.resolvedGlobals,
+    Lean.toExpr profile.resolvedMembers
+  ]
 
 private def certificateText (profile : HostProfile) (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan)
     (source candidate : Program) : EsmSplit.CertificateData.Quotes Refusal Certificate := do
@@ -163,12 +168,13 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   -- free-name cells, hoisted state and entry exports from the actual links.
   let order := fun (p : Program) => p.loaded.flatMap fun m => m.body.map Prod.fst
   let ordered := order source == order candidate
+  let orderedProof := ordered
   -- Larger module graphs can spend most of one reduction budget on linking.
   let stageLink := ordered || (source.modules.map (·.body.length)).sum ≥ 32
   let (layouts, tactic) := if stageLink then
     (layoutDeclaration "private " "source" ++ layoutDeclaration "private " "candidate",
      "  first\n" ++
-     (if ordered then s!"  | verify_ordered_linked_programs {fuel} sourceLink candidateLink premises\n" else "") ++
+     (if orderedProof then s!"  | verify_ordered_linked_programs {fuel} sourceLink candidateLink premises\n" else "") ++
      s!"  | verify_linked_programs_from {fuel} sourceLink candidateLink premises\n  | {ordinaryTactic}\n")
     else ("", s!"  {ordinaryTactic}\n")
   let options := "\nopen CoreJS\n" ++

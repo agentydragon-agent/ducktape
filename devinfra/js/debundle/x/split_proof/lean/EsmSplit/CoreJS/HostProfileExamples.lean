@@ -58,6 +58,10 @@ private def observedTypeHasPremise (profile : HostProfile) (name premise : Strin
   | some (_, state) => state.profileFacts.contains premise
   | none => false
 
+private def observedOperationHasPremise (profile : HostProfile) (name premise : String) : Bool :=
+  let (_, state) := (HostPremises.observations profile).step name .undef [] {}
+  state.profileFacts.contains premise
+
 #guard HostProfile.valid HostProfile.ecmascript
 #guard HostProfile.valid HostProfile.browserPage
 #guard HostProfile.valid HostProfile.node
@@ -150,7 +154,7 @@ private def observedTypeHasPremise (profile : HostProfile) (name premise : Strin
 #guard HostProfile.recordedPrim .nodeRecording "Object" "getPrototypeOf" == some .getPrototypeOf
 #guard HostProfile.recordedPrim .nodeRecording "Object" "setPrototypeOf" == some .setPrototypeOf
 #guard (HostProfile.recordedPrim .browserPage "Object" "create").isNone
-#guard (HostProfile.premises .nodeRecording).contains
+#guard observedOperationHasPremise .nodeRecording "console.log"
   "console.log is the unmodified Node console method and appends formatted output to the recording"
 
 #guard ECMAScriptHost.opaqueConstructorNames.all fun name =>
@@ -212,7 +216,8 @@ private def explicitUndeclaredProfile : HostProfile :=
 
 #guard HostProfile.valid explicitUndeclaredProfile
 #guard HostProfile.undeclaredGlobal explicitUndeclaredProfile "optionalFeature"
-#guard HostProfile.premises explicitUndeclaredProfile == ["optionalFeature is absent"]
+#guard HostProfile.premises explicitUndeclaredProfile == []
+#guard observedTypeHasPremise explicitUndeclaredProfile "optionalFeature" "optionalFeature is absent"
 #guard HostProfile.bindingType explicitUndeclaredProfile "optionalFeature" == some "undefined"
 
 private def parseProfile (source : String) : Except String HostProfile := do
