@@ -411,6 +411,7 @@ function runCase(dir, specName, expected, id) {
           run,
           lowersplit,
           nodeRun,
+          hostContract: process.env.HOST_CONTRACT ?? null,
         }),
       };
     }

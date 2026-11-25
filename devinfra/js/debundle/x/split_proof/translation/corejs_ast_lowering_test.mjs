@@ -26,7 +26,8 @@ function reference(source) {
 
 function run(programs, ast) {
   const input = file(ast ? "asts.jsonl" : "programs.jsonl", programs.map((p) => JSON.stringify(p)).join("\n") + "\n");
-  return execFileSync(process.env.COREJS, [...(ast ? ["--ast"] : []), input], { encoding: "utf8" })
+  const host = ast ? ["--ast", "--host-contract", process.env.NODE_HOST_PROFILE] : [];
+  return execFileSync(process.env.COREJS, [...host, input], { encoding: "utf8" })
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line));
@@ -132,11 +133,17 @@ const ecmaStable = contract("ecma-stable", {
 assert.deepEqual(censusFor(["--host-contract", ecmaStable]), ecmaCensus);
 const browserStable = contract("browser-stable", { profile: "browser-page", stableIntrinsicValues: ["Math.PI@1"] });
 assert.deepEqual(censusFor(["--host-contract", browserStable]), browserCensus);
+const browserObjectStable = contract("browser-object-stable", {
+  profile: "browser-page",
+  stableIntrinsicValues: ["Object.defineProperty@1"],
+});
+assert.deepEqual(censusFor(["--host-contract", browserObjectStable]), browserCensus);
 // Both reports use the certified contract reader and preserve the same
 // first refusals, including for supported stable-intrinsic contracts.
 for (const [contractPath, expected] of [
   [ecmaStable, ecmaCensus],
   [browserStable, browserCensus],
+  [browserObjectStable, browserCensus],
 ]) {
   const concrete = JSON.parse(
     execFileSync(process.env.COREJS, ["--lowering-census", globalsFile, "--host-contract", contractPath], {
@@ -148,7 +155,7 @@ for (const [contractPath, expected] of [
 }
 const invalidContract = contract("invalid-stable", {
   profile: "browser-page",
-  stableIntrinsicValues: ["Object.defineProperty@1"],
+  stableIntrinsicValues: ["Math.notAConstant@1"],
 });
 const malformedContract = file("malformed-contract.json", "{");
 for (const mode of ["--moves-ast", "--lowering-census"]) {

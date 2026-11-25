@@ -485,17 +485,18 @@ structure StaticSplit where
   files : Json
   plan : EsmSplit.Plan
 
-/-- Lower and link an unsplit graph for the recorded Node world. Source ordinals
+/-- Lower and link an unsplit graph under the supplied host profile. Source ordinals
 include the entry's import and export syntax. Provider ordinals follow the entry. -/
-def program (source providers : Json) (scripts : Std.HashSet (Nat × Nat)) (entry : String := "main") :
+def program (profile : HostProfile) (source providers : Json) (scripts : Std.HashSet (Nat × Nat))
+    (entry : String := "main") :
     Except String Program := do
   let nodes ← (ESTreeUnits.nodes source).mapError id
   let format := BodyFormat.recorded scripts
-  let original ← (parse format .nodeRecording entry nodes).mapError StructuralRefusal.reason
+  let original ← (parse format profile entry nodes).mapError StructuralRefusal.reason
   let ps := (← providers.getObj?).toList
   for req in original.imports do
     unless ps.any (·.1 == req.source) do throw s!"missing original dependency {req.source}"
-  let (shared, providerSites) ← (readProviders format .nodeRecording ps nodes.size [entry]).mapError StructuralRefusal.reason
+  let (shared, providerSites) ← (readProviders format profile ps nodes.size [entry]).mapError StructuralRefusal.reason
   let p ← installTemplates { entry, modules := original.numbered entry 0 :: shared }
     (original.templates ++ providerSites)
   let _ ← scopes p

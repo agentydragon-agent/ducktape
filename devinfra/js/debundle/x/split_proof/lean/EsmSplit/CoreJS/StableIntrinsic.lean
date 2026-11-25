@@ -3,7 +3,6 @@ import EsmSplit.CoreJS.StableIntrinsicDescriptor
 namespace CoreJS
 
 namespace StableIntrinsic
-
 /-- Neither observation changes host state. The binding must keep returning the
 same receiver throughout initialization, including across retained units. -/
 def Satisfied (d : StableIntrinsic) (w : World) : Prop :=
@@ -13,10 +12,7 @@ def Satisfied (d : StableIntrinsic) (w : World) : Prop :=
 abbrev Worlds (ds : List StableIntrinsic) (w : World) : Prop := ∀ d ∈ ds, d.Satisfied w
 
 def assumption (d : StableIntrinsic) : String :=
-  let result := match d.value with
-    | .identity name => s!"the stable host reference {name}"
-    | .number bits => s!"the Number with binary64 bits {bits.toNat}"
-  s!"{d.id}: Throughout initialization, reading the ambient binding {d.binding} returns {d.owner}, and reading its own data property {d.key} returns {result}; both reads have no observable effects."
+  s!"{d.id}: {d.premise}; both reads have no observable effects throughout initialization."
 
 def readExpr (d : StableIntrinsic) : Expr :=
   .get (.prim (.globalRef d.binding) []) (.str d.key)

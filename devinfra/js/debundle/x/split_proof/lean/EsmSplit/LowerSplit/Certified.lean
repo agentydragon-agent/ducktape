@@ -95,10 +95,10 @@ private def structuralRefusal (refusal : CoreJS.LinkedBehavior.StructuralRefusal
   { reason := refusal.reason, reasonCode := refusal.reasonCode }
 
 private def profileFields (profile : CoreJS.HostProfile) : List (String × Json) :=
-  if profile == .empty then [] else [("hostProfile", toJson profile.label)]
+  if profile.isEmpty then [] else [("hostProfile", toJson profile.label)]
 
 private def profileVerdict (selected : CoreJS.HostProfile) (used : CoreJS.HostPremises) : List (String × Json) :=
-  if selected == .empty then [] else profileFields selected ++ [("assumptions", toJson used.assumptions)]
+  if selected.isEmpty then [] else profileFields selected ++ [("assumptions", toJson used.assumptions)]
 
 private structure CertifiedOptions where
   request : Guarantee
@@ -129,11 +129,11 @@ private def parseCertifiedOptions (label : String) (args : List String) : IO (Sy
     throw (IO.userError "--deployment-origin requires --structural")
   let (preset, args) := EsmSplit.takeFlag "--deployment-preset" args
   let nativeRecord := preset == some CoreJS.NativeRecord.preset
-  if preset.isSome && !(nativeRecord && deploymentOrigin.isSome && profile == .browserPage) then
+  if preset.isSome && !(nativeRecord && deploymentOrigin.isSome && profile.hasCapability .pageEnvironment) then
     throw (IO.userError "native-browser-record@1 requires a browser-page profile and deployment origin")
   let (mapProfile, args) := EsmSplit.takeFlag "--deployment-import-map" args
   let emptyMap := mapProfile == some "empty@1"
-  if mapProfile.isSome && !(emptyMap && deploymentOrigin.isSome && profile == .browserPage) then
+  if mapProfile.isSome && !(emptyMap && deploymentOrigin.isSome && profile.hasCapability .pageEnvironment) then
     throw (IO.userError "empty@1 requires a browser-page profile and deployment origin")
   let checkOnly := args.contains "--check-output"
   let args := args.filter (· != "--check-output")
@@ -185,7 +185,7 @@ private def prepare (chunk : DeploymentChunk) (input : BundleInput) (work : Syst
   let S ← IO.ofExcept (chunk.spec asts.size)
   for name in S.entry :: S.modules.map Prod.fst do
     let moduleExtension := name.endsWith ".mjs" ||
-      ((profile == .browserPage || (retainEntryRoute && name == sourcePath)) && name.endsWith ".js")
+      ((profile.hasCapability .pageEnvironment || (retainEntryRoute && name == sourcePath)) && name.endsWith ".js")
     unless CoreJS.ModuleInput.supportedFilename name && moduleExtension do
       throw (IO.userError s!"certified output requires a safe relative .mjs path (.js requires a retained deployment entry or browser-page modules), got {name}")
   for (ast, i) in asts.zipIdx do
