@@ -19,9 +19,9 @@ const header = [
 ];
 const body = [];
 for (const [key, rs] of Map.groupBy(rows, (r) => `${r.bundle}\t${r.strategy}`)) {
-  const rejected = rs.filter((r) => r.verdict === "rejected");
+  const refused = rs.filter((r) => r.verdict === "refused");
   const why = {};
-  for (const r of rejected)
+  for (const r of refused)
     why[r.reason_code ?? r.scope ?? "unknown scope"] = (why[r.reason_code ?? r.scope ?? "unknown scope"] ?? 0) + 1;
   body.push([
     ...key.split("\t"),
@@ -29,7 +29,7 @@ for (const [key, rs] of Map.groupBy(rows, (r) => `${r.bundle}\t${r.strategy}`)) 
     count(rs, (r) => r.verdict === "certified"),
     count(rs, (r) => r.verdict === "certified" && r.reordered),
     count(rs, (r) => r.verdict === "certified" && r.node !== "same"),
-    rejected.length,
+    refused.length,
     Object.entries(why)
       .sort((a, b) => b[1] - a[1])
       .map(([c, k]) => `${c} ${k}`)

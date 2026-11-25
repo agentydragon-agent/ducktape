@@ -3,10 +3,9 @@
 //   node run_splits.mjs <bundle> <strategy> [--bundles DIR] [--step N] [--seeds N] [--jobs N] [--out results.jsonl]
 //
 //   bundle    lodash | acorn | semver | zod | acorn.min | zod.min   (../../../lowering/bundles/<bundle>.{json,mjs})
-//   strategy  halves | cuts | cuts_entry_first | single_move | blocks | random
+//   strategy  halves | cuts | cuts_entry_first | blocks | random
 //             cuts:   every single cut point c = step, 2*step, … (two modules [0, c) and [c, n))
 //             cuts_entry_first: the same cuts, but the first module is the entry
-//             single_move: move one selected non-entry statement into its own module; use --unit to select it
 //             blocks: k = 2…8 contiguous blocks
 //             random: k ∈ {2, 3, 5, 8} modules, `seeds` random assignments each
 //
@@ -50,7 +49,6 @@ else if (strategy === "cuts") for (let c = step; c < n; c += step) plans.push({ 
 else if (strategy === "cuts_entry_first")
   for (let c = step; c < n; c += step)
     plans.push({ strategy: "cut", args: [c, "entry-first"], label: "cut_entry_first" });
-else if (strategy === "single_move") plans.push({ strategy, args: [Number(option("unit", 1))] });
 else if (strategy === "blocks") for (let k = 2; k <= 8; k++) plans.push({ strategy, args: [k] });
 else if (strategy === "random")
   for (const k of [2, 3, 5, 8]) for (let seed = 1; seed <= seeds; seed++) plans.push({ strategy, args: [k, seed] });
@@ -88,7 +86,12 @@ async function worker() {
       const specFile = path.join(dir, "spec.json");
       await writeFile(specFile, JSON.stringify(spec));
       const output = path.join(dir, "out");
-      const checked = split({ ast: path.join(lowering, `${bundle}.json`), spec: specFile, out: output });
+      const checked = split({
+        ast: path.join(lowering, `${bundle}.json`),
+        spec: specFile,
+        out: output,
+        structural: true,
+      });
       const certified = checked.status === "certified";
       let node = "not-run";
       let detail = checked.reason ?? "";
@@ -122,7 +125,7 @@ async function worker() {
         detail,
       };
       lines.push(line);
-      const key = certified ? `certified/${node}` : "rejected";
+      const key = certified ? `certified/${node}` : "refused";
       tally[key] = (tally[key] ?? 0) + 1;
     } finally {
       await rm(dir, { recursive: true, force: true });

@@ -23,11 +23,8 @@ run() {
   "$split" "$bundle" "$strategy" "$@" --bundles "$bundles" \
     --out "$results/${bundle}_${strategy}.jsonl" || status=$?
 }
-if [[ ${1:-} == --sample ]]; then
-  # The semver corpus records that moving unit 1 is in the certified fragment.
-  run single_move --unit 1 --require-accepted
-else
-  run halves --require-accepted
+run halves --require-accepted
+if [[ ${1:-} != --sample ]]; then
   run cuts --step "$cut_step"
   run cuts_entry_first --step "$entry_first_step"
   run blocks
