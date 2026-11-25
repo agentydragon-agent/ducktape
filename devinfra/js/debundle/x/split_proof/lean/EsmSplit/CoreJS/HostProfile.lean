@@ -361,9 +361,10 @@ for every world satisfying just the observations made by the two initializers. -
 def observations (profile : HostProfile) : World where
   σ := HostPremises
   -- Capabilities and opaque-constructor allowances select profile-wide lowering
-  -- rules. Global and member facts are added only by the observations that use
-  -- their entries, avoiding both unused premises and a large proof-state list.
-  init := { profileFacts := profile.premises }
+  -- rules. Keep their premises out of the execution state: Probe adds them to
+  -- the reported contract after both executions, so they do not enlarge every
+  -- intermediate state used to compare the programs.
+  init := {}
   step := fun name this args st =>
     let st := match profile.premiseForOperation name with
       | some premise => { st with profileFacts := st.profileFacts.insert premise }

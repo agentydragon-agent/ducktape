@@ -299,6 +299,111 @@ private def witnessFuel (profile : HostPremises) (source candidate : Program) : 
   throw ⟨.probeFuel, s!"linked initialization exhausted the fuel search budget ({limit})", none⟩
 
 /-- Collect host observations from both concrete executions to select the theorem's hypotheses. -/
+private inductive ProfileUse where
+  | prim (operation : Prim)
+  | unary (operation : UnOp)
+
+mutual
+  private partial def profileUsesExpr : Expr → List ProfileUse
+    | .func f => profileUsesFunc f
+    | .obj props => props.flatMap profileUsesProp
+    | .arr elems => elems.flatMap profileUsesExpr
+    | .spreadArg source => profileUsesExpr source
+    | .cls _ _ ctor members => profileUsesFunc ctor ++ members.flatMap profileUsesClassMember
+    | .derived _ _ parent members ctor =>
+      profileUsesExpr parent ++ members.flatMap profileUsesClassMember ++
+        (ctor.toList.flatMap fun (prefixStmts, call, f) =>
+          prefixStmts.flatMap profileUsesStmt ++ profileUsesSuperCall call ++ profileUsesFunc f)
+    | .get o k | .getOptional o k | .delete o k => profileUsesExpr o ++ profileUsesExpr k
+    | .hasProp k o => profileUsesExpr k ++ profileUsesExpr o
+    | .getSuper k => profileUsesExpr k
+    | .assign target rhs | .assignOp target _ rhs | .assignLogical target _ rhs =>
+      profileUsesTarget target ++ profileUsesExpr rhs
+    | .update target .. => profileUsesTarget target
+    | .call f args | .new f args => profileUsesExpr f ++ args.flatMap profileUsesExpr
+    | .callMethod o k args | .callOptionalReceiver o k args =>
+      profileUsesExpr o ++ profileUsesExpr k ++ args.flatMap profileUsesExpr
+    | .callSuper k args _ => profileUsesExpr k ++ args.flatMap profileUsesExpr
+    | .callOptionalCallee o k args property =>
+      profileUsesExpr o ++ profileUsesExpr k ++ args.flatMap profileUsesExpr ++ property.toList.flatMap profileUsesExpr
+    | .prim operation args => .prim operation :: args.flatMap profileUsesExpr
+    | .unary operation e => .unary operation :: profileUsesExpr e
+    | .binary _ a b | .logical _ a b => profileUsesExpr a ++ profileUsesExpr b
+    | .cond c t e => profileUsesExpr c ++ profileUsesExpr t ++ profileUsesExpr e
+    | .seq a b => profileUsesExpr a ++ profileUsesExpr b
+    | .undef | .null | .bool _ | .num _ | .str _ | .regexp _ | .var _ | .host _ | .this => []
+
+  private partial def profileUsesFunc : Func → List ProfileUse
+    | .mk _ _ _ _ body | .withDefaults _ _ _ _ _ body | .withRest _ _ _ _ _ body =>
+      body.flatMap profileUsesStmt
+    | .opaque .. => []
+
+  private partial def profileUsesProp : PropDef → List ProfileUse
+    | .init key value => profileUsesExpr key ++ profileUsesExpr value
+    | .method key f | .getter key f | .setter key f => profileUsesExpr key ++ profileUsesFunc f
+    | .proto value => profileUsesExpr value
+    | .spread source _ => profileUsesExpr source
+
+  private partial def profileUsesClassMember : ClassMember → List ProfileUse
+    | .method _ key f | .getter _ key f | .setter _ key f => profileUsesExpr key ++ profileUsesFunc f
+    | .field _ key init => profileUsesExpr key ++ profileUsesExpr init
+    | .staticBlock f => profileUsesFunc f
+
+  private partial def profileUsesTarget : Target → List ProfileUse
+    | .member o k => profileUsesExpr o ++ profileUsesExpr k
+    | .var _ | .frozen _ => []
+
+  private partial def profileUsesSuperCall : SuperCall → List ProfileUse
+    | .forward => []
+    | .explicit args => args.flatMap profileUsesExpr
+    | .conditional _ consequent alternate =>
+      consequent.flatMap profileUsesExpr ++ alternate.flatMap profileUsesExpr
+
+  private partial def profileUsesBinding : BindingPattern → List ProfileUse
+    | .name _ => []
+    | .object properties => properties.flatMap fun (key, value) => profileUsesExpr key ++ profileUsesBinding value
+    | .array elements rest =>
+      elements.flatMap (Option.elim · [] profileUsesBinding) ++ rest.toList.flatMap profileUsesBinding
+    | .defaultValue pattern fallback => profileUsesBinding pattern ++ profileUsesExpr fallback
+
+  private partial def profileUsesStmt : Stmt → List ProfileUse
+    | .expr e | .ret e | .throw e => profileUsesExpr e
+    | .decl _ _ init => profileUsesExpr init
+    | .bind _ pattern init => profileUsesBinding pattern ++ profileUsesExpr init
+    | .varDecl _ | .brk | .cont | .opaque .. => []
+    | .funDecl f => profileUsesFunc f
+    | .ite c t e => profileUsesExpr c ++ profileUsesStmt t ++ profileUsesStmt e
+    | .block body => body.flatMap profileUsesStmt
+    | .loop init test update body =>
+      init.flatMap profileUsesStmt ++ profileUsesExpr test ++ profileUsesExpr update ++ profileUsesStmt body
+    | .breakScope body => profileUsesStmt body
+    | .forOf _ pattern source body => profileUsesBinding pattern ++ profileUsesExpr source ++ profileUsesStmt body
+    | .tryCatch body _ handler => profileUsesStmt body ++ profileUsesStmt handler
+    | .tryFinally body finalizer => profileUsesStmt body ++ profileUsesStmt finalizer
+end
+
+private def profileUsesProgram (program : Program) : List ProfileUse :=
+  program.modules.flatMap fun module => module.body.flatMap fun (_, stmt) => profileUsesStmt stmt
+
+private def recordedPrimitiveFacts (profile : HostProfile) (owner key : String) (operation : Prim) : List String :=
+  if profile.recordedPrim owner key == some operation then
+    (profile.premiseForOperation (owner ++ "." ++ key)).toList ++
+      (if profile.hasCapability .recordedModelPrimitives then
+        (profile.capabilityPremise? .recordedModelPrimitives).toList
+      else [])
+  else []
+
+private def factsForProfileUse (profile : HostProfile) : ProfileUse → List String
+  | .unary .toString => (profile.capabilityPremise? .recordedStringConversion).toList
+  | .unary _ => []
+  | .prim .log => recordedPrimitiveFacts profile "console" "log" .log
+  | .prim .create => recordedPrimitiveFacts profile "Object" "create" .create
+  | .prim .defineProperty => recordedPrimitiveFacts profile "Object" "defineProperty" .defineProperty
+  | .prim .getPrototypeOf => recordedPrimitiveFacts profile "Object" "getPrototypeOf" .getPrototypeOf
+  | .prim .setPrototypeOf => recordedPrimitiveFacts profile "Object" "setPrototypeOf" .setPrototypeOf
+  | .prim .checkArrayFrom | .prim .templateIterable => (profile.capabilityPremise? .arrayFromTemplate).toList
+  | .prim _ => []
+
 private def observePremises (profile : HostProfile) (source candidate : Program) : HostPremises := Id.run do
   if profile.isEmpty then return {}
   let world := HostPremises.observations profile
@@ -309,9 +414,11 @@ private def observePremises (profile : HostProfile) (source candidate : Program)
     | .fuel => ({} : HostPremises)
   let left := observed source
   let right := observed candidate
+  let profileFacts :=
+    ((profileUsesProgram source ++ profileUsesProgram candidate).flatMap (factsForProfileUse profile)).eraseDups
   return { typeofBindings := (left.typeofBindings ++ right.typeofBindings).eraseDups.mergeSort (fun a b => a.1 ≤ b.1)
            refs := (left.refs ++ right.refs).eraseDups.reverse,
-           profileFacts := (left.profileFacts ++ right.profileFacts).eraseDups }
+           profileFacts := (left.profileFacts ++ right.profileFacts ++ profileFacts).eraseDups }
 
 /-- Find the concrete fuel witness before generating the all-world proof. -/
 def probeWitness (profile : HostProfile) (source candidate : Program) : Except Refusal (HostPremises × Nat) := do
