@@ -95,6 +95,14 @@ def Env.capture (env : Env) (names : List Name) : Env where
   this := env.this
   home := env.home
 
+/-- A global environment's declarative bindings and object environment share one heap.
+The supplied object must be an ordinary modeled object with a complete property snapshot.
+`globalThis` can differ from that object (for example, a host global-this proxy). -/
+structure GlobalEnv where
+  declarative : List (Name × Addr)
+  object : Addr
+  globalThis : Val
+
 /-- What a callable object runs. `fields` are the instance fields of a class constructor. -/
 inductive Code where
   /-- An implicit derived constructor forwards to its current internal prototype. -/
@@ -439,6 +447,20 @@ def regexpGetters : List (String × RegExpGetter) := [
   ("unicode", .flag 'u'), ("unicodeSets", .flag 'v')]
 
 def arrayIteratorProto : Addr := ⟨0, regexpProto.index + 1 + regexpGetters.length⟩
+
+/-- The global object is host-owned; the other slots come from the ECMAScript layer. -/
+inductive RealmId where
+  | globalObject
+  | intrinsic (id : ECMAScriptHost.IntrinsicId)
+  deriving DecidableEq, BEq, Repr
+
+def realmIds : List RealmId := .globalObject :: ECMAScriptHost.realmIntrinsics.map .intrinsic
+
+def realmAddr (id : RealmId) (_present : realmIds.contains id = true) : Addr :=
+  ⟨0, arrayIteratorProto.index + 1 + realmIds.idxOf id⟩
+def globalObject : Addr := realmAddr .globalObject (by decide)
+def errorProto : Addr := realmAddr (.intrinsic .errorPrototype) (by decide)
+def errorConstructor : Addr := realmAddr (.intrinsic .errorConstructor) (by decide)
 
 def arrayIteratorPrototype : Obj :=
   { proto := some iteratorProto, props := hostMembers "ArrayIterator.prototype" ["next"] ++ [stringTag "Array Iterator"] }

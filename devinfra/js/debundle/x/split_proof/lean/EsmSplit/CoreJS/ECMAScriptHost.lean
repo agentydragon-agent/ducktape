@@ -2,6 +2,16 @@ import EsmSplit.CoreJS.HostLayer
 
 namespace CoreJS.ECMAScriptHost
 
+/-- Identities of the ECMAScript intrinsic objects currently represented in the heap. -/
+inductive IntrinsicId where
+  | errorPrototype | errorConstructor
+  deriving DecidableEq, BEq, Repr
+
+def realmIntrinsics : List IntrinsicId := [.errorPrototype, .errorConstructor]
+
+/-- Standard global names whose initial bindings can be supplied by this realm. -/
+def realmGlobalBindings : List (String × IntrinsicId) := [("Error", .errorConstructor)]
+
 private def globalPremise (name : String) :=
   s!"the ambient {name} binding is the unmodified ECMAScript intrinsic throughout initialization"
 
@@ -15,7 +25,8 @@ private def intrinsicObject (name : String) : HostGlobalEntry :=
 
 def globalFunctions : List String :=
   ["AggregateError", "Array", "ArrayBuffer", "BigInt", "BigInt64Array", "BigUint64Array", "SharedArrayBuffer",
-   "Boolean", "DataView", "Date", "Error", "EvalError", "FinalizationRegistry", "Float16Array",
+   "Boolean", "DataView", "Date"] ++ realmGlobalBindings.map Prod.fst ++
+  ["EvalError", "FinalizationRegistry", "Float16Array",
    "Float32Array", "Float64Array", "Function", "Int16Array", "Int32Array", "Int8Array", "Iterator",
    "Map", "Number", "Object", "Promise", "Proxy", "RangeError", "ReferenceError", "RegExp", "Set",
    "String", "SuppressedError", "Symbol", "SyntaxError", "TypeError", "URIError", "Uint16Array",
