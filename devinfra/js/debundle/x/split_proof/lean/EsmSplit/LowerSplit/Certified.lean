@@ -7,6 +7,7 @@ import EsmSplit.CoreJS.Move
 import EsmSplit.CoreJS.StructuralCertificate
 import EsmSplit.ESTreeEmit
 import EsmSplit.LowerSplit.Input
+import EsmSplit.LowerSplit.SliceCertificate
 import EsmSplit.ReadDeployment
 
 /-! Certify a proposed split and publish its output or verify the existing tree. -/
@@ -77,10 +78,17 @@ private def verifyExecution (timings : Bool) (work : System.FilePath) (cert : Co
   return cert.premises
 
 private def emitVerdict (requested : String) (outcome : Except String Guarantee) (scope : Option String := none) (extra : List (String × Json) := []) : IO UInt32 := do
+  let everyEndingMatches := match outcome with
+    | .ok .allOutcomes => true
+    | _ => false
   let fields := match outcome with
     | .error why => [("status", toJson "rejected"), ("guarantee", Json.null), ("reason", toJson why)]
     | .ok level => [("status", toJson "certified"), ("guarantee", toJson level.label)]
-  IO.println (Json.mkObj ([("requested", toJson requested), ("scope", toJson scope)] ++ fields ++ extra)).compress
+  IO.println (Json.mkObj ([
+    ("requested", toJson requested),
+    ("scope", toJson scope),
+    ("every_ending_matches", toJson everyEndingMatches),
+  ] ++ fields ++ extra)).compress
   return if outcome.isOk then 0 else 1
 
 /-- Convert a typed refusal into the existing verdict fields at the CLI boundary. -/
@@ -93,6 +101,11 @@ private def emitRefusal (requested : String) (refusal : CertificationRefusal)
 
 private def structuralRefusal (refusal : CoreJS.LinkedBehavior.StructuralRefusal) : CertificationRefusal :=
   { reason := refusal.reason, reasonCode := refusal.reasonCode }
+
+private def probeRefusal (refusal : CoreJS.LinkedBehavior.Refusal) : CertificationRefusal :=
+  { reason := refusal.reason
+    reasonCode := some refusal.code.label
+    observation := refusal.observation }
 
 private def profileFields (profile : CoreJS.HostProfile) : List (String × Json) :=
   if profile == .empty then [] else [("hostProfile", toJson profile.label)]
@@ -227,6 +240,18 @@ private def checkPartLayout (part : Part) (timings : Bool) : IO Unit := do
   unless ok do
     throw (IO.userError "source placement or module linkage checks failed")
 
+private def replayForPair (timings : Bool) (phase : String) (profile : CoreJS.HostProfile)
+    (program providers files : Json) (plan : Plan) (original candidate : CoreJS.Program)
+    (witness : CoreJS.HostPremises × Nat) : IO (Option CoreJS.HostPremises) := do
+  let (premises, fuel) := witness
+  timePhase timings phase fun _ => IO.lazyPure fun _ =>
+    match CoreJS.LinkedBehavior.replayPremisedPrograms premises fuel original candidate with
+    | none => none
+    | some semantics =>
+      match CoreJS.LinkedBehavior.certifyASTs profile premises program providers files plan original candidate semantics.down with
+      | .error _ => none
+      | .ok _ => some premises
+
 /-- Preserve singleton declarations and executable linked certificates,
 with the original bundle at the virtual root for authored inputs. -/
 private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
@@ -294,55 +319,84 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
       match decoded with
       | .error reason => pure (.error ({ reason, reasonCode := some "linked_input" } : CertificationRefusal))
       | .ok (original, candidate) => do
-        let census ← IO.getEnv "SPLIT_PROOF_STRATEGY_CENSUS"
-        let replayBlockers :=
-          if census == some "1" then
-            CoreJS.LinkedBehavior.replayPremisedBlockerKinds original candidate
-          else []
-        if request != .normalCompletion then
-          pure (.error ({ reason := "linked execution proves only normal-completion" } : CertificationRefusal))
-        else do
-          let replayed : Option CoreJS.HostPremises ←
-            timePhase timings "compiled_replay" fun _ => IO.lazyPure fun _ =>
-              match CoreJS.LinkedBehavior.probeWitness profile original candidate with
-              | .error _ => none
-              | .ok (premises, fuel) =>
-                match CoreJS.LinkedBehavior.replayPremisedPrograms premises fuel original candidate with
-                | none => none
-                | some semantics =>
-                  match CoreJS.LinkedBehavior.certifyASTs profile premises program providers files P original candidate semantics.down with
-                  | .error _ => none
-                  | .ok _ => some premises
-          if let some premises := replayed then
-            pure (.ok (premises, "compiled-replay-premised", []))
-          else
-            let prepared : Except CertificationRefusal
-                (CoreJS.LinkedBehavior.Certificate × Lean.NameMap Lean.ImportArtifacts) ←
-              timePhase timings "certificate_preparation" fun _ => do
-              let result ← IO.lazyPure fun _ =>
-                CoreJS.LinkedBehavior.certificate profile program providers files P original candidate
-              match result with
-              | .error refusal =>
-                pure (.error ({
-                  reason := refusal.reason
-                  reasonCode := some refusal.code.label
-                  observation := refusal.observation
-                } : CertificationRefusal))
-              | .ok (cert, terms) =>
-                try
-                  pure (.ok (cert, ← writeCertificateData work terms))
-                catch err =>
-                  pure (.error ({
-                    reason := err.toString
-                    reasonCode := some "proof_preparation"
-                  } : CertificationRefusal))
-            match prepared with
-            | .error refusal => pure (.error refusal)
-            | .ok (cert, dataArts) => do
-              let used ← verifyExecution timings work cert dataArts
-              pure (.ok (used, "generated-proof", replayBlockers))
+        let probe ← timePhase timings "compiled_slice_probe" fun _ =>
+          IO.lazyPure fun _ => CoreJS.LinkedBehavior.probeWitness profile original candidate
+        -- An accessor and a property-read blocker trigger a real replay
+        -- preflight. Its result controls strategy order; only successful
+        -- replay permits the slice to replace this existing fallback path.
+        let replayKinds := CoreJS.LinkedBehavior.replayPremisedBlockerKinds original candidate
+        let hasAccessorRead := replayKinds.contains "object-accessor" && replayKinds.contains "property-read"
+        let replayForSlice ← match probe with
+          | .ok witness =>
+            if hasAccessorRead then
+              replayForPair timings "compiled_replay_slice_guard" profile program providers files P original candidate witness
+            else pure none
+          | .error _ => pure none
+        let skipSliceForReplay := match probe with
+          | .ok _ => hasAccessorRead && replayForSlice.isNone
+          | .error _ => false
+        let sliceResult ← match probe with
+          | .error refusal => pure (.error (probeRefusal refusal))
+          | .ok _ =>
+            if skipSliceForReplay then
+              pure (.error ({
+                reason := "compiled replay declined a property read; retaining the generated proof path"
+                reasonCode := some "slice_replay_guard"
+              } : CertificationRefusal))
+            else timePhase timings "compiled_slice" fun _ =>
+              IO.lazyPure fun _ => certifySlice profile program providers files P B S
+        match sliceResult with
+        | .ok (kind, _statement) =>
+          if request == .allOutcomes && kind.level != .allOutcomes then
+            pure (.error ({
+              reason := s!"the compiled {kind.scope} slice proves only normal-completion"
+              reasonCode := some "slice_guarantee"
+            } : CertificationRefusal))
+          else pure (.ok (some kind, {}, "compiled-slice", []))
+        | .error _refusal =>
+          if request != .normalCompletion then
+            pure (.error ({ reason := "linked execution proves only normal-completion" } : CertificationRefusal))
+          else do
+            let census ← IO.getEnv "SPLIT_PROOF_STRATEGY_CENSUS"
+            let replayBlockers := if census == some "1" then replayKinds else []
+            let replayed : Option CoreJS.HostPremises ← match probe with
+              | .error _ => pure none
+              | .ok witness =>
+                if let some premises := replayForSlice then pure (some premises)
+                else if skipSliceForReplay then pure none
+                else replayForPair timings "compiled_replay" profile program providers files P original candidate witness
+            if let some premises := replayed then
+              pure (.ok (none, premises, "compiled-replay-premised", []))
+            else
+              let prepared : Except CertificationRefusal
+                  (CoreJS.LinkedBehavior.Certificate × Lean.NameMap Lean.ImportArtifacts) ←
+                timePhase timings "certificate_preparation" fun _ => do
+                  match probe with
+                  | .error refusal => pure (.error (probeRefusal refusal))
+                  | .ok witness => do
+                    let result ← IO.lazyPure fun _ =>
+                      CoreJS.LinkedBehavior.certificateWithWitness profile program providers files P original candidate witness
+                    match result with
+                    | .error refusal => pure (.error (probeRefusal refusal))
+                    | .ok (cert, terms) =>
+                      try
+                        pure (.ok (cert, ← writeCertificateData work terms))
+                      catch err =>
+                        pure (.error ({
+                          reason := err.toString
+                          reasonCode := some "proof_preparation"
+                        } : CertificationRefusal))
+              match prepared with
+              | .error refusal => pure (.error refusal)
+              | .ok (cert, dataArts) => do
+                let used ← verifyExecution timings work cert dataArts
+                pure (.ok (none, used, "generated-proof", replayBlockers))
     match checked with
-    | .ok (active, strategy, blockers) => do
+    | .ok (some kind, active, strategy, blockers) => do
+      let blockerFields := if blockers.isEmpty then [] else [("replay_blockers", toJson blockers)]
+      return ← emitVerdict request.label (.ok kind.level) kind.scope
+        (profileVerdict profile active ++ [("strategy", toJson strategy)] ++ blockerFields)
+    | .ok (none, active, strategy, blockers) => do
       let blockerFields := if blockers.isEmpty then [] else [("replay_blockers", toJson blockers)]
       return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs"
         (profileVerdict profile active ++ [("strategy", toJson strategy)] ++ blockerFields)
