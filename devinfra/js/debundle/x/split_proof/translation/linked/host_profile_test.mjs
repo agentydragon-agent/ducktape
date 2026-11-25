@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { split } from "../testing/split.mjs";
 import {
   assertCertified,
+  browserObservedAssumptions,
   arrow,
   block,
   call,
@@ -80,7 +81,15 @@ for (const [binding, defaulted] of [
   const verdict = test.run("--host-contract", profile);
   assert.equal(verdict.status, "certified", JSON.stringify(verdict));
   assert.equal(verdict.hostProfile, "browser-page");
-  assert.equal(verdict.assumptions.length, local ? 0 : 1);
+  assert.deepEqual(
+    browserObservedAssumptions(verdict.assumptions),
+    local
+      ? []
+      : [
+          "window, globalThis, and self return the same page global object throughout initialization",
+          "typeof window is object without observable effects throughout initialization",
+        ]
+  );
   assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
   // Supply the single observation promised by the profile in this Node realm.
   globalThis.window = {};
@@ -205,7 +214,7 @@ for (const args of [[], [literal("absent")]]) {
       assert(!existsSync(test.out));
     } else {
       assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-      assert.deepEqual(verdict.assumptions, []);
+      assert.deepEqual(browserObservedAssumptions(verdict.assumptions), []);
       assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
       for (const file of [test.sourceFile, path.join(test.out, entry)]) {
         assert.equal((await import(pathToFileURL(file).href)).result, 42);
@@ -236,7 +245,7 @@ if (includesCase("shadowed-host-bindings")) {
   );
   const localVerdict = lexical.run("--host-contract", profile);
   assert.equal(localVerdict.status, "certified", JSON.stringify(localVerdict));
-  assert.deepEqual(localVerdict.assumptions, []);
+  assert.deepEqual(browserObservedAssumptions(localVerdict.assumptions), []);
   for (const file of [lexical.sourceFile, path.join(lexical.out, entry)]) {
     assert.equal((await import(pathToFileURL(file).href)).result, "local");
   }
@@ -299,7 +308,10 @@ for (const pageSkipsError of [true, false]) {
     continue;
   }
   assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.assumptions.length, 1);
+  assert.deepEqual(browserObservedAssumptions(verdict.assumptions), [
+    "window, globalThis, and self return the same page global object throughout initialization",
+    "typeof window is object without observable effects throughout initialization",
+  ]);
   assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
   globalThis.window = {};
   try {
@@ -339,7 +351,7 @@ for (const active of [false, true]) {
     assert(!existsSync(test.out));
   } else {
     assert.equal(status, "certified", reason);
-    assert.deepEqual(assumptions, []);
+    assert.deepEqual(browserObservedAssumptions(assumptions), []);
     for (const file of [test.sourceFile, path.join(test.out, entry)]) {
       const mod = await import(pathToFileURL(file).href);
       assert.equal(mod.result, "help");

@@ -2,7 +2,16 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { assertCertifiedResult, assertRejected, caseShard, lower, observe, prepare, root } from "./harness.mjs";
+import {
+  assertCertifiedResult,
+  assertRejected,
+  browserObservedAssumptions,
+  caseShard,
+  lower,
+  observe,
+  prepare,
+  root,
+} from "./harness.mjs";
 
 const runCase = caseShard();
 
@@ -78,7 +87,8 @@ if (runCase("async-iterator-symbol")) {
     { "base.mjs": ["#0"], "entry.mjs": ["#1", "#2"] }
   );
   assertCertifiedResult(run, true);
-  assert.deepEqual(run.verdict.assumptions, [
+  assert.deepEqual(browserObservedAssumptions(run.verdict.assumptions), [
+    "Symbol.asyncIterator is the realm's well-known symbol throughout initialization",
     "Symbol.asyncIterator returns the well-known asyncIterator symbol without observable effects throughout initialization",
   ]);
   assert.deepEqual(

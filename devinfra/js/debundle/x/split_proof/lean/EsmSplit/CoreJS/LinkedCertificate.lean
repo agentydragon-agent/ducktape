@@ -109,6 +109,23 @@ private partial def expandedBytes (expr : Lean.Expr) : Nat :=
   | .fvar id => id.name.toString.utf8ByteSize
   | _ => 0
 
+/-- Reuse the compiled definitions for built-in layers in generated certificates.
+Author layers remain quoted as data, so certificates retain the exact selected
+profile without expanding the standard catalog into every proof module. -/
+private def hostLayerExpr (layer : HostLayer) : Lean.Expr :=
+  if layer = ECMAScriptHost.layer then Lean.mkConst ``ECMAScriptHost.layer
+  else if layer = NodeHost.layer then Lean.mkConst ``NodeHost.layer
+  else if layer = BrowserPageHost.layer then Lean.mkConst ``BrowserPageHost.layer
+  else if layer = RecordedNodeHost.layer then Lean.mkConst ``RecordedNodeHost.layer
+  else Lean.toExpr layer
+
+private def hostProfileExpr (profile : HostProfile) : Lean.Expr := Id.run do
+  let layerType := Lean.mkConst ``HostLayer
+  let layers := profile.layers.foldr (fun layer tail =>
+    Lean.mkApp3 (Lean.mkConst ``List.cons [0]) layerType (hostLayerExpr layer) tail)
+    (Lean.mkApp (Lean.mkConst ``List.nil [0]) layerType)
+  return Lean.mkApp2 (Lean.mkConst ``HostProfile.fromLayers) (Lean.toExpr profile.name) layers
+
 private def certificateText (profile : HostProfile) (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan)
     (source candidate : Program) : EsmSplit.CertificateData.Quotes Refusal Certificate := do
   let records := RecordQuotes.collect source candidate
@@ -134,7 +151,7 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   let recordTerms ← records.definitions sourceTerm candidateTerm move.isSome
   let writeTerms ← writes.definitions
   let p ← EsmSplit.CertificateData.quote "plan" (Lean.toExpr plan)
-  let profileTerm ← EsmSplit.CertificateData.quote "profile" (Lean.toExpr profile)
+  let profileTerm ← EsmSplit.CertificateData.quote "profile" (hostProfileExpr profile)
   let (asts, astData) := jsonDefinitions [("sourceAST", sourceAST), ("providers", providers), ("files", files)]
   modify (· ++ astData)
   -- The generated declarations are short. Estimate the compiler's workload from

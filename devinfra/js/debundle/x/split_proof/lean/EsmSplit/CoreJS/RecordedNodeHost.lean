@@ -3,8 +3,7 @@ import EsmSplit.CoreJS.NodeHost
 namespace CoreJS.RecordedNodeHost
 
 private def recordedValue (entry : HostGlobalEntry) : HostGlobalEntry :=
-  { name := entry.name, typeTag := entry.typeTag, recordedValue := true,
-    premise := entry.premise }
+  { name := entry.name, recordedValue := true }
 
 def globals : List HostGlobalEntry :=
   (NodeHost.layers.flatMap fun layer => layer.globals).filterMap fun entry =>

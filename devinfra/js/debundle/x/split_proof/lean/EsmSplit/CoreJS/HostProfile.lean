@@ -9,6 +9,9 @@ namespace CoreJS
 structure HostProfile where
   name : String
   layers : List HostLayer := []
+  /-- Merged lookup tables derived from `layers`; host facts are authored only in the layers. -/
+  resolvedGlobals : List HostGlobalEntry := []
+  resolvedMembers : List HostMemberEntry := []
   deriving DecidableEq, Repr
 
 namespace HostProfile
@@ -61,38 +64,48 @@ private def mergeMember (left right : HostMemberEntry) : Option HostMemberEntry 
   guard (dataValue.isNone || (identity.isNone && !worldCall && primitive.isNone))
   pure ⟨left.owner, left.key, identity, worldCall, primitive, dataValue, mergePremise left.premise right.premise⟩
 
+private def mergeGlobalEntries (layers : List HostLayer) : Option (List HostGlobalEntry) := Id.run do
+  let mut entries : List HostGlobalEntry := []
+  for entry in layers.flatMap (·.globals) do
+    if let some prior := entries.find? (·.name == entry.name) then
+      if let some merged := mergeGlobal prior entry then
+        entries := entries.map fun old => if old.name == entry.name then merged else old
+      else
+        return none
+    else
+      entries := entries ++ [entry]
+  return some entries
+
+private def mergeMemberEntries (layers : List HostLayer) : Option (List HostMemberEntry) := Id.run do
+  let mut entries : List HostMemberEntry := []
+  for entry in layers.flatMap (·.members) do
+    if let some prior := entries.find? fun old => old.owner == entry.owner && old.key == entry.key then
+      if let some merged := mergeMember prior entry then
+        entries := entries.map fun old =>
+          if old.owner == entry.owner && old.key == entry.key then merged else old
+      else
+        return none
+    else
+      entries := entries ++ [entry]
+  return some entries
+
+/-- Build the derived lookup tables once after composing the authored layers. -/
+def fromLayers (name : String) (layers : List HostLayer) : HostProfile :=
+  ⟨name, layers, (mergeGlobalEntries layers).getD [], (mergeMemberEntries layers).getD []⟩
+
+def withLayers (profile : HostProfile) (layers : List HostLayer) : HostProfile :=
+  fromLayers profile.name layers
+
 def globalEntry? (profile : HostProfile) (name : String) : Option HostGlobalEntry := Id.run do
-  let mut found : Option HostGlobalEntry := none
-  for entry in profile.layers.flatMap (·.globals) do
-    if entry.name == name then
-      found := match found with
-        | none => some entry
-        | some prior => mergeGlobal prior entry
-      if found.isNone then return none
-  return found
+  return profile.resolvedGlobals.find? (·.name == name)
 
 def memberEntry? (profile : HostProfile) (owner key : String) : Option HostMemberEntry := Id.run do
-  let mut found : Option HostMemberEntry := none
-  for entry in profile.layers.flatMap (·.members) do
-    if entry.owner == owner && entry.key == key then
-      found := match found with
-        | none => some entry
-        | some prior => mergeMember prior entry
-      if found.isNone then return none
-  return found
+  return profile.resolvedMembers.find? fun entry => entry.owner == owner && entry.key == key
 
 def valid (profile : HostProfile) : Bool := Id.run do
   unless profile.layers.all HostLayer.validPremises do return false
-  let globals := profile.layers.flatMap (·.globals)
-  for (entry, i) in globals.zipIdx do
-    if globals.drop (i + 1) |>.any fun next => next.name == entry.name && (mergeGlobal entry next).isNone then
-      return false
-  let members := profile.layers.flatMap (·.members)
-  for (entry, i) in members.zipIdx do
-    if members.drop (i + 1) |>.any fun next =>
-        next.owner == entry.owner && next.key == entry.key && (mergeMember entry next).isNone then
-      return false
-  return true
+  return mergeGlobalEntries profile.layers == some profile.resolvedGlobals &&
+    mergeMemberEntries profile.layers == some profile.resolvedMembers
 
 def premises (profile : HostProfile) : List String := Id.run do
   let mut result : List String := []
@@ -132,11 +145,11 @@ def premiseForOperation (profile : HostProfile) (name : String) : Option String 
     if s!"{entry.owner}.{entry.key}" == name then return entry.premise
   return none
 
-def empty : HostProfile := ⟨"empty", []⟩
-def ecmascript : HostProfile := ⟨"ecmascript", [ECMAScriptHost.layer]⟩
-def browserPage : HostProfile := ⟨"browser-page", BrowserPageHost.layers⟩
-def node : HostProfile := ⟨"node", NodeHost.layers⟩
-def nodeRecording : HostProfile := ⟨"node-recording", RecordedNodeHost.layers⟩
+def empty : HostProfile := fromLayers "empty" []
+def ecmascript : HostProfile := fromLayers "ecmascript" [ECMAScriptHost.layer]
+def browserPage : HostProfile := fromLayers "browser-page" BrowserPageHost.layers
+def node : HostProfile := fromLayers "node" NodeHost.layers
+def nodeRecording : HostProfile := fromLayers "node-recording" RecordedNodeHost.layers
 
 def isEmpty (profile : HostProfile) : Bool := profile.layers.isEmpty
 
@@ -170,12 +183,9 @@ def bindingType (profile : HostProfile) (name : String) : Option String :=
 def opaqueBinding (profile : HostProfile) (name : String) : Bool :=
   (profile.globalEntry? name).any fun entry => entry.opaqueRef && entry.identity.isNone
 
-private def presentedIdentity (profile : HostProfile) (identity : String) : String :=
-  if !profile.hasCapability .pageEnvironment then identity
-  else if ["intrinsic.Array", "intrinsic.Symbol", "intrinsic.Array.from"].contains identity ||
-      identity.startsWith "Symbol." then identity
-  else if let some suffix := identity.dropPrefix? "intrinsic." then "window." ++ suffix.toString
-  else identity
+/-- Standard globals keep their shared intrinsic identity in every profile.
+Page-only globals already carry their explicit `window.*` identities. -/
+private def presentedIdentity (_profile : HostProfile) (identity : String) : String := identity
 
 def bindingIdentity (profile : HostProfile) (name : String) : Option String :=
   if profile.recordedHostValue name then none
@@ -311,7 +321,7 @@ def read (j : Lean.Json) : Except String HostProfile := do
   if profile.name == "empty" && name != "empty" then
     throw s!"unsupported host profile {name}"
   let extensions ← (← arrayField j "extensions").mapM parseLayer
-  let profile := { profile with layers := profile.layers ++ extensions }
+  let profile := profile.withLayers (profile.layers ++ extensions)
   unless profile.valid do throw "host profile contains an entry without a premise or conflicting entries"
   return profile
 

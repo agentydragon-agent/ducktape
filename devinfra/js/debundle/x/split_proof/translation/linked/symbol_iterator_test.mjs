@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { assertCertifiedResult, lower, root, threeUnitFixture as fixture } from "./harness.mjs";
+import {
+  assertCertifiedResult,
+  browserObservedAssumptions,
+  lower,
+  root,
+  threeUnitFixture as fixture,
+} from "./harness.mjs";
 
 const profile = path.join(root, "browser.json");
 writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
@@ -34,7 +40,10 @@ const method = fixture(
 assert.match(method.run().reason, /unsupported computed class key/);
 const run = lower(method.sourceFile, method.specFile, method.out, options);
 assertCertifiedResult({ ...run, files: method, out: method.out }, true);
-assert.deepEqual(run.verdict.assumptions, [premise]);
+assert.deepEqual(browserObservedAssumptions(run.verdict.assumptions), [
+  "Symbol.iterator is the realm's well-known symbol throughout initialization",
+  premise,
+]);
 assert.deepEqual(method.run(...options, "--check-output"), run.verdict);
 
 const owner = path.join(method.out, "worker.mjs");
@@ -52,7 +61,7 @@ const shadow = fixture(
 );
 const shadowRun = lower(shadow.sourceFile, shadow.specFile, shadow.out, options);
 assertCertifiedResult({ ...shadowRun, files: shadow, out: shadow.out }, 42);
-assert.deepEqual(shadowRun.verdict.assumptions, []);
+assert.deepEqual(browserObservedAssumptions(shadowRun.verdict.assumptions), []);
 
 const accessors = fixture(
   "iterator-accessors",
@@ -69,7 +78,10 @@ const accessors = fixture(
 );
 const accessorRun = lower(accessors.sourceFile, accessors.specFile, accessors.out, options);
 assertCertifiedResult({ ...accessorRun, files: accessors, out: accessors.out }, true);
-assert.deepEqual(accessorRun.verdict.assumptions, [premise]);
+assert.deepEqual(browserObservedAssumptions(accessorRun.verdict.assumptions), [
+  "Symbol.iterator is the realm's well-known symbol throughout initialization",
+  premise,
+]);
 
 const builtin = fixture(
   "native-array-iterator",

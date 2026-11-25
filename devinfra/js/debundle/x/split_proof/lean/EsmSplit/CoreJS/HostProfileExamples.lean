@@ -25,14 +25,22 @@ private def legacyBrowserIdentity (name : String) : Option String :=
     some ("window." ++ name)
   else none
 
+private def canonicalBrowserIdentity (name : String) : Option String := do
+  let identity ← legacyBrowserIdentity name
+  if ECMAScriptHost.globalEntries.any (·.name == name) then
+    if let some suffix := identity.dropPrefix? "window." then
+      return "intrinsic." ++ suffix.toString
+  return identity
+
 private def legacyBrowserMemberIdentity (owner key : String) : Option String :=
   if owner == "Symbol" then
     match WellKnownSymbol.ofMember? key with
     | some symbol => some symbol.description
     | none => none
   else if ((BrowserGlobals.methods.lookup owner).getD []).contains key then
-    some (if owner == "Array" && key == "from" then "intrinsic.Array.from"
-      else "window." ++ owner ++ "." ++ key)
+    if ECMAScriptHost.globalEntries.any (·.name == owner) then
+      some ("intrinsic." ++ owner ++ "." ++ key)
+    else some ("window." ++ owner ++ "." ++ key)
   else none
 
 private def legacyBrowserReceiver (owner : String) : String :=
@@ -60,13 +68,13 @@ private def observedTypeHasPremise (profile : HostProfile) (name premise : Strin
 #guard legacyBrowserComparisonNames.all fun name =>
   HostProfile.bindingType .browserPage name == legacyBrowserTypeof name
 #guard legacyBrowserComparisonNames.all fun name =>
-  HostProfile.bindingIdentity .browserPage name == legacyBrowserIdentity name
+  HostProfile.bindingIdentity .browserPage name == canonicalBrowserIdentity name
 #guard legacyBrowserComparisonNames.all fun name =>
   HostProfile.opaqueBinding .browserPage name ==
     (BrowserGlobals.opaqueBindings.contains name || BrowserGlobals.shims.contains name)
 #guard legacyBrowserNames.all fun name => (HostProfile.globalEntry? .browserPage name).isSome
 #guard HostProfile.bindingType .browserPage "eval" == some "function"
-#guard HostProfile.bindingIdentity .browserPage "eval" == some "window.eval"
+#guard HostProfile.bindingIdentity .browserPage "eval" == some "intrinsic.eval"
 #guard !HostProfile.opaqueBinding .browserPage "eval"
 #guard BrowserPageHost.globals.all fun entry =>
   !(ECMAScriptHost.globalEntries.any (·.name == entry.name))
@@ -74,6 +82,9 @@ private def observedTypeHasPremise (profile : HostProfile) (name premise : Strin
   !(ECMAScriptHost.globalEntries.any (·.name == entry.name))
 #guard HostProfile.bindingIdentity .node "global" == some "node.global"
 #guard HostProfile.bindingIdentity .node "globalThis" == some "node.global"
+#guard HostProfile.bindingIdentity .browserPage "Object" == some "intrinsic.Object"
+#guard HostProfile.identity .browserPage (.property "window.Object" "defineProperty") ==
+  some "intrinsic.Object.defineProperty"
 #guard HostProfile.bindingType .node "URL" == some "function"
 #guard HostProfile.bindingType .node "FileReader" == some "undefined"
 
@@ -112,6 +123,8 @@ private def observedTypeHasPremise (profile : HostProfile) (name premise : Strin
 #guard (ECMAScriptHost.globalFunctions ++ ECMAScriptHost.globalObjects).all fun name =>
   HostProfile.recordedHostValue .nodeRecording name
 #guard NodeHost.globals.all fun entry => HostProfile.recordedHostValue .nodeRecording entry.name
+#guard RecordedNodeHost.globals.all fun entry =>
+  entry.recordedValue && entry.typeTag.isNone && entry.identity.isNone && entry.premise.isNone
 #guard HostProfile.bindingType .nodeRecording "Object" == some "function"
 #guard (HostProfile.bindingIdentity .nodeRecording "Object").isNone
 #guard (HostProfile.valueForRef? .nodeRecording (.binding "Object")).isNone
@@ -150,18 +163,18 @@ private def observedTypeHasPremise (profile : HostProfile) (name premise : Strin
   "deferred standard constructors use the page realm's unchanged constructors throughout initialization"
 
 private def invalidGlobalProfile : HostProfile :=
-  { name := "invalid", layers := [{ name := "bad", globals := [{ name := "x", identity := some "x" }] }] }
+  HostProfile.fromLayers "invalid" [{ name := "bad", globals := [{ name := "x", identity := some "x" }] }]
 
 private def conflictingGlobalFieldsProfile : HostProfile :=
-  { name := "invalid", layers := [{ name := "bad", globals := [
+  HostProfile.fromLayers "invalid" [{ name := "bad", globals := [
       { name := "x", typeTag := some "object", identity := some "x", opaqueRef := true,
-        premise := some "conflicting global facts" }] }] }
+        premise := some "conflicting global facts" }] }]
 
 #guard !HostProfile.valid invalidGlobalProfile
 #guard !HostProfile.valid conflictingGlobalFieldsProfile
 
 private def recordedValueWithoutPremise : HostProfile :=
-  { name := "recorded", layers := [{ name := "recorded", globals := [{ name := "x", recordedValue := true }] }] }
+  HostProfile.fromLayers "recorded" [{ name := "recorded", globals := [{ name := "x", recordedValue := true }] }]
 
 #guard HostProfile.valid recordedValueWithoutPremise
 #guard HostProfile.premises recordedValueWithoutPremise == []
@@ -171,31 +184,31 @@ private def recordedValueWithoutPremise : HostProfile :=
   "the browser page exposes the unchanged FileReader function throughout initialization"
 
 private def invalidMemberProfile : HostProfile :=
-  { name := "invalid", layers := [{ name := "bad", members := [
-      { owner := "Object", key := "create", primitive := some .create }] }] }
+  HostProfile.fromLayers "invalid" [{ name := "bad", members := [
+      { owner := "Object", key := "create", primitive := some .create }] }]
 
 private def invalidCapabilityProfile : HostProfile :=
-  { name := "invalid", layers := [{ name := "bad", capabilities := [⟨.ambientSymbols, none⟩] }] }
+  HostProfile.fromLayers "invalid" [{ name := "bad", capabilities := [⟨.ambientSymbols, none⟩] }]
 
 #guard !HostProfile.valid invalidMemberProfile
 #guard !HostProfile.valid invalidCapabilityProfile
 
 private def conflictingGlobalProfile : HostProfile :=
-  { name := "conflict", layers := [
+  HostProfile.fromLayers "conflict" [
       { name := "first", globals := [⟨"x", none, some "first", false, false, false, false, some "first premise"⟩] },
-      { name := "second", globals := [⟨"x", none, some "second", false, false, false, false, some "second premise"⟩] }] }
+      { name := "second", globals := [⟨"x", none, some "second", false, false, false, false, some "second premise"⟩] }]
 
 private def conflictingMemberProfile : HostProfile :=
-  { name := "conflict", layers := [
+  HostProfile.fromLayers "conflict" [
       { name := "first", members := [⟨"X", "y", some "first", false, none, none, some "first premise"⟩] },
-      { name := "second", members := [⟨"X", "y", some "second", false, none, none, some "second premise"⟩] }] }
+      { name := "second", members := [⟨"X", "y", some "second", false, none, none, some "second premise"⟩] }]
 
 #guard !HostProfile.valid conflictingGlobalProfile
 #guard !HostProfile.valid conflictingMemberProfile
 
 private def explicitUndeclaredProfile : HostProfile :=
-  { name := "author-extension", layers := [{ name := "author-extension", globals := [
-      { name := "optionalFeature", undeclared := true, premise := some "optionalFeature is absent" }] }] }
+  HostProfile.fromLayers "author-extension" [{ name := "author-extension", globals := [
+      { name := "optionalFeature", undeclared := true, premise := some "optionalFeature is absent" }] }]
 
 #guard HostProfile.valid explicitUndeclaredProfile
 #guard HostProfile.undeclaredGlobal explicitUndeclaredProfile "optionalFeature"
