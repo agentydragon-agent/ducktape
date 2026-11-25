@@ -2,6 +2,7 @@
 //
 //   node gen_spec.mjs <n> halves
 //   node gen_spec.mjs <n> cut <c> [entry-first]   two modules: statements [0, c) and [c, n); the entry is the second unless told otherwise
+//   node gen_spec.mjs <n> single_move <unit>       move one non-entry statement; retain every other statement in the entry
 //   node gen_spec.mjs <n> blocks <k>          k contiguous blocks of about n/k statements
 //   node gen_spec.mjs <n> random <k> <seed>   every statement to a uniformly random one of k modules
 //
@@ -16,6 +17,11 @@ export function assignment(n, strategy, args = []) {
   if (strategy === "cut") {
     const c = Number(args[0]);
     for (let i = 0; i < n; i++) a[i] = i < c ? 0 : 1;
+  } else if (strategy === "single_move") {
+    const moved = Number(args[0]);
+    if (!Number.isInteger(moved) || moved < 0 || moved >= n - 1)
+      throw new Error(`single_move needs a non-entry statement index below ${n - 1}`);
+    for (let i = 0; i < n; i++) a[i] = i === moved ? 1 : 0;
   } else if (strategy === "blocks") {
     const per = Math.ceil(n / Number(args[0]));
     for (let i = 0; i < n; i++) a[i] = Math.floor(i / per);
