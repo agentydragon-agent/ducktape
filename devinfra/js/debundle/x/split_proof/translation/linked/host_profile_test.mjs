@@ -434,7 +434,7 @@ if (includesCase("profile-premise-sources")) {
     "a global name absent from the ECMAScript and Node layers is undeclared throughout initialization",
     "typeof window is undefined without observable effects throughout initialization",
   ];
-  assert.deepEqual([...verdict.assumptions].sort(), [...loweringFacts, ...observedFacts].sort());
+  assert.deepEqual([...verdict.verdict.assumptions].sort(), [...loweringFacts, ...observedFacts].sort());
 
   const deadSymbol = fixture(
     "profile-premise-dead-symbol",
