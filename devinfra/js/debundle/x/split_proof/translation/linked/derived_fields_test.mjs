@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
-import { assertCertifiedResult, lower, sequentialSplit } from "./harness.mjs";
+import { assertLinkedPreviewResult, assertMatchedModel, prepareLinkedFixture } from "./fixture_preview.mjs";
+import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
+import { probeLinkedModel } from "../testing/linked_model_probe.mjs";
+import { withSplitPreview } from "../testing/split_preview.mjs";
+import { observe } from "./harness.mjs";
 
-const implicit = sequentialSplit(
+function fixture(name, source, modules = { "worker.mjs": ["#0"], "entry.mjs": ["#1", "#2"] }, order = ["worker.mjs"]) {
+  return prepareLinkedFixture(name, source, { entry: "entry.mjs", modules, order, sequential: true });
+}
+
+const implicit = fixture(
   "default-derived-fields",
   `class Base {
     constructor(id) { this.id = id; }
@@ -21,18 +28,24 @@ const implicit = sequentialSplit(
     return a.items.length;
   })();`
 );
-assertCertifiedResult(implicit, 0);
+assertPublicEmissionRefused(implicit.manifest, implicit.out);
+assert.deepEqual(observe(implicit.sourceFile, "result"), { result: 0 });
+await withSplitPreview({ manifest: implicit.manifest }, ({ directory, entryFile }) => {
+  assert.deepEqual(observe(entryFile, "result"), { result: 0 });
+  assertMatchedModel(implicit, directory, [[["result"], 0]]);
+  assertPublicRecheckRefused(implicit.manifest, directory);
+  const original = readFileSync(entryFile, "utf8");
+  const changed = original.replace(/items\s*=\s*\[\s*\]/, "items = [1]");
+  assert.notEqual(changed, original);
+  writeFileSync(entryFile, changed);
+  assert.deepEqual(observe(entryFile, "result"), { result: 1 });
+  const model = probeLinkedModel({ source: implicit.sourceFile, spec: implicit.specFile, directory });
+  assert.equal(model.status, "refused");
+  assert.equal(model.reason_code, "linked_input");
+  assertPublicRecheckRefused(implicit.manifest, directory);
+});
 
-const { files, out } = implicit;
-assert.deepEqual(lower(files.sourceFile, files.specFile, out, ["--check-output"]).verdict, implicit.verdict);
-const entry = path.join(out, "entry.mjs");
-const original = readFileSync(entry, "utf8");
-const changed = original.replace(/items\s*=\s*\[\s*\]/, "items = [1]");
-assert.notEqual(changed, original);
-writeFileSync(entry, changed);
-assert.match(lower(files.sourceFile, files.specFile, out, ["--check-output"]).verdict.reason, /entry\.mjs differs/);
-
-const explicit = sequentialSplit(
+const explicit = fixture(
   "explicit-derived-fields",
   `const label = "outer";
   class Base { constructor() { return { phase: "base" }; } }
@@ -49,9 +62,10 @@ const explicit = sequentialSplit(
   { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3"] },
   ["base.mjs"]
 );
-assertCertifiedResult(explicit, "body");
+assertPublicEmissionRefused(explicit.manifest, explicit.out);
+await assertLinkedPreviewResult(explicit, "body");
 
-const abrupt = sequentialSplit(
+const abrupt = fixture(
   "abrupt-derived-fields",
   `const trace = { count: 0 };
   class Base { constructor(fail) { if (fail) throw "parent"; } }
@@ -70,9 +84,10 @@ const abrupt = sequentialSplit(
   { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3"] },
   ["base.mjs"]
 );
-assertCertifiedResult(abrupt, 1);
+assertPublicEmissionRefused(abrupt.manifest, abrupt.out);
+await assertLinkedPreviewResult(abrupt, 1);
 
-const forwarded = sequentialSplit(
+const forwarded = fixture(
   "derived-fresh-arguments",
   `const identity = {};
   class Base {
@@ -92,7 +107,19 @@ const forwarded = sequentialSplit(
   { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3", "#4"] },
   ["base.mjs"]
 );
-assertCertifiedResult(forwarded, [
-  [false, "empty", true],
-  [true, 8, true],
-]);
+assertPublicEmissionRefused(forwarded.manifest, forwarded.out);
+await assertLinkedPreviewResult(
+  forwarded,
+  [
+    [false, "empty", true],
+    [true, 8, true],
+  ],
+  [
+    [["result", "0", "0"], false],
+    [["result", "0", "1"], "empty"],
+    [["result", "0", "2"], true],
+    [["result", "1", "0"], true],
+    [["result", "1", "1"], 8],
+    [["result", "1", "2"], true],
+  ]
+);

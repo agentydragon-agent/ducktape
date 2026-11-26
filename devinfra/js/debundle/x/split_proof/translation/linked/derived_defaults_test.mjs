@@ -1,11 +1,26 @@
-import { assertCertifiedResult, assertRejected, sequentialSplit } from "./harness.mjs";
+import assert from "node:assert/strict";
+import { assertLinkedPreviewResult, prepareLinkedFixture, prepareWorkerFixture } from "./fixture_preview.mjs";
+import { assertPublicEmissionRefused } from "../testing/public_refusal.mjs";
+import { probeLinkedModel } from "../testing/linked_model_probe.mjs";
+import { withSplitPreview } from "../testing/split_preview.mjs";
+import { observe } from "./harness.mjs";
 
-const split = { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3"] };
+const spec = {
+  entry: "entry.mjs",
+  modules: { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3"] },
+  order: ["base.mjs"],
+  sequential: true,
+};
 
-assertCertifiedResult(
-  sequentialSplit(
-    "derived-defaults-order",
-    `const trace = { value: "" };
+async function checkDerived(name, source, expected) {
+  const fixture = prepareLinkedFixture(name, source, spec);
+  assertPublicEmissionRefused(fixture.manifest, fixture.out);
+  await assertLinkedPreviewResult(fixture, expected);
+}
+
+await checkDerived(
+  "derived-defaults-order",
+  `const trace = { value: "" };
     class Base {
       constructor(value) { trace.value += "s"; this.value = value; }
     }
@@ -28,16 +43,12 @@ assertCertifiedResult(
       if (trace.value !== "dpsfbdpsfbpsfbpsfb") throw "incorrect default side effects";
       return first.value;
     })();`,
-    split,
-    ["base.mjs"]
-  ),
   "a:false:last"
 );
 
-assertCertifiedResult(
-  sequentialSplit(
-    "abrupt-derived-defaults",
-    `const trace = { value: "" };
+await checkDerived(
+  "abrupt-derived-defaults",
+  `const trace = { value: "" };
     class Base { constructor() { trace.value += "s"; } }
     class Child extends Base {
       field = trace.value += "f";
@@ -61,9 +72,6 @@ assertCertifiedResult(
       if (trace.value !== "tdc") throw "an abrupt default reached the constructor body";
       return trace.value;
     })();`,
-    split,
-    ["base.mjs"]
-  ),
   "tdc"
 );
 
@@ -75,8 +83,17 @@ for (const [name, constructor, reason] of [
     /default parameter|overlap|shadow/i,
   ],
 ]) {
-  assertRejected(
-    sequentialSplit(name, `const outer = 1; class Child extends Object { ${constructor} } export const result = 1;`),
-    reason
+  const fixture = prepareWorkerFixture(
+    name,
+    `const outer = 1; class Child extends Object { ${constructor} } export const result = 1;`,
+    ["#1", "#2"]
   );
+  assertPublicEmissionRefused(fixture.manifest, fixture.out);
+  assert.deepEqual(observe(fixture.sourceFile, "result"), { result: 1 });
+  await withSplitPreview({ manifest: fixture.manifest }, ({ directory, entryFile }) => {
+    const model = probeLinkedModel({ source: fixture.sourceFile, spec: fixture.specFile, directory });
+    assert.equal(model.status, "refused", name);
+    assert.match(model.reason, reason, name);
+    assert.deepEqual(observe(entryFile, "result"), { result: 1 });
+  });
 }

@@ -227,6 +227,9 @@ _RECORD_TESTS = [
 
 _WORKER_PREVIEW_TESTS = [
     "bitwise_test",
+    "conditional_super_test",
+    "derived_defaults_test",
+    "derived_fields_test",
     "derived_object_parameters_test",
 ]
 

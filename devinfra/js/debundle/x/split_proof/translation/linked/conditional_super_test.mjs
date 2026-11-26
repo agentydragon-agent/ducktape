@@ -1,12 +1,19 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
-import { assertCertifiedResult, assertRejected, caseShard, lower, observe, sequentialSplit } from "./harness.mjs";
+import { caseShard, observe } from "./harness.mjs";
+import { assertLinkedPreviewResult, assertMatchedModel, prepareLinkedFixture } from "./fixture_preview.mjs";
+import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
+import { probeLinkedModel } from "../testing/linked_model_probe.mjs";
+import { withSplitPreview } from "../testing/split_preview.mjs";
+
+function fixture(name, source, modules, order) {
+  return prepareLinkedFixture(name, source, { entry: "entry.mjs", modules, order, sequential: true });
+}
 
 const runCase = caseShard();
 
 if (runCase("both-branches")) {
-  const split = sequentialSplit(
+  const split = fixture(
     "conditional-super-both-branches",
     `const trace = { value: "" };
     class Base {
@@ -41,25 +48,25 @@ if (runCase("both-branches")) {
     { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3"] },
     ["base.mjs"]
   );
-  assertCertifiedResult(split, true);
-  assert.deepEqual(
-    lower(split.files.sourceFile, split.files.specFile, split.out, ["--check-output"]).verdict,
-    split.verdict
-  );
-
-  const entry = path.join(split.out, "entry.mjs");
-  const printed = readFileSync(entry, "utf8");
-  assert.match(printed, /super\(local\.value/);
-  writeFileSync(entry, printed.replace("super(local.value", "super(0"));
-  assert.equal(
-    lower(split.files.sourceFile, split.files.specFile, split.out, ["--check-output"]).verdict.status,
-    "rejected"
-  );
-  assert.deepEqual(observe(entry, "result"), { result: false });
+  assertPublicEmissionRefused(split.manifest, split.out);
+  assert.deepEqual(observe(split.sourceFile, "result"), { result: true });
+  await withSplitPreview({ manifest: split.manifest }, ({ directory, entryFile }) => {
+    assert.deepEqual(observe(entryFile, "result"), { result: true });
+    assertMatchedModel(split, directory, [[["result"], true]]);
+    assertPublicRecheckRefused(split.manifest, directory);
+    const printed = readFileSync(entryFile, "utf8");
+    assert.match(printed, /super\(local\.value/);
+    writeFileSync(entryFile, printed.replace("super(local.value", "super(0"));
+    const model = probeLinkedModel({ source: split.sourceFile, spec: split.specFile, directory });
+    assert.equal(model.status, "refused");
+    assert.equal(model.reason_code, "linked_input");
+    assertPublicRecheckRefused(split.manifest, directory);
+    assert.deepEqual(observe(entryFile, "result"), { result: false });
+  });
 }
 
 if (runCase("throwing-argument")) {
-  const split = sequentialSplit(
+  const split = fixture(
     "conditional-super-throwing-argument",
     `const trace = { value: "" };
     class Base { constructor() { trace.value += "b"; } }
@@ -82,11 +89,12 @@ if (runCase("throwing-argument")) {
     { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3"] },
     ["base.mjs"]
   );
-  assertCertifiedResult(split, "x");
+  assertPublicEmissionRefused(split.manifest, split.out);
+  await assertLinkedPreviewResult(split, "x");
 }
 
 if (runCase("missing-branch")) {
-  const split = sequentialSplit(
+  const split = fixture(
     "conditional-super-missing-branch",
     `class Base {}
     class Child extends Base { constructor(run) { if (run) super(); } }
@@ -94,6 +102,12 @@ if (runCase("missing-branch")) {
     { "base.mjs": ["#0"], "entry.mjs": ["#1", "#2"] },
     ["base.mjs"]
   );
-  assertRejected(split, /expected a direct super call/);
-  assert.deepEqual(observe(split.files.sourceFile, "result"), { error: "ReferenceError" });
+  assertPublicEmissionRefused(split.manifest, split.out);
+  assert.deepEqual(observe(split.sourceFile, "result"), { error: "ReferenceError" });
+  await withSplitPreview({ manifest: split.manifest }, ({ directory, entryFile }) => {
+    const model = probeLinkedModel({ source: split.sourceFile, spec: split.specFile, directory });
+    assert.equal(model.status, "refused");
+    assert.match(model.reason, /expected a direct super call/);
+    assert.deepEqual(observe(entryFile, "result"), { error: "ReferenceError" });
+  });
 }
