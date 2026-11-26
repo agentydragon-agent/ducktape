@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
-import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { probeLinkedModel } from "../testing/linked_model_probe.mjs";
+import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
+import { withSplitPreview } from "../testing/split_preview.mjs";
+import { assertMatchedModel, prepareLinkedFixture } from "./fixture_preview.mjs";
 import {
-  assertCertified,
-  assertNoCompiledRule,
-  root,
   id,
   literal,
   call,
@@ -18,10 +18,7 @@ import {
   exportNamed,
   program,
   observe,
-  lower,
-  prepare,
   moduleEvaluationOrder,
-  forcePreview,
 } from "./harness.mjs";
 
 // Source initializes left, then right. Pin the reverse order across all cases.
@@ -37,39 +34,38 @@ for (const [changed, first, second] of [
     sequential: true,
   };
   for (const dependent of [false, true]) {
-    const dir = path.join(root, `reordered-providers-${changed}-${dependent}`);
     const readsRight = dependent && changed === "left";
     const readsLeft = dependent && changed === "right";
-    const files = prepare(dir, {
-      source: program([
-        variable("const", "left", readsRight ? id("right") : literal(first)),
-        variable("const", "right", readsLeft ? id("left") : literal(second)),
-        variable("const", "pair", {
-          type: "ObjectExpression",
-          properties: [property("first", id("left")), property("second", id("right"))],
-        }),
-        exportNamed([["pair", "result"]]),
-      ]),
-      provider: "",
-      spec,
-    });
-    const out = path.join(dir, "out");
-    const { verdict, log } = lower(files.sourceFile, files.specFile, out);
+    const source = program([
+      variable("const", "left", readsRight ? id("right") : literal(first)),
+      variable("const", "right", readsLeft ? id("left") : literal(second)),
+      variable("const", "pair", {
+        type: "ObjectExpression",
+        properties: [property("first", id("left")), property("second", id("right"))],
+      }),
+      exportNamed([["pair", "result"]]),
+    ]);
+    const fixture = prepareLinkedFixture(`reordered-providers-${changed}-${dependent}`, source, spec);
+    const { manifest, out, sourceFile, specFile } = fixture;
+    assertPublicEmissionRefused(manifest, out);
     const tdz = { error: "ReferenceError" };
     const normal = { result: { first: readsRight ? second : first, second: readsLeft ? first : second } };
-    assert.deepEqual(observe(files.sourceFile, "result"), readsRight ? tdz : normal);
-    let candidate = out;
-    if (dependent) {
-      assert.equal(verdict.status, "rejected", log);
-      assert.equal(verdict.reason, `${readsRight ? "original" : "split"} threw during linked initialization`);
-      assert(!existsSync(out));
-      candidate = path.join(dir, "preview");
-      forcePreview(files, candidate);
-    } else {
-      assertCertified(verdict, log);
-    }
-    assert.deepEqual(moduleEvaluationOrder(candidate, spec.entry), [...spec.order, spec.entry]);
-    assert.deepEqual(observe(path.join(candidate, spec.entry), "result"), readsLeft ? tdz : normal);
+    assert.deepEqual(observe(sourceFile, "result"), readsRight ? tdz : normal);
+    await withSplitPreview({ manifest, expectedExit: dependent ? 1 : 0 }, ({ directory, entryFile }) => {
+      assert.deepEqual(moduleEvaluationOrder(directory, spec.entry), [...spec.order, spec.entry]);
+      assert.deepEqual(observe(entryFile, "result"), readsLeft ? tdz : normal);
+      if (dependent) {
+        const model = probeLinkedModel({ source: sourceFile, spec: specFile, directory });
+        assert.equal(model.status, "refused", JSON.stringify(model));
+        assert.equal(model.reason_code, "probe_throw", JSON.stringify(model));
+        assert.equal(model.reason, `${readsRight ? "original" : "split"} threw during linked initialization`);
+      } else {
+        assertMatchedModel(fixture, directory, [
+          [["result", "first"], first],
+          [["result", "second"], second],
+        ]);
+      }
+    });
   }
 }
 
@@ -122,41 +118,40 @@ for (const [observed, leftArg, rightArg] of [
       order: ["format.mjs", ...calls],
       sequential: true,
     };
-    const dir = path.join(root, `reordered-formatter-${observed}-${variant}`);
-    const files = prepare(dir, { source, provider: "", spec });
-    const out = path.join(dir, "out");
-    const { verdict, log } = lower(files.sourceFile, files.specFile, out);
-    const context = `${observed}/${variant}: ${log}`;
+    const fixture = prepareLinkedFixture(`reordered-formatter-${observed}-${variant}`, source, spec);
+    const { manifest, out, sourceFile, specFile } = fixture;
     const bundled = capturesCall ? dependentSource : original;
-    assert.deepEqual(observe(files.sourceFile, "result"), { result: bundled }, context);
-
-    assert.equal(verdict.status, "rejected", context);
-    assert(!existsSync(out), context);
-    if (capturesCall && reversed) {
-      assert.match(verdict.reason, /probe executions completed normally with different final states/, context);
-    } else {
-      assert.equal(verdict.reason_code, "no_compiled_rule", context);
-    }
-
-    let candidate = out;
-    if (reversed) {
-      candidate = path.join(dir, "preview");
-      forcePreview(files, candidate);
-    } else {
-      // The structural checker can prove the retained order even for these direct calls.
-      const structural = lower(files.sourceFile, files.specFile, out, ["--structural"], "linked-structural-order");
-      assert.equal(structural.verdict.status, "certified", structural.log);
-      assert.equal(structural.verdict.guarantee, "all-outcomes", structural.log);
-    }
-    assert.deepEqual(moduleEvaluationOrder(candidate, spec.entry), [...spec.order, spec.entry], context);
-    const expected = capturesCall && reversed ? dependentReversed : bundled;
-    assert.deepEqual(observe(path.join(candidate, spec.entry), "result"), { result: expected }, context);
+    const differs = capturesCall && reversed;
+    const expected = differs ? dependentReversed : bundled;
+    assertPublicEmissionRefused(manifest, out);
+    assert.deepEqual(observe(sourceFile, "result"), { result: bundled });
+    await withSplitPreview({ manifest, expectedExit: reversed ? 1 : 0 }, ({ directory, entryFile }) => {
+      assert.deepEqual(moduleEvaluationOrder(directory, spec.entry), [...spec.order, spec.entry]);
+      assert.deepEqual(observe(entryFile, "result"), { result: expected });
+      if (differs) {
+        const model = probeLinkedModel({ source: sourceFile, spec: specFile, directory });
+        assert.equal(model.status, "refused", JSON.stringify(model));
+        assert.equal(model.reason_code, "probe_mismatch", JSON.stringify(model));
+        const changed = observed === "left" ? "right" : "left";
+        assert.deepEqual(model.observation, {
+          kind: "value",
+          path: ["result", changed],
+          original: JSON.stringify(bundled[changed]),
+          split: JSON.stringify(expected[changed]),
+        });
+      } else {
+        assertMatchedModel(fixture, directory, [
+          [["result", "left"], expected.left],
+          [["result", "right"], expected.right],
+        ]);
+      }
+    });
   }
 }
 
 // These distinct world calls both return undefined in World.probe, so the concrete
 // final states match. Other worlds can distinguish the order of these calls.
-// The compiled checker must refuse the reversed schedule.
+// The public command refuses the reversed schedule. Node can distinguish it using a recording host method.
 {
   const localeCompare = (left, right) =>
     call(
@@ -183,9 +178,36 @@ for (const [observed, leftArg, rightArg] of [
     order: ["right.mjs", "left.mjs"],
     sequential: true,
   };
-  const dir = path.join(root, "reordered-probe-equivalent-host-calls");
-  const files = prepare(dir, { source, provider: "", spec });
-  const preview = path.join(dir, "preview");
-  assertNoCompiledRule(files, preview);
-  assert.deepEqual(moduleEvaluationOrder(preview, spec.entry), [...spec.order, spec.entry]);
+  const fixture = prepareLinkedFixture("reordered-probe-equivalent-host-calls", source, spec);
+  const { manifest, out, sourceFile } = fixture;
+  assertPublicEmissionRefused(manifest, out);
+  await withSplitPreview({ manifest, expectedExit: 1 }, async ({ directory, entryFile }) => {
+    assert.deepEqual(moduleEvaluationOrder(directory, spec.entry), [...spec.order, spec.entry]);
+    assertMatchedModel(fixture, directory, [
+      [["first"], undefined],
+      [["second"], undefined],
+    ]);
+
+    const original = String.prototype.localeCompare;
+    const log = [];
+    String.prototype.localeCompare = function (argument) {
+      log.push([String(this), argument]);
+      return 0;
+    };
+    try {
+      const bundle = await import(pathToFileURL(sourceFile).href);
+      const preview = await import(pathToFileURL(entryFile).href);
+      assert.deepEqual([bundle.first, bundle.second, preview.first, preview.second], [0, 0, 0, 0]);
+    } finally {
+      String.prototype.localeCompare = original;
+    }
+    assert.deepEqual(log, [
+      ["x", "y"],
+      ["z", "w"],
+      ["z", "w"],
+      ["x", "y"],
+    ]);
+    assertPublicEmissionRefused(manifest, directory);
+    assertPublicRecheckRefused(manifest, directory);
+  });
 }

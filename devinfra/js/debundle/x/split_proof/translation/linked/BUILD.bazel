@@ -228,6 +228,7 @@ _RECORD_TESTS = [
 _FIXTURE_PREVIEW_TESTS = [
     "regexp_test",
     "relational_test",
+    "reordering_test",
     "resolved_placement_test",
     "rest_parameters_test",
     "sequence_test",
@@ -339,12 +340,12 @@ js_test(
 js_test(
     name = "table_lookups_test",
     size = "medium",
-    data = _TEST_DATA + [
+    data = _TEST_DATA + _FIXTURE_PREVIEW_DATA + [
         "//devinfra/js/debundle/x/split_proof/translation:node_modules/acorn",
         "//devinfra/js/debundle/x/split_proof/translation:node_modules/astring",
     ],
     entry_point = "table_lookups_test.mjs",
-    env = _TEST_ENV,
+    env = _TEST_ENV | _LINKED_MODEL_ENV,
 )
 
 js_test(

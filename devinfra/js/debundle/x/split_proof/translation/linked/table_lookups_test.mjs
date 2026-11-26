@@ -1,24 +1,23 @@
 import assert from "node:assert/strict";
-import { cpSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse } from "acorn";
 import { generate } from "astring";
+import { probeLinkedModel } from "../testing/linked_model_probe.mjs";
+import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
+import { withSplitPreview } from "../testing/split_preview.mjs";
+import { assertMatchedModel, prepareLinkedFixture } from "./fixture_preview.mjs";
 import {
-  assertCertified,
   array,
   exportNamed,
   expression,
-  forcePreview,
   id,
   literal,
-  lower,
   member,
   moduleEvaluationOrder,
-  prepare,
   program,
   property,
-  root,
   variable,
 } from "./harness.mjs";
 
@@ -74,11 +73,11 @@ function fixture(name, width, rows, mutation) {
 
   const modules = Object.fromEntries([...order, entry].map((owner) => [owner, []]));
   for (const [index, [owner]] of units.entries()) modules[owner].push(`#${index}`);
-  const dir = path.join(root, name);
-  const files = prepare(dir, {
-    source: program(units.map(([, node]) => node)),
-    provider: "",
-    spec: { entry, modules, order, sequential: true },
+  const prepared = prepareLinkedFixture(name, program(units.map(([, node]) => node)), {
+    entry,
+    modules,
+    order,
+    sequential: true,
   });
 
   function expectedRows(side, lookedUp) {
@@ -97,7 +96,7 @@ function fixture(name, width, rows, mutation) {
     };
   }
 
-  return { dir, files, expected, last, alternate, alternateValue: value(alternate) };
+  return { ...prepared, expected, last, alternate, alternateValue: value(alternate) };
 }
 
 async function expectExports(file, expected) {
@@ -108,53 +107,70 @@ async function expectExports(file, expected) {
 
 {
   const test = fixture("reversed-table", 128, 4);
-  const out = path.join(test.dir, "out");
-  const { sourceFile, specFile } = test.files;
-  const { verdict, log } = lower(sourceFile, specFile, out);
-  assertCertified(verdict, log);
-  assert.equal(verdict.strategy, "compiled-replay-premised", log);
-  assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
-  assert.deepEqual(lower(sourceFile, specFile, out, ["--check-output"]).verdict, verdict);
-  await expectExports(sourceFile, test.expected());
-  await expectExports(path.join(out, entry), test.expected());
+  const { manifest, out, sourceFile, specFile } = test;
+  assertPublicEmissionRefused(manifest, out);
+  const expected = test.expected();
+  await expectExports(sourceFile, expected);
+  await withSplitPreview({ manifest }, async ({ directory, entryFile }) => {
+    assert.deepEqual(moduleEvaluationOrder(directory, entry), [...order, entry]);
+    await expectExports(entryFile, expected);
+    assertMatchedModel(test, directory, [
+      [["aliases", "1"], expected.aliases[1]],
+      [["first", "0", "2"], expected.first[0][2]],
+      [["second", "3", "3", "1", "1"], undefined],
+      [["summary"], expected.summary],
+    ]);
+    assertPublicRecheckRefused(manifest, directory);
 
-  for (const alteration of ["row-order", "lookup-key"]) {
-    const tampered = path.join(test.dir, alteration);
-    cpSync(out, tampered, { recursive: true });
-    const changedFile = path.join(tampered, firstOwner);
-    const ast = parse(readFileSync(changedFile, "utf8"), { ecmaVersion: "latest", sourceType: "module" });
-    const array = ast.body.find((node) => node.type === "VariableDeclaration").declarations[0].init;
-    const changed = test.expected();
-    if (alteration === "row-order") {
-      array.elements.reverse();
-      changed.first.reverse();
-    } else {
-      const member = array.elements[0].elements[2];
-      assert.equal(member.property.name, test.last);
-      member.property.name = test.alternate;
-      changed.first[0][2] = test.alternateValue;
+    const changedFile = path.join(directory, firstOwner);
+    const printed = readFileSync(changedFile, "utf8");
+    for (const alteration of ["row-order", "lookup-key"]) {
+      const tampered = path.join(path.dirname(directory), alteration);
+      cpSync(directory, tampered, { recursive: true });
+      const ast = parse(printed, { ecmaVersion: "latest", sourceType: "module" });
+      const array = ast.body.find((node) => node.type === "VariableDeclaration").declarations[0].init;
+      const changed = test.expected();
+      if (alteration === "row-order") {
+        array.elements.reverse();
+        changed.first.reverse();
+      } else {
+        const member = array.elements[0].elements[2];
+        assert.equal(member.property.name, test.last);
+        member.property.name = test.alternate;
+        changed.first[0][2] = test.alternateValue;
+      }
+      writeFileSync(path.join(tampered, firstOwner), generate(ast));
+      const model = probeLinkedModel({ source: sourceFile, spec: specFile, directory: tampered });
+      assert.equal(model.status, "refused", JSON.stringify(model));
+      assert.equal(model.reason_code, "linked_input", JSON.stringify(model));
+      assert.match(model.reason, /emitted syntax differs from original unit 2/);
+      assertPublicEmissionRefused(manifest, tampered);
+      assertPublicRecheckRefused(manifest, tampered);
+      await expectExports(path.join(tampered, entry), changed);
     }
-    writeFileSync(changedFile, generate(ast));
-    const disk = lower(sourceFile, specFile, tampered, ["--check-output"]);
-    assert.equal(disk.verdict.status, "rejected", disk.log);
-    assert.match(disk.verdict.reason, /output module first\.mjs differs from its generated ESTree/, disk.log);
-    await expectExports(path.join(tampered, entry), changed);
-  }
+  });
 }
 
 // The same reversal moves an own-property write or a key-binding write ahead
 // of the reads. Both executions finish, but the captured rows are different.
 for (const mutation of ["field", "key"]) {
   const test = fixture(`reversed-table-${mutation}`, 128, 3, mutation);
-  const out = path.join(test.dir, "out");
-  const { verdict, log } = lower(test.files.sourceFile, test.files.specFile, out);
-  assert.equal(verdict.status, "rejected", log);
-  assert.match(verdict.reason, /probe executions completed normally with different final states/, log);
-  assert(!existsSync(out), log);
-
-  const preview = path.join(test.dir, "preview");
-  forcePreview(test.files, preview);
-  assert.deepEqual(moduleEvaluationOrder(preview, entry), [...order, entry]);
-  await expectExports(test.files.sourceFile, test.expected());
-  await expectExports(path.join(preview, entry), test.expected(mutation === "field" ? "updated" : test.alternateValue));
+  const { manifest, out, sourceFile, specFile } = test;
+  assertPublicEmissionRefused(manifest, out);
+  const original = test.expected();
+  const changed = test.expected(mutation === "field" ? "updated" : test.alternateValue);
+  await expectExports(sourceFile, original);
+  await withSplitPreview({ manifest, expectedExit: 1 }, async ({ directory, entryFile }) => {
+    assert.deepEqual(moduleEvaluationOrder(directory, entry), [...order, entry]);
+    await expectExports(entryFile, changed);
+    const model = probeLinkedModel({ source: sourceFile, spec: specFile, directory });
+    assert.equal(model.status, "refused", JSON.stringify(model));
+    assert.equal(model.reason_code, "probe_mismatch", JSON.stringify(model));
+    assert.match(model.reason, /probe executions completed normally with different final states/);
+    assert.equal(model.observation.kind, "value", JSON.stringify(model));
+    assert.deepEqual(model.observation.path.slice(1), ["0", "2"], JSON.stringify(model));
+    assert(["first", "second"].includes(model.observation.path[0]), JSON.stringify(model));
+    assert.equal(model.observation.original, JSON.stringify(original.first[0][2]));
+    assert.equal(model.observation.split, JSON.stringify(changed.first[0][2]));
+  });
 }
