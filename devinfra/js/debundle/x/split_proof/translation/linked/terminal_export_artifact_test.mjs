@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { dump } from "../parser.mjs";
 import { split } from "../testing/split.mjs";
 import { observe, prepare, root } from "./harness.mjs";
 
@@ -67,3 +69,10 @@ const otherResult = split({ source: other.sourceFile, spec: other.specFile, out:
 assert.equal(otherResult.status, "refused", otherResult.log);
 assert.match(otherResult.reason, /terminal-export-not-applicable/, otherResult.log);
 assert(!existsSync(otherOut));
+
+// Non-vacuity: the fixed input-side premises hold for a real parsed module.
+const inputWitness = spawnSync(process.env.TERMINAL_CONST_INPUT_CHECKER, [], {
+  encoding: "utf8",
+  input: JSON.stringify(dump("const x = 1;\nexport { x };\n")),
+});
+assert.equal(inputWitness.status, 0, inputWitness.error?.message ?? inputWitness.stdout + inputWitness.stderr);

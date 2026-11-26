@@ -1717,3 +1717,17 @@ lean_proof_test(
     required_theorems = ["EsmSplit.LowerSplit.TerminalConstInput.input_model_sound"],
     deps = [":terminal_const_input"],
 )
+
+lean_library(
+    name = "terminal_const_input_test_runner_modules",
+    testonly = True,
+    srcs = ["TerminalConstInputMain.lean"],
+    deps = [":terminal_const_input"],
+)
+
+lean_binary(
+    name = "terminal_const_input_test_runner",
+    testonly = True,
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    deps = [":terminal_const_input_test_runner_modules"],
+)

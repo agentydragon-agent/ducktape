@@ -112,11 +112,14 @@ js_test(
     size = "medium",
     data = [
         ":harness",
+        "//devinfra/js/debundle/x/split_proof/lean:terminal_const_input_test_runner",
         "//devinfra/js/debundle/x/split_proof/lean:terminal_export_artifact_test_runner",
         "//devinfra/js/debundle/x/split_proof/translation:module_io",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
     ],
     entry_point = "terminal_export_artifact_test.mjs",
     env = {
+        "TERMINAL_CONST_INPUT_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:terminal_const_input_test_runner)",
         "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:terminal_export_artifact_test_runner)",
         "SPLIT_PROOF_MODULE_IO": "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
     },
