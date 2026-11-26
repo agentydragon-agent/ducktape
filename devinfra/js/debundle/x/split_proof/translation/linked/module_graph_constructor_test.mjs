@@ -55,19 +55,25 @@ if (exactStrategy) {
   assert.equal(production.scope, "named-declarations");
   writeFileSync(spec, JSON.stringify(fixture.spec));
   assert.equal(split({ source, spec, out, require: "all-outcomes", checkOutput: true }).status, "certified");
-  const entry = path.join(out, fixture.entry);
-  const before = readFileSync(entry, "utf8");
+  const consumer = path.join(out, "consumer0.mjs");
+  const before = readFileSync(consumer, "utf8");
   const ast = parse(before, { sourceType: "module", ecmaVersion: "latest" });
+  const imports = ast.body.flatMap((stmt) => (stmt.type === "ImportDeclaration" ? stmt.specifiers : []));
   const exports = ast.body.flatMap((stmt) => (stmt.type === "ExportNamedDeclaration" ? stmt.specifiers : []));
-  const first = exports.find((item) => item.exported.name === "reader0");
-  const second = exports.find((item) => item.exported.name === "reader1");
-  assert(first && second && first.local.name !== second.local.name, "entry must expose distinct cells");
-  first.local.name = second.local.name;
-  writeFileSync(entry, generate(ast));
+  const reader = exports.find((item) => item.exported.name === "reader0");
+  assert(
+    imports.some((item) => item.local.name === "data0"),
+    "consumer must import the provider cell"
+  );
+  assert(reader?.local.name === "reader0", "consumer must expose the original reader cell");
+  // The source initializes reader0 from data0: both values are `value0`, but their cells differ.
+  assert.equal(fixture.expected.reader0, "value0");
+  reader.local.name = "data0";
+  writeFileSync(consumer, generate(ast));
   const checked = split({ source, spec, out, require: "all-outcomes", checkOutput: true });
   assert.equal(checked.status, "refused");
-  writeFileSync(entry, before);
-  wrongCell = "refused";
+  writeFileSync(consumer, before);
+  wrongCell = "refused (same value, different live cell)";
 } else {
   assert(constructor.error, "a legacy certificate cannot establish constructor acceptance");
 }
