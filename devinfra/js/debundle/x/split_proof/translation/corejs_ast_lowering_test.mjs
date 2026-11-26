@@ -127,7 +127,9 @@ const browserPath = contract("browser", { profile: "browser-page" });
 const browserCensus = censusFor(["--host-contract", browserPath]);
 assert.deepEqual([browserCensus.hostProfile, browserCensus.allocate, browserCensus.opaque], ["browser-page", 0, 0]);
 const nodeCensus = censusFor(["--node-recording"]);
-assert.deepEqual([nodeCensus.hostProfile, nodeCensus.allocate, nodeCensus.opaque], ["node-recording", 2, 0]);
+// The recorded Node harness includes the shared ECMAScript layer, so standard
+// global reads have the same identities as in the ECMAScript-only profile.
+assert.deepEqual([nodeCensus.hostProfile, nodeCensus.allocate, nodeCensus.opaque], ["node-recording", 0, 0]);
 const ecmaStable = contract("ecma-stable", {
   profile: "ecmascript",
   stableIntrinsicValues: ["Object.defineProperty@1"],

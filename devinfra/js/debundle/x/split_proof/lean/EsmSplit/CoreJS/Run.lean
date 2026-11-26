@@ -156,7 +156,10 @@ def replay (calls : List Recorded) (scripts : Scripts := []) (refs : List (HostR
   globalTypeof name st := do
     let value ← profile.bindingType name
     return (.ret (.str value), st)
-  hostRef ref st := (refs.lookup ref).map fun identity => (.identity identity, st)
+  hostRef ref st :=
+    match refs.lookup ref with
+    | some identity => some (.identity identity, st)
+    | none => profile.valueForRef? ref |>.map fun value => (value, st)
   step fn this args st :=
     let stop (why : String) : HostResult × Replay :=
       (.throw (.str "world: not the recorded call"), { st with left := [], problem := st.problem.or (some why) })

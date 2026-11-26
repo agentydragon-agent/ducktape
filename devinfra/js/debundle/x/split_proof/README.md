@@ -231,14 +231,17 @@ property names. A member call evaluates its receiver and key once, reads the cal
 evaluating arguments, and passes the receiver as `this`. Ordinary functions have the call's
 receiver and arrows capture the surrounding `this`. Access to private members and to `super.property` is unsupported.
 
-In the `browser-page` profile, a class can define a method or accessor at `[Symbol.iterator]`.
-When a read executes, the certificate records the premise that the ambient `Symbol.iterator`
-returns the well-known iterator symbol without observable effects. Its descriptor is distinct
-from one named `"Symbol.iterator"`. For example, `this.path[Symbol.iterator]()` looks up the
-method on the path’s prototype chain and calls it with the path as its receiver.
+The `ecmascript`, Node, and `browser-page` profiles share one declaration of the Symbol
+intrinsic and its well-known members. A class can define a method or accessor at
+`[Symbol.iterator]`; when a global `Symbol.iterator` read executes, the certificate reports
+the premises that the global binding is the unmodified intrinsic and that its well-known
+member is stable and effect-free. A lexical or parameter binding named `Symbol` is evaluated
+as that local binding instead. The symbol-keyed descriptor is distinct from one named
+`"Symbol.iterator"`. For example, `this.path[Symbol.iterator]()` looks up the method on the
+path’s prototype chain and calls it with the path as its receiver.
 
-A browser-profile call to the ambient `Symbol()` or `Symbol("description")` creates a fresh
-symbol under an explicit premise that the binding holds the intrinsic Symbol function.
+A call to the global `Symbol()` or `Symbol("description")` creates a fresh symbol under the
+shared intrinsic-operation premise and the premise for the host’s global Symbol binding.
 A class can use a lexical identifier as a computed instance field key. Class definition
 captures the key once, and each construction creates an own data property for that key.
 
@@ -280,7 +283,7 @@ Arithmetic and bitwise compound assignments read the target before the right-han
 
 Linked `delete` accepts dot and computed member expressions. It evaluates the receiver and key, then removes an own configurable property. A missing own property succeeds, while a nonconfigurable property throws in strict code. Reached deletion on unmodeled values or a computed key that requires object coercion stops the model.
 
-Linked object literals may contain static and computed data properties, methods and accessors, and spread elements. A numeric literal key uses the JavaScript string form of its value, so `5e-1` names the property `"0.5"` and the quoted key `"5e-1"` keeps its spelling. Property values use the same linked expression lowering as other initializers. CoreJS creates a fresh ordinary object and initializes its own properties in source order. If one property's value throws, evaluation stops before the following property. Repeated definitions update or extend the existing property without changing its first insertion position. A colon-form `__proto__` sets the prototype. A computed property evaluates its key before the value and defines an own property even when the key is `"__proto__"`; methods and accessors take their inferred names from the converted key. The Node comparison cases exercise `ToPropertyKey` for strings, numbers, booleans, null, and the well-known iterator symbol. The `browser-page` production profile supplies the well-known symbol intrinsic; the default `empty` and `ecmascript` profiles make no ambient `Symbol` assumption. A directly anonymous function or arrow value still needs name inference from the computed key. An explicitly named function keeps its name. Object-key coercion that invokes user code remains outside the executable model.
+Linked object literals may contain static and computed data properties, methods and accessors, and spread elements. A numeric literal key uses the JavaScript string form of its value, so `5e-1` names the property `"0.5"` and the quoted key `"5e-1"` keeps its spelling. Property values use the same linked expression lowering as other initializers. CoreJS creates a fresh ordinary object and initializes its own properties in source order. If one property's value throws, evaluation stops before the following property. Repeated definitions update or extend the existing property without changing its first insertion position. A colon-form `__proto__` sets the prototype. A computed property evaluates its key before the value and defines an own property even when the key is `"__proto__"`; methods and accessors take their inferred names from the converted key. The Node comparison cases exercise `ToPropertyKey` for strings, numbers, booleans, null, and the well-known iterator symbol. The `ecmascript`, Node, and `browser-page` profiles share the well-known symbol declaration; the default `empty` profile makes no ambient `Symbol` assumption. A directly anonymous function or arrow value still needs name inference from the computed key. An explicitly named function keeps its name. Object-key coercion that invokes user code remains outside the executable model.
 
 Object spread evaluates its operand once and copies its enumerable own properties into the new object. Keys follow JavaScript enumeration order. Getters run with the source as their receiver and can change which later keys are copied. A nullish value, number, or boolean contributes no keys. A string contributes its indexed UTF-16 code units within the Basic Multilingual Plane. Copying a host value, an engine error, or a string containing a supplementary character yields an unknown result.
 

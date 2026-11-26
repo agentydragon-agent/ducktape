@@ -176,10 +176,10 @@ assert.notEqual(first, live.value());
 assert.equal(original.read(), live.value());
 assert.equal(live.calls(), 2);
 
-const split = await import(pathToFileURL(path.join(out, entry)));
-assert.deepEqual(Object.keys(split), Object.keys(original));
-const wrongRecord = instrument(split);
-assert.throws(() => split.read(), TypeError);
+const splitModule = await import(pathToFileURL(path.join(out, entry)));
+assert.deepEqual(Object.keys(splitModule), Object.keys(original));
+const wrongRecord = instrument(splitModule);
+assert.throws(() => splitModule.read(), TypeError);
 assert.equal(wrongRecord.calls(), 0);
 
 const profile = path.join(root, "browser-profile.json");
