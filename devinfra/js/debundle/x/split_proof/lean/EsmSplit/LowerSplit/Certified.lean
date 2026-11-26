@@ -1,5 +1,6 @@
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.NamedDeclarationSplit
+import EsmSplit.CoreJS.TerminalConstructor
 import EsmSplit.ESTreeEmit
 import EsmSplit.LowerSplit.Input
 
@@ -31,26 +32,49 @@ private def emitRefusal (requested : String) (refusal : CertificationRefusal)
 private def noConstructedRule (requested : String) : IO UInt32 :=
   emitRefusal requested ({ reason := "no compiled constructor supports this split; no JavaScript was written", reasonCode := some "no_constructed_rule" } : CertificationRefusal)
 
-/-- Apply the named-declaration constructor to its actual decoded source and
-print only the modules it returns. A decline never writes to the destination. -/
-private def runNamedDeclarations (requested : String) (chunk : DeploymentChunk)
-    (out work : System.FilePath) (checkOnly timings : Bool) : IO UInt32 := do
-  let .authored spec := chunk.placement | return ← noConstructedRule requested
-  unless spec.sequential do return ← noConstructedRule requested
-  let src ← readBundle chunk.source work true timings (← IO.ofExcept chunk.sourceHash)
-  let .ok source := CoreJS.LinkedInput.decodeSingletonSource src.program spec.entry | return ← noConstructedRule requested
-  let [original] := source.modules | return ← noConstructedRule requested
+/-- A decline tries the next constructor; a constructed result is final,
+including any printing or staged readback failure. -/
+private def tryNamedDeclarations (requested : String) (chunk : DeploymentChunk) (src : BundleInput)
+    (out work : System.FilePath) (checkOnly timings : Bool) : IO (Option UInt32) := do
+  let .authored spec := chunk.placement | return none
+  unless spec.sequential do return none
+  let .ok source := CoreJS.LinkedInput.decodeSingletonSource src.program spec.entry | return none
+  let [original] := source.modules | return none
   unless !original.body.isEmpty && original.body.all (fun (_, stmt) =>
-      match stmt with | .decl .const _ _ => true | _ => false) do return ← noConstructedRule requested
-  unless spec.modules.all (fun row => row.1.endsWith ".mjs") do return ← noConstructedRule requested
-  let .ok constructed := CoreJS.NamedDeclarationSplit.construct source spec | return ← noConstructedRule requested
-  let programs ← IO.ofExcept (ESTreeEmit.corePrograms constructed.split.program src.source)
-  let part : OutputPart := { programs, source := src.source, input := src.input, work }
-  let checked ← certifyOutput (α := Unit) [part] (Json.mkObj []) out work checkOnly timings fun _ =>
-    pure (.ok ())
-  match checked with
-  | .ok _ => emitVerdict requested (.ok .allOutcomes) "named-declarations" [("strategy", toJson "compiled-constructor")]
-  | .error refusal => emitRefusal requested refusal "named-declarations"
+      match stmt with | .decl .const _ _ => true | _ => false) do return none
+  unless spec.modules.all (fun row => row.1.endsWith ".mjs") do return none
+  let .ok constructed := CoreJS.NamedDeclarationSplit.construct source spec | return none
+  try
+    let programs ← IO.ofExcept (ESTreeEmit.corePrograms constructed.split.program src.source)
+    let part : OutputPart := { programs, source := src.source, input := src.input, work }
+    let checked ← certifyOutput (α := Unit) [part] (Json.mkObj []) out work checkOnly timings fun _ =>
+      pure (.ok ())
+    match checked with
+    | .ok _ => return some (← emitVerdict requested (.ok .allOutcomes) "named-declarations"
+        [("strategy", toJson "compiled-constructor")])
+    | .error refusal => return some (← emitRefusal requested refusal "named-declarations")
+  catch e => return some (← emitVerdict requested (.error e.toString) "named-declarations")
+
+/-- Construct the terminal-export family from the original nodes, decoded
+source and unchanged authored placement. -/
+private def tryTerminalDeclarations (requested : String) (chunk : DeploymentChunk) (src : BundleInput)
+    (out work : System.FilePath) (checkOnly timings : Bool) : IO (Option UInt32) := do
+  let .authored spec := chunk.placement | return none
+  unless spec.sequential && spec.modules.all (fun row => row.1.endsWith ".mjs") do return none
+  let .ok nodes := ESTreeUnits.checkedNodes src.program src.source | return none
+  let .ok input := CoreJS.LinkedInput.decodeSingletonSourceWithLocalExports src.program spec.entry | return none
+  let bundle := linkedLayoutBundle nodes (Effects.footprintUnits nodes)
+  let .ok built := CoreJS.TerminalConstructor.construct input bundle spec | return none
+  try
+    let programs ← IO.ofExcept (ESTreeEmit.corePrograms built.program src.source)
+    let part : OutputPart := { programs, source := src.source, input := src.input, work }
+    let checked ← certifyOutput (α := Unit) [part] (Json.mkObj []) out work checkOnly timings fun _ =>
+      pure (.ok ())
+    match checked with
+    | .ok _ => return some (← emitVerdict requested (.ok .allOutcomes) "terminal-declarations"
+        [("strategy", toJson "compiled-constructor")])
+    | .error refusal => return some (← emitRefusal requested refusal "terminal-declarations")
+  catch e => return some (← emitVerdict requested (.error e.toString) "terminal-declarations")
 
 /-- Unsupported requests refuse; supported requests use the compiled constructor. -/
 def certified (args : List String) : IO UInt32 := do
@@ -67,7 +91,13 @@ def certified (args : List String) : IO UInt32 := do
     let manifest ← readDeploymentManifest manifestPath
     let [chunk] := manifest.chunks | return ← noConstructedRule requested
     let timings := (← IO.getEnv "SPLIT_PROOF_TIMINGS") == some "1"
-    IO.FS.withTempDir fun work => runNamedDeclarations requested chunk out work checkOnly timings
+    IO.FS.withTempDir fun work => do
+      let src ← readBundle chunk.source work true timings (← IO.ofExcept chunk.sourceHash)
+      if let some verdict ← tryTerminalDeclarations requested chunk src out work checkOnly timings then
+        return verdict
+      if let some verdict ← tryNamedDeclarations requested chunk src out work checkOnly timings then
+        return verdict
+      noConstructedRule requested
   catch e => emitVerdict requested (.error e.toString)
 
 end EsmSplit.LowerSplit
