@@ -312,7 +312,7 @@ export function workerSplit(name, source, entryUnits = ["#1"]) {
 
 export function assertCertified(verdict, log) {
   assert.equal(verdict.status, "certified", log);
-  assert(["all-outcomes", "normal-completion"].includes(verdict.guarantee), log);
+  assert.equal(verdict.guarantee, "all-outcomes", log);
 }
 
 export function assertCertifiedResult({ files, out, verdict, log }, result) {
@@ -324,18 +324,25 @@ export function assertCertifiedResult({ files, out, verdict, log }, result) {
 
 export function assertRejected({ verdict, log, out }, reason) {
   assert.equal(verdict.status, "rejected", log);
-  assert.match(verdict.reason, reason, log);
+  if (reason !== undefined) assert.match(verdict.reason, reason, log);
   assert(!existsSync(out), out);
 }
 
-// Order-kept slices prove the stronger all-outcomes result for these cases.
-export function assertRejectedOrOrderKeptSlice({ verdict, log, out }, reason) {
-  if (verdict.status === "certified" && verdict.scope === "linked-slice-order-kept") {
-    assert.equal(verdict.guarantee, "all-outcomes", log);
+export function assertNoConstructedRule({ verdict, log, out }) {
+  assert.equal(verdict.status, "rejected", log);
+  assert.equal(verdict.reason_code, "no_constructed_rule", log);
+  assert(!existsSync(out), out);
+}
+
+// Only an all-outcomes certificate may publish now that replay and slice proof
+// routes are retired.
+export function assertRejectedOrOrderKeptSlice({ verdict, log, out }, _reason) {
+  if (verdict.status === "certified") {
+    assertCertified(verdict, log);
     assert(existsSync(out), out);
     return true;
   }
-  assertRejected({ verdict, log, out }, reason);
+  assertNoConstructedRule({ verdict, log, out });
   return false;
 }
 
