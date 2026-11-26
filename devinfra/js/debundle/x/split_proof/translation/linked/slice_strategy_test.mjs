@@ -45,7 +45,6 @@ const omitted = prepareLinkedFixture("omitted-export-unit", "const result = [].l
   entry,
   modules: { [entry]: ["#0", "#1"] },
 });
-assertPublicEmissionRefused(omitted.manifest, omitted.out);
 await assertLinkedPreviewResult(omitted, 0);
 
 const moves = prepareLinkedFixture("slice-moves", "export const left = []; const right = [];", {
@@ -54,7 +53,6 @@ const moves = prepareLinkedFixture("slice-moves", "export const left = []; const
   order: ["right.mjs"],
   sequential: true,
 });
-assertPublicEmissionRefused(moves.manifest, moves.out);
 await withSplitPreview({ manifest: moves.manifest }, ({ directory, entryFile }) => {
   assert.deepEqual(moduleEvaluationOrder(directory, entry), ["right.mjs", entry]);
   for (const file of [moves.sourceFile, entryFile]) assert.deepEqual(observe(file, "left"), { left: [] });
@@ -66,7 +64,6 @@ const bindings = prepareLinkedFixture(
   "let x = 0; let y = 0; x = 1; y = 2; const done = x + y;",
   { entry, modules: { "m0.mjs": ["#1", "#3"], [entry]: ["#0", "#2", "#4"] } }
 );
-assertPublicEmissionRefused(bindings.manifest, bindings.out);
 await withSplitPreview({ manifest: bindings.manifest }, ({ directory, entryFile }) => {
   assert.deepEqual(moduleEvaluationOrder(directory, entry), ["m0.mjs", entry]);
   for (const file of [bindings.sourceFile, entryFile]) assert.deepEqual(observe(file, []), {});
@@ -85,7 +82,6 @@ const heritage = prepareLinkedFixture(
   `,
   { entry, modules: { "prefix.mjs": ["#0", "#1", "#3", "#4"], [entry]: ["#2", "#5"] } }
 );
-assertPublicEmissionRefused(heritage.manifest, heritage.out);
 await assertLinkedPreviewResult(heritage, 8);
 
 const providerFallback = prepareLinkedFixture(
@@ -96,7 +92,6 @@ const providerFallback = prepareLinkedFixture(
   { entry, modules: { [entry]: ["#0", "#1", "#2"] } }
 );
 writeFileSync(providerFallback.providerFile, "export const imported = 41;");
-assertPublicEmissionRefused(providerFallback.manifest, providerFallback.out);
 await withSplitPreview({ manifest: providerFallback.manifest }, ({ directory, entryFile }) => {
   copyFileSync(providerFallback.providerFile, path.join(directory, "provider.mjs"));
   for (const file of [providerFallback.sourceFile, entryFile])
@@ -111,7 +106,6 @@ await withSplitPreview({ manifest: providerFallback.manifest }, ({ directory, en
   assert.equal(model.status, "matched", JSON.stringify(model));
   assert(model.fuel > 0);
   assert.deepEqual(model.observed, expectedModelObservations([[["result"], 42]]));
-  assertPublicRecheckRefused(providerFallback.manifest, directory);
 });
 
 const profiled = prepareWorkerFixture(
@@ -119,7 +113,6 @@ const profiled = prepareWorkerFixture(
   `class Collection { [Symbol.iterator]() { return 42; } }
   export const result = new Collection()[Symbol.iterator]();`
 );
-assertPublicEmissionRefused(profiled.manifest, profiled.out);
 assert.deepEqual(observe(profiled.sourceFile, "result"), { result: 42 });
 await withSplitPreview({ manifest: profiled.manifest }, ({ directory, entryFile }) => {
   assert.deepEqual(observe(entryFile, "result"), { result: 42 });

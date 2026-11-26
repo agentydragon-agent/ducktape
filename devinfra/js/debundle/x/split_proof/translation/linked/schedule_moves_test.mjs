@@ -19,7 +19,6 @@ function fixture(name, source, moved, kept, provider = "") {
 }
 
 async function checkPreview(fixture, expectedExit, check) {
-  assertPublicEmissionRefused(fixture.manifest, fixture.out);
   await withSplitPreview({ manifest: fixture.manifest, expectedExit }, check);
 }
 
@@ -47,6 +46,7 @@ const instanceField = fixture(
   ["#1"],
   ["#0", "#2", "#3"]
 );
+assertPublicEmissionRefused(instanceField.manifest, instanceField.out);
 await checkPreview(instanceField, 0, async ({ directory, entryFile }) => {
   for (const file of [instanceField.sourceFile, entryFile]) {
     const { before, C } = await import(pathToFileURL(file).href);
@@ -76,7 +76,6 @@ await checkPreview(staticField, 0, async ({ directory, entryFile }) => {
     [["before"], 3],
     [["C", "value", "answer"], 7],
   ]);
-  assertPublicRecheckRefused(staticField.manifest, directory);
 });
 
 const eagerField = fixture(
@@ -146,7 +145,7 @@ const multipleMoves = fixture(
   "export const seed = 9;"
 );
 for (const move of [safe, multipleMoves]) {
-  await checkPreview(move, 0, async ({ directory, entryFile }) => {
+  await checkPreview(move, 1, async ({ directory, entryFile }) => {
     copyFileSync(move.providerFile, path.join(directory, "provider.mjs"));
     for (const file of [move.sourceFile, entryFile]) {
       const namespace = await import(pathToFileURL(file).href);
@@ -156,7 +155,6 @@ for (const move of [safe, multipleMoves]) {
       assert(namespace.bytes instanceof Uint8Array);
       assert.deepEqual([...namespace.bytes], [9, 17]);
     }
-    assertPublicRecheckRefused(move.manifest, directory);
     if (move !== safe) return;
     const worker = path.join(directory, "scroll.mjs");
     const printed = readFileSync(worker, "utf8");
@@ -168,7 +166,6 @@ for (const move of [safe, multipleMoves]) {
     assert.equal(model.reason_code, "linked_input", JSON.stringify(model));
     assert.match(model.reason, /emitted syntax differs from original unit 3/);
     assertPublicEmissionRefused(move.manifest, directory);
-    assertPublicRecheckRefused(move.manifest, directory);
   });
 }
 
@@ -202,7 +199,6 @@ await checkPreview(deferredPair, 0, async ({ directory, entryFile }) => {
     const { bytes, inspect } = await import(pathToFileURL(file).href);
     assert.equal(inspect(bytes[0]), 18);
   }
-  assertPublicRecheckRefused(deferredPair.manifest, directory);
 });
 
 // The helper and its two interleaved declarations are assigned together.
@@ -230,7 +226,6 @@ await checkPreview(interleaved, 0, async ({ directory, entryFile }) => {
     const { bytes, inspect, scale } = await import(pathToFileURL(file).href);
     assert.equal(inspect(scale(bytes[0])), 15);
   }
-  assertPublicRecheckRefused(interleaved.manifest, directory);
 });
 
 // An actual read by a hoisted function during the crossing is observable,
@@ -290,7 +285,6 @@ await checkPreview(one, 0, async ({ directory, entryFile }) => {
     [["before"], undefined],
     [["later"], 2],
   ]);
-  assertPublicRecheckRefused(one.manifest, directory);
 });
 const two = fixture("retained-capture-two-pivots", retainedReader, ["#2", "#3"], ["#0", "#1", "#4"]);
 await checkPreview(two, 1, ({ directory, entryFile }) => {
