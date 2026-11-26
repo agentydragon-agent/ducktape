@@ -42,3 +42,7 @@ and verify that new appends still read back. Check write latency, replication la
 space before increasing the scope. Keep both readers until both inventories show no legacy
 or unreadable blocks, skipped ranges have been accounted for, and a supported backup has
 been restored and read successfully.
+
+When History and Sampler have both retired their legacy readers, delete this guide and its
+links from both service READMEs in the same cleanup PR. Keep the instructions for routine
+compaction in the service READMEs.
