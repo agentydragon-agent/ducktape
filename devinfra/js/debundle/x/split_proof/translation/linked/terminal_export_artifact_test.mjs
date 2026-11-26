@@ -4,6 +4,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { dump } from "../parser.mjs";
 import { split } from "../testing/split.mjs";
+import { writeDeployment } from "../testing/deployment_manifest.mjs";
 import { observe, prepare, root } from "./harness.mjs";
 
 const entry = "entry.mjs";
@@ -76,3 +77,30 @@ const inputWitness = spawnSync(process.env.TERMINAL_CONST_INPUT_CHECKER, [], {
   input: JSON.stringify(dump("const x = 1;\nexport { x };\n")),
 });
 assert.equal(inputWitness.status, 0, inputWitness.error?.message ?? inputWitness.stdout + inputWitness.stderr);
+
+// This checks source admission alone: it neither emits nor certifies a split.
+for (const [label, source, authored, accepted] of [
+  ["one", "const x = 1;\nexport { x };\n", spec, true],
+  ["nine", "const x = 9;\nexport { x };\n", spec, true],
+  ["wrong-name", "const a = 1;\nexport { a };\n", spec, false],
+  [
+    "wrong-owner",
+    "const x = 1;\nexport { x };\n",
+    { ...spec, modules: { [worker]: ["#0", "#1"], [entry]: [] } },
+    false,
+  ],
+]) {
+  const input = prepare(path.join(root, `source-${label}`), { source, provider: "", spec: authored });
+  const unusedOut = path.join(root, `source-${label}-out`);
+  const manifest = writeDeployment(input.sourceFile, input.specFile, unusedOut);
+  const result = spawnSync(process.env.LOWERSPLIT, ["--check-source", manifest], { encoding: "utf8" });
+  assert.equal(result.status, accepted ? 0 : 1, result.error?.message ?? result.stdout + result.stderr);
+  if (accepted) {
+    assert.equal(result.stdout.trim(), "source admitted");
+    // Concrete diagnostic, not a premise of the source-to-model theorem.
+    const emitted = spawnSync(process.env.LOWERSPLIT, ["--probe-emission", manifest], { encoding: "utf8" });
+    assert.equal(emitted.status, 0, emitted.error?.message ?? emitted.stdout + emitted.stderr);
+    assert.equal(emitted.stdout.trim(), "emitter example matched");
+  }
+  assert(!existsSync(unusedOut));
+}
