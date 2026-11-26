@@ -313,3 +313,60 @@ assert.equal(pureSparseResult.status, "certified", pureSparseResult.log);
 assert.deepEqual(observe(path.join(pureSparseOut, entry), "value"), observe(pureSparse.sourceFile, "value"));
 
 assert.deepEqual(snapshot(), beforeUnsupported, "all refusal paths must preserve the previously published files");
+
+const multiSpec = {
+  entry,
+  modules: { "values.mjs": ["#0", "#1"], "readers.mjs": ["#2", "#3"], [entry]: ["#4"] },
+  order: ["values.mjs", "readers.mjs"],
+  sequential: true,
+};
+const multi = prepare(path.join(root, "multi-terminal-cli"), {
+  source: 'const a = "same";\nconst b = "same";\nconst first = a;\nconst second = b;\nexport { first, second };\n',
+  provider: "",
+  spec: multiSpec,
+});
+const multiOut = path.join(root, "multi-terminal-cli-out");
+const multiRun = (options = {}) =>
+  split({ source: multi.sourceFile, spec: multi.specFile, out: multiOut, require: "all-outcomes", ...options });
+const multiResult = multiRun();
+assert.equal(multiResult.status, "certified", multiResult.log);
+assert.equal(multiResult.verdict.strategy, "compiled-multi-terminal-export");
+assert.equal(multiResult.verdict.observation_scope, "strict-static-data");
+assert.deepEqual(observe(path.join(multiOut, entry), ["first", "second"]), { first: "same", second: "same" });
+assert.deepEqual(multiRun({ checkOutput: true }).verdict, multiResult.verdict);
+const multiBytes = Object.fromEntries(
+  [entry, "values.mjs", "readers.mjs"].map((name) => [name, readFileSync(path.join(multiOut, name))])
+);
+const multiEntry = path.join(multiOut, entry);
+const wrongMultiCell = multiBytes[entry]
+  .toString()
+  .replace(/export\s*\{\s*first\s*,\s*second\s*\}/, "export { second as first, second }");
+assert.notEqual(wrongMultiCell, multiBytes[entry].toString());
+writeFileSync(multiEntry, wrongMultiCell);
+assert.deepEqual(observe(multiEntry, ["first", "second"]), { first: "same", second: "same" });
+const wrongMultiBytes = readFileSync(multiEntry);
+const wrongMultiResult = multiRun({ checkOutput: true, allowExistingOut: true });
+assert.equal(wrongMultiResult.status, "refused", wrongMultiResult.log);
+assert.deepEqual(readFileSync(multiEntry), wrongMultiBytes);
+for (const file of ["values.mjs", "readers.mjs"])
+  assert.deepEqual(readFileSync(path.join(multiOut, file)), multiBytes[file]);
+writeFileSync(multiEntry, multiBytes[entry]);
+const unsupportedMultiProfile = multiRun({ structural: true, allowExistingOut: true });
+assert.equal(unsupportedMultiProfile.status, "refused", unsupportedMultiProfile.log);
+assert.equal(unsupportedMultiProfile.verdict.strategy, "compiled-multi-terminal-export");
+for (const [file, bytes] of Object.entries(multiBytes))
+  assert.deepEqual(readFileSync(path.join(multiOut, file)), bytes);
+for (const [name, badSpec] of [
+  ["wrong-owner", { ...multiSpec, modules: { ...multiSpec.modules, "values.mjs": ["#0", "#1", "#4"], [entry]: [] } }],
+  ["dropped-export", { ...multiSpec, modules: { ...multiSpec.modules, [entry]: [] } }],
+  ["duplicate-export", { ...multiSpec, modules: { ...multiSpec.modules, [entry]: ["#4", "#4"] } }],
+  ["reordered", { ...multiSpec, order: ["readers.mjs", "values.mjs"] }],
+]) {
+  const badSpecFile = path.join(root, `multi-${name}.json`);
+  writeFileSync(badSpecFile, JSON.stringify(badSpec));
+  const refused = multiRun({ spec: badSpecFile, allowExistingOut: true });
+  assert.equal(refused.status, "refused", refused.log);
+  assert.equal(refused.verdict.strategy, "compiled-multi-terminal-export");
+  for (const [file, bytes] of Object.entries(multiBytes))
+    assert.deepEqual(readFileSync(path.join(multiOut, file)), bytes);
+}

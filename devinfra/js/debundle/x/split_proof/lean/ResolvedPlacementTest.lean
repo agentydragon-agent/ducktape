@@ -1,5 +1,6 @@
 import EsmSplit.CoreJS.ResolvedPlacement
 import EsmSplit.CoreJS.CheckedSplit
+import EsmSplit.LowerSplit.MultiTerminalExport
 
 open CoreJS CoreJS.LinkedBehavior CoreJS.ResolvedPlacement
 
@@ -70,6 +71,29 @@ private def pairRequest : EsmSplit.Spec := {
   modules := [("values.mjs", [.stmt 0, .stmt 1]), ("readers.mjs", [.stmt 2, .stmt 3]),
     ("entry.mjs", [])]
 }
+
+private def pairWithEmpty (emptyFirst : Bool) : Program :=
+  let base := pairOutput "first"
+  let imports : List Import := [⟨"readers.mjs", [("first", "first"), ("second", "second")]⟩]
+  let empty : Import := ⟨"empty.mjs", []⟩
+  let modules := base.modules.map fun m =>
+    if m.name == "entry.mjs" then { m with imports := if emptyFirst then empty :: imports else imports ++ [empty] }
+    else m
+  { base with modules := modules ++ [⟨"empty.mjs", [], [], []⟩] }
+
+private def checkPairOrder : IO Unit := do
+  let request := { pairRequest with order := ["values.mjs", "readers.mjs", "empty.mjs"], sequential := true }
+  let correct := pairWithEmpty false
+  let wrong := pairWithEmpty true
+  let goodLinks ← IO.ofExcept (checkProbePair pairSource correct)
+  let wrongLinks ← IO.ofExcept (checkProbePair pairSource wrong)
+  unless (sameUnits? (unitsOf goodLinks.after.linked) (unitsOf wrongLinks.after.linked)).isSome do
+    throw (IO.userError "empty-module permutation changed executable schedule")
+  let _ ← IO.ofExcept ((checkLinkedSchedules [] wrongLinks.before wrongLinks.after {}).mapError StructuralRefusal.reason)
+  let _ ← IO.ofExcept (EsmSplit.LowerSplit.MultiTerminalExport.checkOrder request correct)
+  match EsmSplit.LowerSplit.MultiTerminalExport.checkOrder request wrong with
+  | .error _ => pure ()
+  | .ok _ => throw (IO.userError "incorrect empty-module order passed")
 
 private def checkPairCells : IO Unit := do
   let placement ← IO.ofExcept (legacyResolve pairSource pairRequest)
@@ -145,6 +169,7 @@ private def withBody (body : List (Nat × Stmt)) : Program :=
 
 def test : IO Unit := do
   checkPairCells
+  checkPairOrder
   let chosen ← IO.ofExcept (legacyResolve sparse spec)
   unless chosen.assignment == [(0, "worker.mjs"), (2, "entry.mjs")] do
     throw (IO.userError "name selectors did not preserve sparse source IDs")

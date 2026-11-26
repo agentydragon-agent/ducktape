@@ -150,3 +150,17 @@ assert.deepEqual(
   observe(path.join(graphOut, entry), names),
   Object.fromEntries(names.map((name, i) => [name, `value${i}`]))
 );
+
+const renamed = prepare(path.join(root, "multi-terminal-renamed"), {
+  source:
+    'const a = "same";\nconst b = "same";\nconst first = a;\nconst second = b;\nexport { first as renamed, second };\n',
+  provider: "",
+  spec: multiSpec,
+});
+const renamedResult = split({
+  source: renamed.sourceFile,
+  spec: renamed.specFile,
+  out: path.join(root, "multi-terminal-renamed-out"),
+  require: "all-outcomes",
+});
+assert.equal(renamedResult.status, "refused", renamedResult.log);

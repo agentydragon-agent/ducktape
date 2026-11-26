@@ -9,7 +9,7 @@ import EsmSplit.ESTreeEmit
 import EsmSplit.LowerSplit.CheckedArtifact
 import EsmSplit.LowerSplit.Input
 import EsmSplit.LowerSplit.SliceCertificate
-import EsmSplit.LowerSplit.TerminalExportArtifact
+import EsmSplit.LowerSplit.MultiTerminalExport
 import EsmSplit.ReadDeployment
 
 /-! Certify a proposed split and publish its output or verify the existing tree. -/
@@ -280,6 +280,47 @@ private def checkPartLayout (part : Part) (timings : Bool) : IO Unit := do
   unless ok do
     throw (IO.userError "source placement or module linkage checks failed")
 
+/-- Recognized multi-unit terminal exports retain their authored request and
+are either certified through the shared strict gate or refused here. -/
+private def tryMultiTerminalExport (chunk : DeploymentChunk) (input : BundleInput)
+    (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
+  let .authored spec := chunk.placement | return none
+  unless javascriptSource chunk.source && chunk.source.extension == some "mjs" do return none
+  unless MultiTerminalExport.candidate input.program spec.entry do return none
+  let refuse reason := emitVerdict options.request.label (.error reason) (some "checked-construction") [
+    ("strategy", toJson "compiled-multi-terminal-export"),
+    ("reason_code", toJson "multi_terminal_export_refusal")
+  ]
+  if options.structural || options.profile != .empty || !options.intrinsics.isEmpty ||
+      options.deploymentOrigin.isSome || options.browserOptions.nativeRecord || options.browserOptions.emptyMap then
+    return some (← refuse "multi-terminal export requires the default strict profile")
+  unless (spec.entry :: spec.modules.map Prod.fst).all (·.endsWith ".mjs") do
+    return some (← refuse "multi-terminal export requires .mjs output modules")
+  let prepared ← timePhase timings "checked_construction" fun _ => IO.lazyPure fun _ =>
+    MultiTerminalExport.prepare input.program input.source spec
+  match prepared with
+  | .error reason => return some (← refuse reason)
+  | .ok prepared =>
+    let part : OutputPart := { programs := prepared.programs, source := input.source, input := input.input, work }
+    let covered := supportsStrictObservationInput input.program spec.entry
+    let checked ← try
+      certifyOutput [part] (Json.mkObj []) out work options.checkOnly timings fun files =>
+        timePhase timings "checked_correspondence" fun _ => do
+          let result : Except CertificationRefusal Unit :=
+            match MultiTerminalExport.verify input.program files prepared with
+            | .ok _ => .ok ()
+            | .error reason => .error { reason, reasonCode := some "constructed_output_mismatch" }
+          pure (guardStrictObservation covered result)
+    catch error =>
+      pure (.error ({ reason := error.toString, reasonCode := some "constructed_output_refusal" } : CertificationRefusal))
+    match checked with
+    | .ok _ => return some (← emitVerdict options.request.label (.ok .allOutcomes) (some "checked-construction") [
+        ("strategy", toJson "compiled-multi-terminal-export"),
+        ("premises", toJson ([] : List String)),
+        ("observation_scope", toJson "strict-static-data")
+      ])
+    | .error refusal => return some (← emitRefusal options.request.label refusal (some "checked-construction"))
+
 /-- The original terminal export ordinal is part of the authored request.
 A recognized request is either certified through the shared strict gate or
 refused; it cannot silently fall through to a different strategy. -/
@@ -429,6 +470,9 @@ private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
   let structural := options.structural
   let checkOnly := options.checkOnly
   let src ← readBundle chunk.source work true timings (← IO.ofExcept chunk.sourceHash)
+  match ← tryMultiTerminalExport chunk src out work options timings with
+  | some result => return result
+  | none => pure ()
   match ← tryTerminalExport chunk src out work options timings with
   | some result => return result
   | none => pure ()

@@ -28,6 +28,19 @@ def metadataClaims (request : EsmSplit.Spec) (terminal : Nat) : List (Nat × Str
     | .stmt ordinal => if ordinal == terminal then some (terminal, owner) else none
     | .name _ => none
 
+/-- Source-only dispatch: a recognized multi-unit static-data source owns its
+request, even if its authored placement is subsequently refused. -/
+def candidate (original : Json) (entry : String) : Bool := Id.run do
+  let .ok nodes := ESTreeUnits.nodes original | return false
+  if nodes.size ≤ 2 then return false
+  let .ok source := LinkedInput.decodeSingletonSource original entry | return false
+  unless CheckedSplit.supportsStrictStaticSource source do return false
+  let [m] := source.modules | return false
+  unless m.exports.all (fun (publicName, localName) => publicName == localName) do return false
+  match classify (m.body.map Prod.fst) nodes with
+  | .ok [terminal] => return terminal + 1 == nodes.size
+  | _ => return false
+
 structure Prepared (original : Json) (sourceText : String) (request : EsmSplit.Spec) where
   nodes : Array Json
   nodesMatch : ESTreeUnits.checkedNodes original sourceText = .ok nodes
@@ -61,6 +74,9 @@ def prepare (original : Json) (sourceText : String) (request : EsmSplit.Spec) :
   if terminalPosition : terminal + 1 = nodes.size then
     let ⟨source, ⟨sourceMatch⟩⟩ ← witness (LinkedInput.decodeSingletonSource original request.entry)
     if staticData : CheckedSplit.supportsStrictStaticSource source = true then
+      let [m] := source.modules | throw "expected one source module"
+      unless m.exports.all (fun (publicName, localName) => publicName == localName) do
+        throw "renamed exports are unsupported"
       let placement ← ResolvedPlacement.resolve source (executableRequest request terminal)
         (CheckedSplit.requestedPlacement source)
       let ⟨actualMetadata, ⟨metadataMatch⟩⟩ ← witness (classify (placement.module.body.map Prod.fst) nodes)
@@ -98,6 +114,13 @@ def prepare (original : Json) (sourceText : String) (request : EsmSplit.Spec) :
     else throw "source is outside strict static data"
   else throw "source is empty"
 
+/-- The executable schedule alone does not constrain empty modules. Retain
+the complete decoded order, including modules with no executable units. -/
+def checkOrder (request : EsmSplit.Spec) (output : Program) :
+    Except String (PLift (output.evalOrder = request.order ++ [request.entry])) :=
+  if same : output.evalOrder = request.order ++ [request.entry] then .ok ⟨same⟩
+  else .error "decoded evaluation order differs from authored sequential order"
+
 private def noProviders := Json.mkObj []
 
 def Verified (original files : Json) {sourceText request}
@@ -105,7 +128,8 @@ def Verified (original files : Json) {sourceText request}
   ∃ decoded,
     LinkedInput.decodeSingleton original noProviders files prepared.plan = .ok decoded ∧
     decoded.before = prepared.source ∧
-    ResolvedPlacement.Sound prepared.placement .allOutcomes decoded.after
+    ResolvedPlacement.Sound prepared.placement .allOutcomes decoded.after ∧
+    decoded.after.evalOrder = request.order ++ [request.entry]
 
 def verify (original files : Json) {sourceText request}
     (prepared : Prepared original sourceText request) : Except String (PLift (Verified original files prepared)) :=
@@ -115,6 +139,7 @@ def verify (original files : Json) {sourceText request}
     let some ⟨sourceMatches⟩ := SyntaxMatch.programEq decoded.before prepared.source |
       throw "original lowered differently during verification"
     let ⟨placed⟩ ← checkPlaces prepared.placement.assignment prepared.source decoded.after
+    let ⟨order⟩ ← checkOrder request decoded.after
     let links ← checkProbePair prepared.source decoded.after
     let checked ← (checkLinkedSchedules [] links.before links.after {}).mapError StructuralRefusal.reason
     match checked with
@@ -122,7 +147,7 @@ def verify (original files : Json) {sourceText request}
       have runs : ScheduleEquivalent .allOutcomes (fun _ => True) prepared.source decoded.after := by
         intro w _ n
         exact equivalent w (by simp [StableIntrinsic.Worlds]) n
-      return ⟨⟨decoded, lowered, sourceMatches, placed, exports, runs⟩⟩
+      return ⟨⟨decoded, lowered, sourceMatches, ⟨placed, exports, runs⟩, order⟩⟩
     | _ => throw "expected an order-preserved all-outcomes schedule"
 
 theorem verify_sound {original files sourceText request}
@@ -130,6 +155,7 @@ theorem verify_sound {original files sourceText request}
     (_accepted : verify original files prepared = .ok proof) : Verified original files prepared := proof.down
 
 #print axioms prepare
+#print axioms checkOrder
 #print axioms verify
 #print axioms verify_sound
 

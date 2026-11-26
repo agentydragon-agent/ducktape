@@ -90,6 +90,13 @@ placement and the entry's live exports, then requires the staged and reread
 JavaScript to decode to that exact candidate before publishing. Its verdict
 states the CoreJS theorem, reports no host premises, and marks
 `every_ending_matches: true` with `observation_scope: "strict-static-data"`.
+A multi-unit source ending in one unrenamed local export list can instead use
+`compiled-multi-terminal-export`: the authored sequential request selects the
+original export ordinal in the entry and every declaration exactly once. The
+checker retains those owners, the complete module evaluation order and the live
+entry cells in the staged and reread output. This route accepts the default
+strict profile; a recognized source with unsupported options or placement is
+refused without trying another strategy.
 The common certified output gate reports that same observation scope only for
 import-free static data declarations and safe local reads. It checks the exact
 singleton source or every manifest chunk and additional source in a linked

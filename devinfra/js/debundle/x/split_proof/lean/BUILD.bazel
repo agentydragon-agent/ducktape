@@ -570,6 +570,7 @@ lean_library(
     deps = [
         ":corejs_checked_split",
         ":corejs_resolved_placement",
+        ":multi_terminal_export",
     ],
 )
 
@@ -801,8 +802,8 @@ lean_library(
         ":corejs_structural",
         ":lowersplit_input",
         ":lowersplit_support",
+        ":multi_terminal_export",
         ":planner",
-        ":terminal_export_artifact",
     ],
 )
 
@@ -1689,6 +1690,7 @@ lean_proof_test(
     allow_empty = True,
     modules = ["EsmSplit.LowerSplit.MultiTerminalExport"],
     required_theorems = [
+        "EsmSplit.LowerSplit.MultiTerminalExport.checkOrder",
         "EsmSplit.LowerSplit.MultiTerminalExport.prepare",
         "EsmSplit.LowerSplit.MultiTerminalExport.verify",
         "EsmSplit.LowerSplit.MultiTerminalExport.verify_sound",

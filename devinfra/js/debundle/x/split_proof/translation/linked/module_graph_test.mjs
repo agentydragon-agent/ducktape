@@ -30,9 +30,12 @@ modules[entry] = [`#${2 * count}`];
 const dir = path.join(root, "module-graph");
 const files = prepare(dir, { source, provider: "", spec: { entry, modules, order, sequential: true } });
 const out = path.join(dir, "out");
-const { verdict, log } = lower(files.sourceFile, files.specFile, out);
+const { verdict, log } = lower(files.sourceFile, files.specFile, out, [], "checked-construction");
 assertCertified(verdict, log);
-assert.deepEqual(lower(files.sourceFile, files.specFile, out, ["--check-output"]).verdict, verdict);
+assert.deepEqual(
+  lower(files.sourceFile, files.specFile, out, ["--check-output"], "checked-construction").verdict,
+  verdict
+);
 assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
 for (const file of [files.sourceFile, path.join(out, entry)]) {
   assert.deepEqual(observe(file, names), expected);
