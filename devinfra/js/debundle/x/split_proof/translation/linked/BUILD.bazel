@@ -123,6 +123,18 @@ js_test(
 )
 
 js_test(
+    name = "arithmetic_model_check_test",
+    size = "medium",
+    data = _TEST_DATA + [
+        "//devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+    ],
+    entry_point = "arithmetic_model_check_test.mjs",
+    env = _TEST_ENV | {"LINKED_MODEL_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner)"},
+)
+
+js_test(
     name = "joint_static_test",
     size = "medium",
     data = _TEST_DATA + [
