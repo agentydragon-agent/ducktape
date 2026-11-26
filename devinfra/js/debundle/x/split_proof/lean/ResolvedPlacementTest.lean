@@ -49,6 +49,52 @@ def proveSparse (resolved : LegacyPlacement sparse spec) : Except String
     return ⟨places, links.sameExports exported, fun w _ fuel => runs w fuel⟩
   else throw "entry exports do not resolve to the source cells"
 
+/-! Two equal-valued readers have distinct cells. This exercises the linked
+schedule checker directly, without the staged-output syntax comparison. -/
+private def pairSource : Program := ⟨"entry.mjs", [⟨"entry.mjs", [], [
+  (0, .decl .const "a" (.str "same")), (1, .decl .const "b" (.str "same")),
+  (2, .decl .const "first" (.var "a")), (3, .decl .const "second" (.var "b"))],
+  [("first", "first"), ("second", "second")]⟩]⟩
+
+private def pairOutput (firstCell : String) : Program := ⟨"entry.mjs", [
+  ⟨"values.mjs", [], [(0, .decl .const "a" (.str "same")),
+    (1, .decl .const "b" (.str "same"))], [("a", "a"), ("b", "b")]⟩,
+  ⟨"readers.mjs", [⟨"values.mjs", [("a", "a"), ("b", "b")]⟩],
+    [(2, .decl .const "first" (.var "a")), (3, .decl .const "second" (.var "b"))],
+    [("first", "first"), ("second", "second")]⟩,
+  ⟨"entry.mjs", [⟨"readers.mjs", [("first", "first"), ("second", "second")]⟩], [],
+    [("first", firstCell), ("second", "second")]⟩]⟩
+
+private def pairRequest : EsmSplit.Spec := {
+  entry := "entry.mjs"
+  modules := [("values.mjs", [.stmt 0, .stmt 1]), ("readers.mjs", [.stmt 2, .stmt 3]),
+    ("entry.mjs", [])]
+}
+
+private def checkPairCells : IO Unit := do
+  let placement ← IO.ofExcept (legacyResolve pairSource pairRequest)
+  unless placement.assignment == [(0, "values.mjs"), (1, "values.mjs"),
+      (2, "readers.mjs"), (3, "readers.mjs")] do
+    throw (IO.userError "resolved owners differ from authored original ordinals")
+  let good := pairOutput "first"
+  let wrong := pairOutput "second"
+  let _ ← IO.ofExcept (checkPlaces placement.assignment pairSource good)
+  let _ ← IO.ofExcept (checkPlaces placement.assignment pairSource wrong)
+  let goodLinks ← IO.ofExcept (checkProbePair pairSource good)
+  let wrongLinks ← IO.ofExcept (checkProbePair pairSource wrong)
+  unless exportsMatchFrom goodLinks.before goodLinks.after &&
+      !exportsMatchFrom wrongLinks.before wrongLinks.after do
+    throw (IO.userError "equal-valued wrong export cell was not distinguished")
+  unless (StateMatch.probe wrongLinks.before.ready wrongLinks.after.ready).isSome &&
+      (sameUnits? (unitsOf wrongLinks.before.linked) (unitsOf wrongLinks.after.linked)).isSome do
+    throw (IO.userError "wrong-cell case also changed linker state or schedule")
+  match checkLinkedSchedules [] goodLinks.before goodLinks.after {} with
+  | .ok ⟨.allOutcomes, .preservedOrder, _⟩ => pure ()
+  | _ => throw (IO.userError "correct live cells were not certified")
+  match checkLinkedSchedules [] wrongLinks.before wrongLinks.after {} with
+  | .error _ => pure ()
+  | .ok _ => throw (IO.userError "wrong live cell passed linked schedule checking")
+
 private def dense : Program := ⟨"entry.mjs", [⟨"entry.mjs", [], [
   (0, .decl .const "seed" (.num 42)),
   (1, .funDecl (.mk "read" .normal false [] [.ret (.var "seed")])),
@@ -98,6 +144,7 @@ private def withBody (body : List (Nat × Stmt)) : Program :=
   ⟨"entry.mjs", [⟨"entry.mjs", [], body, [("seed", "seed")]⟩]⟩
 
 def test : IO Unit := do
+  checkPairCells
   let chosen ← IO.ofExcept (legacyResolve sparse spec)
   unless chosen.assignment == [(0, "worker.mjs"), (2, "entry.mjs")] do
     throw (IO.userError "name selectors did not preserve sparse source IDs")
