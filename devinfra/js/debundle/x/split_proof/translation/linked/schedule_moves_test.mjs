@@ -108,6 +108,9 @@ const lazySource = "export const location = import.meta.url;";
 const originalLazy = path.join(path.dirname(opaqueContext.sourceFile), "lazy.mjs");
 writeFileSync(originalLazy, lazySource);
 await checkPreview(opaqueContext, 0, async ({ directory, entryFile }) => {
+  const model = probeLinkedModel(request(opaqueContext, directory));
+  assert.equal(model.status, "refused", JSON.stringify(model));
+  assert.match(model.reason, /[Ii]mport|source-module/);
   const previewLazy = path.join(directory, "lazy.mjs");
   writeFileSync(previewLazy, lazySource);
   for (const [file, lazy] of [
@@ -118,9 +121,6 @@ await checkPreview(opaqueContext, 0, async ({ directory, entryFile }) => {
     assert.equal(phase, 1);
     assert.equal((await load()).location, pathToFileURL(lazy).href);
   }
-  const model = probeLinkedModel(request(opaqueContext, directory));
-  assert.equal(model.status, "refused", JSON.stringify(model));
-  assert.match(model.reason, /[Ii]mport|source-module/);
 });
 
 const typedArraySource = `import { seed } from "./provider.mjs";
