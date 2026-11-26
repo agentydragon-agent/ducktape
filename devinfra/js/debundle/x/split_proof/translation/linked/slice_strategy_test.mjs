@@ -1,107 +1,81 @@
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { assertCertified, assertRejected, lower, observe, prepare, root, runSplit } from "./harness.mjs";
+import { probeLinkedModel } from "../testing/linked_model_probe.mjs";
+import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
+import { withSplitPreview } from "../testing/split_preview.mjs";
+import {
+  assertLinkedPreviewResult,
+  assertMatchedModel,
+  expectedModelObservations,
+  prepareLinkedFixture,
+  prepareWorkerFixture,
+} from "./fixture_preview.mjs";
+import { moduleEvaluationOrder, observe } from "./harness.mjs";
 
 const entry = "entry.mjs";
 
-function checkSlice(test, scope, guarantee) {
-  assertCertified(test.verdict, test.log);
-  assert.equal(test.verdict.scope, scope, test.log);
-  assert.equal(test.verdict.guarantee, guarantee, test.log);
-  assert.equal(test.verdict.every_ending_matches, guarantee === "all-outcomes", test.log);
-  assert.deepEqual(
-    lower(test.files.sourceFile, test.files.specFile, test.out, ["--check-output"]).verdict,
-    test.verdict
-  );
-}
-
-const orderKept = runSplit("slice-order-kept", {
-  source: "const left = []; const other = [99]; export const result = left.length;",
-  provider: "",
-  spec: { entry, modules: { "left.mjs": ["#0"], [entry]: ["#1", "#2"] }, order: ["left.mjs"] },
-});
-checkSlice(orderKept, "linked-slice-order-kept", "all-outcomes");
-assert.deepEqual(observe(orderKept.files.sourceFile, "result"), { result: 0 });
-assert.deepEqual(observe(path.join(orderKept.out, entry), "result"), { result: 0 });
-const allOutcomes = ["--require", "all-outcomes"];
-const exact = lower(orderKept.files.sourceFile, orderKept.files.specFile, orderKept.out, [
-  ...allOutcomes,
-  "--check-output",
-]);
-assertCertified(exact.verdict, exact.log);
-assert.equal(exact.verdict.scope, "linked-slice-order-kept", exact.log);
-assert.equal(exact.verdict.guarantee, "all-outcomes", exact.log);
-assert.equal(exact.verdict.requested, "all-outcomes", exact.log);
-const emitExact = path.join(orderKept.dir, "all-outcomes");
-assert.deepEqual(
-  lower(orderKept.files.sourceFile, orderKept.files.specFile, emitExact, allOutcomes).verdict,
-  exact.verdict
+const orderKept = prepareLinkedFixture(
+  "slice-order-kept",
+  "const left = []; const other = [99]; export const result = left.length;",
+  { entry, modules: { "left.mjs": ["#0"], [entry]: ["#1", "#2"] }, order: ["left.mjs"] }
 );
+assertPublicEmissionRefused(orderKept.manifest, orderKept.out);
+assert.deepEqual(observe(orderKept.sourceFile, "result"), { result: 0 });
+await withSplitPreview({ manifest: orderKept.manifest }, ({ directory, entryFile }) => {
+  assert.deepEqual(moduleEvaluationOrder(directory, entry), ["left.mjs", entry]);
+  assert.deepEqual(observe(entryFile, "result"), { result: 0 });
+  assertMatchedModel(orderKept, directory, [[["result"], 0]]);
+  assertPublicRecheckRefused(orderKept.manifest, directory);
 
-const changedEntry = path.join(emitExact, entry);
-const entryText = readFileSync(changedEntry, "utf8");
-const wrongBinding = entryText.replace("left.length", "other.length");
-assert.notEqual(wrongBinding, entryText);
-writeFileSync(changedEntry, wrongBinding);
-for (const request of [[], allOutcomes]) {
-  const changed = lower(orderKept.files.sourceFile, orderKept.files.specFile, emitExact, [
-    ...request,
-    "--check-output",
-  ]);
-  assert.equal(changed.verdict.status, "rejected", changed.log);
-  assert.match(changed.verdict.reason, /entry\.mjs differs from its generated ESTree/, changed.log);
-}
-
-const omitted = runSplit("omitted-export-unit", {
-  source: "const result = [].length; export { result };",
-  provider: "",
-  spec: { entry, modules: { [entry]: ["#0", "#1"] } },
+  const printed = readFileSync(entryFile, "utf8");
+  const wrongBinding = printed.replace("left.length", "other.length");
+  assert.notEqual(wrongBinding, printed);
+  writeFileSync(entryFile, wrongBinding);
+  assert.deepEqual(observe(entryFile, "result"), { result: 1 });
+  const model = probeLinkedModel({ source: orderKept.sourceFile, spec: orderKept.specFile, directory });
+  assert.equal(model.status, "refused", JSON.stringify(model));
+  assert.equal(model.reason_code, "linked_input", JSON.stringify(model));
+  assert.match(model.reason, /emitted syntax differs from original unit 2/);
+  assertPublicEmissionRefused(orderKept.manifest, directory);
+  assertPublicRecheckRefused(orderKept.manifest, directory);
 });
-assertCertified(omitted.verdict, omitted.log);
-assert.equal(omitted.verdict.guarantee, "normal-completion", omitted.log);
-assert.equal(omitted.verdict.scope, "linked-programs", omitted.log);
-assert.deepEqual(
-  lower(omitted.files.sourceFile, omitted.files.specFile, omitted.out, ["--check-output"]).verdict,
-  omitted.verdict
+
+const omitted = prepareLinkedFixture("omitted-export-unit", "const result = [].length; export { result };", {
+  entry,
+  modules: { [entry]: ["#0", "#1"] },
+});
+assertPublicEmissionRefused(omitted.manifest, omitted.out);
+await assertLinkedPreviewResult(omitted, 0);
+
+const moves = prepareLinkedFixture("slice-moves", "export const left = []; const right = [];", {
+  entry,
+  modules: { "right.mjs": ["#1"], [entry]: ["#0"] },
+  order: ["right.mjs"],
+  sequential: true,
+});
+assertPublicEmissionRefused(moves.manifest, moves.out);
+await withSplitPreview({ manifest: moves.manifest }, ({ directory, entryFile }) => {
+  assert.deepEqual(moduleEvaluationOrder(directory, entry), ["right.mjs", entry]);
+  for (const file of [moves.sourceFile, entryFile]) assert.deepEqual(observe(file, "left"), { left: [] });
+  assertMatchedModel(moves, directory, []);
+});
+
+const bindings = prepareLinkedFixture(
+  "slice-certified-bindings",
+  "let x = 0; let y = 0; x = 1; y = 2; const done = x + y;",
+  { entry, modules: { "m0.mjs": ["#1", "#3"], [entry]: ["#0", "#2", "#4"] } }
 );
-const omittedOut = path.join(omitted.dir, "all-outcomes");
-assertRejected(
-  { out: omittedOut, ...lower(omitted.files.sourceFile, omitted.files.specFile, omittedOut, allOutcomes) },
-  /proves only normal-completion/
-);
-const omittedDisk = lower(omitted.files.sourceFile, omitted.files.specFile, omitted.out, [
-  ...allOutcomes,
-  "--check-output",
-]);
-assert.equal(omittedDisk.verdict.status, "rejected", omittedDisk.log);
-assert.match(omittedDisk.verdict.reason, /proves only normal-completion/, omittedDisk.log);
-
-const moves = runSplit("slice-moves", {
-  source: "export const left = []; const right = [];",
-  provider: "",
-  spec: {
-    entry,
-    modules: { "right.mjs": ["#1"], [entry]: ["#0"] },
-    order: ["right.mjs"],
-    sequential: true,
-  },
+assertPublicEmissionRefused(bindings.manifest, bindings.out);
+await withSplitPreview({ manifest: bindings.manifest }, ({ directory, entryFile }) => {
+  assert.deepEqual(moduleEvaluationOrder(directory, entry), ["m0.mjs", entry]);
+  for (const file of [bindings.sourceFile, entryFile]) assert.deepEqual(observe(file, []), {});
+  assertMatchedModel(bindings, directory, []);
 });
-checkSlice(moves, "linked-slice-moves", "normal-completion");
-assert.deepEqual(observe(path.join(moves.out, entry), "left"), { left: [] });
 
-const bindings = runSplit("slice-certified-bindings", {
-  source: "let x = 0; let y = 0; x = 1; y = 2; const done = x + y;",
-  provider: "",
-  spec: {
-    entry,
-    modules: { "m0.mjs": ["#1", "#3"], [entry]: ["#0", "#2", "#4"] },
-  },
-});
-checkSlice(bindings, "linked-slice-certified-bindings", "normal-completion");
-
-const heritage = runSplit("slice-heritage", {
-  source: `
+const heritage = prepareLinkedFixture(
+  "slice-heritage",
+  `
     var Base = class {};
     var Earlier = class extends Base {};
     var Pivot = class extends Base {};
@@ -109,101 +83,69 @@ const heritage = runSplit("slice-heritage", {
     var local = [5];
     export var result = config.factor + local[0];
   `,
-  provider: "",
-  spec: {
-    entry,
-    modules: {
-      "prefix.mjs": ["#0", "#1", "#3", "#4"],
-      [entry]: ["#2", "#5"],
-    },
-  },
-});
-checkSlice(heritage, "linked-slice-heritage", "normal-completion");
-assert.deepEqual(observe(path.join(heritage.out, entry), "result"), { result: 8 });
-
-const providerFallback = runSplit("slice-provider-fallback", {
-  source: `import { imported } from "./provider.mjs";
-    const result = imported + 1;
-    export { result };`,
-  provider: "export const imported = 41;",
-  spec: { entry, modules: { [entry]: ["#0", "#1", "#2"] } },
-});
-assertRejected(providerFallback, /no compiled certification rule/);
-assert.equal(providerFallback.verdict.reason_code, "no_compiled_rule", providerFallback.log);
-const providerStructural = lower(
-  providerFallback.files.sourceFile,
-  providerFallback.files.specFile,
-  providerFallback.out,
-  ["--structural"],
-  "linked-structural-order"
+  { entry, modules: { "prefix.mjs": ["#0", "#1", "#3", "#4"], [entry]: ["#2", "#5"] } }
 );
-assertCertified(providerStructural.verdict, providerStructural.log);
-assert.equal(providerStructural.verdict.guarantee, "all-outcomes", providerStructural.log);
-assert.deepEqual(observe(providerFallback.files.sourceFile, "result"), { result: 42 });
-assert.deepEqual(observe(path.join(providerFallback.out, entry), "result"), { result: 42 });
+assertPublicEmissionRefused(heritage.manifest, heritage.out);
+await assertLinkedPreviewResult(heritage, 8);
 
-const profile = path.join(root, "browser.json");
-writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
-const host = ["--host-contract", profile];
-const profiledDir = path.join(root, "profile-dependent-slice");
-const profiled = prepare(profiledDir, {
-  source: `class Collection { [Symbol.iterator]() { return 42; } }
-    export const result = new Collection()[Symbol.iterator]();`,
-  provider: "",
-  spec: { entry, modules: { "worker.mjs": ["#0"], [entry]: ["#1"] }, order: ["worker.mjs"] },
-});
-const profiledOut = path.join(profiledDir, "out");
-assertRejected(
-  { out: profiledOut, ...lower(profiled.sourceFile, profiled.specFile, profiledOut) },
-  /unsupported computed class key/
+const providerFallback = prepareLinkedFixture(
+  "slice-provider-fallback",
+  `import { imported } from "./provider.mjs";
+  const result = imported + 1;
+  export { result };`,
+  { entry, modules: { [entry]: ["#0", "#1", "#2"] } }
 );
-const normal = lower(profiled.sourceFile, profiled.specFile, profiledOut, host);
-assertRejected({ out: profiledOut, ...normal }, /no compiled certification rule/);
-assert.equal(normal.verdict.reason_code, "no_compiled_rule", normal.log);
+writeFileSync(providerFallback.providerFile, "export const imported = 41;");
+assertPublicEmissionRefused(providerFallback.manifest, providerFallback.out);
+await withSplitPreview({ manifest: providerFallback.manifest }, ({ directory, entryFile }) => {
+  copyFileSync(providerFallback.providerFile, path.join(directory, "provider.mjs"));
+  for (const file of [providerFallback.sourceFile, entryFile])
+    assert.deepEqual(observe(file, "result"), { result: 42 });
+  const model = probeLinkedModel({
+    source: providerFallback.sourceFile,
+    spec: providerFallback.specFile,
+    directory,
+    providers: ["provider.mjs"],
+    observe: [["result"]],
+  });
+  assert.equal(model.status, "matched", JSON.stringify(model));
+  assert(model.fuel > 0);
+  assert.deepEqual(model.observed, expectedModelObservations([[["result"], 42]]));
+  assertPublicRecheckRefused(providerFallback.manifest, directory);
+});
 
-const structural = [...host, "--structural"];
-const profiledOrder = lower(profiled.sourceFile, profiled.specFile, profiledOut, structural, "linked-structural-order");
-assertCertified(profiledOrder.verdict, profiledOrder.log);
-assert.equal(profiledOrder.verdict.guarantee, "all-outcomes", profiledOrder.log);
-assert.equal(profiledOrder.verdict.hostProfile, "browser-page", profiledOrder.log);
-assert.deepEqual(profiledOrder.verdict.assumptions, [
-  "Retained source units use the same capability-closed opaque world in both layouts.",
-]);
+const profiled = prepareWorkerFixture(
+  "profile-dependent-slice",
+  `class Collection { [Symbol.iterator]() { return 42; } }
+  export const result = new Collection()[Symbol.iterator]();`
+);
+assertPublicEmissionRefused(profiled.manifest, profiled.out);
 assert.deepEqual(observe(profiled.sourceFile, "result"), { result: 42 });
-assert.deepEqual(observe(path.join(profiledOut, entry), "result"), { result: 42 });
-assert.deepEqual(
-  lower(
-    profiled.sourceFile,
-    profiled.specFile,
-    profiledOut,
-    [...structural, "--check-output"],
-    "linked-structural-order"
-  ).verdict,
-  profiledOrder.verdict
-);
-const normalDisk = lower(profiled.sourceFile, profiled.specFile, profiledOut, [...host, "--check-output"]);
-assert.deepEqual(normalDisk.verdict, normal.verdict, normalDisk.log);
-const profiledAll = path.join(profiledDir, "all-outcomes");
-assertRejected(
-  { out: profiledAll, ...lower(profiled.sourceFile, profiled.specFile, profiledAll, [...host, ...allOutcomes]) },
-  /proves only normal-completion/
-);
-const profiledDisk = lower(profiled.sourceFile, profiled.specFile, profiledOut, [
-  ...host,
-  ...allOutcomes,
-  "--check-output",
-]);
-assert.equal(profiledDisk.verdict.status, "rejected", profiledDisk.log);
-assert.match(profiledDisk.verdict.reason, /proves only normal-completion/, profiledDisk.log);
+await withSplitPreview({ manifest: profiled.manifest }, ({ directory, entryFile }) => {
+  assert.deepEqual(observe(entryFile, "result"), { result: 42 });
+  const options = { source: profiled.sourceFile, spec: profiled.specFile, directory, observe: [["result"]] };
+  const missing = probeLinkedModel(options);
+  assert.equal(missing.status, "refused", JSON.stringify(missing));
+  assert.match(missing.reason, /unsupported computed class key/);
+  const host = { profile: "browser-page" };
+  const model = probeLinkedModel({ ...options, host });
+  assert.equal(model.status, "matched", JSON.stringify(model));
+  assert(model.fuel > 0);
+  assert.deepEqual(model.observed, expectedModelObservations([[["result"], 42]]));
+  assert.deepEqual(model.assumptions, [
+    "Symbol.iterator returns the well-known iterator symbol without observable effects throughout initialization",
+  ]);
 
-const profiledWorker = path.join(profiledOut, "worker.mjs");
-const workerText = readFileSync(profiledWorker, "utf8");
-const changedWorker = workerText.replace(/\[\s*Symbol\.iterator\s*\]/, '["Symbol.iterator"]');
-assert.notEqual(changedWorker, workerText);
-writeFileSync(profiledWorker, changedWorker);
-for (const request of [[], allOutcomes]) {
-  const tampered = lower(profiled.sourceFile, profiled.specFile, profiledOut, [...host, ...request, "--check-output"]);
-  assert.equal(tampered.verdict.status, "rejected", tampered.log);
-  assert.match(tampered.verdict.reason, /worker\.mjs differs from its generated ESTree/, tampered.log);
-  assert.equal(readFileSync(profiledWorker, "utf8"), changedWorker, tampered.log);
-}
+  const worker = path.join(directory, "worker.mjs");
+  const printed = readFileSync(worker, "utf8");
+  const changed = printed.replace(/\[\s*Symbol\.iterator\s*\]/, '["Symbol.iterator"]');
+  assert.notEqual(changed, printed);
+  writeFileSync(worker, changed);
+  assert.deepEqual(observe(entryFile, "result"), { error: "TypeError" });
+  const tampered = probeLinkedModel({ ...options, host });
+  assert.equal(tampered.status, "refused", JSON.stringify(tampered));
+  assert.equal(tampered.reason_code, "linked_input", JSON.stringify(tampered));
+  assert.match(tampered.reason, /emitted syntax differs from original unit 0/);
+  assertPublicEmissionRefused(profiled.manifest, directory);
+  assertPublicRecheckRefused(profiled.manifest, directory);
+});
