@@ -163,14 +163,29 @@ for (const mutation of ["field", "key"]) {
   await withSplitPreview({ manifest, expectedExit: 1 }, async ({ directory, entryFile }) => {
     assert.deepEqual(moduleEvaluationOrder(directory, entry), [...order, entry]);
     await expectExports(entryFile, changed);
-    const model = probeLinkedModel({ source: sourceFile, spec: specFile, directory });
+    const paths = [
+      ["first", "0", "2"],
+      ["second", "0", "2"],
+    ];
+    // The report can omit a summary observation for nested aggregate differences.
+    // This fuel exceeds the 128-property fixture's initialization depth.
+    const model = probeLinkedModel({
+      source: sourceFile,
+      spec: specFile,
+      directory,
+      observe: paths,
+      mismatchFuel: 256,
+    });
     assert.equal(model.status, "refused", JSON.stringify(model));
     assert.equal(model.reason_code, "probe_mismatch", JSON.stringify(model));
     assert.match(model.reason, /probe executions completed normally with different final states/);
-    assert.equal(model.observation.kind, "value", JSON.stringify(model));
-    assert.deepEqual(model.observation.path.slice(1), ["0", "2"], JSON.stringify(model));
-    assert(["first", "second"].includes(model.observation.path[0]), JSON.stringify(model));
-    assert.equal(model.observation.original, JSON.stringify(original.first[0][2]));
-    assert.equal(model.observation.split, JSON.stringify(changed.first[0][2]));
+    assert.deepEqual(
+      model.observed,
+      paths.map((path) => ({
+        path,
+        original: JSON.stringify(original[path[0]][0][2]),
+        split: JSON.stringify(changed[path[0]][0][2]),
+      }))
+    );
   });
 }

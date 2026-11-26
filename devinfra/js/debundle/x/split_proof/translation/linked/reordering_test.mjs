@@ -125,7 +125,7 @@ for (const [observed, leftArg, rightArg] of [
     const expected = differs ? dependentReversed : bundled;
     assertPublicEmissionRefused(manifest, out);
     assert.deepEqual(observe(sourceFile, "result"), { result: bundled });
-    await withSplitPreview({ manifest, expectedExit: reversed ? 1 : 0 }, ({ directory, entryFile }) => {
+    await withSplitPreview({ manifest, expectedExit: differs ? 1 : 0 }, ({ directory, entryFile }) => {
       assert.deepEqual(moduleEvaluationOrder(directory, spec.entry), [...spec.order, spec.entry]);
       assert.deepEqual(observe(entryFile, "result"), { result: expected });
       if (differs) {
