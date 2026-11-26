@@ -802,6 +802,7 @@ lean_library(
         ":lowersplit_input",
         ":lowersplit_support",
         ":planner",
+        ":sparse_checked_artifact",
         ":terminal_export_artifact",
     ],
 )

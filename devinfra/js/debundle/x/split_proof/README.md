@@ -96,8 +96,10 @@ singleton source or every manifest chunk and additional source in a linked
 deployment. It refuses callables,
 calls, host/property reads, imports, and other effects before publication,
 regardless of the selected CoreJS proof strategy or host profile. The
-constructor route refuses sparse IDs and changed unit
-order without changing an existing output directory. A recognized dense
+constructor route also supports two const declarations with primitive initializers
+or earlier-const reads, separated by local named-export metadata and selected by
+their original source ordinals. It refuses other
+sparse forms and changed unit order without changing an existing output directory. A recognized dense
 singleton source with a function declaration, call, or other effectful
 initializer is refused with `strict_observation_unsupported` before structural
 or host-profile alternatives can run. Source forms outside this constructor's

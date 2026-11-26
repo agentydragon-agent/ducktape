@@ -8,6 +8,7 @@ import EsmSplit.CoreJS.StructuralCertificate
 import EsmSplit.ESTreeEmit
 import EsmSplit.LowerSplit.CheckedArtifact
 import EsmSplit.LowerSplit.Input
+import EsmSplit.LowerSplit.SparseArtifact
 import EsmSplit.LowerSplit.SliceCertificate
 import EsmSplit.LowerSplit.TerminalExportArtifact
 import EsmSplit.ReadDeployment
@@ -321,6 +322,44 @@ private def tryTerminalExport (chunk : DeploymentChunk) (input : BundleInput)
       ])
     | .error refusal => return some (← emitRefusal options.request.label refusal (some "checked-construction"))
 
+/-! Sparse admission is final: unsupported options, metadata or source units
+must not fall through to a strategy with different observation coverage. -/
+private def trySparseCheckedConstructor (chunk : DeploymentChunk) (input : BundleInput)
+    (spec : Spec) (source : CoreJS.Program) (out work : System.FilePath)
+    (options : CertifiedOptions) (timings : Bool) : IO UInt32 := do
+  let fail (reason : String) (code : String) := emitVerdict options.request.label (.error reason)
+    (some "checked-construction") [("strategy", toJson "compiled-sparse-constructor"), ("reason_code", toJson code)]
+  let [m] := source.modules | return ← fail "sparse construction requires one source module" "constructor_refusal"
+  unless CoreJS.CheckedSplit.supportsStrictStaticUnits m.body do
+    return ← fail "strict JavaScript observations require static const initializers and earlier binding reads"
+      "strict_observation_unsupported"
+  if options.structural || options.profile != .empty || !options.intrinsics.isEmpty ||
+      options.deploymentOrigin.isSome || options.browserOptions.nativeRecord || options.browserOptions.emptyMap then
+    return ← fail "sparse construction does not support host or deployment options" "constructor_refusal"
+  unless javascriptSource chunk.source && chunk.source.extension == some "mjs" &&
+      (spec.entry :: spec.modules.map Prod.fst).all (·.endsWith ".mjs") do
+    return ← fail "sparse construction requires JavaScript modules with .mjs paths" "constructor_refusal"
+  try
+    let placement ← timePhase timings "checked_placement" fun _ => IO.ofExcept <|
+      CoreJS.ResolvedPlacement.resolve source spec (CoreJS.CheckedSplit.requestedPlacement source)
+    let built ← timePhase timings "checked_construction" fun _ => IO.ofExcept <|
+      CoreJS.SparseCheckedSplit.construct placement .allOutcomes
+    let prepared ← timePhase timings "output_ast" fun _ => IO.ofExcept <|
+      SparseArtifact.prepare input.program input.source placement
+    let part : OutputPart := { programs := prepared.programs, source := input.source, input := input.input, work }
+    let checked ← certifyOutput [part] (Json.mkObj []) out work options.checkOnly timings fun files =>
+      timePhase timings "checked_correspondence" fun _ =>
+        pure <| guardStrictObservation (CoreJS.CheckedSplit.supportsStrictStaticUnits m.body) <|
+          match SparseArtifact.verify input.program files built prepared.plan with
+          | .ok _ => .ok ()
+          | .error reason => .error { reason, reasonCode := some "constructed_output_mismatch" }
+    match checked with
+    | .ok _ => emitVerdict options.request.label (.ok .allOutcomes) (some "checked-construction") [
+        ("strategy", toJson "compiled-sparse-constructor"), ("premises", toJson ([] : List String)),
+        ("observation_scope", toJson "strict-static-data")]
+    | .error refusal => emitRefusal options.request.label refusal (some "checked-construction")
+  catch error => fail error.toString "constructor_refusal"
+
 private def tryCheckedConstructor (chunk : DeploymentChunk) (input : BundleInput)
     (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
   let .authored spec := chunk.placement | return none
@@ -332,12 +371,7 @@ private def tryCheckedConstructor (chunk : DeploymentChunk) (input : BundleInput
   match CoreJS.CheckedSplit.sourceAdmission source with
   | .outsideFragment => return none
   | .sparseUnitIds =>
-    return some (← emitVerdict options.request.label
-      (.error "source has sparse unit identities; placement requires the original ordinals")
-      (some "checked-construction") [
-        ("strategy", toJson "compiled-constructor"),
-        ("reason_code", toJson "sparse_unit_id")
-      ])
+    return some (← trySparseCheckedConstructor chunk input spec source out work options timings)
   | .supported => pure ()
   unless CoreJS.CheckedSplit.supportsStrictStaticSource source do
     return some (← emitVerdict options.request.label
