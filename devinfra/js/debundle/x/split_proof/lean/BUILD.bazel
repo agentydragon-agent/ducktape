@@ -733,7 +733,7 @@ lean_library(
     deps = [
         ":lowersplit_support",
         ":lowersplit_workflows",
-        ":terminal_export_artifact",
+        ":multi_terminal_export",
     ],
 )
 
@@ -1676,4 +1676,22 @@ lean_proof_test(
         "CoreJS.StackReadComposition.shadowConstructionUnknown",
     ],
     deps = [":stack_read_composition_axioms_test_modules"],
+)
+
+lean_library(
+    name = "multi_terminal_export",
+    srcs = ["EsmSplit/LowerSplit/MultiTerminalExport.lean"],
+    deps = [":terminal_export_artifact"],
+)
+
+lean_proof_test(
+    name = "multi_terminal_export_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.LowerSplit.MultiTerminalExport"],
+    required_theorems = [
+        "EsmSplit.LowerSplit.MultiTerminalExport.prepare",
+        "EsmSplit.LowerSplit.MultiTerminalExport.verify",
+        "EsmSplit.LowerSplit.MultiTerminalExport.verify_sound",
+    ],
+    deps = [":multi_terminal_export"],
 )

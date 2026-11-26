@@ -1,4 +1,4 @@
-import EsmSplit.LowerSplit.TerminalExportArtifact
+import EsmSplit.LowerSplit.MultiTerminalExport
 
 /-! Test-only staging harness for the terminal export artifact proof. -/
 
@@ -14,15 +14,24 @@ private def run (manifestPath out : System.FilePath) (checkOnly : Bool) : IO Uni
   let out ← IO.ofExcept (outputDirectory out)
   IO.FS.withTempDir fun work => do
     let input ← readBundle chunk.source work true false
-    let prepared ← match TerminalExportArtifact.attempt input.program input.source spec with
-      | .notApplicable => throw (IO.userError "terminal-export-not-applicable")
-      | .refused reason => throw (IO.userError reason)
-      | .prepared prepared => pure prepared
-    let part : OutputPart := { programs := prepared.programs, source := input.source, input := input.input, work }
-    let verified ← certifyOutput (α := Unit) [part] (Json.mkObj []) out work checkOnly false fun files =>
-      match TerminalExportArtifact.verify input.program files prepared with
-      | .ok _ => pure (.ok ())
-      | .error reason => pure (.error { reason })
+    let nodes ← IO.ofExcept (ESTreeUnits.checkedNodes input.program input.source)
+    let verified ← if nodes.size > 2 then do
+      let prepared ← IO.ofExcept (MultiTerminalExport.prepare input.program input.source spec)
+      let part : OutputPart := { programs := prepared.programs, source := input.source, input := input.input, work }
+      certifyOutput (α := Unit) [part] (Json.mkObj []) out work checkOnly false fun files =>
+        match MultiTerminalExport.verify input.program files prepared with
+        | .ok _ => pure (.ok ())
+        | .error reason => pure (.error { reason })
+    else do
+      let prepared ← match TerminalExportArtifact.attempt input.program input.source spec with
+        | .notApplicable => throw (IO.userError "terminal-export-not-applicable")
+        | .refused reason => throw (IO.userError reason)
+        | .prepared prepared => pure prepared
+      let part : OutputPart := { programs := prepared.programs, source := input.source, input := input.input, work }
+      certifyOutput (α := Unit) [part] (Json.mkObj []) out work checkOnly false fun files =>
+        match TerminalExportArtifact.verify input.program files prepared with
+        | .ok _ => pure (.ok ())
+        | .error reason => pure (.error { reason })
     IO.ofExcept (verified.mapError (·.reason))
 
 def main (args : List String) : IO UInt32 := do
