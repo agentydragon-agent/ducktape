@@ -60,6 +60,7 @@ if (includesCase("shared-ecmascript-symbol-node")) {
   assert.deepEqual(
     [...verdict.assumptions].sort(),
     [
+      "Symbol returns the intrinsic Symbol function without observable effects throughout initialization",
       "the ambient Symbol binding is the unmodified ECMAScript intrinsic throughout initialization",
       "the intrinsic Symbol operations return fresh symbols and canonical well-known symbols without observable effects throughout initialization",
     ].sort()
