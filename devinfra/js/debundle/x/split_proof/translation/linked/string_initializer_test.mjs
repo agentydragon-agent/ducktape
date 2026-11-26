@@ -65,7 +65,7 @@ for (const [name, before, expression, expected, moved, expectedExit] of [
     'new RegExp("a")',
     { error: "TypeError" },
     { error: "TypeError" },
-    0,
+    1,
   ],
 ]) {
   const test = fixture(name, `${before}; var result = ${expression}; export { result };`, ["#1"], ["#0", "#2"]);
