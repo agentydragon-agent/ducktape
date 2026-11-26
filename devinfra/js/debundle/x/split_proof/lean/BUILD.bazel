@@ -1741,8 +1741,12 @@ lean_library(
 lean_proof_test(
     name = "terminal_const_decoder_axioms_test",
     allow_empty = True,
-    modules = ["EsmSplit.LowerSplit.TerminalConstDecoder"],
+    modules = [
+        "EsmSplit.CoreJS.FromESTree",
+        "EsmSplit.LowerSplit.TerminalConstDecoder",
+    ],
     required_theorems = [
+        "CoreJS.FromESTree.linkedDeclarator_identifier",
         "EsmSplit.LowerSplit.TerminalConstDecoder.export_spec",
         "EsmSplit.LowerSplit.TerminalConstDecoder.import_decl",
     ],

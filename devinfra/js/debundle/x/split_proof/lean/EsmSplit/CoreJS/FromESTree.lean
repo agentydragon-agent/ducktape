@@ -678,6 +678,65 @@ partial def containsUnsupportedSparseArrayHole (j : Json) : Bool := Id.run do
   | .arr elements => return elements.any containsUnsupportedSparseArrayHole
   | _ => return false
 
+mutual
+
+private partial def linkedBindingPattern (lower : Name → Json → Except String Expr)
+    (binder : Json → Except String Name) (j : Json) : Except String BindingPattern := do
+  match ← field j "type" with
+  | "Identifier" => return .name (← binder j)
+  | "ObjectPattern" =>
+    let props ← j.getObjValAs? (List Json) "properties"
+    return .object (← props.mapM (linkedBindingProperty lower binder))
+  | "ArrayPattern" =>
+    let mut items := #[]
+    let mut rest := none
+    for elem in ← j.getObjValAs? (Array Json) "elements" do
+      if rest.isSome then throw "array binding rest element must be last"
+      if elem == .null then items := items.push none
+      else if (← field elem "type") == "RestElement" then
+        rest := some (← elem.getObjVal? "argument" >>= linkedBindingPattern lower binder)
+      else items := items.push (some (← linkedBindingPattern lower binder elem))
+    return .array items.toList rest
+  | "AssignmentPattern" =>
+    let target ← j.getObjVal? "left" >>= linkedBindingPattern lower binder
+    let name := if let .name name := target then name else ""
+    return .defaultValue target (← lower name (← j.getObjVal? "right"))
+  | other => throw s!"unsupported binding pattern {other}"
+
+private partial def linkedBindingProperty (lower : Name → Json → Except String Expr)
+    (binder : Json → Except String Name) (p : Json) : Except String (Expr × BindingPattern) := do
+  unless (← field p "type") == "Property" do throw "unsupported object binding property"
+  unless (← field p "kind") == "init" && !(← p.getObjValAs? Bool "method") do
+    throw "expected an object binding property initializer"
+  let key ← p.getObjVal? "key"
+  let key ← if ← p.getObjValAs? Bool "computed" then lower "" key else .str <$> staticPropertyName key
+  let target ← p.getObjVal? "value" >>= linkedBindingPattern lower binder
+  return (key, target)
+
+end
+
+private def linkedDeclarator (lower : Name → Json → Except String Expr)
+    (binder : Json → Except String Name) (kind : String) (d : Json) : Except String (List Name × Stmt) := do
+  let id ← d.getObjVal? "id"
+  if !["ObjectPattern", "ArrayPattern"].contains (← field id "type") then
+    let (name, stmt) ← declaratorWith binder lower kind d
+    return ([name], stmt)
+  unless (← field d "type") == "VariableDeclarator" do throw "expected a variable declarator"
+  let pattern ← linkedBindingPattern lower binder id
+  let init ← d.getObjVal? "init"
+  if init == .null then throw "binding pattern declaration needs an initializer"
+  return (pattern.names, .bind (← parseDeclKind kind) pattern (← lower "" init))
+
+/-- Identifier declarators take the total simple-declaration path. No information
+about the other fields is discarded by this equation. -/
+theorem linkedDeclarator_identifier (lower : Name → Json → Except String Expr)
+    (binder : Json → Except String Name) (kind : String) (d id : Json)
+    (idField : d.getObjVal? "id" = .ok id) (idType : field id "type" = .ok "Identifier") :
+    linkedDeclarator lower binder kind d = (do
+      let (name, stmt) ← declaratorWith binder lower kind d
+      pure ([name], stmt)) := by
+  simp [linkedDeclarator, idField, idType, bind, Except.bind, pure, Except.pure]
+
 /-- Named defaults initialize lexical parameter cells in order from the raw argument slots.
 Ordinary functions then enter a body block; derived constructors run their prefix before super. -/
 private inductive LinkedFunctionParts where
@@ -1275,51 +1334,6 @@ private partial def linkedClassScoped (profile : HostProfile) (imports : List Na
     else pure (Expr.derived name (id != .null) (← linkedExprScoped profile imports classScope "" parent) ordered derivedCtor)
   if declarations.isEmpty then return cls
   return .call (.func (.mk "" .arrow false [] (declarations ++ [.ret cls]))) []
-
-private partial def linkedBindingPattern (lower : Name → Json → Except String Expr)
-    (binder : Json → Except String Name) (j : Json) : Except String BindingPattern := do
-  match ← field j "type" with
-  | "Identifier" => return .name (← binder j)
-  | "ObjectPattern" =>
-    let props ← j.getObjValAs? (List Json) "properties"
-    return .object (← props.mapM (linkedBindingProperty lower binder))
-  | "ArrayPattern" =>
-    let mut items := #[]
-    let mut rest := none
-    for elem in ← j.getObjValAs? (Array Json) "elements" do
-      if rest.isSome then throw "array binding rest element must be last"
-      if elem == .null then items := items.push none
-      else if (← field elem "type") == "RestElement" then
-        rest := some (← elem.getObjVal? "argument" >>= linkedBindingPattern lower binder)
-      else items := items.push (some (← linkedBindingPattern lower binder elem))
-    return .array items.toList rest
-  | "AssignmentPattern" =>
-    let target ← j.getObjVal? "left" >>= linkedBindingPattern lower binder
-    let name := if let .name name := target then name else ""
-    return .defaultValue target (← lower name (← j.getObjVal? "right"))
-  | other => throw s!"unsupported binding pattern {other}"
-
-private partial def linkedBindingProperty (lower : Name → Json → Except String Expr)
-    (binder : Json → Except String Name) (p : Json) : Except String (Expr × BindingPattern) := do
-  unless (← field p "type") == "Property" do throw "unsupported object binding property"
-  unless (← field p "kind") == "init" && !(← p.getObjValAs? Bool "method") do
-    throw "expected an object binding property initializer"
-  let key ← p.getObjVal? "key"
-  let key ← if ← p.getObjValAs? Bool "computed" then lower "" key else .str <$> staticPropertyName key
-  let target ← p.getObjVal? "value" >>= linkedBindingPattern lower binder
-  return (key, target)
-
-private partial def linkedDeclarator (lower : Name → Json → Except String Expr)
-    (binder : Json → Except String Name) (kind : String) (d : Json) : Except String (List Name × Stmt) := do
-  let id ← d.getObjVal? "id"
-  if !["ObjectPattern", "ArrayPattern"].contains (← field id "type") then
-    let (name, stmt) ← declaratorWith binder lower kind d
-    return ([name], stmt)
-  unless (← field d "type") == "VariableDeclarator" do throw "expected a variable declarator"
-  let pattern ← linkedBindingPattern lower binder id
-  let init ← d.getObjVal? "init"
-  if init == .null then throw "binding pattern declaration needs an initializer"
-  return (pattern.names, .bind (← parseDeclKind kind) pattern (← lower "" init))
 
 /-- Split off a trailing object rest binding only when the excluded property names are static.
 The saved RHS is outside the source identifier namespace. All user bindings keep their original
