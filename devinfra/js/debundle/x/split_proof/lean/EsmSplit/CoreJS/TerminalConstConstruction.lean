@@ -19,7 +19,7 @@ def provider (value : Float) : Module := ⟨"provider.mjs", [], [declaration val
 def entry : Module := ⟨"entry.mjs", [⟨"provider.mjs", [("x", "x")]⟩], [], [("x", "x")]⟩
 
 def source (value : Float) : Program := ⟨"entry.mjs", [sourceModule value]⟩
-def construct (value : Float) : Program := ⟨"entry.mjs", [provider value, entry]⟩
+def construct (value : Float) : Program := ⟨"entry.mjs", [entry, provider value]⟩
 
 /-- Original AST ordinal 1 is the terminal export list; the CoreJS body
 contains only ordinal 0. -/
@@ -29,7 +29,7 @@ def bundle : EsmSplit.Bundle := [
 
 def request : EsmSplit.Spec := {
   entry := "entry.mjs"
-  modules := [("provider.mjs", [.stmt 0]), ("entry.mjs", [.stmt 1])]
+  modules := [("entry.mjs", [.stmt 1]), ("provider.mjs", [.stmt 0])]
   order := ["provider.mjs"]
   sequential := true
 }
