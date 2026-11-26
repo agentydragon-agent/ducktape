@@ -337,8 +337,9 @@ private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
           let _ ← IO.ofExcept (prepared.certify files)
           pure (.ok ())
       match checked with
-      | .ok _ => return ← emitVerdict request.label (.ok level) "closed-declarations"
-        (profileVerdict profile {} pageEnvironmentUsed)
+      | .ok _ => do
+        return ← emitVerdict request.label (.ok level) "closed-declarations"
+          (profileVerdict profile {} pageEnvironmentUsed)
       | .error refusal => return ← emitRefusal request.label refusal "closed-declarations"
     catch e => return ← emitVerdict request.label (.error e.toString) "closed-declarations"
   if structural then
@@ -355,8 +356,9 @@ private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
             requireGuarantee request level
             pure (.ok (used, level, proof))
       match checked with
-      | .ok (used, level, proof) => return ← emitStructural options used level proof
-        (pageEnvironmentUsed || options.browserOptions.nativeRecord || options.browserOptions.emptyMap)
+      | .ok (used, level, proof) => do
+        return ← emitStructural options used level proof
+          (pageEnvironmentUsed || options.browserOptions.nativeRecord || options.browserOptions.emptyMap)
       | .error refusal => return ← emitRefusal request.label refusal "linked-structural"
     catch e => return ← emitVerdict request.label (.error e.toString) "linked-structural"
   try
@@ -484,8 +486,9 @@ private def runDeployment (manifest : DeploymentManifest) (out work : System.Fil
           requireGuarantee request level
           pure (.ok (used, level, proof))
     match checked with
-    | .ok (used, level, proof) => emitStructural options used level proof
-      (pageEnvironmentUsed || browserOptions.nativeRecord || browserOptions.emptyMap)
+    | .ok (used, level, proof) => do
+      emitStructural options used level proof
+        (pageEnvironmentUsed || browserOptions.nativeRecord || browserOptions.emptyMap)
     | .error refusal => emitRefusal request.label refusal "linked-structural"
   catch e => emitVerdict request.label (.error e.toString) "linked-structural"
 
