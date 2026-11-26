@@ -225,6 +225,11 @@ _RECORD_TESTS = [
     "wide_table_reversal_test",
 ]
 
+_WORKER_PREVIEW_TESTS = [
+    "bitwise_test",
+    "derived_object_parameters_test",
+]
+
 _SHARD_COUNTS = {
     "browser_globals_test": 4,
     "classes_test": 5,
@@ -265,9 +270,9 @@ _SHARD_COUNTS = {
         timeout = "long" if name in _LONG_TIMEOUT_TESTS else "moderate",
         data = _TEST_DATA + (
             _RECORD_DATA if name in _RECORD_TESTS else _PUBLIC_REFUSAL_TEST_DATA if name == "provider_location_test" else []
-        ),
+        ) + ([":fixture_preview"] + _RECORD_DATA if name in _WORKER_PREVIEW_TESTS else []),
         entry_point = name + ".mjs",
-        env = _TEST_ENV | (_RECORD_ENV if name in _RECORD_TESTS else {}),
+        env = _TEST_ENV | (_RECORD_ENV if name in _RECORD_TESTS or name in _WORKER_PREVIEW_TESTS else {}),
         shard_count = _SHARD_COUNTS.get(name),
     )
     for name in _UNSHARDED_TESTS + _SHARD_COUNTS.keys()
