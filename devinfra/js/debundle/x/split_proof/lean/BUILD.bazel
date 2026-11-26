@@ -1,10 +1,6 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_lean//lean:defs.bzl", "lean_binary", "lean_library", "lean_proof_test")
-load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 load(":executable_test.bzl", "executable_test", "test_runner")
-load(":generated_proof_toolchain.bzl", "generated_proof_toolchain")
-load(":splitter_launcher.bzl", "splitter_launcher")
 
 lean_library(
     name = "module_order",
@@ -162,44 +158,6 @@ exports_files(
     visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants/no_writes:__pkg__"],
 )
 
-splitter_launcher(
-    name = "lowersplit_launcher",
-    out = "lowersplit_launcher.sh",
-    core = ":lowersplit_core",
-    diagnostic = ":lowersplit_diagnostic_core",
-    module_io = "//devinfra/js/debundle/x/split_proof/translation:module_io",
-    strategy_census = ":strategy_census_runner",
-    template = "lowersplit.sh",
-)
-
-py_binary(
-    name = "strategy_census_runner",
-    srcs = ["strategy_census_wrapper.py"],
-    main = "strategy_census_wrapper.py",
-)
-
-sh_binary(
-    name = "lowersplit",
-    srcs = [":lowersplit_launcher"],
-    data = [
-        ":lowersplit_core",
-        ":lowersplit_diagnostic_core",
-        ":strategy_census_runner",
-        "//devinfra/js/debundle/x/split_proof/translation:module_io",
-    ],
-    use_bash_launcher = True,
-    visibility = [
-        "//devinfra/js/debundle/x/split_proof:__pkg__",
-        "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
-        "//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__",
-        "//devinfra/js/debundle/x/split_proof/model:__pkg__",
-        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
-        "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__",
-    ],
-)
-
 # Location-dependent inputs do not depend on the movement and footprint proofs.
 lean_library(
     name = "corejs_module_inputs",
@@ -333,7 +291,6 @@ lean_library(
     name = "corejs_linked_input",
     srcs = [
         # Keep import order for the native Lean rule.
-        "EsmSplit/CertificateData.lean",
         "EsmSplit/CoreJS/DeploymentPlacement.lean",
         "EsmSplit/CoreJS/LinkedInput.lean",
     ],
@@ -360,25 +317,16 @@ lean_library(
 )
 
 lean_library(
-    name = "corejs_certificate_generation_support",
+    name = "corejs_certificate_probe",
     srcs = [
         # Keep import order for the native Lean rule.
         "EsmSplit/CoreJS/LinkedCertificate/QuoteCoreJS.lean",
-        "EsmSplit/CoreJS/LinkedCertificate/QuoteJson.lean",
         "EsmSplit/CoreJS/LinkedCertificate/Probe.lean",
-        "EsmSplit/CoreJS/LinkedCertificate/QuoteRecords.lean",
-        "EsmSplit/CoreJS/LinkedCertificate/QuoteWrites.lean",
     ],
     deps = [
         ":corejs_certificate_proof",
         ":corejs_structural",
     ],
-)
-
-lean_library(
-    name = "corejs_certificates",
-    srcs = ["EsmSplit/CoreJS/LinkedCertificate.lean"],
-    deps = [":corejs_certificate_generation_support"],
 )
 
 lean_library(
@@ -444,7 +392,7 @@ lean_library(
     name = "corejs_checked_split",
     srcs = ["EsmSplit/CoreJS/CheckedSplit.lean"],
     deps = [
-        ":corejs_certificate_generation_support",
+        ":corejs_certificate_probe",
         ":corejs_linked_input",
         ":corejs_runtime",
         ":corejs_single_module",
@@ -668,7 +616,6 @@ test_runner(
     visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
     deps = [
         ":lowersplit_support",
-        ":lowersplit_workflows",
         ":terminal_export_artifact",
     ],
 )
@@ -706,15 +653,11 @@ lean_library(
 )
 
 lean_library(
-    name = "lowersplit_workflows",
-    srcs = [
-        # Keep import order for the native Lean rule.
-        "EsmSplit/LowerSplit/Diagnostic.lean",
-        "EsmSplit/LowerSplit/SliceCertificate.lean",
-        "EsmSplit/LowerSplit/Certified.lean",
-    ],
+    name = "slice_certificate",
+    testonly = True,
+    srcs = ["EsmSplit/LowerSplit/SliceCertificate.lean"],
     deps = [
-        ":corejs_certificates",
+        ":corejs_certificate_probe",
         ":corejs_runtime",
         ":corejs_single_module",
         ":corejs_structural",
@@ -732,50 +675,38 @@ lean_proof_test(
         "CoreJS.runProgram_singleModuleMetadata",
         "EsmSplit.LowerSplit.certifySlice_sound",
     ],
-    deps = [":lowersplit_workflows"],
+    deps = [":slice_certificate"],
 )
 
-# Diagnostic runs need no linked certificate evaluator or structural proofs.
 lean_library(
-    name = "lowersplit_diagnostic_core_modules",
-    srcs = ["EsmSplit/LowerSplitDiagnosticMain.lean"],
+    name = "lowersplit_certified",
+    srcs = ["EsmSplit/LowerSplit/Certified.lean"],
     visibility = ["//visibility:private"],
-    deps = [":lowersplit_workflows"],
-)
-
-lean_binary(
-    name = "lowersplit_diagnostic_core",
-    deps = [":lowersplit_diagnostic_core_modules"],
-)
-
-generated_proof_toolchain(
-    name = "lowersplit_generated_proof_config",
-    binary_name = "lowersplit_core",
-    deps = [":corejs_certificate_proof"],
-)
-
-filegroup(
-    name = "lowersplit_generated_proof_files",
-    srcs = [":lowersplit_generated_proof_config"],
-    output_group = "proof_files",
+    deps = [":planner"],
 )
 
 lean_library(
     name = "lowersplit_core_modules",
     srcs = [
-        # Keep import order for the native Lean rule.
         "EsmSplit/LowerSplit.lean",
-        ":lowersplit_generated_proof_config",
-        "EsmSplit/LowerSplitBazelMain.lean",
+        "EsmSplit/LowerSplitMain.lean",
     ],
     visibility = ["//visibility:private"],
-    deps = [":lowersplit_workflows"],
+    deps = [":lowersplit_certified"],
 )
 
 lean_binary(
-    name = "lowersplit_core",
-    data = [":lowersplit_generated_proof_files"],
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+    name = "lowersplit",
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/model:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__",
+    ],
     deps = [":lowersplit_core_modules"],
 )
 
@@ -955,7 +886,8 @@ lean_library(
     ],
     visibility = ["//visibility:private"],
     deps = [
-        ":corejs_certificates",
+        ":corejs_certificate_probe",
+        ":corejs_certificate_proof",
         ":corejs_runtime",
         ":corejs_structural",
         ":planner",
@@ -995,6 +927,7 @@ lean_proof_test(
         "EsmSplit.CoreJS.JointStatic",
         "EsmSplit.CoreJS.LinkWorld",
         "EsmSplit.CoreJS.LinkedBehaviorExamples",
+        "EsmSplit.CoreJS.LinkedCertificate.Probe",
         "EsmSplit.CoreJS.LinkedCells",
         "EsmSplit.CoreJS.LinkedPivot",
         "EsmSplit.CoreJS.LinkedPivotCertificate",
@@ -1042,9 +975,6 @@ lean_proof_test(
         "CoreJS.LinkedBehavior.ASTEquivalent.normal",
         "CoreJS.LinkedBehavior.normalEquivalent_of_shared",
         "CoreJS.LinkedBehavior.probeObservationMismatchRefutesEquivalent",
-        "CoreJS.LinkedBehaviorExamples.literalRoundTrip",
-        "CoreJS.LinkedBehaviorExamples.jsonLiteralRoundTrip",
-        "CoreJS.LinkedBehaviorExamples.sharedJsonLiteralRoundTrip",
         "CoreJS.LinkedBehaviorExamples.movedClosure",
         "CoreJS.StaticProviderBoundary.liveCells",
         "CoreJS.StaticProviderBoundary.providerPrefix",
@@ -1377,11 +1307,6 @@ build_test(
     name = "experiments_test",
     tags = ["manual"],
     targets = [":experiments_test_modules"],
-)
-
-py_library(
-    name = "strategy_census_wrapper",
-    srcs = ["strategy_census_wrapper.py"],
 )
 
 lean_library(

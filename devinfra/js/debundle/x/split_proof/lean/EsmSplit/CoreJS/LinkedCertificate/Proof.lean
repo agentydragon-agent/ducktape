@@ -89,35 +89,6 @@ theorem ASTEquivalent.normal {profile premises source providers files plan}
   obtain ⟨original, candidate, decoded, semantics, exports⟩ := h
   exact ⟨original, candidate, decoded, semantics.normalEquivalent, exports⟩
 
-/-- Reduction used by the generated equation for a checked wide record. -/
-def evalQuotedRecordBody {W : World} (fields : List (String × String)) (props : List PropDef)
-    (width fuel : Nat) (env : Env) : M W Val :=
-  match fuel with
-  | 0 => outOfFuel
-  | n + 1 =>
-    if width < n then .obj <$> alloc (literalRecord fields) else
-      (do
-        let addr ← alloc { proto := some objectProto, props := [] }
-        evalProps n env addr props
-        pure (.obj addr))
-
-/-- The generated equation specializes the usual record rule using the checked
-property list and width. It preserves the ordinary evaluator at insufficient fuel. -/
-theorem evalQuotedRecord {W : World} {fields : List (String × String)} {props : List PropDef} {width : Nat}
-    (props_eq : props = fields.map literalField) (width_bound : fields.length ≤ width)
-    (fuel : Nat) (env : Env) :
-    (evalExpr fuel env (.obj props) : M W Val) = evalQuotedRecordBody fields props width fuel env := by
-  cases fuel with
-  | zero => rfl
-  | succ n =>
-    dsimp only [evalQuotedRecordBody]
-    split
-    · rename_i h
-      have budget := Nat.lt_of_le_of_lt width_bound h
-      rw [props_eq]
-      exact evalExpr_obj_string_fields n env fields budget
-    · rw [evalExpr] <;> rfl
-
 /-- The equation compiler puts a negative premise on the general unary case because
 `typeof` of a variable has its own lookup rule. The proof-producing `cbv` evaluator
 only uses unconditional rewrites. Dispatch on the operator and operand on the RHS
@@ -233,14 +204,6 @@ macro "check_linked_layout" : tactic =>
         all_goals rfl
     | exact none)
 
-/-- Reduce a run against the link result whose equation the kernel has checked. -/
-macro "reduce_linked_run_from " fuel:num layout:ident world:ident : tactic =>
-  `(tactic|
-    ((first | rw [run_after_link $fuel (($layout $world).get (by rfl))] | skip) <;>
-      (conv =>
-        lhs
-        cbv) <;> rfl))
-
 macro "verify_linked_exports_from " source:ident candidate:ident : tactic =>
   `(tactic|
     (apply sameExports_of_match
@@ -264,24 +227,6 @@ macro "verify_ordered_linked_programs " fuel:num source:ident candidate:ident pr
        · rw [run_after_link $fuel (($source (HostPremises.specialize $premises w)).get (by rfl))]
          first | cbv <;> rfl | rfl
        · check_ordered_linked_runs $fuel $source $candidate (HostPremises.specialize $premises w)
-     · verify_linked_exports_from $source $candidate))
-
-/-- Reuse each checked link between execution and export matching. -/
-macro "verify_linked_programs_from " fuel:num source:ident candidate:ident premises:ident : tactic => do
-  let reduce ← `(tactic| first | cbv <;> constructor <;> rfl | exact ⟨rfl, rfl⟩)
-  `(tactic|
-    (constructor
-     · first
-       | apply of_evaluation $fuel
-         intro w
-         rw [run_after_link $fuel (($source w).get (by rfl)),
-             run_after_link $fuel (($candidate w).get (by rfl))] <;> $reduce
-       | apply of_host_evaluation (premises := $premises) $fuel
-         intro w
-         rw [run_after_link $fuel (($source (HostPremises.specialize $premises w)).get (by rfl)),
-             run_after_link $fuel (($candidate (HostPremises.specialize $premises w)).get (by rfl))]
-         -- Lean 4.35 can panic when cbv simplifies the conjunction in the specialized world.
-         constructor <;> (first | cbv <;> rfl | rfl)
      · verify_linked_exports_from $source $candidate))
 
 -- Check the actual theorem, whose reduction lemmas depend on the input program.
