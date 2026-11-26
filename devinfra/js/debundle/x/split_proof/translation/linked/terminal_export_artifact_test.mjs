@@ -120,3 +120,33 @@ for (const [name, badSpec] of [
   assert.equal(result.status, "refused", result.log);
   for (const file of multiFiles) assert.deepEqual(readFileSync(path.join(multiOut, file)), saved[file]);
 }
+
+const count = 16;
+const names = Array.from({ length: count }, (_, i) => `reader${i}`);
+const graphSource = [
+  ...names.map((_, i) => `const data${i} = "value${i}";`),
+  ...names.map((name, i) => `const ${name} = data${i};`),
+  `export { ${names.join(", ")} };`,
+].join("\n");
+const graphModules = {};
+for (const [group, offset] of [
+  ["provider", 0],
+  ["consumer", count],
+]) {
+  for (let i = 0; i < count; i++) (graphModules[`${group}${Math.floor(i / 8)}.mjs`] ??= []).push(`#${offset + i}`);
+}
+const graphOrder = Object.keys(graphModules);
+graphModules[entry] = ["#32"];
+const graph = prepare(path.join(root, "multi-terminal-graph"), {
+  source: graphSource,
+  provider: "",
+  spec: { entry, modules: graphModules, order: graphOrder, sequential: true },
+});
+const graphOut = path.join(root, "multi-terminal-graph-out");
+const graphResult = split({ source: graph.sourceFile, spec: graph.specFile, out: graphOut, require: "all-outcomes" });
+assert.equal(graphResult.status, "certified", graphResult.log);
+assert.deepEqual(moduleEvaluationOrder(graphOut, entry), [...graphOrder, entry]);
+assert.deepEqual(
+  observe(path.join(graphOut, entry), names),
+  Object.fromEntries(names.map((name, i) => [name, `value${i}`]))
+);
