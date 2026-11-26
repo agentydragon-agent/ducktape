@@ -253,6 +253,44 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
       units := units.push (i, ← (namespaceCaptures namespaces.toList s).mapError StructuralRefusal.unclassified, j)
   return { imports := imports.toList, units := units.toList, exports := exports.toList, templates := templates.toList }
 
+private theorem parse_two_export (declaration exportNode : Json) (p : Parsed)
+    (declType : typ declaration = .ok "VariableDeclaration")
+    (exportType : typ exportNode = .ok "ExportNamedDeclaration")
+    (exportList : Lower.isNull (Lower.fld exportNode "declaration") = true)
+    (parsed : parse .linked .empty "bundle.mjs" #[declaration, exportNode] = .ok p) :
+    ∃ specs : Array Json,
+      ModuleInput.noAttributes exportNode = .ok () ∧
+      exportNode.getObjVal? "source" = .ok .null ∧
+      exportNode.getObjVal? "declaration" = .ok .null ∧
+      exportNode.getObjValAs? (Array Json) "specifiers" = .ok specs := by
+  simp [parse, declType, exportType, Except.mapError, bind, Except.bind, pure,
+    Except.pure, Functor.map, Except.map, throw] at parsed
+  cases hLower : BodyFormat.lower .linked .empty [] 0 none declaration false with
+  | error reason => simp [hLower] at parsed
+  | ok lowered =>
+    simp [hLower, namespaceCaptures, pure, Except.pure] at parsed
+    cases hAttributes : ModuleInput.noAttributes exportNode with
+    | error reason => simp [hAttributes, pure, Except.pure] at parsed
+    | ok _ =>
+      simp [hAttributes, pure, Except.pure] at parsed
+      cases hSource : exportNode.getObjVal? "source" with
+      | error reason => simp [hSource] at parsed
+      | ok source =>
+        cases source <;> simp_all [Lower.fld, Lower.isNull, Json.getObjValD]
+        cases hDecl : exportNode.getObjVal? "declaration" with
+        | error reason => simp [hDecl] at parsed
+        | ok value =>
+          have hNull : value = .null := by
+            simp [hDecl, Except.toOption] at exportList
+            cases value <;> simp_all
+          subst value
+          simp [hDecl] at parsed
+          cases hSpecs : exportNode.getObjValAs? (Array Json) "specifiers" with
+          | error reason => simp [hSpecs] at parsed
+          | ok specs =>
+            simp [hSpecs] at parsed
+            simp_all
+
 private def Parsed.numbered (p : Parsed) (name : String) (base : Nat) : Module where
   name := name
   imports := p.imports
@@ -494,6 +532,28 @@ def decodeSingletonSource (source : Json) (entry : String) : Except String Progr
   unless original.imports.isEmpty do throw "checked construction requires an import-free original"
   unless original.templates.isEmpty do throw "checked construction does not install template objects"
   return { entry, modules := [original.numbered entry 0] }
+
+/-- Successful linked lowering of a declaration and a local export list
+establishes the required export fields. No emitted program is inspected. -/
+theorem decodeSingletonSource_localExportFields (source declaration exportNode : Json)
+    (entry : String) (program : Program)
+    (nodes : ESTreeUnits.nodes source = .ok #[declaration, exportNode])
+    (declType : declaration.getObjValAs? String "type" = .ok "VariableDeclaration")
+    (exportType : exportNode.getObjValAs? String "type" = .ok "ExportNamedDeclaration")
+    (exportList : Lower.isNull (Lower.fld exportNode "declaration") = true)
+    (accepted : decodeSingletonSource source entry = .ok program) :
+    ∃ specs : Array Json,
+      ModuleInput.noAttributes exportNode = .ok () ∧
+      exportNode.getObjVal? "source" = .ok .null ∧
+      exportNode.getObjVal? "declaration" = .ok .null ∧
+      exportNode.getObjValAs? (Array Json) "specifiers" = .ok specs := by
+  cases parsed : parse .linked .empty "bundle.mjs" #[declaration, exportNode] with
+  | error reason =>
+    simp [decodeSingletonSource, nodes, parsed, Except.mapError, bind, Except.bind] at accepted
+  | ok p =>
+    exact parse_two_export declaration exportNode p declType exportType exportList parsed
+
+#print axioms decodeSingletonSource_localExportFields
 
 /-- Experimental input for a structural schedule proof. The body of each returned module retains the
 original source ordinals, including when an emitted module has different positions. Providers use

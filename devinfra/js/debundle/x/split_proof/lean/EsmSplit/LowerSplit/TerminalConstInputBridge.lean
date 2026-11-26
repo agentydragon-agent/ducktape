@@ -49,6 +49,20 @@ def sourceHashbang (sourceText : String) : Option String :=
 theorem sourceBundle_length (nodes : Array Json) : (sourceBundle nodes).length = nodes.size := by
   simp [sourceBundle, linkedLayoutBundle, Effects.footprintUnits]
 
+/-- A nonempty `Lower.typ` comes from an actual string-valued type field. -/
+theorem typeField_of_lowerTyp (node : Json) (kind : String)
+    (nonempty : kind ≠ "") (typeMatch : Lower.typ node = kind) :
+    node.getObjValAs? String "type" = .ok kind := by
+  change (node.getObjValD "type").getStr? = .ok kind
+  unfold Lower.typ at typeMatch
+  cases h : (node.getObjValD "type").getStr? with
+  | error reason =>
+    simp [h, Except.toOption] at typeMatch
+    exact False.elim (nonempty typeMatch)
+  | ok found =>
+    simp [h, Except.toOption] at typeMatch
+    simpa [typeMatch] using h
+
 /-- Input facts for Q's model and the actual authored spec, with no check of
 any candidate program, emitted AST, plan validity, placement or execution. -/
 structure Admitted (original : Json) (sourceText specText : String) where
@@ -114,6 +128,28 @@ theorem admitted_source_shape {original sourceText specText}
     rw [← nodesEq]
     exact admitted.metadata
   exact ⟨declaration, exportNode, nodesEq, classify_pair declaration exportNode classified⟩
+
+/-- The linked source decoder's success supplies the fields required by the
+local-export parser, including fields the classifier alone may default. -/
+theorem admitted_exportFields {original sourceText specText}
+    (admitted : Admitted original sourceText specText) :
+    ∃ (declaration exportNode : Json) (specs : Array Json),
+      admitted.nodes = #[declaration, exportNode] ∧
+      CoreJS.ModuleInput.noAttributes exportNode = .ok () ∧
+      exportNode.getObjVal? "source" = .ok .null ∧
+      exportNode.getObjVal? "declaration" = .ok .null ∧
+      exportNode.getObjValAs? (Array Json) "specifiers" = .ok specs := by
+  obtain ⟨declaration, exportNode, nodeEq, declType, _, exportType, exportList, _⟩ :=
+    admitted_source_shape admitted
+  have originalNodes : ESTreeUnits.nodes original = .ok #[declaration, exportNode] := by
+    rw [← nodeEq]
+    exact ESTreeUnits.checkedNodes_nodes admitted.nodesMatch
+  have declarationType := typeField_of_lowerTyp declaration "VariableDeclaration" (by decide) declType
+  have exportNodeType := typeField_of_lowerTyp exportNode "ExportNamedDeclaration" (by decide) exportType
+  obtain ⟨specs, attributes, sourceField, noDeclaration, specifiers⟩ :=
+    LinkedInput.decodeSingletonSource_localExportFields original declaration exportNode "entry.mjs"
+      (source admitted.value) originalNodes declarationType exportNodeType exportList admitted.sourceMatch
+  exact ⟨declaration, exportNode, specs, nodeEq, attributes, sourceField, noDeclaration, specifiers⟩
 
 private def witness {α : Type} (result : Except String α) :
     Except String (Σ value : α, PLift (result = .ok value)) := do
@@ -201,5 +237,7 @@ No theorem above assumes this proposition or compares a candidate program. -/
 #print axioms admitted_nodes_pair
 #print axioms classify_pair
 #print axioms admitted_source_shape
+#print axioms typeField_of_lowerTyp
+#print axioms admitted_exportFields
 
 end EsmSplit.LowerSplit.TerminalConstInputBridge

@@ -1727,11 +1727,13 @@ lean_proof_test(
         "EsmSplit.LowerSplit.TerminalConstInputBridge.admitted_node_count",
         "EsmSplit.LowerSplit.TerminalConstInputBridge.admitted_nodes_pair",
         "EsmSplit.LowerSplit.TerminalConstInputBridge.admitted_source_shape",
+        "EsmSplit.LowerSplit.TerminalConstInputBridge.admitted_exportFields",
         "EsmSplit.LowerSplit.TerminalConstInputBridge.classify_pair",
         "EsmSplit.LowerSplit.TerminalConstInputBridge.input_sound",
         "EsmSplit.LowerSplit.TerminalConstInputBridge.modeled_sound",
         "EsmSplit.LowerSplit.TerminalConstInputBridge.nodes_pair",
         "EsmSplit.LowerSplit.TerminalConstInputBridge.sourceBundle_length",
+        "EsmSplit.LowerSplit.TerminalConstInputBridge.typeField_of_lowerTyp",
     ],
     deps = [":terminal_const_input_bridge"],
 )
