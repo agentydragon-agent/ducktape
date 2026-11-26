@@ -113,3 +113,14 @@ const refusedReorder = split({
 assert.equal(refusedReorder.status, "refused", refusedReorder.log);
 assert.match(refusedReorder.verdict.reason, /changes the source unit order/);
 assert.deepEqual(snapshot(out), beforeReorder, "reorder refusal changed existing files");
+
+const contract = path.join(root, "browser-contract.json");
+writeFileSync(contract, JSON.stringify({ profile: "browser-page" }));
+for (const options of [{ structural: true }, { hostContract: contract }]) {
+  const before = snapshot(out);
+  const refused = run({ ...options, allowExistingOut: true });
+  assert.equal(refused.status, "refused", refused.log);
+  assert.equal(refused.verdict.guarantee, null, refused.log);
+  assert.match(refused.verdict.reason, /does not support host or deployment options/);
+  assert.deepEqual(snapshot(out), before, "option refusal changed existing files");
+}
