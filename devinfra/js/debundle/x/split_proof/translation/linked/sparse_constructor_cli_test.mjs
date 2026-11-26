@@ -39,6 +39,7 @@ assert(!phases(emitted.stderr).includes("certificate_preparation"), emitted.log)
 const checked = run({ checkOutput: true });
 assert.deepEqual(checked.verdict, emitted.verdict);
 assert(!phases(checked.stderr).includes("output_publication"), checked.log);
+assert(!phases(checked.stderr).includes("certificate_preparation"), checked.log);
 
 const entryFile = path.join(out, entry);
 const original = readFileSync(entryFile, "utf8");
@@ -113,6 +114,23 @@ const refusedReorder = split({
 assert.equal(refusedReorder.status, "refused", refusedReorder.log);
 assert.match(refusedReorder.verdict.reason, /changes the source unit order/);
 assert.deepEqual(snapshot(out), beforeReorder, "reorder refusal changed existing files");
+
+const wrongOwner = prepare(path.join(root, "metadata-owner"), {
+  source,
+  provider: "",
+  spec: { entry, modules: { [worker]: ["#0", "#1"], [entry]: ["#2"] } },
+});
+const beforeWrongOwner = snapshot(out);
+const refusedOwner = split({
+  source: wrongOwner.sourceFile,
+  spec: wrongOwner.specFile,
+  out,
+  require: "all-outcomes",
+  allowExistingOut: true,
+});
+assert.equal(refusedOwner.status, "refused", refusedOwner.log);
+assert.match(refusedOwner.verdict.reason, /source position 1 has no executable unit/);
+assert.deepEqual(snapshot(out), beforeWrongOwner, "wrong metadata owner changed existing files");
 
 const contract = path.join(root, "browser-contract.json");
 writeFileSync(contract, JSON.stringify({ profile: "browser-page" }));
