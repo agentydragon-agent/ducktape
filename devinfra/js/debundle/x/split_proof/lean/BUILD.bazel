@@ -941,6 +941,21 @@ lean_proof_test(
 )
 
 lean_library(
+    name = "linked_model_check_runner_modules",
+    testonly = True,
+    srcs = ["LinkedModelCheckMain.lean"],
+    visibility = ["//visibility:private"],
+    deps = [":lowersplit_workflows"],
+)
+
+lean_binary(
+    name = "linked_model_check_runner",
+    testonly = True,
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    deps = [":linked_model_check_runner_modules"],
+)
+
+lean_library(
     name = "joint_static_test_runner_modules",
     testonly = True,
     srcs = ["JointStaticTest.lean"],
