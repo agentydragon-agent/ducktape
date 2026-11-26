@@ -804,6 +804,8 @@ lean_library(
         ":lowersplit_support",
         ":multi_terminal_export",
         ":planner",
+        ":sparse_checked_artifact",
+        ":terminal_export_artifact",
     ],
 )
 

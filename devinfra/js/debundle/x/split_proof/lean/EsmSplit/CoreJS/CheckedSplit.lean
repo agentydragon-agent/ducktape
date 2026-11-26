@@ -36,8 +36,9 @@ inductive SourceAdmission where
   | sparseUnitIds
   deriving DecidableEq, Repr
 
-/-- Classify a source using the same constructor fragment checks. Sparse IDs
-are a hard refusal until placement selectors preserve their original ordinals. -/
+/-- Classify a source for the dense checked constructor. Sparse IDs are
+reported separately so callers can route through the original-ordinal sparse
+constructor; `checkedSplit` itself continues to refuse them. -/
 def sourceAdmission (source : Program) : SourceAdmission := Id.run do
   let [m] := source.modules | return .outsideFragment
   if source.entry != m.name || !m.imports.isEmpty then return .outsideFragment
@@ -53,21 +54,25 @@ different checker. -/
 def supportsSource (source : Program) : Bool := Id.run do
   return sourceAdmission source == .supported
 
-/-- Strict CLI construction is currently limited to primitive const initializers
-and reads of earlier consts. The latter cannot throw from a temporal-dead-zone
-read, while later reads, calls and effectful initializers need separate
-observation evidence. -/
-def supportsStrictStaticSource (source : Program) : Bool := Id.run do
-  if sourceAdmission source != .supported then return false
-  let [m] := source.modules | return false
+/-- Check the actual units in source order, including their initializer expressions. -/
+def supportsStrictStaticUnits (units : List (Nat × Stmt)) : Bool := Id.run do
   let mut earlier : List Name := []
-  for (_, stmt) in m.body do
+  for (_, stmt) in units do
     match stmt with
     | .decl .const name value =>
       if !strictInitializer earlier value then return false
       earlier := earlier ++ [name]
     | _ => return false
   return true
+
+/-- Strict CLI construction is currently limited to primitive const initializers
+and reads of earlier consts. The latter cannot throw from a temporal-dead-zone
+read, while later reads, calls and effectful initializers need separate
+observation evidence. Dense admission is still required for this constructor. -/
+def supportsStrictStaticSource (source : Program) : Bool := Id.run do
+  if sourceAdmission source != .supported then return false
+  let [m] := source.modules | return false
+  return supportsStrictStaticUnits m.body
 
 private def strictStaticAtom (declared varNames initialized : List Name) : Expr → Bool
   | .undef | .null | .bool _ | .num _ | .str _ => true
