@@ -20,7 +20,7 @@ const spec = {
 const dir = path.join(root, "resolved-cycle");
 const files = prepare(dir, { source, spec, provider: "" });
 const out = path.join(dir, "out");
-const opts = ["--structural"];
+const opts = [];
 const run = (dest, flags, scope) => lower(files.sourceFile, files.specFile, dest, flags, scope).verdict;
 
 // Visiting value first follows its request for reader. It does not evaluate value first.
@@ -55,7 +55,7 @@ refuses(
     order: ["value.mjs", "reader.mjs"],
     sequential: true,
   },
-  ["--structural"],
+  [],
   "linked-structural",
   effect
 );

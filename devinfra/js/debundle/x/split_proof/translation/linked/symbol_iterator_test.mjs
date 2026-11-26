@@ -34,7 +34,7 @@ const method = fixture(
 assert.match(method.run().reason, /unsupported computed class key/);
 const run = lower(method.sourceFile, method.specFile, method.out, options);
 assertCertifiedResult({ ...run, files: method, out: method.out }, true);
-assert.deepEqual(run.verdict.assumptions, run.verdict.scope === "linked-slice-order-kept" ? [] : [premise]);
+assert.deepEqual(run.verdict.premises, run.verdict.scope === "linked-slice-order-kept" ? [] : [premise]);
 assert.deepEqual(method.run(...options, "--check-output"), run.verdict);
 
 const owner = path.join(method.out, "worker.mjs");
@@ -52,7 +52,7 @@ const shadow = fixture(
 );
 const shadowRun = lower(shadow.sourceFile, shadow.specFile, shadow.out, options);
 assertCertifiedResult({ ...shadowRun, files: shadow, out: shadow.out }, 42);
-assert.deepEqual(shadowRun.verdict.assumptions, []);
+assert.deepEqual(shadowRun.verdict.premises, []);
 
 const accessors = fixture(
   "iterator-accessors",
@@ -70,7 +70,7 @@ const accessors = fixture(
 const accessorRun = lower(accessors.sourceFile, accessors.specFile, accessors.out, options);
 assertCertifiedResult({ ...accessorRun, files: accessors, out: accessors.out }, true);
 assert.deepEqual(
-  accessorRun.verdict.assumptions,
+  accessorRun.verdict.premises,
   accessorRun.verdict.scope === "linked-slice-order-kept" ? [] : [premise]
 );
 

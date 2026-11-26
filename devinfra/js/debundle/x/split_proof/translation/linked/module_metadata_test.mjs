@@ -23,7 +23,7 @@ for (const member of ["url", "env.MODE"]) {
   const out = path.join(dir, "out");
   const profile = path.join(dir, "host.json");
   writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
-  const options = ["--structural", "--deployment-origin", "https://example.org", "--host-contract", profile];
+  const options = ["--deployment-origin", "https://example.org", "--host-contract", profile];
   if (member === "url") {
     const scope = "linked-structural-pivot";
     const { verdict } = lower(sourceFile, specFile, out, options, scope);
@@ -37,7 +37,7 @@ for (const member of ["url", "env.MODE"]) {
     const preset = [...options, "--deployment-preset", "native-browser-record@1"];
     const accepted = lower(sourceFile, specFile, out, preset, "linked-structural-pivot").verdict;
     assert.equal(accepted.status, "certified", JSON.stringify(accepted));
-    assert(accepted.assumptions.some((p) => p.startsWith("native-browser-record@1:")));
+    assert(accepted.premises.some((p) => p.startsWith("native-browser-record@1:")));
     assert.deepEqual(
       lower(sourceFile, specFile, out, [...preset, "--check-output"], "linked-structural-pivot").verdict,
       accepted
@@ -104,7 +104,6 @@ assert.equal(wrongRecord.calls(), 0);
 const profile = path.join(root, "browser-profile.json");
 writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
 const preset = [
-  "--structural",
   "--deployment-origin",
   "https://example.org",
   "--host-contract",

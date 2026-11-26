@@ -22,7 +22,7 @@ const certified = read.run(pivot, ...enabled);
 assert.equal(certified.status, "certified");
 assert.equal(certified.hostProfile, "ecmascript");
 assert.match(
-  certified.assumptions.join("\n"),
+  certified.premises.join("\n"),
   /Object\.defineProperty@1:.*ambient binding Object returns intrinsic\.Object.*stable host reference intrinsic\.Object\.defineProperty; both reads have no observable effects/
 );
 assert.deepEqual(read.run(pivot, ...enabled, "--check-output"), certified);

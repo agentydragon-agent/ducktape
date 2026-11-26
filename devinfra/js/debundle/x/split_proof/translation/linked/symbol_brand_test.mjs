@@ -27,7 +27,7 @@ const brand = fixture(
 const run = lower(brand.sourceFile, brand.specFile, brand.out, options);
 assertCertifiedResult({ ...run, files: brand, out: brand.out }, true);
 assert.deepEqual(
-  run.verdict.assumptions,
+  run.verdict.premises,
   run.verdict.scope === "linked-slice-order-kept"
     ? []
     : ["Symbol returns the intrinsic Symbol function without observable effects throughout initialization"]
@@ -53,7 +53,7 @@ const shadow = fixture(
 );
 const shadowRun = lower(shadow.sourceFile, shadow.specFile, shadow.out, options);
 assertCertifiedResult({ ...shadowRun, files: shadow, out: shadow.out }, 42);
-assert.deepEqual(shadowRun.verdict.assumptions, []);
+assert.deepEqual(shadowRun.verdict.premises, []);
 
 const namedField = fixture(
   "computed-field-function-name",

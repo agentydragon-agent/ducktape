@@ -14,21 +14,15 @@ function place(modules) {
   writeFileSync(spec, JSON.stringify({ entry, modules, order: [provider], sequential: true }));
 }
 function check(dir, status, ...args) {
-  const request = "normal-completion";
-  const run = spawnSync(
-    process.env.LOWERSPLIT,
-    [writeDeployment(source, spec, dir), dir, "--require", request, ...args],
-    {
-      encoding: "utf8",
-    }
-  );
+  const run = spawnSync(process.env.LOWERSPLIT, [writeDeployment(source, spec, dir), dir, ...args], {
+    encoding: "utf8",
+  });
   assert.equal(run.status, status === "certified" ? 0 : 1, run.stdout + run.stderr);
   const verdict = JSON.parse(run.stdout);
-  assert.equal(verdict.requested, request);
   assert.equal(verdict.status, status);
   if (status === "certified") {
-    assert([request, "all-outcomes"].includes(verdict.guarantee));
-    if (verdict.guarantee === "all-outcomes") assert.equal(verdict.scope, "linked-slice-order-kept");
+    assert(["normal-completion", "all-outcomes"].includes(verdict.guarantee));
+    assert.equal(verdict.every_ending_matches, verdict.guarantee === "all-outcomes");
   } else assert.equal(verdict.guarantee, null);
 }
 place({ [provider]: ["#0"], [entry]: ["#1"] });

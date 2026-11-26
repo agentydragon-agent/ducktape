@@ -31,7 +31,7 @@ for (const [name, before, operand, expected, moved] of [
   if (name === "ordinary") {
     const emitted = run(pivot, "--host-contract", stable);
     assert.equal(emitted.status, "certified", JSON.stringify(emitted));
-    assert.match(emitted.assumptions.join("\n"), /Math.*window\.Math.*PI.*4614256656552045848.*no observable effects/);
+    assert.match(emitted.premises.join("\n"), /Math.*window\.Math.*PI.*4614256656552045848.*no observable effects/);
     assert.deepEqual(run(pivot, "--check-output", "--host-contract", stable), emitted);
     assert.equal(run(refusal, "--check-output", "--host-contract", plain).status, "rejected");
     assert.deepEqual(observe(path.join(out, "entry.mjs"), "result"), { result: moved });

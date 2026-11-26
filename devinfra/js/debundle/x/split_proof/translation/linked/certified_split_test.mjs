@@ -16,25 +16,24 @@ function prepare(source, modules, order, entry = "entry.mjs") {
   fs.writeFileSync(placement, JSON.stringify({ entry, order, sequential: true, modules }));
   return ast;
 }
-function requestFile(file, out, requested, ...args) {
+function requestFile(file, out, ...args) {
   const checkOutput = args.includes("--check-output");
   const hostAt = args.indexOf("--host-contract");
   const result = split({
     ...(file.endsWith(".json") ? { ast: file } : { source: file }),
     spec: placement,
     out,
-    require: requested,
     checkOutput,
     allowExistingOut: fs.existsSync(out),
     ...(hostAt >= 0 ? { hostContract: args[hostAt + 1] } : {}),
   });
   return result.verdict;
 }
-function request(out, requested, ...args) {
-  return requestFile(input, out, requested, ...args);
+function request(out, ...args) {
+  return requestFile(input, out, ...args);
 }
-function check(out, requested, status, ...args) {
-  const verdict = request(out, requested, ...args);
+function check(out, status, ...args) {
+  const verdict = request(out, ...args);
   assert.equal(verdict.status, status, JSON.stringify(verdict));
   return verdict;
 }
@@ -45,8 +44,6 @@ async function observe(url) {
     return e.name;
   }
 }
-const all = "all-outcomes";
-const normal = "normal-completion";
 const entry = "entry.mjs";
 const left = "left.mjs";
 const right = "right.mjs";
@@ -55,15 +52,17 @@ const placement3 = { [entry]: ["#2"], [left]: ["#0"], [right]: ["#1"] };
 if (runCase("ordered-disk-mutations")) {
   const out = path.join(root, "mutations");
   const ast = prepare(source, placement3, [left, right]);
-  const orderedVerdict = check(out, all, "certified");
-  assert.equal(orderedVerdict.scope, "closed-declarations");
-  assert.equal(orderedVerdict.guarantee, all);
+  const orderedVerdict = check(out, "certified");
+  assert.equal(orderedVerdict.scope, "linked-slice-order-kept");
+  assert.equal(orderedVerdict.strategy, "compiled-slice");
+  assert.equal(orderedVerdict.guarantee, "all-outcomes");
+  assert.equal(orderedVerdict.every_ending_matches, true);
   // The ordinary JavaScript entry point and the annotated dump share the same checker.
   const sourceFile = path.join(root, "source.mjs");
   const rawOutput = path.join(root, "from-source");
   fs.writeFileSync(sourceFile, source);
-  assert.equal(requestFile(sourceFile, rawOutput, undefined).status, "certified");
-  assert.equal(requestFile(sourceFile, out, all, "--check-output").status, "certified");
+  assert.equal(requestFile(sourceFile, rawOutput).status, "certified");
+  assert.equal(requestFile(sourceFile, out, "--check-output").status, "certified");
   assert.deepEqual(await observe(pathToFileURL(path.join(rawOutput, entry))), await observe(pathToFileURL(sourceFile)));
   const entryFile = path.join(out, entry);
   const emitted = fs.readFileSync(entryFile, "utf8");
@@ -81,27 +80,27 @@ if (runCase("ordered-disk-mutations")) {
   ]) {
     assert.notEqual(changed, emitted);
     fs.writeFileSync(entryFile, changed);
-    check(out, all, "rejected", "--check-output");
+    check(out, "rejected", "--check-output");
   }
   fs.writeFileSync(entryFile, "// harmless formatting change\n" + emitted);
-  check(out, all, "certified", "--check-output");
+  check(out, "certified", "--check-output");
   const extra = path.join(out, "extra.mjs");
   fs.writeFileSync(extra, "");
-  check(out, all, "rejected", "--check-output");
+  check(out, "rejected", "--check-output");
   fs.unlinkSync(extra);
   fs.renameSync(path.join(out, left), extra);
-  check(out, all, "rejected", "--check-output");
+  check(out, "rejected", "--check-output");
   fs.renameSync(extra, path.join(out, left));
 
   // Publication must leave a previously populated destination intact on failure.
   const sentinel = path.join(out, "unrelated");
   fs.writeFileSync(sentinel, "keep");
-  check(out, all, "rejected");
+  check(out, "rejected");
   assert.equal(fs.readFileSync(sentinel, "utf8"), "keep");
   fs.unlinkSync(sentinel);
   ast.sourceText = source.replace("= 1", "= 3");
   fs.writeFileSync(input, JSON.stringify(ast));
-  assert.match(check(out, all, "rejected", "--check-output").reason, /fresh parse/);
+  assert.match(check(out, "rejected", "--check-output").reason, /fresh parse/);
 }
 
 // Compose declarations, unary expressions, dependency chains and partition boundaries.
@@ -129,7 +128,9 @@ for (const [first, end] of [
     const selectors = decls.map((_, i) => "#" + i);
     const generated = path.join(root, "seed-" + seed);
     prepare(code, { [left]: selectors.slice(0, cut), [entry]: selectors.slice(cut) }, [left]);
-    assert.equal(check(generated, all, "certified").guarantee, all, code);
+    const verdict = check(generated, "certified");
+    assert(["all-outcomes", "normal-completion"].includes(verdict.guarantee), code);
+    assert.equal(verdict.every_ending_matches, verdict.guarantee === "all-outcomes", code);
     assert.deepEqual(
       await observe(pathToFileURL(path.join(generated, entry))),
       await observe("data:text/javascript," + encodeURIComponent(code)),
@@ -140,7 +141,7 @@ for (const [first, end] of [
     const changed = contents.replace(/ = [^;]+/, " = 12345");
     assert.notEqual(changed, contents);
     fs.writeFileSync(file, changed);
-    check(generated, all, "rejected", "--check-output");
+    check(generated, "rejected", "--check-output");
   }
 }
 
@@ -148,41 +149,55 @@ if (runCase("grouped-declarations-and-placement")) {
   // A printer can keep consecutive module-scope declarators in one statement.
   prepare("const a = 1, b = a; export const result = b;", { [entry]: ["#2"], [left]: ["#0", "#1"] }, [left]);
   const groupedOut = path.join(root, "grouped-declarators");
-  check(groupedOut, normal, "certified");
+  check(groupedOut, "certified");
   const groupedFile = path.join(groupedOut, left);
   const groupedCode = fs.readFileSync(groupedFile, "utf8").replace("const a = 1;\nconst b = a;", "const a = 1, b = a;");
   assert.match(groupedCode, /const a = 1, b = a;/);
   fs.writeFileSync(groupedFile, groupedCode);
-  check(groupedOut, normal, "certified", "--check-output");
+  check(groupedOut, "certified", "--check-output");
   for (const changed of ["const b = a, a = 1;", "let a = 1, b = a;", "const a = 2, b = a;"]) {
     fs.writeFileSync(groupedFile, groupedCode.replace("const a = 1, b = a;", changed));
-    check(groupedOut, normal, "rejected", "--check-output");
+    check(groupedOut, "rejected", "--check-output");
   }
   // This cyclic placement needs the entry to expose a previously private binding to its peer.
   // Even an order-preserving CoreJS plan with all nine structural checks cannot certify that change.
   const leakingSource = "const first = later; var later = 1; export const publicValue = first;";
   prepare(leakingSource, { [left]: ["#0"], [entry]: ["#1", "#2"] }, [left]);
   const leakage = path.join(root, "leakage");
-  const leakageRefusal = check(leakage, undefined, "rejected");
+  const leakageRefusal = check(leakage, "rejected");
   assert.match(leakageRefusal.reason, /entry public exports/);
   assert(!fs.existsSync(leakage));
 
   const reordered = path.join(root, "reordered");
   prepare(source, placement3, [right, left]);
-  assert.match(check(reordered, all, "rejected").reason, /normal-completion/);
-  assert(!fs.existsSync(reordered));
-  const movedVerdict = check(reordered, normal, "certified");
-  assert.equal(movedVerdict.scope, "closed-declarations");
-  assert.equal(movedVerdict.guarantee, normal);
-  assert.deepEqual(check(reordered, normal, "certified", "--check-output"), movedVerdict);
+  const movedVerdict = check(reordered, "certified");
+  assert.equal(movedVerdict.scope, "linked-slice-moves");
+  assert.equal(movedVerdict.strategy, "compiled-slice");
+  assert.equal(movedVerdict.guarantee, "normal-completion");
+  assert.equal(movedVerdict.every_ending_matches, false);
+  assert.deepEqual(check(reordered, "certified", "--check-output"), movedVerdict);
   assert.deepEqual(await observe(pathToFileURL(path.join(reordered, entry))), [["result", 1]]);
 }
 
 if (runCase("browser-and-path-contracts")) {
   prepare("const sparse = [1, , (() => 2)()];", { [entry]: ["#0"] }, []);
   const unsupported = path.join(root, "unsupported");
-  assert.match(check(unsupported, normal, "rejected").reason, /unsupported array hole/);
-  check(unsupported, undefined, "rejected");
+  assert.match(check(unsupported, "rejected").reason, /unsupported array hole/);
+  assert(!fs.existsSync(unsupported));
+
+  const pureSparseSource = "const sparse = [1, , 2]; export const hasHole = 1 in sparse;";
+  const pureSparseFile = path.join(root, "pure-sparse.mjs");
+  fs.writeFileSync(pureSparseFile, pureSparseSource);
+  prepare(pureSparseSource, { [entry]: ["#0", "#1"] }, []);
+  const pureSparseOut = path.join(root, "pure-sparse-output");
+  const pureSparseVerdict = check(pureSparseOut, "certified");
+  assert.equal(pureSparseVerdict.scope, "linked-slice-order-kept");
+  assert.equal(pureSparseVerdict.strategy, "compiled-slice");
+  assert.equal(pureSparseVerdict.every_ending_matches, true);
+  assert.deepEqual(
+    await observe(pathToFileURL(path.join(pureSparseOut, entry))),
+    await observe(pathToFileURL(pureSparseFile))
+  );
 
   // Browser module scripts can use .js for both the entry and its imports.
   const browserTree = path.join(root, "browser-tree");
@@ -194,24 +209,24 @@ if (runCase("browser-and-path-contracts")) {
     ["value.js"],
     "entry.js"
   );
-  assert.match(check(browserTree, all, "rejected").reason, /safe relative \.mjs path/);
+  assert.match(check(browserTree, "rejected").reason, /safe relative \.mjs path/);
   const browserArgs = ["--host-contract", pageProfile];
-  check(browserTree, all, "certified", ...browserArgs);
-  check(browserTree, all, "certified", ...browserArgs, "--check-output");
+  check(browserTree, "certified", ...browserArgs);
+  check(browserTree, "certified", ...browserArgs, "--check-output");
   const valueFile = path.join(browserTree, "value.js");
   const valueSource = fs.readFileSync(valueFile, "utf8");
   assert(valueSource.includes("value = 1"), valueSource);
   fs.writeFileSync(valueFile, valueSource.replace("value = 1", "value = 2"));
-  assert.match(check(browserTree, all, "rejected", ...browserArgs, "--check-output").reason, /value\.js differs/);
+  assert.match(check(browserTree, "rejected", ...browserArgs, "--check-output").reason, /value\.js differs/);
 
   // A CommonJS extension has no portable ESM loading contract.
   prepare("const local = 1;", { [entry]: [], "other.cjs": ["#0"] }, ["other.cjs"]);
-  assert.match(check(unsupported, all, "rejected").reason, /\.mjs/);
-  assert.match(check(unsupported, all, "rejected", ...browserArgs).reason, /safe relative/);
+  assert.match(check(unsupported, "rejected").reason, /\.mjs/);
+  assert.match(check(unsupported, "rejected", ...browserArgs).reason, /safe relative/);
   assert(!fs.existsSync(unsupported));
   const escaping = "../escaped.mjs";
   prepare("const local = 1;", { [entry]: [], [escaping]: ["#0"] }, [escaping]);
-  check(unsupported, all, "rejected");
+  check(unsupported, "rejected");
   assert(!fs.existsSync(path.join(root, "escaped.mjs")));
 }
 
@@ -259,18 +274,18 @@ if (runCase("hashbang-and-literal-type")) {
   fs.writeFileSync(hashbangFile, hashbangSource);
   prepare(hashbangSource, { [entry]: ["#0"] }, []);
   const hashbangOut = path.join(root, "hashbang-output");
-  assert.equal(requestFile(hashbangFile, hashbangOut, all).status, "certified");
+  assert.equal(requestFile(hashbangFile, hashbangOut).status, "certified");
   const hashbangEntry = path.join(hashbangOut, entry);
   const hashbangOutput = fs.readFileSync(hashbangEntry, "utf8");
   assert(hashbangOutput.startsWith("#!/usr/bin/env node\n"), hashbangOutput);
   fs.writeFileSync(hashbangEntry, hashbangOutput.replace("#!/usr/bin/env node", "#!/usr/bin/env node --no-warnings"));
-  check(hashbangOut, all, "rejected", "--check-output");
+  check(hashbangOut, "rejected", "--check-output");
 
   // JSON stores both of these Literal.value fields as the string "Infinity".
   const infiniteString = 'export const value = "Infinity";';
   prepare(infiniteString, { [entry]: ["#0"] }, []);
   const literalOut = path.join(root, "literal-type");
-  check(literalOut, all, "certified");
+  check(literalOut, "certified");
   fs.writeFileSync(path.join(literalOut, entry), "export const value = 1e999;");
-  check(literalOut, all, "rejected", "--check-output");
+  check(literalOut, "rejected", "--check-output");
 }

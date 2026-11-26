@@ -20,7 +20,7 @@ writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs":
 writeFileSync(host, JSON.stringify({ profile: "browser-page" }));
 
 function certify(checkOutput) {
-  const args = [writeDeployment(source, spec, out), out, "--require", "normal-completion", "--host-contract", host];
+  const args = [writeDeployment(source, spec, out), out, "--host-contract", host];
   if (checkOutput) args.push("--check-output");
   const run = spawnSync(process.env.LOWERSPLIT, args, { encoding: "utf8" });
   assert.equal(run.status, 0, run.stdout + run.stderr);

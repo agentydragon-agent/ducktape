@@ -46,7 +46,7 @@ For a closed module containing only identifier declarations, the checker also ha
 
 ## Request a CoreJS guarantee
 
-Pass the deployment manifest and a fresh output directory to the splitter. Its default request is `normal-completion`; an order-preserving split may prove the stronger `all-outcomes` guarantee too.
+Pass the deployment manifest and a fresh output directory to the splitter. The checker selects the strongest guarantee established by its accepted proof. An order-preserving split may prove `all-outcomes`; other accepted proofs may establish `normal-completion`.
 
 ```sh
 bb run //devinfra/js/debundle/x/split_proof/lean:lowersplit -- deployment.json output
@@ -80,11 +80,11 @@ Class static blocks run in their own scope with the constructor as the
 receiver. The checker evaluates class member keys before it initializes
 fixed-name static fields and runs blocks in their source order.
 
-The command prints one JSON verdict. A successful split reports `status: "certified"` after Lean certifies the output module ASTs and the printer writes them to the requested directory. The default `normal-completion` request means that, for each modeled world and successful final state, the bundle reaches that state exactly when the split does. It does not say that either program completes normally; in the closed-declaration case, both may throw. The linked-program proof additionally establishes that both programs initialize normally. The checker reports the strongest available guarantee. A structural split that links to the same initial state and the same ordered units reports `all-outcomes`, including when both versions throw. Pass `--require all-outcomes` to insist on that stronger guarantee. A rejected request exits nonzero with `status: "rejected"`, a null guarantee and a reason.
+The command prints one JSON verdict. A successful split reports `status: "certified"` after the checker certifies the output module ASTs and the printer writes them to the requested directory. The checker chooses a strategy and reports its evidence, premises, and the theorem it proves. `all-outcomes` means the source and split have the same outcomes and states in every modeled CoreJS world. `normal-completion` means they have the same successful final states. The verdict sets `every_ending_matches` from that proven guarantee; equal unit order alone does not set it. A rejected split exits nonzero with `status: "rejected"`, a null guarantee, and a reason. `strategy_attempts` lists each attempted strategy's refusal when no strategy certifies.
 
 To move an initializer such as `Math.PI / 12`, pass
 `{"profile":"browser-page","stableIntrinsicValues":["Math.PI@1"]}` with
-`--host-contract` and `--structural` on both emission and `--check-output`.
+`--host-contract` on both emission and `--check-output`.
 The caller asserts that throughout initialization the ambient binding returns
 the same Math object, and that reading its own `PI` data property returns the
 Number with binary64 bits `0x400921fb54442d18`. Both reads must have no
@@ -113,8 +113,8 @@ jq '{entry:"main.js", chunks:[.placements[] | {
   path:(.chunk_id + ".js"), source:("bundle/" + .chunk_id + ".js"), placement:.
 }]}' resolved.json > deployment.json
 printf '%s\n' '{"profile":"browser-page"}' > browser.json
-lowersplit deployment.json out --structural --host-contract browser.json --deployment-origin https://example.test
-lowersplit deployment.json out --structural --host-contract browser.json --deployment-origin https://example.test --check-output
+lowersplit deployment.json out --host-contract browser.json --deployment-origin https://example.test
+lowersplit deployment.json out --host-contract browser.json --deployment-origin https://example.test --check-output
 ```
 
 Use the original module routes in `path`, including hashed filenames when the
@@ -152,7 +152,7 @@ in each schedule, including through a local alias. A write, accessor or
 unmodeled intervening operation drops the evidence. Only the scheduling
 proof substitutes the value; the emitted JS still reads `table.value`.
 
-The experimental `--structural` checker selects a proof from the linked schedules. If the units keep their original order, it checks the exact unit sequence, source syntax, resolved capture cells, initial state and entry exports, then reports `scope: "linked-structural-order"` and `guarantee: "all-outcomes"` when the decoded schedules match exactly. For an order change, it brings units forward one at a time. A hoisted function is already in its declaration cell before either schedule runs. The initial states must agree on its object address, code, and captured cells; entry exports must resolve to the same live cells. Only the inert declaration step moves past earlier units, which may already use the function. Moving an allocating initializer still requires checks on the prefix and crossed units of the intermediate schedule. It reports `scope: "linked-structural-pivot"` for one move and `scope: "linked-structural-moves"` for multiple moves.
+The automatic selector can choose the compiled structural schedule strategy after the compiled slice strategy. If units keep their original order, it checks the exact unit sequence, source syntax, resolved capture cells, initial state, and entry exports, then reports `scope: "linked-structural-order"` and `all-outcomes` when the decoded schedules match exactly. For an order change, it chooses pivots and checks each move against the linked schedules. A hoisted function is already in its declaration cell before either schedule runs. The initial states must agree on its object address, code, and captured cells; entry exports must resolve to the same live cells. Only the inert declaration step moves past earlier units, which may already use the function. Moving an allocating initializer still requires checks on the prefix and crossed units of the intermediate schedule. It reports `scope: "linked-structural-pivot"` for one move and `scope: "linked-structural-moves"` for multiple moves.
 
 A regex literal can move as a fresh allocation, including as the value of a named data property. Each evaluation creates a distinct object with its own `lastIndex` and the realm's `%RegExp.prototype%`. The intrinsic constructor's `prototype` is a non-writable, non-configurable data property; literal evaluation does not consult the global `RegExp` binding or invoke getters on the prototype. This rule needs no browser-page premise. Calling `new RegExp(...)`, reading `/a/.flags`, and running a matcher during initialization remain outside the allocation rule.
 

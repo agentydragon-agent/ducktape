@@ -26,10 +26,10 @@ const tag = fixture(
 assert.match(tag.run().reason, /unsupported computed class key/);
 const run = lower(tag.sourceFile, tag.specFile, tag.out, options);
 assertCertifiedResult({ ...run, files: tag, out: tag.out }, true);
-if (run.verdict.scope === "linked-slice-order-kept") assert.deepEqual(run.verdict.assumptions, []);
+if (run.verdict.scope === "linked-slice-order-kept") assert.deepEqual(run.verdict.premises, []);
 else {
   assert.ok(
-    run.verdict.assumptions.includes(
+    run.verdict.premises.includes(
       "Symbol.toStringTag returns the well-known toStringTag symbol without observable effects throughout initialization"
     )
   );

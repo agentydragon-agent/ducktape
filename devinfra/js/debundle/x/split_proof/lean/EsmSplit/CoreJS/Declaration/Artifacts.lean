@@ -92,13 +92,18 @@ def SameSurface (source : Json) (actual : Program) : Prop :=
   ∃ groups entry, DeclarationInput.decode source = .ok groups ∧ actual.find actual.entry = some entry ∧
     entry.exports.Perm (groups.flatMap DeclarationGroup.exports)
 
-private def checkSurface (source : Json) (actual : Program) : Except String (PLift (SameSurface source actual)) :=
+private def checkSurfaceProof (source : Json) (actual : Program) : Except String (PLift (SameSurface source actual)) :=
   match h : DeclarationInput.decode source, e : actual.find actual.entry with
   | .error err, _ => .error err
   | _, none => .error "missing entry module"
   | .ok groups, some entry =>
     if p : entry.exports.Perm (groups.flatMap DeclarationGroup.exports) then .ok ⟨⟨groups, entry, h, e, p⟩⟩
     else .error "entry public exports differ from the source"
+
+/-- Preserve the source's public entry surface as a shared eligibility check,
+without using the closed-declaration execution proof. -/
+def checkSourceSurface (source : Json) (actual : Program) : Except String Unit :=
+  (checkSurfaceProof source actual).map fun _ => ()
 
 structure Corresponds (source files : Json) (ss : List Stmt) (B : EsmSplit.Bundle) (P : EsmSplit.Plan) : Prop where
   covered : DeclarationCertificate.covers source ss = true
@@ -118,7 +123,7 @@ private def verify (source files : Json) (ss : List Stmt) (B : EsmSplit.Bundle) 
     let ⟨entry⟩ ← checkEq actual.entry expected.entry "entry module differs from the plan"
     let ⟨modules⟩ ← checkList checkModule actual.modules expected.modules
     have same : actual = splitProgram ss B P := program_eq entry modules
-    let ⟨surface⟩ ← checkSurface source actual
+    let ⟨surface⟩ ← checkSurfaceProof source actual
     return ⟨⟨covered, h.trans (congrArg Except.ok same), same ▸ surface⟩⟩
 
 def check (source files : Json) (ss : List Stmt) (B : EsmSplit.Bundle) (P : EsmSplit.Plan) : Except String Unit :=

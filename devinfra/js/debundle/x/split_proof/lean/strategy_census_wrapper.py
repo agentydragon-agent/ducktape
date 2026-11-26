@@ -1,15 +1,13 @@
-"""Measure checker strategies while preserving a test's ordinary lowersplit result."""
+"""Record the automatic checker verdict and its attempted strategies."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import os
-import shutil
 import subprocess
 import sys
 import time
-import uuid
 from pathlib import Path
 
 
@@ -74,40 +72,6 @@ def verdict_from(result: subprocess.CompletedProcess[bytes]) -> dict:
     return {}
 
 
-def alternate_args(args: list[str], strategy: str, output: Path) -> list[str]:
-    changed = list(args)
-    changed[1] = str(output)
-    has_structural = "--structural" in changed
-    if strategy == "structural" and not has_structural:
-        changed.append("--structural")
-    elif strategy != "structural" and has_structural:
-        changed.remove("--structural")
-    return changed
-
-
-def run_attempt(
-    executable: str, args: list[str], strategy: str, original_out: Path, check_only: bool, forced_linked: bool = False
-) -> tuple[dict, float, str]:
-    out = Path(os.environ["TEST_TMPDIR"]) / ".split-strategy-census" / uuid.uuid4().hex / "out"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    if check_only and original_out.exists():
-        shutil.copytree(original_out, out)
-    command_args = alternate_args(args, strategy, out)
-    child_env = os.environ.copy()
-    if forced_linked:
-        child_env["SPLIT_PROOF_CENSUS_FORCE_LINKED"] = "1"
-    started = time.perf_counter()
-    result = subprocess.run([executable, *command_args], check=False, capture_output=True, env=child_env)
-    elapsed_ms = (time.perf_counter() - started) * 1000
-    verdict = verdict_from(result)
-    if not verdict:
-        verdict = {
-            "status": "error",
-            "reason": (result.stderr.decode(errors="replace") or "checker returned no JSON verdict")[-4000:],
-        }
-    return verdict, elapsed_ms, (result.stderr.decode(errors="replace")[-4000:])
-
-
 def append_record(path: Path, record: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     encoded = (json.dumps(record, sort_keys=True) + "\n").encode()
@@ -118,38 +82,29 @@ def append_record(path: Path, record: dict) -> None:
         os.close(fd)
 
 
-def record_attempt(
-    report: Path,
-    case: str,
-    input_name: str,
-    strategy: str,
-    verdict: dict,
-    elapsed_ms: float,
-    forced_linked: bool = False,
-) -> None:
+def record_attempt(report: Path, case: str, input_name: str, strategy: str, verdict: dict, elapsed_ms: float) -> None:
     append_record(
         report,
         {
             "input": case,
             "input_name": input_name,
             "case_name": os.environ.get("SPLIT_PROOF_STRATEGY_CENSUS_CASE", input_name),
-            "strategy": "linked-programs" if forced_linked else strategy,
+            "strategy": strategy,
             "certificate_strategy": verdict.get("strategy"),
             "status": verdict.get("status", "error"),
             "scope": verdict.get("scope"),
             "guarantee": verdict.get("guarantee"),
+            "every_ending_matches": verdict.get("every_ending_matches"),
+            "target_theorem": verdict.get("target_theorem"),
+            "premises": verdict.get("premises"),
             "reason_code": verdict.get("reason_code"),
             "reason": verdict.get("reason"),
             "replay_blockers": verdict.get("replay_blockers"),
+            "strategy_attempts": verdict.get("strategy_attempts", []),
             "elapsed_ms": round(elapsed_ms, 2),
-            "requested": verdict.get("requested"),
             "test": Path(os.environ.get("TEST_BINARY", "unknown")).name,
         },
     )
-
-
-def needs_forced_linked(scope: object) -> bool:
-    return isinstance(scope, str) and (scope == "closed-declarations" or "slice" in scope)
 
 
 def main() -> int:
@@ -171,10 +126,9 @@ def main() -> int:
     if not original_out.is_absolute():
         original_out = Path.cwd() / original_out
     check_only = "--check-output" in args
-    configuration = [arg for arg in args[2:] if arg != "--structural"]
+    configuration = args[2:]
     case = input_id(manifest, original_out, check_only, configuration)
     input_name = manifest.stem
-    base_strategy = "structural" if "--structural" in args else "automatic"
 
     started = time.perf_counter()
     baseline = subprocess.run([executable, *args], check=False, capture_output=True)
@@ -185,27 +139,7 @@ def main() -> int:
             "status": "error",
             "reason": (baseline.stderr.decode(errors="replace") or "checker returned no JSON verdict")[-4000:],
         }
-    record_attempt(report, case, input_name, base_strategy, baseline_verdict, baseline_ms)
-
-    alternate_strategy = "automatic" if base_strategy == "structural" else "structural"
-    alternate_verdict, alternate_ms, _ = run_attempt(executable, args, alternate_strategy, original_out, check_only)
-    record_attempt(report, case, input_name, alternate_strategy, alternate_verdict, alternate_ms)
-
-    automatic_verdict = baseline_verdict if base_strategy == "automatic" else alternate_verdict
-    try:
-        manifest_text = manifest.read_text()
-    except OSError:
-        is_singleton = True
-    else:
-        try:
-            is_singleton = len(json.loads(manifest_text).get("chunks", [])) == 1
-        except json.JSONDecodeError:
-            is_singleton = True
-    if is_singleton and needs_forced_linked(automatic_verdict.get("scope")):
-        linked_verdict, linked_ms, _ = run_attempt(
-            executable, args, "automatic", original_out, check_only, forced_linked=True
-        )
-        record_attempt(report, case, input_name, "automatic", linked_verdict, linked_ms, forced_linked=True)
+    record_attempt(report, case, input_name, "automatic", baseline_verdict, baseline_ms)
 
     sys.stdout.buffer.write(baseline.stdout)
     sys.stderr.buffer.write(baseline.stderr)

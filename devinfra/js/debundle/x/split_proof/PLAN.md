@@ -261,15 +261,16 @@ The retry isolates the selected original unit, keeps its imports and ordinal, an
 
 ### One guarantee
 
-**Now.** Certified verdicts have three scopes, and each proves a different statement:
+**Now.** Every certified verdict states the same target theorem over the exact decoded source and emitted programs. The selector chooses a strategy and reports its evidence, premises, and proof level:
 
-| Scope                 | Selected by                                                                       | Proves                                                                                            |
-| --------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `closed-declarations` | Automatically, for a closed module of simple declarations, without `--structural` | Order kept: every ending matches. Moves: same successful states, both directions                  |
-| `linked-programs`     | Default                                                                           | In every allowed world, both programs finish normally in the same state                           |
-| `linked-structural-*` | `--structural`                                                                    | Exact linked schedule: every ending matches. Moves: same successful final states, both directions |
+| Strategy                   | Selected by                                            | Proves                                                                         |
+| -------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `compiled-slice`           | Automatically for applicable single-module inputs      | Order kept: all outcomes match. Supported moves: same successful final states. |
+| `structural`               | Automatically after slice; automatically chosen pivots | Preserved order: all outcomes match. Moves: same successful final states.      |
+| `compiled-replay-premised` | Automatically after structural                         | Same successful final states under checked replay premises.                    |
+| `generated-proof`          | Linked fallback                                        | Same successful final states under the generated Lean proof and host premises. |
 
-`--require all-outcomes|normal-completion` asks for a level.
+`every_ending_matches` comes from the selected theorem's guarantee, so a normal-completion proof reports `false` even when the decoded unit order is unchanged. If every attempted strategy refuses, `strategy_attempts` reports each strategy's name, reason code, and refusal text.
 
 The linked statement implies `NormalEquivalent` over the worlds that satisfy its host premises ([`ASTEquivalent.normal`](lean/EsmSplit/CoreJS/LinkedCertificate/Proof.lean)), so a linked or structural `normal-completion` verdict states the same guarantee.
 
@@ -299,13 +300,13 @@ During the replay rollout, `linked-programs` also reports `strategy` as `compile
 
 **Primitive logical replay census (2026-11-25).** BuildBuddy invocation [`30deb3b2-4a1a-4d91-a40a-1b6c73a1910e`](https://app.buildbuddy.io/invocation/30deb3b2-4a1a-4d91-a40a-1b6c73a1910e), based on `devel` plus the build repair in #20027, passed all 98 targets and collected 181 JSONL outputs. Four of the 43 linked-only inputs moved from generated proofs to compiled replay; 39 remain. The rule applies only to a single import-free source module whose linked schedules contain primitive expressions, binding reads and plain data records. Functions, calls and other syntax retain the existing fallback. No matching certified identity lost certification. The earlier census predates intervening `devel` changes and this run lacks 20 of its certified identities, including origin-dependent browser cases; the aggregate comparison is not a final no-loss gate.
 
-For singletons, the planned order is the compiled slice strategy, then the compiled structural schedule with automatically chosen pivots, then linked fallback. The slice applies to one source module with no imports, providers, or template objects; it certifies all outcomes when order is kept and normal completion otherwise. Its `SliceKind` and checked premises are reported as evidence under the same guarantee as the other strategies. The census predates this strategy and should be rerun after it lands.
+For singletons, the selector tries the compiled slice, structural schedule with automatically chosen pivots, compiled replay, then generated linked proof. The slice applies to one source module with no imports, providers, or template objects; it certifies all outcomes when order is kept and normal completion otherwise. Its checked premises are reported as evidence under the same guarantee as the other strategies. The strategy census predates this selector and should be rerun on the combined checker.
 
 **How.**
 
 1. Report every scope under the one guarantee.
-2. Pick the strategy automatically in the planned singleton order. Remove `--structural` and `--require`.
-3. Run the closed-declaration inputs through the remaining checker. In the census, structural certified all 30 inputs accepted by closed declarations, including all order-kept cases; retire that path when the automatic selector tries structural before linked fallback. [Declaration certificate](lean/EsmSplit/CoreJS/Declaration/Certificate.lean)
+2. Pick the strategy automatically in the singleton order above. Remove `--structural` and `--require`.
+3. Run the closed-declaration inputs through the remaining checker. The measured structural checker certified all 30 inputs accepted by closed declarations, including all order-kept cases; the closed-declaration proof path is retired.
 
 **Done when.** No CLI flag chooses a proof technique or level, and the closed-declaration path is gone.
 

@@ -30,8 +30,6 @@ export function split({
   spec,
   out,
   hostContract,
-  require: guarantee,
-  structural = false,
   checkOutput = false,
   allowExistingOut = false,
   deploymentOrigin,
@@ -54,9 +52,7 @@ export function split({
   const input = source ?? ast;
   const deployment = manifest ?? writeDeployment(input, spec, out);
   const args = [deployment, out];
-  if (guarantee) args.push("--require", guarantee);
   if (hostContract) args.push("--host-contract", hostContract);
-  if (structural) args.push("--structural");
   if (deploymentOrigin) args.push("--deployment-origin", deploymentOrigin);
   if (deploymentPreset) args.push("--deployment-preset", deploymentPreset);
   if (deploymentImportMap) args.push("--deployment-import-map", deploymentImportMap);
@@ -79,7 +75,12 @@ export function split({
     throw new Error(`lowersplit returned no JSON verdict: ${log}`, { cause: error });
   }
   assert(["certified", "rejected"].includes(verdict.status), log);
-  assert.equal(verdict.requested, guarantee ?? "normal-completion", log);
+  if (verdict.status === "certified") {
+    assert(["all-outcomes", "normal-completion"].includes(verdict.guarantee), log);
+    assert.equal(typeof verdict.target_theorem, "string", log);
+    assert.equal(typeof verdict.every_ending_matches, "boolean", log);
+    assert.equal(verdict.every_ending_matches, verdict.guarantee === "all-outcomes", log);
+  }
   assert.equal(result.status, verdict.status === "certified" ? 0 : 1, log);
 
   const files = filesUnder(out);

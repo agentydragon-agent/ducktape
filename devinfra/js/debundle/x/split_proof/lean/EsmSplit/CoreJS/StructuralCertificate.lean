@@ -68,11 +68,12 @@ def projectionHints (source : Lean.Json) (pivots : List Nat) : Except String (Li
 /-- The checked executions are exactly the original and generated graphs.
 Unchanged units run against the same opaque-code world in both graphs. -/
 def StructuralASTEquivalent (profile : HostProfile) (offered used : List StableIntrinsic) (source providers files : Lean.Json)
-    (plan : EsmSplit.Plan)
-    (deployment : Option LinkedDeployment.Input) (level : Guarantee) : Prop :=
-  used ⊆ offered ∧ ∃ pivots original candidate,
-    LinkedInput.decodeStructuralPair source providers files plan pivots profile deployment = .ok (original, candidate) ∧
-    ScheduleEquivalent level (StableIntrinsic.Worlds used) original candidate ∧ SameExports original candidate
+    (plan : EsmSplit.Plan) (deployment : Option LinkedDeployment.Input)
+    (decoded : LinkedInput.DecodedDeployment) (level : Guarantee) : Prop :=
+  used ⊆ offered ∧ ∃ pivots,
+    LinkedInput.decodeStructuralSingleton source providers files plan pivots profile deployment = .ok decoded ∧
+    ScheduleEquivalent level (StableIntrinsic.Worlds used) decoded.before decoded.after ∧
+    SameExports decoded.before decoded.after
 
 /-- Only a concretely lowered initializer can use one of the offered host values. -/
 def usedIntrinsics (offered : List StableIntrinsic) (original : Program) : List StableIntrinsic :=
@@ -91,20 +92,23 @@ private def certifyWith (recordPivots : Std.HashSet Nat) (pivots : List Nat) (pr
     (plan : EsmSplit.Plan)
     (deployment : Option LinkedDeployment.Input) :
     Except StructuralRefusal ((used : List StableIntrinsic) ×
-      (level : Guarantee) × StructuralProof ×
-        PLift (StructuralASTEquivalent profile offered used source providers files plan deployment level)) := do
-  match decoded : LinkedInput.decodeStructuralPair source providers files plan pivots profile deployment with
+      (level : Guarantee) × StructuralProof × (decoded : LinkedInput.DecodedDeployment) ×
+        PLift (StructuralASTEquivalent profile offered used source providers files plan deployment decoded level)) := do
+  match decoded : LinkedInput.decodeStructuralSingleton source providers files plan pivots profile deployment with
   | .error reason => throw reason
-  | .ok (original, candidate) =>
+  | .ok checked =>
+    let original := checked.before
+    let candidate := checked.after
     let used := usedIntrinsics offered original
     let ⟨level, method, ⟨certified⟩⟩ ← checkStructuralSchedule used original candidate recordPivots
-    return ⟨used, level, method, ⟨usedIntrinsics_subset offered original, pivots, original, candidate, decoded, certified⟩⟩
+    return ⟨used, level, method, checked,
+      ⟨usedIntrinsics_subset offered original, pivots, decoded, certified.1, certified.2⟩⟩
 
 def certifyStructuralASTs (profile : HostProfile) (offered : List StableIntrinsic) (source providers files : Lean.Json)
     (plan : EsmSplit.Plan) (deployment : Option LinkedDeployment.Input) :
     Except StructuralRefusal ((used : List StableIntrinsic) ×
-      (level : Guarantee) × StructuralProof ×
-        PLift (StructuralASTEquivalent profile offered used source providers files plan deployment level)) := do
+      (level : Guarantee) × StructuralProof × (decoded : LinkedInput.DecodedDeployment) ×
+        PLift (StructuralASTEquivalent profile offered used source providers files plan deployment decoded level)) := do
   let pivots ← (pivotHints source plan).mapError StructuralRefusal.unclassified
   let set := Std.HashSet.ofList pivots
   let check := fun ids => certifyWith set ids profile offered source providers files plan deployment

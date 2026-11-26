@@ -130,6 +130,9 @@ for (const [width, reversedKeys, readPosition] of [
   const { verdict, log } = lower(files.sourceFile, files.specFile, out);
   assertCertified(verdict, log);
   assert.equal(verdict.strategy, "generated-proof", log);
+  // Generated linked proofs establish normal completion even when the unit
+  // schedule is unchanged; the verdict must reflect the theorem, not order.
+  assert.equal(verdict.every_ending_matches, false, log);
   assert(verdict.replay_blockers.includes("property-read"), log);
   assert(verdict.replay_blockers.includes("object-accessor"), log);
   for (const file of [files.sourceFile, path.join(out, entry)]) {

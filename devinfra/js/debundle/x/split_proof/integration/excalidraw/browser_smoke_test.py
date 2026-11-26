@@ -107,8 +107,6 @@ def certify_deployment(runfiles: Runfiles, editor: Path, origin: str, pinned: di
         resolve(runfiles, os.environ["LOWERSPLIT"]),
         deployment,
         out,
-        "--require",
-        "normal-completion",
         "--host-contract",
         profile,
         "--deployment-origin",
@@ -117,7 +115,6 @@ def certify_deployment(runfiles: Runfiles, editor: Path, origin: str, pinned: di
         "native-browser-record@1",
         "--deployment-import-map",
         "empty@1",
-        "--structural",
     ]
     verdicts = []
     for stage, args in [("emit", []), ("check-output", ["--check-output"])]:
@@ -126,7 +123,8 @@ def certify_deployment(runfiles: Runfiles, editor: Path, origin: str, pinned: di
         assert run.returncode == 0, run.stdout + run.stderr
         verdict = json.loads(run.stdout.strip().splitlines()[-1])
         assert verdict["status"] == "certified", verdict
-        assert verdict["requested"] == verdict["guarantee"] == "normal-completion", verdict
+        assert verdict["guarantee"] == "normal-completion", verdict
+        assert verdict["every_ending_matches"] is False, verdict
         assert verdict["scope"] == "linked-structural-moves", verdict
         assert verdict["hostProfile"] == "browser-page", verdict
         for premise in ["Math.PI@1:", "native-browser-record@1:", "empty@1:"]:
@@ -443,7 +441,6 @@ async def test_bare_import(
             resolve(runfiles, os.environ["LOWERSPLIT"]),
             write_deployment(tmp_path / "deployment.json", entry, spec),
             out,
-            "--structural",
             "--host-contract",
             profile,
             "--deployment-origin",
@@ -531,7 +528,6 @@ async def test_native_metadata_preset(
             resolve(runfiles, os.environ["LOWERSPLIT"]),
             write_deployment(tmp_path / "deployment.json", source, spec),
             out,
-            "--structural",
             "--host-contract",
             profile,
             "--deployment-origin",

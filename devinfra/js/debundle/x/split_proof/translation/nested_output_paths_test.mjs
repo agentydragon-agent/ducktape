@@ -82,9 +82,10 @@ writeFileSync(
   })
 );
 const certifiedOut = path.join(work, "certified-nested");
-const certified = split({ source: bundlePath, spec: specPath, out: certifiedOut, require: "all-outcomes" });
+const certified = split({ source: bundlePath, spec: specPath, out: certifiedOut });
 assert.equal(certified.status, "certified", certified.log);
 assert.equal(certified.guarantee, "all-outcomes");
+assert.equal(certified.verdict.every_ending_matches, true);
 assert.equal(
   spawnSync(
     process.execPath,
@@ -108,7 +109,6 @@ const wrongTarget = split({
   source: bundlePath,
   spec: specPath,
   out: certifiedOut,
-  require: "all-outcomes",
   checkOutput: true,
 });
 assert.equal(wrongTarget.status, "refused", wrongTarget.log);
@@ -116,7 +116,7 @@ assert.match(wrongTarget.reason, /output module public\/entry\.mjs differs from 
 
 // A trailing separator names the same output directory. Publication stages beside it.
 const slashOut = path.join(work, "certified-trailing-slash");
-const slashed = split({ source: bundlePath, spec: specPath, out: slashOut + path.sep, require: "all-outcomes" });
+const slashed = split({ source: bundlePath, spec: specPath, out: slashOut + path.sep });
 assert.equal(slashed.status, "certified", slashed.log);
 assert.deepEqual(readdirSync(slashOut).sort(), ["other", "parts", "public"]);
 assert.deepEqual(

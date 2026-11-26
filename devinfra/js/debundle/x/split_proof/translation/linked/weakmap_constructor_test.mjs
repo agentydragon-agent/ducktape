@@ -20,22 +20,20 @@ function fixture(name, crossed, init = "new WeakMap()") {
 }
 
 const neutral = fixture("neutral", "var phase = 1");
-for (const [scope, flags, reason, reasonCode] of [
-  [
-    "linked-structural",
-    ["--structural"],
-    /unit 1 is not a local allocating declaration/,
-    "structural_non_local_allocation",
-  ],
-  ["linked-programs", [], /host value window\.WeakMap is constructed/, undefined],
-]) {
-  const { verdict } = lower(neutral.files.sourceFile, neutral.files.specFile, neutral.out, [...opts, ...flags], scope);
-  assert.equal(verdict.status, "rejected");
-  assert.equal(verdict.guarantee, null);
-  assert.match(verdict.reason, reason);
-  if (reasonCode) assert.equal(verdict.reason_code, reasonCode);
-  assert(!existsSync(neutral.out));
-}
+const { verdict: neutralVerdict } = lower(neutral.files.sourceFile, neutral.files.specFile, neutral.out, opts);
+assert.equal(neutralVerdict.status, "rejected");
+assert.equal(neutralVerdict.guarantee, null);
+assert.equal(neutralVerdict.reason_code, "structural_non_local_allocation");
+assert.match(neutralVerdict.reason, /unit 1 is not a local allocating declaration/);
+assert(neutralVerdict.strategy_attempts.some((attempt) => attempt.strategy === "compiled-slice"));
+assert(neutralVerdict.strategy_attempts.some((attempt) => attempt.strategy === "structural"));
+assert(
+  neutralVerdict.strategy_attempts.some(
+    (attempt) =>
+      attempt.strategy === "generated-proof" && /host value window\.WeakMap is constructed/.test(attempt.reason)
+  )
+);
+assert(!existsSync(neutral.out));
 
 // No property or prototype tag encodes [[WeakMapData]]. The inherited brand
 // string and instanceof both accept this ordinary fake. A native method does not.
@@ -96,13 +94,7 @@ for (const [name, crossed] of [
   ["shadowed", "export const WeakMap = " + sentinelCtor],
 ]) {
   const test = fixture(name, crossed);
-  const { verdict } = lower(
-    test.files.sourceFile,
-    test.files.specFile,
-    test.out,
-    ["--structural", ...opts],
-    "linked-structural"
-  );
+  const { verdict } = lower(test.files.sourceFile, test.files.specFile, test.out, opts, "linked-structural");
   assert.equal(verdict.status, "rejected", JSON.stringify(verdict));
   assert(!existsSync(test.out));
   assert.deepEqual(observe(test.files.sourceFile, name), { log: [], shared: true });

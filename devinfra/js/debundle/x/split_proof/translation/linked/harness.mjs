@@ -151,8 +151,6 @@ export function lower(source, spec, out, extra = [], scope = null) {
   for (let i = 0; i < extra.length; i++) {
     const flag = extra[i];
     if (flag === "--check-output") options.checkOutput = true;
-    else if (flag === "--structural") options.structural = true;
-    else if (flag === "--require") options.require = extra[++i];
     else if (flag === "--host-contract") options.hostContract = extra[++i];
     else if (flag === "--deployment-origin") options.deploymentOrigin = extra[++i];
     else if (flag === "--deployment-preset") options.deploymentPreset = extra[++i];
@@ -164,21 +162,38 @@ export function lower(source, spec, out, extra = [], scope = null) {
   cached.push({ options, result });
   certifiedByFixture.set(fixtureKey(source, spec), cached);
   if (process.env.SPLIT_PROOF_TIMINGS === "1") process.stderr.write(result.stderr);
-  if (scope === null) {
-    if (result.status === "certified") {
-      assert(
-        [
-          "closed-declarations",
-          "linked-programs",
-          "linked-slice-order-kept",
-          "linked-slice-moves",
-          "linked-slice-certified-bindings",
-          "linked-slice-heritage",
-        ].includes(result.scope),
-        `unexpected linked strategy scope ${result.scope}: ${result.log}`
-      );
+  if (result.status === "certified") {
+    assert(
+      [
+        "linked-programs",
+        "linked-structural-order",
+        "linked-structural-pivot",
+        "linked-structural-moves",
+        "linked-slice-order-kept",
+        "linked-slice-moves",
+        "linked-slice-certified-bindings",
+        "linked-slice-heritage",
+      ].includes(result.scope),
+      `unexpected linked strategy scope ${result.scope}: ${result.log}`
+    );
+    if (scope?.startsWith("linked-structural")) assert.equal(result.verdict.strategy, "structural", result.log);
+    else if (scope?.startsWith("linked-slice")) assert.equal(result.verdict.strategy, "compiled-slice", result.log);
+    else if (scope === "linked-programs") {
+      assert(["compiled-replay-premised", "generated-proof"].includes(result.verdict.strategy), result.log);
     }
-  } else assert.equal(result.scope, scope, result.log);
+  } else if (scope === "linked-structural") {
+    assert(
+      result.verdict.strategy_attempts?.some((attempt) => attempt.strategy === "structural"),
+      result.log
+    );
+  } else if (scope === "linked-programs") {
+    assert(
+      result.verdict.strategy_attempts?.some((attempt) =>
+        ["compiled-replay-premised", "generated-proof"].includes(attempt.strategy)
+      ),
+      result.log
+    );
+  }
   return { verdict: result.verdict, log: result.log };
 }
 
@@ -313,6 +328,8 @@ export function workerSplit(name, source, entryUnits = ["#1"]) {
 export function assertCertified(verdict, log) {
   assert.equal(verdict.status, "certified", log);
   assert(["all-outcomes", "normal-completion"].includes(verdict.guarantee), log);
+  assert.equal(typeof verdict.target_theorem, "string", log);
+  assert.equal(verdict.every_ending_matches, verdict.guarantee === "all-outcomes", log);
 }
 
 export function assertCertifiedResult({ files, out, verdict, log }, result) {
@@ -363,8 +380,7 @@ export function structuralSplit(name, source, modules, provider = "") {
   const dir = path.join(root, name);
   const files = prepare(dir, { source, provider, spec: { entry, modules } });
   const out = path.join(dir, "out");
-  const run = (scope, ...args) =>
-    lower(files.sourceFile, files.specFile, out, ["--structural", ...args], scope).verdict;
+  const run = (scope, ...args) => lower(files.sourceFile, files.specFile, out, args, scope).verdict;
   return { ...files, dir, out, run };
 }
 

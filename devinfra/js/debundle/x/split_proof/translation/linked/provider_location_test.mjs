@@ -30,7 +30,6 @@ const files = prepare(dir, {
 const host = path.join(dir, "host.json");
 writeFileSync(host, JSON.stringify({ profile: "browser-page" }));
 const opts = [
-  "--structural",
   "--deployment-origin",
   "https://example.org",
   "--host-contract",

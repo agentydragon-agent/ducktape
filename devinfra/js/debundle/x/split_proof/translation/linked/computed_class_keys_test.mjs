@@ -87,7 +87,7 @@ if (runCase("async-iterator-symbol")) {
   );
   assertCertifiedResult(run, true);
   assert.deepEqual(
-    run.verdict.assumptions,
+    run.verdict.premises,
     run.verdict.scope === "linked-slice-order-kept"
       ? []
       : [

@@ -5,7 +5,7 @@ import EsmSplit.LowerSplit.InstanceGenerator
 /-!
 # Certify and publish a JavaScript deployment.
 
-    lowersplit <deployment.json> <outdir> [--require <all-outcomes|normal-completion>] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN]]
+    lowersplit <deployment.json> <outdir> [--check-output] [--host-contract PROFILE.json] [--deployment-origin ORIGIN]
     lowersplit --diagnostic <deployment.json> <outdir> [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]
     lowersplit --generate-instance <deployment.json> <Generated.lean> [--namespace NAME] [--variant SPEC]... [--control SPEC]...
 

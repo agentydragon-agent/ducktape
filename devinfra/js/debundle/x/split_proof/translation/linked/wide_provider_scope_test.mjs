@@ -22,7 +22,7 @@ const files = prepare(dir, {
   },
 });
 const out = path.join(dir, "out");
-const options = ["--structural"];
+const options = [];
 const { verdict: proof, log } = lower(files.sourceFile, files.specFile, out, options, "linked-structural-order");
 assertCertified(proof, log);
 assert.deepEqual(
