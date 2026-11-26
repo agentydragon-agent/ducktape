@@ -73,7 +73,7 @@ if (includesCase("shared-ecmascript-symbol-node")) {
 if (includesCase("shadowed-symbol-is-not-intrinsic")) {
   const shadowed = fixture(
     "shadowed-symbol-is-not-intrinsic",
-    'const result = ((Symbol) => Symbol.iterator)({ iterator: "shadowed" }); export { result };'
+    'const read = (Symbol) => Symbol.iterator; const result = read({ iterator: "shadowed" }); export { result };'
   );
   const verdict = shadowed.run("--host-contract", profile);
   assert.equal(verdict.status, "certified", JSON.stringify(verdict));
