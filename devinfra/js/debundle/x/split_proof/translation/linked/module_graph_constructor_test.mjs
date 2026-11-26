@@ -54,6 +54,7 @@ const altered = generate(ast);
 writeFileSync(consumer, altered);
 const wrongCell = split({ source, spec, out, require: "all-outcomes", checkOutput: true, timeoutMs: 90_000 });
 assert.equal(wrongCell.status, "refused", wrongCell.log);
+assert.equal(wrongCell.scope, "terminal-declarations", wrongCell.log);
 assert.equal(readFileSync(consumer, "utf8"), altered, "readback refusal changed existing bytes");
 writeFileSync(consumer, before);
 
@@ -76,6 +77,7 @@ const ownerResult = split({
   timeoutMs: 90_000,
 });
 assert.equal(ownerResult.status, "refused", ownerResult.log);
+assert.equal(ownerResult.reasonCode, "no_constructed_rule", ownerResult.log);
 assert.equal(readFileSync(sentinel, "utf8"), "preserve existing bytes\n");
 
 assert(!existsSync(leanMarker), "a split or check-output invoked lean from PATH");
