@@ -275,8 +275,9 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
           let _ ← IO.ofExcept (prepared.certify files)
           pure (.ok ())
       match checked with
-      | .ok _ => return ← emitVerdict request.label (.ok level) "closed-declarations"
-          (profileVerdict profile {} pageEnvironmentUsed)
+      | .ok _ => do
+        let used := profileVerdict profile {} pageEnvironmentUsed
+        return ← emitVerdict request.label (.ok level) "closed-declarations" used
       | .error refusal => return ← emitRefusal request.label refusal "closed-declarations"
     catch e => return ← emitVerdict request.label (.error e.toString) "closed-declarations"
   if structural then
@@ -293,8 +294,10 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
             requireGuarantee request level
             pure (.ok (used, level, proof))
       match checked with
-      | .ok (used, level, proof) => return ← emitStructural options used level proof
-          (pageEnvironmentUsed || options.browserOptions.nativeRecord || options.browserOptions.emptyMap)
+      | .ok (used, level, proof) => do
+        let pageEnvironmentUsed :=
+          pageEnvironmentUsed || options.browserOptions.nativeRecord || options.browserOptions.emptyMap
+        return ← emitStructural options used level proof pageEnvironmentUsed
       | .error refusal => return ← emitRefusal request.label refusal "linked-structural"
     catch e => return ← emitVerdict request.label (.error e.toString) "linked-structural"
   try
@@ -416,8 +419,9 @@ private def runDeployment (manifest : DeploymentManifest) (out work : System.Fil
           requireGuarantee request level
           pure (.ok (used, level, proof))
     match checked with
-    | .ok (used, level, proof) => emitStructural options used level proof
-        (pageEnvironmentUsed || browserOptions.nativeRecord || browserOptions.emptyMap)
+    | .ok (used, level, proof) => do
+      let pageEnvironmentUsed := pageEnvironmentUsed || browserOptions.nativeRecord || browserOptions.emptyMap
+      emitStructural options used level proof pageEnvironmentUsed
     | .error refusal => emitRefusal request.label refusal "linked-structural"
   catch e => emitVerdict request.label (.error e.toString) "linked-structural"
 
