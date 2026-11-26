@@ -61,7 +61,7 @@ theorem typeField_of_lowerTyp (node : Json) (kind : String)
     exact False.elim (nonempty typeMatch)
   | ok found =>
     simp [h, Except.toOption] at typeMatch
-    simpa [typeMatch] using h
+    simp [typeMatch]
 
 /-- Input facts for Q's model and the actual authored spec, with no check of
 any candidate program, emitted AST, plan validity, placement or execution. -/

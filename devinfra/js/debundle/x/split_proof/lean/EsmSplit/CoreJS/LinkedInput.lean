@@ -264,15 +264,15 @@ private theorem parse_two_export (declaration exportNode : Json) (p : Parsed)
       exportNode.getObjVal? "declaration" = .ok .null ∧
       exportNode.getObjValAs? (Array Json) "specifiers" = .ok specs := by
   simp [parse, declType, exportType, Except.mapError, bind, Except.bind, pure,
-    Except.pure, Functor.map, Except.map, throw] at parsed
+    Except.pure, throw] at parsed
   cases hLower : BodyFormat.lower .linked .empty [] 0 none declaration false with
   | error reason => simp [hLower] at parsed
   | ok lowered =>
     simp [hLower, namespaceCaptures, pure, Except.pure] at parsed
     cases hAttributes : ModuleInput.noAttributes exportNode with
-    | error reason => simp [hAttributes, pure, Except.pure] at parsed
+    | error reason => simp [hAttributes] at parsed
     | ok _ =>
-      simp [hAttributes, pure, Except.pure] at parsed
+      simp [hAttributes] at parsed
       cases hSource : exportNode.getObjVal? "source" with
       | error reason => simp [hSource] at parsed
       | ok source =>
