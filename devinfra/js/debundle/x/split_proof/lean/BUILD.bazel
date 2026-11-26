@@ -1766,6 +1766,7 @@ lean_proof_test(
     required_theorems = [
         "EsmSplit.LowerSplit.TerminalConstTyped.admitted_decode",
         "EsmSplit.LowerSplit.TerminalConstTyped.decode_encode",
+        "EsmSplit.LowerSplit.TerminalConstTyped.staged_sound",
     ],
     deps = [":terminal_const_typed"],
 )

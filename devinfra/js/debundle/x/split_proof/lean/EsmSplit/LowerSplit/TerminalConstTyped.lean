@@ -110,7 +110,23 @@ theorem admitted_decode (declaration exportNode : Json) (hashbang : Option Strin
     decode (encode declaration exportNode hashbang) = .ok (construct source.value) :=
   decode_encode declaration exportNode hashbang source.value source.declarationDecoded source.exportsDecoded
 
+/-- The output decoder composes with the existing placement and live-cell proof.
+This does not identify the original JavaScript or the printed files with the model. -/
+theorem staged_sound (declaration exportNode : Json) (hashbang : Option String)
+    (source : Source declaration exportNode) :
+    decode (encode declaration exportNode hashbang) = .ok (construct source.value) ∧
+    CoreJS.Places [(0, "provider.mjs")]
+      (TerminalConstConstruction.source source.value) (construct source.value) ∧
+    CoreJS.LinkedBehavior.SameExports (TerminalConstConstruction.source source.value) (construct source.value) ∧
+    (∀ w fuel, CoreJS.runProgram w fuel (TerminalConstConstruction.source source.value) =
+      CoreJS.runProgram w fuel (construct source.value)) ∧
+    (construct source.value).evalOrder = request.order ++ [request.entry] := by
+  refine ⟨admitted_decode declaration exportNode hashbang source, ?_⟩
+  exact ⟨(construct_sound source.value).1, (construct_sound source.value).2.1,
+    (construct_sound source.value).2.2, by cbv⟩
+
 #print axioms decode_encode
 #print axioms admitted_decode
+#print axioms staged_sound
 
 end EsmSplit.LowerSplit.TerminalConstTyped
