@@ -29,10 +29,8 @@ def nodes (program : Json) : Except String (Array Json) := do
     for unit in (← split statement) do units := units.push unit
   return units
 
-/-- Validate source unit positions before using any ranges in the printer. Model-only ASTs
-need no positions and use `nodes` directly. -/
-def checkedNodes (program : Json) (source : String) : Except String (Array Json) := do
-  let units ← nodes program
+/-- Validate the ranges without changing or renumbering the source units. -/
+def validateRanges (units : Array Json) (source : String) : Except String Unit := do
   let offsets := ESTreeSource.ranges source
   for ast in units do
     offsets.validate ast
@@ -40,6 +38,22 @@ def checkedNodes (program : Json) (source : String) : Except String (Array Json)
       then (ast.getObjVal? "declaration").toOption.getD .null else ast
     if let .ok ds := decl.getObjValAs? (Array Json) "declarations" then
       for d in ds do offsets.validate d
+
+/-- Validate source unit positions before using any ranges in the printer. Model-only ASTs
+need no positions and use `nodes` directly. -/
+def checkedNodes (program : Json) (source : String) : Except String (Array Json) := do
+  let units ← nodes program
+  validateRanges units source
   return units
+
+/-- Range validation retains the exact nodes and therefore their original ordinals. -/
+theorem checkedNodes_nodes {program : Json} {source : String} {units : Array Json}
+    (accepted : checkedNodes program source = .ok units) : nodes program = .ok units := by
+  cases hn : nodes program with
+  | error reason => simp [checkedNodes, hn, bind, Except.bind] at accepted
+  | ok found =>
+    cases hv : validateRanges found source with
+    | error reason => simp [checkedNodes, hn, hv, bind, Except.bind] at accepted
+    | ok _ => simpa [checkedNodes, hn, hv, bind, Except.bind, pure, Except.pure] using accepted
 
 end ESTreeUnits
