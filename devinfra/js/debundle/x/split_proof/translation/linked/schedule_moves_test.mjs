@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse } from "acorn";
@@ -161,11 +161,20 @@ for (const move of [safe, multipleMoves]) {
     const changed = printed.replace("amount + 1", "amount + 2");
     assert.notEqual(changed, printed);
     writeFileSync(worker, changed);
-    const model = probeLinkedModel({ ...request(move, directory), providers: ["provider.mjs"] });
+    const model = probeLinkedModel({
+      ...request(move, directory),
+      providers: ["provider.mjs"],
+      host: { profile: "browser-page" },
+    });
     assert.equal(model.status, "refused", JSON.stringify(model));
     assert.equal(model.reason_code, "linked_input", JSON.stringify(model));
     assert.match(model.reason, /emitted syntax differs from original unit 3/);
     assertPublicEmissionRefused(move.manifest, directory);
+    assertPublicRecheckRefused(move.manifest, directory);
+    const tampered = path.join(path.dirname(directory), "tampered");
+    cpSync(directory, tampered, { recursive: true });
+    const { Bg } = await import(pathToFileURL(path.join(tampered, "entry.mjs")).href);
+    assert.equal(Bg({ amount: 22 }), 24);
   });
 }
 
