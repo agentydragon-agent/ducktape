@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { parse } from "acorn";
+import { dump } from "../parser.mjs";
 import { writeDeployment } from "../testing/deployment_manifest.mjs";
 import { split } from "../testing/split.mjs";
 import { generate } from "astring";
@@ -272,6 +273,21 @@ export function forcePreview(files, directory) {
   assert([0, 1].includes(preview.status), preview.error?.message ?? preview.stdout + preview.stderr);
   assert.match(preview.stdout, /model diagnostic: /, preview.stdout + preview.stderr);
   return certification;
+}
+
+export function runLinkedCoreJSModel(files, directory, exportName = "result", status = 0) {
+  const checker = process.env.LINKED_MODEL_CHECKER;
+  assert(checker, "LINKED_MODEL_CHECKER is required");
+  const parse = (file) => dump(readFileSync(file, "utf8"), { includeOpaqueCaptures: true });
+  const input = {
+    source: parse(files.sourceFile),
+    spec: readFileSync(files.specFile, "utf8"),
+    files: Object.fromEntries(readdirSync(directory).map((name) => [name, parse(path.join(directory, name))])),
+    export: exportName,
+  };
+  const run = spawnSync(checker, [], { encoding: "utf8", input: JSON.stringify(input) });
+  assert.equal(run.status, status, run.error?.message ?? run.stdout + run.stderr);
+  return JSON.parse(run.stdout);
 }
 
 export function runSplit(name, fixture) {
