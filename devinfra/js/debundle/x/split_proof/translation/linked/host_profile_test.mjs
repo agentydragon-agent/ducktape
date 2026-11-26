@@ -397,7 +397,8 @@ if (includesCase("profile-premise-sources")) {
   const fixtureWithProfileUse = fixture(
     "profile-premise-sources",
     `if (false) console.log("must not run");
-    export const result = typeof window;`
+    const result = typeof window;
+    export { result };`
   );
   const verdict = split({
     source: fixtureWithProfileUse.sourceFile,
@@ -423,7 +424,9 @@ if (includesCase("profile-premise-sources")) {
 
   const deadSymbol = fixture(
     "profile-premise-dead-symbol",
-    "if (false) { const key = Symbol.iterator; } export const result = typeof window;"
+    `if (false) { const key = Symbol.iterator; }
+    const result = typeof window;
+    export { result };`
   );
   const symbolVerdict = deadSymbol.run("--host-contract", profile);
   assert.equal(symbolVerdict.status, "certified", JSON.stringify(symbolVerdict));
