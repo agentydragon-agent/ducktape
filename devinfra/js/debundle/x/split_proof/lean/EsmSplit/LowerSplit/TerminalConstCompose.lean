@@ -11,6 +11,11 @@ open CoreJS CoreJS.TerminalConstConstruction
 open EsmSplit.LowerSplit.TerminalConstInputBridge
 open EsmSplit.LowerSplit.TerminalConstTyped
 
+/-- The decoder and source-range validator see the same original ordinals. -/
+theorem admitted_nodes {original sourceText specText}
+    (input : Admitted original sourceText specText) : ESTreeUnits.nodes original = .ok input.nodes :=
+  ESTreeUnits.checkedNodes_nodes input.nodesMatch
+
 /-- The two proof branches describe the very same raw AST constructor. -/
 theorem encode_eq_emittedAST (declaration exportNode : Json) (hashbang : Option String) :
     encode declaration exportNode hashbang = emittedAST declaration exportNode hashbang := by
