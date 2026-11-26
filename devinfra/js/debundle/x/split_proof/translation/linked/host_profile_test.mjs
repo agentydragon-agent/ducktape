@@ -444,14 +444,14 @@ if (includesCase("profile-premise-sources")) {
   );
   const symbolVerdict = deadSymbol.run("--host-contract", profile);
   assert.equal(symbolVerdict.status, "certified", JSON.stringify(symbolVerdict));
-  assert.deepEqual(browserLoweringAssumptions(symbolVerdict.verdict.assumptions), [
+  assert.deepEqual(browserLoweringAssumptions(symbolVerdict.assumptions), [
     "the ambient Symbol binding is the unmodified ECMAScript intrinsic throughout initialization",
     "the intrinsic Symbol.iterator property is the realm's well-known symbol and reading it has no observable effects throughout initialization",
   ]);
-  assert.deepEqual(browserProfileAssumptions(symbolVerdict.verdict.assumptions), [
+  assert.deepEqual(browserProfileAssumptions(symbolVerdict.assumptions), [
     "the intrinsic Symbol operations return fresh symbols and canonical well-known symbols without observable effects throughout initialization",
   ]);
-  assert.deepEqual(browserObservedAssumptions(symbolVerdict.verdict.assumptions), [
+  assert.deepEqual(browserObservedAssumptions(symbolVerdict.assumptions), [
     "window, globalThis, and self return the same page global object throughout initialization",
     "typeof window is object without observable effects throughout initialization",
   ]);
