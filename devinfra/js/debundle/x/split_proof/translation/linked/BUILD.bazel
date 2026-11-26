@@ -55,6 +55,16 @@ _LONG_TIMEOUT_TESTS = [
 ]
 
 js_test(
+    name = "static_provider_boundary_input_test",
+    data = glob(["fixtures/static_provider_boundary/**/*.mjs"]) + [
+        "//devinfra/js/debundle/x/split_proof/lean:provider_input_boundary_test_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
+    ],
+    entry_point = "static_provider_boundary_input_test.mjs",
+    env = {"PROVIDER_BOUNDARY_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:provider_input_boundary_test_runner)"},
+)
+
+js_test(
     name = "joint_static_test",
     size = "medium",
     data = _TEST_DATA + [
@@ -83,7 +93,6 @@ js_test(
         "arrays_test",
         "async_methods_test",
         "bitwise_test",
-        "classes_test",
         "derived_defaults_test",
         "derived_object_parameters_test",
         "derived_fields_test",
@@ -142,6 +151,7 @@ js_test(
     )
     for name, shards in [
         ("browser_globals_test", 4),
+        ("classes_test", 5),
         ("computed_class_keys_test", 4),
         ("conditional_super_test", 3),
         ("default_parameters_test", 3),
