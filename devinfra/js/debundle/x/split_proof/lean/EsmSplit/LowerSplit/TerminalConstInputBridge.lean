@@ -87,25 +87,27 @@ theorem admitted_nodes_pair {original sourceText specText}
 theorem classify_pair (declaration exportNode : Json)
     (classified : classify [0] #[declaration, exportNode] = .ok [1]) :
     Lower.typ declaration = "VariableDeclaration" ∧
+    Lower.str (Lower.fld declaration "kind") = "const" ∧
     Lower.typ exportNode = "ExportNamedDeclaration" ∧
+    Lower.isNull (Lower.fld exportNode "declaration") = true ∧
     Lower.isNull (Lower.fld exportNode "source") = true := by
   by_cases declOk : Lower.typ declaration = "VariableDeclaration" ∧
       Lower.str (Lower.fld declaration "kind") = "const"
   · by_cases exportOk : (Lower.typ exportNode = "ExportNamedDeclaration" ∧
         Lower.isNull (Lower.fld exportNode "declaration") = true) ∧
         Lower.isNull (Lower.fld exportNode "source") = true
-    · exact ⟨declOk.1, exportOk.1.1, exportOk.2⟩
-    · simp [classify, declOk, exportOk, bind, Except.bind, pure, Except.pure, throw,
-        MonadExceptOf.throw] at classified
-  · simp [classify, declOk, bind, Except.bind, pure, Except.pure, throw,
-      MonadExceptOf.throw] at classified
+    · exact ⟨declOk.1, declOk.2, exportOk.1.1, exportOk.1.2, exportOk.2⟩
+    · simp [classify, declOk, exportOk, bind, Except.bind, pure, Except.pure, throw] at classified
+  · simp [classify, declOk, bind, Except.bind, pure, Except.pure, throw] at classified
 
 theorem admitted_source_shape {original sourceText specText}
     (admitted : Admitted original sourceText specText) :
     ∃ declaration exportNode,
       admitted.nodes = #[declaration, exportNode] ∧
       Lower.typ declaration = "VariableDeclaration" ∧
+      Lower.str (Lower.fld declaration "kind") = "const" ∧
       Lower.typ exportNode = "ExportNamedDeclaration" ∧
+      Lower.isNull (Lower.fld exportNode "declaration") = true ∧
       Lower.isNull (Lower.fld exportNode "source") = true := by
   obtain ⟨declaration, exportNode, nodesEq⟩ := admitted_nodes_pair admitted
   have classified : classify [0] #[declaration, exportNode] = .ok [1] := by
