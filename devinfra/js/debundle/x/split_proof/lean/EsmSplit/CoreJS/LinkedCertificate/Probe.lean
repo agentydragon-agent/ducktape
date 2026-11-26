@@ -434,11 +434,16 @@ private def observePremises (profile : HostProfile) (source candidate : Program)
     | .fuel => ({} : HostPremises)
   let left := observed source
   let right := observed candidate
-  let profileFacts :=
+  let loweringFacts :=
     ((profileUsesProgram source ++ profileUsesProgram candidate).flatMap (factsForProfileUse profile)).eraseDups
+  -- Report premises that justified the lowered CoreJS first, in its deterministic tree
+  -- traversal order. Concrete execution can also encounter the same premise (for example,
+  -- reading Symbol.iterator after the lowering has relied on the ambient Symbol binding);
+  -- append those observations so they cannot reorder the lowering contract.
+  let profileFacts := (loweringFacts ++ left.profileFacts ++ right.profileFacts).eraseDups
   return { typeofBindings := (left.typeofBindings ++ right.typeofBindings).eraseDups.mergeSort (fun a b => a.1 ≤ b.1)
            refs := (left.refs ++ right.refs).eraseDups.reverse,
-           profileFacts := (left.profileFacts ++ right.profileFacts ++ profileFacts).eraseDups }
+           profileFacts := profileFacts }
 
 /-- Find the concrete fuel witness before generating the all-world proof. -/
 def probeWitness (profile : HostProfile) (source candidate : Program) : Except Refusal (ProbeWitness source candidate) :=
