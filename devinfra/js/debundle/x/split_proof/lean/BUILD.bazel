@@ -733,6 +733,7 @@ lean_library(
     deps = [
         ":lowersplit_support",
         ":lowersplit_workflows",
+        ":terminal_const_input_bridge",
         ":terminal_export_artifact",
     ],
 )
@@ -1708,6 +1709,24 @@ lean_library(
         ":sparse_checked_artifact",
         ":terminal_const_construction",
     ],
+)
+
+lean_library(
+    name = "terminal_const_input_bridge",
+    srcs = ["EsmSplit/LowerSplit/TerminalConstInputBridge.lean"],
+    deps = [":terminal_const_input"],
+)
+
+lean_proof_test(
+    name = "terminal_const_input_bridge_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.LowerSplit.TerminalConstInputBridge"],
+    required_theorems = [
+        "EsmSplit.LowerSplit.TerminalConstInputBridge.admit",
+        "EsmSplit.LowerSplit.TerminalConstInputBridge.input_sound",
+        "EsmSplit.LowerSplit.TerminalConstInputBridge.modeled_sound",
+    ],
+    deps = [":terminal_const_input_bridge"],
 )
 
 lean_proof_test(
