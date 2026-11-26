@@ -408,7 +408,13 @@ private def opaqueConstructorFacts (profile : HostProfile) (name : String) : Lis
 private def factsForProfileUse (profile : HostProfile) : ProfileUse → List String
   | .unary .toString => (profile.capabilityPremise? .recordedStringConversion).toList
   | .unary _ => []
-  | .prim .freshSymbol | .prim (.wellKnownSymbol _) => (profile.capabilityPremise? .ambientSymbols).toList
+  | .prim .freshSymbol =>
+    ((profile.globalEntry? "Symbol").bind (·.premise)).toList ++
+      (profile.capabilityPremise? .ambientSymbols).toList
+  | .prim (.wellKnownSymbol symbol) =>
+    ((profile.globalEntry? "Symbol").bind (·.premise)).toList ++
+      ((profile.memberEntry? "Symbol" symbol.member).bind (·.premise)).toList ++
+      (profile.capabilityPremise? .ambientSymbols).toList
   | .prim (.opaqueConstructorRef name) => opaqueConstructorFacts profile name
   | .prim .log => recordedPrimitiveFacts profile "console" "log" .log
   | .prim .create => recordedPrimitiveFacts profile "Object" "create" .create

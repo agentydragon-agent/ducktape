@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   assertCertifiedResult,
+  browserLoweringAssumptions,
   browserProfileAssumptions,
   browserObservedAssumptions,
   lower,
@@ -41,12 +42,13 @@ const method = fixture(
 assert.match(method.run().reason, /unsupported computed class key/);
 const run = lower(method.sourceFile, method.specFile, method.out, options);
 assertCertifiedResult({ ...run, files: method, out: method.out }, true);
-assert.deepEqual(browserObservedAssumptions(run.verdict.assumptions), [
-  "Symbol.iterator is the realm's well-known symbol throughout initialization",
-  premise,
+assert.deepEqual(browserObservedAssumptions(run.verdict.assumptions), [premise]);
+assert.deepEqual(browserLoweringAssumptions(run.verdict.assumptions), [
+  "the ambient Symbol binding is the unmodified ECMAScript intrinsic throughout initialization",
+  "the intrinsic Symbol.iterator property is the realm's well-known symbol and reading it has no observable effects throughout initialization",
 ]);
 assert.deepEqual(browserProfileAssumptions(run.verdict.assumptions), [
-  "Symbol is the unmodified ECMAScript intrinsic throughout initialization",
+  "the intrinsic Symbol operations return fresh symbols and canonical well-known symbols without observable effects throughout initialization",
 ]);
 assert.deepEqual(method.run(...options, "--check-output"), run.verdict);
 
@@ -83,12 +85,13 @@ const accessors = fixture(
 );
 const accessorRun = lower(accessors.sourceFile, accessors.specFile, accessors.out, options);
 assertCertifiedResult({ ...accessorRun, files: accessors, out: accessors.out }, true);
-assert.deepEqual(browserObservedAssumptions(accessorRun.verdict.assumptions), [
-  "Symbol.iterator is the realm's well-known symbol throughout initialization",
-  premise,
+assert.deepEqual(browserObservedAssumptions(accessorRun.verdict.assumptions), [premise]);
+assert.deepEqual(browserLoweringAssumptions(accessorRun.verdict.assumptions), [
+  "the ambient Symbol binding is the unmodified ECMAScript intrinsic throughout initialization",
+  "the intrinsic Symbol.iterator property is the realm's well-known symbol and reading it has no observable effects throughout initialization",
 ]);
 assert.deepEqual(browserProfileAssumptions(accessorRun.verdict.assumptions), [
-  "Symbol is the unmodified ECMAScript intrinsic throughout initialization",
+  "the intrinsic Symbol operations return fresh symbols and canonical well-known symbols without observable effects throughout initialization",
 ]);
 
 const builtin = fixture(

@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { split } from "../testing/split.mjs";
 import {
   assertCertified,
+  browserLoweringAssumptions,
   browserObservedAssumptions,
   arrow,
   block,
@@ -48,6 +49,25 @@ const nodeProfileVerdict = split({
 assert.equal(nodeProfileVerdict.status, "certified", nodeProfileVerdict.log);
 assert.equal(nodeProfileVerdict.verdict.hostProfile, "node-recording");
 assert(existsSync(nodeProfileFixture.out));
+
+if (includesCase("shared-ecmascript-symbol-node")) {
+  const symbolFixture = fixture(
+    "shared-ecmascript-symbol-node",
+    'const brand = Symbol("node-host"); const result = typeof brand; export { result };'
+  );
+  const verdict = symbolFixture.run("--host-contract", nodeProfile);
+  assert.equal(verdict.status, "certified", JSON.stringify(verdict));
+  assert.deepEqual(
+    [...verdict.assumptions].sort(),
+    [
+      "the ambient Symbol binding is the unmodified ECMAScript intrinsic throughout initialization",
+      "the intrinsic Symbol operations return fresh symbols and canonical well-known symbols without observable effects throughout initialization",
+    ].sort()
+  );
+  for (const file of [symbolFixture.sourceFile, path.join(symbolFixture.out, entry)]) {
+    assert.equal((await import(pathToFileURL(file).href)).result, "symbol");
+  }
+}
 
 for (const [binding, defaulted] of [
   ["ambient", false],
@@ -236,20 +256,25 @@ if (includesCase("caught-opaque-error")) {
 }
 
 if (includesCase("shadowed-host-bindings")) {
-  const lexical = fixture(
-    "shadowed-host-bindings",
-    `const read = () => {
+  for (const [hostName, hostProfile] of [
+    ["browser", profile],
+    ["node", nodeProfile],
+  ]) {
+    const lexical = fixture(
+      `shadowed-host-bindings-${hostName}`,
+      `const read = () => {
     class Error { value = "local"; }
     const Symbol = { for: (key) => key };
     return Symbol.for((new Error()).value);
   };
   const result = read(); export { result };`
-  );
-  const localVerdict = lexical.run("--host-contract", profile);
-  assert.equal(localVerdict.status, "certified", JSON.stringify(localVerdict));
-  assert.deepEqual(browserObservedAssumptions(localVerdict.assumptions), []);
-  for (const file of [lexical.sourceFile, path.join(lexical.out, entry)]) {
-    assert.equal((await import(pathToFileURL(file).href)).result, "local");
+    );
+    const localVerdict = lexical.run("--host-contract", hostProfile);
+    assert.equal(localVerdict.status, "certified", JSON.stringify(localVerdict));
+    assert.deepEqual(browserObservedAssumptions(localVerdict.assumptions), []);
+    for (const file of [lexical.sourceFile, path.join(lexical.out, entry)]) {
+      assert.equal((await import(pathToFileURL(file).href)).result, "local");
+    }
   }
 }
 
@@ -395,6 +420,27 @@ if (includesCase("profile-premise-sources")) {
     "typeof window is undefined without observable effects throughout initialization",
   ];
   assert.deepEqual([...verdict.assumptions].sort(), [...loweringFacts, ...observedFacts].sort());
+
+  const deadSymbol = fixture(
+    "profile-premise-dead-symbol",
+    "if (false) { const key = Symbol.iterator; } export const result = typeof window;"
+  );
+  const symbolVerdict = deadSymbol.run("--host-contract", profile);
+  assert.equal(symbolVerdict.status, "certified", JSON.stringify(symbolVerdict));
+  assert.deepEqual(browserLoweringAssumptions(symbolVerdict.assumptions), [
+    "the ambient Symbol binding is the unmodified ECMAScript intrinsic throughout initialization",
+    "the intrinsic Symbol.iterator property is the realm's well-known symbol and reading it has no observable effects throughout initialization",
+  ]);
+  assert.deepEqual(browserProfileAssumptions(symbolVerdict.assumptions), [
+    "the intrinsic Symbol operations return fresh symbols and canonical well-known symbols without observable effects throughout initialization",
+  ]);
+  assert.deepEqual(browserObservedAssumptions(symbolVerdict.assumptions), [
+    "window, globalThis, and self return the same page global object throughout initialization",
+    "typeof window is object without observable effects throughout initialization",
+  ]);
+  // `typeof window` alone is the unused-fact control: the profile contains the
+  // Symbol layer, but its premises are omitted when no Symbol operation is lowered.
+  assert.deepEqual(browserProfileAssumptions(verdict.assumptions), []);
 
   const capturedOutput = [];
   const originalLog = console.log;

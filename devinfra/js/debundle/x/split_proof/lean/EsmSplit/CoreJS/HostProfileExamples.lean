@@ -67,6 +67,20 @@ private def observedOperationHasPremise (profile : HostProfile) (name premise : 
 #guard HostProfile.valid HostProfile.node
 #guard HostProfile.valid HostProfile.nodeRecording
 
+-- Both concrete host descriptions include exactly the same authored ECMAScript
+-- layer, including Symbol's intrinsic operations and well-known members.
+#guard BrowserPageHost.layers.head? == some ECMAScriptHost.layer
+#guard NodeHost.layers.head? == some ECMAScriptHost.layer
+#guard ECMAScriptHost.layer.members.filter (·.owner == "Symbol") == ECMAScriptHost.symbolMembers
+#guard HostProfile.bindingIdentity .browserPage "Symbol" == some "intrinsic.Symbol"
+#guard HostProfile.bindingIdentity .node "Symbol" == some "intrinsic.Symbol"
+#guard HostProfile.identity .browserPage (.property "intrinsic.Symbol" "iterator") == some "Symbol.iterator"
+#guard HostProfile.identity .node (.property "intrinsic.Symbol" "iterator") == some "Symbol.iterator"
+#guard HostProfile.ambientSymbols .browserPage
+#guard HostProfile.ambientSymbols .node
+#guard HostProfile.capabilityPremise? .browserPage .ambientSymbols ==
+  HostProfile.capabilityPremise? .node .ambientSymbols
+
 -- The browser layer and the shared ECMAScript layer preserve every old browser
 -- catalog answer while keeping all standard names out of the page-only layer.
 #guard legacyBrowserComparisonNames.all fun name =>
@@ -194,8 +208,13 @@ private def invalidMemberProfile : HostProfile :=
 private def invalidCapabilityProfile : HostProfile :=
   HostProfile.fromLayers "invalid" [{ name := "bad", capabilities := [⟨.ambientSymbols, none⟩] }]
 
+private def unboundSymbolCapabilityProfile : HostProfile :=
+  HostProfile.fromLayers "unbound-symbol" [{ name := "test", capabilities := [
+    ⟨.ambientSymbols, some "the test Symbol operations are stable"⟩] }]
+
 #guard !HostProfile.valid invalidMemberProfile
 #guard !HostProfile.valid invalidCapabilityProfile
+#guard !HostProfile.ambientSymbols unboundSymbolCapabilityProfile
 
 private def conflictingGlobalProfile : HostProfile :=
   HostProfile.fromLayers "conflict" [

@@ -74,6 +74,7 @@ def layer : HostLayer :=
     opaqueConstructors := ["URL"].map fun name =>
       ⟨name, some s!"the browser page exposes the unchanged {name} constructor throughout initialization"⟩,
     capabilities := [
+      ⟨.pageEnvironment, some "window, globalThis, and self return the same page global object throughout initialization"⟩,
       ⟨.arrayFromTemplate, some "tagged template arrays use the page realm's Array iterator throughout initialization"⟩,
       ⟨.opaqueStandardConstructors, some "deferred standard constructors use the page realm's unchanged constructors throughout initialization"⟩] }
 

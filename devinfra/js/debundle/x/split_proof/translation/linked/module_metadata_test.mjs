@@ -38,11 +38,44 @@ for (const member of ["url", "env.MODE"]) {
     const accepted = lower(sourceFile, specFile, out, preset, "linked-structural-pivot").verdict;
     assert.equal(accepted.status, "certified", JSON.stringify(accepted));
     assert(accepted.assumptions.some((p) => p.startsWith("native-browser-record@1:")));
+    assert(
+      accepted.assumptions.includes(
+        "window, globalThis, and self return the same page global object throughout initialization"
+      )
+    );
     assert.deepEqual(
       lower(sourceFile, specFile, out, [...preset, "--check-output"], "linked-structural-pivot").verdict,
       accepted
     );
   }
+}
+
+// Browser deployment options require the page capability; a Node profile cannot
+// enable browser metadata or empty-import-map assumptions.
+const nonBrowserDir = path.join(root, "non-browser-deployment");
+const nonBrowser = prepare(nonBrowserDir, {
+  source: "const value = 1; export { value };",
+  sourceName: entry,
+  provider: "",
+  spec: placement("#0", []),
+});
+const nodeProfile = path.join(nonBrowserDir, "node.json");
+writeFileSync(nodeProfile, JSON.stringify({ profile: "node" }));
+for (const [flag, value] of [
+  ["--deployment-preset", "native-browser-record@1"],
+  ["--deployment-import-map", "empty@1"],
+]) {
+  const out = path.join(nonBrowserDir, value);
+  const { verdict } = lower(
+    nonBrowser.sourceFile,
+    nonBrowser.specFile,
+    out,
+    ["--structural", "--deployment-origin", "https://example.org", "--host-contract", nodeProfile, flag, value],
+    "linked-structural"
+  );
+  assert.equal(verdict.status, "rejected", JSON.stringify(verdict));
+  assert.match(verdict.reason, /requires a browser-page profile and deployment origin/);
+  assert(!existsSync(out));
 }
 
 // One native module record shares mutable metadata between its closures. The outer

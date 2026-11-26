@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   assertCertifiedResult,
+  browserLoweringAssumptions,
   browserProfileAssumptions,
   browserObservedAssumptions,
   lower,
@@ -34,11 +35,13 @@ const brand = fixture(
 const run = lower(brand.sourceFile, brand.specFile, brand.out, options);
 assertCertifiedResult({ ...run, files: brand, out: brand.out }, true);
 assert.deepEqual(browserObservedAssumptions(run.verdict.assumptions), [
-  "the ambient Symbol binding is the unmodified ECMAScript intrinsic throughout initialization",
   "Symbol returns the intrinsic Symbol function without observable effects throughout initialization",
 ]);
+assert.deepEqual(browserLoweringAssumptions(run.verdict.assumptions), [
+  "the ambient Symbol binding is the unmodified ECMAScript intrinsic throughout initialization",
+]);
 assert.deepEqual(browserProfileAssumptions(run.verdict.assumptions), [
-  "Symbol is the unmodified ECMAScript intrinsic throughout initialization",
+  "the intrinsic Symbol operations return fresh symbols and canonical well-known symbols without observable effects throughout initialization",
 ]);
 assert.deepEqual(brand.run(...options, "--check-output"), run.verdict);
 

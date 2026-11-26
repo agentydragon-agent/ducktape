@@ -147,7 +147,10 @@ def nodeRecording : HostProfile := fromLayers "node-recording" RecordedNodeHost.
 def isEmpty (profile : HostProfile) : Bool := profile.layers.isEmpty
 
 /-- Fresh Symbol calls and well-known symbols use the shared ECMAScript layer. -/
-def ambientSymbols (profile : HostProfile) : Bool := profile.hasCapability .ambientSymbols
+def ambientSymbols (profile : HostProfile) : Bool :=
+  profile.hasCapability .ambientSymbols &&
+    (profile.globalEntry? "Symbol").any fun entry =>
+      entry.identity == some "intrinsic.Symbol" && entry.premise.isSome
 
 /-- Recorded values are supplied by the world. This field asserts no property of its answer. -/
 def recordedHostValue (profile : HostProfile) (name : String) : Bool :=

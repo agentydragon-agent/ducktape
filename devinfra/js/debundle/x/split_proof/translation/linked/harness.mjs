@@ -19,18 +19,31 @@ process.on("exit", () => {
 });
 
 export const browserProfilePremises = [
-  "Symbol is the unmodified ECMAScript intrinsic throughout initialization",
+  "the intrinsic Symbol operations return fresh symbols and canonical well-known symbols without observable effects throughout initialization",
   "the browser page exposes the unchanged URL constructor throughout initialization",
   "tagged template arrays use the page realm's Array iterator throughout initialization",
   "deferred standard constructors use the page realm's unchanged constructors throughout initialization",
 ];
 
 export function browserObservedAssumptions(assumptions) {
-  return assumptions.filter((assumption) => !browserProfilePremises.includes(assumption));
+  return assumptions.filter(
+    (assumption) =>
+      !browserProfilePremises.includes(assumption) &&
+      !assumption.startsWith("the ambient Symbol binding is ") &&
+      !/^the intrinsic Symbol\.[A-Za-z]+ property/.test(assumption)
+  );
 }
 
 export function browserProfileAssumptions(assumptions) {
   return assumptions.filter((assumption) => browserProfilePremises.includes(assumption));
+}
+
+export function browserLoweringAssumptions(assumptions) {
+  return assumptions.filter(
+    (assumption) =>
+      assumption.startsWith("the ambient Symbol binding is ") ||
+      /^the intrinsic Symbol\.[A-Za-z]+ property/.test(assumption)
+  );
 }
 
 export function caseShard() {

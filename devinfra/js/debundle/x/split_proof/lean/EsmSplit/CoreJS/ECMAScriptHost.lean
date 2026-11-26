@@ -155,7 +155,7 @@ def prototypeMembers : List HostMemberEntry :=
 def symbolMembers : List HostMemberEntry :=
   ["asyncIterator", "hasInstance", "iterator", "toStringTag"].map fun key =>
     ⟨"Symbol", key, some ("Symbol." ++ key), false, none, none,
-      some s!"Symbol.{key} is the realm's well-known symbol throughout initialization"⟩
+      some s!"the intrinsic Symbol.{key} property is the realm's well-known symbol and reading it has no observable effects throughout initialization"⟩
 
 def allMembers : List HostMemberEntry := staticMembers ++ prototypeMembers ++ symbolMembers
 
@@ -172,6 +172,6 @@ def hostNamespaces : List (String × List String) :=
 def layer : HostLayer :=
   { name := "ecmascript", globals := globalEntries, members := allMembers,
     capabilities := [
-      ⟨.ambientSymbols, some "Symbol is the unmodified ECMAScript intrinsic throughout initialization"⟩] }
+      ⟨.ambientSymbols, some "the intrinsic Symbol operations return fresh symbols and canonical well-known symbols without observable effects throughout initialization"⟩] }
 
 end CoreJS.ECMAScriptHost

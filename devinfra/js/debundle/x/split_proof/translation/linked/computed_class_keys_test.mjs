@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import {
   assertCertifiedResult,
   assertRejected,
+  browserLoweringAssumptions,
   browserProfileAssumptions,
   browserObservedAssumptions,
   caseShard,
@@ -89,11 +90,14 @@ if (runCase("async-iterator-symbol")) {
   );
   assertCertifiedResult(run, true);
   assert.deepEqual(browserObservedAssumptions(run.verdict.assumptions), [
-    "Symbol.asyncIterator is the realm's well-known symbol throughout initialization",
     "Symbol.asyncIterator returns the well-known asyncIterator symbol without observable effects throughout initialization",
   ]);
+  assert.deepEqual(browserLoweringAssumptions(run.verdict.assumptions), [
+    "the ambient Symbol binding is the unmodified ECMAScript intrinsic throughout initialization",
+    "the intrinsic Symbol.asyncIterator property is the realm's well-known symbol and reading it has no observable effects throughout initialization",
+  ]);
   assert.deepEqual(browserProfileAssumptions(run.verdict.assumptions), [
-    "Symbol is the unmodified ECMAScript intrinsic throughout initialization",
+    "the intrinsic Symbol operations return fresh symbols and canonical well-known symbols without observable effects throughout initialization",
   ]);
   assert.deepEqual(
     lower(run.files.sourceFile, run.files.specFile, run.out, [...run.options, "--check-output"]).verdict,
