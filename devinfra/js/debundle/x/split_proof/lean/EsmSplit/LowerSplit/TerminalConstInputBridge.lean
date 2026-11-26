@@ -84,6 +84,35 @@ theorem admitted_nodes_pair {original sourceText specText}
     ∃ declaration exportNode, admitted.nodes = #[declaration, exportNode] :=
   nodes_pair admitted.nodes (admitted_node_count admitted)
 
+theorem classify_pair (declaration exportNode : Json)
+    (classified : classify [0] #[declaration, exportNode] = .ok [1]) :
+    Lower.typ declaration = "VariableDeclaration" ∧
+    Lower.typ exportNode = "ExportNamedDeclaration" ∧
+    Lower.isNull (Lower.fld exportNode "source") = true := by
+  by_cases declOk : Lower.typ declaration = "VariableDeclaration" ∧
+      Lower.str (Lower.fld declaration "kind") = "const"
+  · by_cases exportOk : (Lower.typ exportNode = "ExportNamedDeclaration" ∧
+        Lower.isNull (Lower.fld exportNode "declaration") = true) ∧
+        Lower.isNull (Lower.fld exportNode "source") = true
+    · exact ⟨declOk.1, exportOk.1.1, exportOk.2⟩
+    · simp [classify, declOk, exportOk, bind, Except.bind, pure, Except.pure, throw,
+        MonadExceptOf.throw] at classified
+  · simp [classify, declOk, bind, Except.bind, pure, Except.pure, throw,
+      MonadExceptOf.throw] at classified
+
+theorem admitted_source_shape {original sourceText specText}
+    (admitted : Admitted original sourceText specText) :
+    ∃ declaration exportNode,
+      admitted.nodes = #[declaration, exportNode] ∧
+      Lower.typ declaration = "VariableDeclaration" ∧
+      Lower.typ exportNode = "ExportNamedDeclaration" ∧
+      Lower.isNull (Lower.fld exportNode "source") = true := by
+  obtain ⟨declaration, exportNode, nodesEq⟩ := admitted_nodes_pair admitted
+  have classified : classify [0] #[declaration, exportNode] = .ok [1] := by
+    rw [← nodesEq]
+    exact admitted.metadata
+  exact ⟨declaration, exportNode, nodesEq, classify_pair declaration exportNode classified⟩
+
 private def witness {α : Type} (result : Except String α) :
     Except String (Σ value : α, PLift (result = .ok value)) := do
   match h : result with
@@ -168,5 +197,7 @@ No theorem above assumes this proposition or compares a candidate program. -/
 #print axioms admitted_node_count
 #print axioms nodes_pair
 #print axioms admitted_nodes_pair
+#print axioms classify_pair
+#print axioms admitted_source_shape
 
 end EsmSplit.LowerSplit.TerminalConstInputBridge

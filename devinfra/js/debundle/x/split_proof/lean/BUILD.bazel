@@ -1723,8 +1723,14 @@ lean_proof_test(
     modules = ["EsmSplit.LowerSplit.TerminalConstInputBridge"],
     required_theorems = [
         "EsmSplit.LowerSplit.TerminalConstInputBridge.admit",
+        "EsmSplit.LowerSplit.TerminalConstInputBridge.admitted_node_count",
+        "EsmSplit.LowerSplit.TerminalConstInputBridge.admitted_nodes_pair",
+        "EsmSplit.LowerSplit.TerminalConstInputBridge.admitted_source_shape",
+        "EsmSplit.LowerSplit.TerminalConstInputBridge.classify_pair",
         "EsmSplit.LowerSplit.TerminalConstInputBridge.input_sound",
         "EsmSplit.LowerSplit.TerminalConstInputBridge.modeled_sound",
+        "EsmSplit.LowerSplit.TerminalConstInputBridge.nodes_pair",
+        "EsmSplit.LowerSplit.TerminalConstInputBridge.sourceBundle_length",
     ],
     deps = [":terminal_const_input_bridge"],
 )
