@@ -176,7 +176,6 @@ js_test(
         "literal_records_test",
         "logical_test",
         "member_test",
-        "module_graph_test",
         "module_metadata_test",
         "numeric_prefix_test",
         "object_elements_test",
@@ -313,14 +312,26 @@ js_test(
     shard_count = 3,
 )
 
+js_test(
+    name = "module_graph_test",
+    size = "medium",
+    data = _TEST_DATA + ["//devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner"],
+    entry_point = "module_graph_test.mjs",
+    env = _TEST_ENV | {
+        "LINKED_MODEL_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner)",
+    },
+)
+
 # Preserve the 48-reader reduction-budget regression for explicit runs.
 js_test(
     name = "module_graph_scale_test",
     size = "medium",
     args = ["--full-graph"],
-    data = _TEST_DATA,
+    data = _TEST_DATA + ["//devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner"],
     entry_point = "module_graph_test.mjs",
-    env = _TEST_ENV,
+    env = _TEST_ENV | {
+        "LINKED_MODEL_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner)",
+    },
     tags = ["manual"],
 )
 
