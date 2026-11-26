@@ -221,14 +221,16 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
     | "EmptyStatement" | "DebuggerStatement" => pure ()
     | "ExportNamedDeclaration" =>
       (ModuleInput.noAttributes j).mapError StructuralRefusal.unclassified
-      unless (← (j.getObjVal? "source").mapError StructuralRefusal.unclassified) == .null do
-        throw (.unclassified "unsupported re-export from another module")
+      match ← (j.getObjVal? "source").mapError StructuralRefusal.unclassified with
+      | .null => pure ()
+      | _ => throw (.unclassified "unsupported re-export from another module")
       let declaration ← (j.getObjVal? "declaration").mapError StructuralRefusal.unclassified
       let specs ← (j.getObjValAs? (Array Json) "specifiers").mapError StructuralRefusal.unclassified
-      if declaration == .null then
+      match declaration with
+      | .null =>
         for sp in specs do
           exports := exports.push (← (FromESTree.exportSpec sp).mapError StructuralRefusal.unclassified)
-      else
+      | declaration =>
         unless specs.isEmpty do throw (.unclassified "expected an inline declaration export")
         let (s, names, sites) ← decode declaration true
         templates := templates ++ sites.toArray
