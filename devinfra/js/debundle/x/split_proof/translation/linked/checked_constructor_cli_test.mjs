@@ -370,3 +370,10 @@ for (const [name, badSpec] of [
   for (const [file, bytes] of Object.entries(multiBytes))
     assert.deepEqual(readFileSync(path.join(multiOut, file)), bytes);
 }
+
+const freshMultiOut = path.join(root, "multi-wrong-owner-fresh");
+const freshMultiRefusal = multiRun({ spec: path.join(root, "multi-wrong-owner.json"), out: freshMultiOut });
+assert.equal(freshMultiRefusal.status, "refused", freshMultiRefusal.log);
+assert.equal(freshMultiRefusal.verdict.strategy, "compiled-multi-terminal-export");
+assert.equal(freshMultiRefusal.verdict.reason_code, "multi_terminal_export_refusal");
+assert(!existsSync(freshMultiOut));
