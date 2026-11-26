@@ -578,7 +578,6 @@ lean_axiom_test(
 
 lean_library(
     name = "checked_artifact",
-    testonly = True,
     srcs = ["EsmSplit/LowerSplit/CheckedArtifact.lean"],
     deps = [
         ":corejs_checked_split",
@@ -638,6 +637,7 @@ lean_library(
         "EsmSplit/LowerSplit/SliceCertificate.lean",
     ],
     deps = [
+        ":checked_artifact",
         ":corejs_certificates",
         ":corejs_runtime",
         ":corejs_single_module",
