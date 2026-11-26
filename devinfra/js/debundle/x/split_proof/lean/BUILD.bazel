@@ -1677,3 +1677,43 @@ lean_proof_test(
     ],
     deps = [":stack_read_composition_axioms_test_modules"],
 )
+
+lean_library(
+    name = "terminal_const_construction",
+    srcs = ["EsmSplit/CoreJS/TerminalConstConstruction.lean"],
+    deps = [
+        ":corejs_certificate_support_base",
+        ":corejs_linked_input",
+        ":planner",
+    ],
+)
+
+lean_proof_test(
+    name = "terminal_const_construction_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.TerminalConstConstruction"],
+    required_theorems = [
+        "CoreJS.TerminalConstConstruction.construct_sound",
+        "CoreJS.TerminalConstConstruction.exact_cell",
+        "CoreJS.TerminalConstConstruction.planned_eq_construct",
+        "CoreJS.TerminalConstConstruction.planned_sound",
+    ],
+    deps = [":terminal_const_construction"],
+)
+
+lean_library(
+    name = "terminal_const_input",
+    srcs = ["EsmSplit/LowerSplit/TerminalConstInput.lean"],
+    deps = [
+        ":sparse_checked_artifact",
+        ":terminal_const_construction",
+    ],
+)
+
+lean_proof_test(
+    name = "terminal_const_input_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.LowerSplit.TerminalConstInput"],
+    required_theorems = ["EsmSplit.LowerSplit.TerminalConstInput.input_model_sound"],
+    deps = [":terminal_const_input"],
+)
