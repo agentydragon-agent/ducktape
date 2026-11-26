@@ -2125,6 +2125,32 @@ lean_proof_test(
 )
 
 lean_library(
+    name = "corejs_ordered_const_rhs",
+    srcs = ["EsmSplit/CoreJS/OrderedConstRhs.lean"],
+    deps = [
+        ":corejs_terminal_footprints",
+        ":corejs_terminal_plan_family",
+        ":corejs_terminal_plan_selection",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_ordered_const_rhs_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.OrderedConstRhs"],
+    required_theorems = [
+        "CoreJS.OrderedConstRhs.all_const",
+        "CoreJS.OrderedConstRhs.checkBody",
+        "CoreJS.OrderedConstRhs.checkEarlierReads",
+        "CoreJS.OrderedConstRhs.checkRhs",
+        "CoreJS.OrderedConstRhs.planned_family",
+        "CoreJS.OrderedConstRhs.rhs_free",
+        "CoreJS.OrderedConstRhs.source_shape",
+    ],
+    deps = [":corejs_ordered_const_rhs"],
+)
+
+lean_library(
     name = "entry_export_cells",
     srcs = ["EsmSplit/CoreJS/EntryExportCells.lean"],
     deps = [":corejs_certificate_support_base"],
