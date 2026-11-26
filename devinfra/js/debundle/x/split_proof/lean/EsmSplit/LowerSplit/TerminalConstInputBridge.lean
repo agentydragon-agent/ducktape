@@ -85,10 +85,12 @@ theorem modeled_sound {original sourceText specText}
         (TerminalConstInput.modeledCandidate admitted.nodes admitted.value) ∧
     SameExports (source admitted.value) (TerminalConstInput.modeledCandidate admitted.nodes admitted.value) ∧
     (∀ w fuel, runProgram w fuel (source admitted.value) =
-      runProgram w fuel (TerminalConstInput.modeledCandidate admitted.nodes admitted.value)) := by
+      runProgram w fuel (TerminalConstInput.modeledCandidate admitted.nodes admitted.value)) ∧
+    (TerminalConstInput.modeledCandidate admitted.nodes admitted.value).evalOrder =
+      request.order ++ [request.entry] := by
   have modeled := TerminalConstInput.input_model_sound original sourceText admitted.nodes admitted.value
     admitted.nodesMatch admitted.metadata admitted.sourceMatch admitted.footprints
-  exact ⟨modeled.2.2.2.1, modeled.2.2.2.2.1, modeled.2.2.2.2.2.1⟩
+  exact ⟨modeled.2.2.2.1, modeled.2.2.2.2.1, modeled.2.2.2.2.2.1, modeled.2.2.2.2.2.2⟩
 
 /-- The remaining AST boundary, stated without assuming or checking it. A
 proof must derive this from `Admitted`; printer/reparse identity is separate. -/
