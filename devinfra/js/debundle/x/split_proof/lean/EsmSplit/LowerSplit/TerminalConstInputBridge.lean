@@ -6,7 +6,7 @@ The real emitter-to-model equation and printer/reparse boundary remain separate.
 
 namespace EsmSplit.LowerSplit.TerminalConstInputBridge
 
-open Lean (Json)
+open Lean (Json toJson)
 open CoreJS CoreJS.LinkedBehavior CoreJS.TerminalConstConstruction
 open EsmSplit.LowerSplit.SparseArtifact (classify sourceBundle)
 
@@ -18,6 +18,37 @@ deriving instance DecidableEq for EsmSplit.Stmt
 actual order for the fixed entry/provider names, independent of written order. -/
 def parsedRequest : EsmSplit.Spec := request
 
+private def node (kind : String) (fields : List (String × Json)) : Json :=
+  Json.mkObj (("type", .str kind) :: fields)
+
+private def identifier (name : String) : Json := node "Identifier" [("name", .str name)]
+
+/-- The actual emitter preserves the original two source nodes. Synthetic
+glue is fixed by the authored request; the entry retains a source hashbang. -/
+def emittedAST (declaration exportNode : Json) (hashbang : Option String) : Json :=
+  let importNode := node "ImportDeclaration" [
+    ("source", node "Literal" [("value", .str "./provider.mjs")]),
+    ("specifiers", toJson [node "ImportSpecifier" [("local", identifier "x"), ("imported", identifier "x")]]),
+    ("attributes", .arr #[])]
+  let glueExport := node "ExportNamedDeclaration" [
+    ("declaration", .null), ("source", .null),
+    ("specifiers", toJson [node "ExportSpecifier" [("local", identifier "x"), ("exported", identifier "x")]]),
+    ("attributes", .arr #[])]
+  let hashbang := hashbang.toList.map fun text => ("hashbang", Json.str text)
+  Json.mkObj [
+    ("entry.mjs", node "Program" ([("sourceType", .str "module"),
+      ("body", toJson [importNode, exportNode])] ++ hashbang)),
+    ("provider.mjs", node "Program" [("sourceType", .str "module"),
+      ("body", toJson [declaration, glueExport])])]
+
+def sourceHashbang (sourceText : String) : Option String :=
+  if sourceText.startsWith "#!" then
+    some (sourceText.takeWhile fun c => !['\n', '\r', '\u2028', '\u2029'].contains c).toString
+  else none
+
+theorem sourceBundle_length (nodes : Array Json) : (sourceBundle nodes).length = nodes.size := by
+  simp [sourceBundle, linkedLayoutBundle, Effects.footprintUnits]
+
 /-- Input facts for Q's model and the actual authored spec, with no check of
 any candidate program, emitted AST, plan validity, placement or execution. -/
 structure Admitted (original : Json) (sourceText specText : String) where
@@ -28,6 +59,30 @@ structure Admitted (original : Json) (sourceText specText : String) where
   value : Float
   sourceMatch : LinkedInput.decodeSingletonSource original "entry.mjs" = .ok (source value)
   footprints : sourceBundle nodes = bundle
+
+theorem admitted_node_count {original sourceText specText}
+    (admitted : Admitted original sourceText specText) : admitted.nodes.size = 2 := by
+  have count := congrArg List.length admitted.footprints
+  simpa [sourceBundle_length, bundle] using count
+
+theorem nodes_pair (nodes : Array Json) (count : nodes.size = 2) :
+    ∃ declaration exportNode, nodes = #[declaration, exportNode] := by
+  cases nodes with
+  | mk items =>
+    cases items with
+    | nil => simp at count
+    | cons declaration rest =>
+      cases rest with
+      | nil => simp at count
+      | cons exportNode rest =>
+        cases rest with
+        | nil => exact ⟨declaration, exportNode, rfl⟩
+        | cons extra rest => simp at count
+
+theorem admitted_nodes_pair {original sourceText specText}
+    (admitted : Admitted original sourceText specText) :
+    ∃ declaration exportNode, admitted.nodes = #[declaration, exportNode] :=
+  nodes_pair admitted.nodes (admitted_node_count admitted)
 
 private def witness {α : Type} (result : Except String α) :
     Except String (Σ value : α, PLift (result = .ok value)) := do
@@ -109,5 +164,9 @@ No theorem above assumes this proposition or compares a candidate program. -/
 #print axioms admit
 #print axioms input_sound
 #print axioms modeled_sound
+#print axioms sourceBundle_length
+#print axioms admitted_node_count
+#print axioms nodes_pair
+#print axioms admitted_nodes_pair
 
 end EsmSplit.LowerSplit.TerminalConstInputBridge
