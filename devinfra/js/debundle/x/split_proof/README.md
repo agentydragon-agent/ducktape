@@ -58,7 +58,11 @@ For browser module scripts, the `browser-page` contract also permits `.js` outpu
 
 For a module loaded as a browser page entry, you can pass `--host-contract browser.json` with `{"profile":"browser-page"}` on emission and on `--check-output`. Under this profile, ambient `window`, `globalThis`, and `self` may return the same opaque page object, and their `typeof` may return `"object"`. The browser fallback `typeof global` may return `"undefined"`; a page with a Node-style shim can violate that premise. Each selected observation must preserve host state throughout initialization. A direct read of ambient `global` remains opaque and stops the proof if reached. Lexical and imported names use their actual bindings.
 
-The [browser globals catalog](lean/EsmSplit/CoreJS/BrowserGlobals.lean) covers ECMAScript and browser APIs, including DOM bindings, timers, networking, storage, and static method references such as `Object.defineProperty` and `Date.now`. A reached lookup can assume a specific `typeof` or stable reference. For example, a reference to `FileReader` requires it to exist on that page. Reading `window.Error` and reading the bare `Error` binding can return the same opaque reference under separate premises. The checker records observations from both initializers and the generated Lean theorem checks them in every world satisfying the listed premises. A deferred or untaken lookup adds no premise. A reference to a method supplies no result for a call. Volatile page values, including scroll coordinates, and operations such as reading Error stacks or writing to the DOM stay opaque.
+The [`ECMAScriptHost` layer](lean/EsmSplit/CoreJS/ECMAScriptHost.lean) describes standard globals and modeled member operations once. The [`BrowserPageHost` layer](lean/EsmSplit/CoreJS/BrowserPageHost.lean) adds page aliases, DOM names, and web APIs; [`NodeHost`](lean/EsmSplit/CoreJS/NodeHost.lean) adds Node globals. The recorded Node comparison harness selects `node-recording.json`, which adds recorded values and output handling to the Node profile. `BrowserGlobals.lean` remains only as a migration snapshot for old-versus-new compatibility checks; runtime host lookups and the Node catalog do not read it.
+
+`--host-contract` reads a profile JSON file. A profile can add typed extension layers; entries that assert behavior must include a named premise, which the verdict reports when that fact is used. Recorded values are answered by the world and assert no behavior, so they need no premise.
+
+A reached lookup can require a `typeof`, stable-reference, or stable-data premise. For example, a reference to `FileReader` requires it to exist on that page. Bare intrinsic bindings and their `window` properties use the same ECMAScript-layer identity premise. The checker records observations from both initializers and the generated Lean theorem checks them in every world satisfying the listed premises. A deferred or untaken lookup adds no per-reference premise; the selected profile's capabilities and opaque-constructor allowances are reported as layer premises. A reference to a method supplies no result for a call. Volatile page values, including scroll coordinates, and operations such as reading Error stacks or writing to the DOM stay opaque.
 
 CoreJS allocates a fresh object for each regular-expression literal. It preserves the pattern, flags, and `lastIndex` descriptor. The shared prototype implements `source`, the individual flag getters, and `flags`, including reads of overridden flag properties. Calls to the intrinsic matching methods currently produce an unknown result.
 
@@ -227,14 +231,17 @@ property names. A member call evaluates its receiver and key once, reads the cal
 evaluating arguments, and passes the receiver as `this`. Ordinary functions have the call's
 receiver and arrows capture the surrounding `this`. Access to private members and to `super.property` is unsupported.
 
-In the `browser-page` profile, a class can define a method or accessor at `[Symbol.iterator]`.
-When a read executes, the certificate records the premise that the ambient `Symbol.iterator`
-returns the well-known iterator symbol without observable effects. Its descriptor is distinct
-from one named `"Symbol.iterator"`. For example, `this.path[Symbol.iterator]()` looks up the
-method on the path’s prototype chain and calls it with the path as its receiver.
+The `ecmascript`, Node, and `browser-page` profiles share one declaration of the Symbol
+intrinsic and its well-known members. A class can define a method or accessor at
+`[Symbol.iterator]`; when a global `Symbol.iterator` read executes, the certificate reports
+the premises that the global binding is the unmodified intrinsic and that its well-known
+member is stable and effect-free. A lexical or parameter binding named `Symbol` is evaluated
+as that local binding instead. The symbol-keyed descriptor is distinct from one named
+`"Symbol.iterator"`. For example, `this.path[Symbol.iterator]()` looks up the method on the
+path’s prototype chain and calls it with the path as its receiver.
 
-A browser-profile call to the ambient `Symbol()` or `Symbol("description")` creates a fresh
-symbol under an explicit premise that the binding holds the intrinsic Symbol function.
+A call to the global `Symbol()` or `Symbol("description")` creates a fresh symbol under the
+shared intrinsic-operation premise and the premise for the host’s global Symbol binding.
 A class can use a lexical identifier as a computed instance field key. Class definition
 captures the key once, and each construction creates an own data property for that key.
 
@@ -276,7 +283,7 @@ Arithmetic and bitwise compound assignments read the target before the right-han
 
 Linked `delete` accepts dot and computed member expressions. It evaluates the receiver and key, then removes an own configurable property. A missing own property succeeds, while a nonconfigurable property throws in strict code. Reached deletion on unmodeled values or a computed key that requires object coercion stops the model.
 
-Linked object literals may contain static and computed data properties, methods and accessors, and spread elements. A numeric literal key uses the JavaScript string form of its value, so `5e-1` names the property `"0.5"` and the quoted key `"5e-1"` keeps its spelling. Property values use the same linked expression lowering as other initializers. CoreJS creates a fresh ordinary object and initializes its own properties in source order. If one property's value throws, evaluation stops before the following property. Repeated definitions update or extend the existing property without changing its first insertion position. A colon-form `__proto__` sets the prototype. A computed property evaluates its key before the value and defines an own property even when the key is `"__proto__"`; methods and accessors take their inferred names from the converted key. The Node comparison cases exercise `ToPropertyKey` for strings, numbers, booleans, null, and the well-known iterator symbol. The `browser-page` production profile supplies the well-known symbol intrinsic; the default `empty` and `ecmascript` profiles make no ambient `Symbol` assumption. A directly anonymous function or arrow value still needs name inference from the computed key. An explicitly named function keeps its name. Object-key coercion that invokes user code remains outside the executable model.
+Linked object literals may contain static and computed data properties, methods and accessors, and spread elements. A numeric literal key uses the JavaScript string form of its value, so `5e-1` names the property `"0.5"` and the quoted key `"5e-1"` keeps its spelling. Property values use the same linked expression lowering as other initializers. CoreJS creates a fresh ordinary object and initializes its own properties in source order. If one property's value throws, evaluation stops before the following property. Repeated definitions update or extend the existing property without changing its first insertion position. A colon-form `__proto__` sets the prototype. A computed property evaluates its key before the value and defines an own property even when the key is `"__proto__"`; methods and accessors take their inferred names from the converted key. The Node comparison cases exercise `ToPropertyKey` for strings, numbers, booleans, null, and the well-known iterator symbol. The `ecmascript`, Node, and `browser-page` profiles share the well-known symbol declaration; the default `empty` profile makes no ambient `Symbol` assumption. A directly anonymous function or arrow value still needs name inference from the computed key. An explicitly named function keeps its name. Object-key coercion that invokes user code remains outside the executable model.
 
 Object spread evaluates its operand once and copies its enumerable own properties into the new object. Keys follow JavaScript enumeration order. Getters run with the source as their receiver and can change which later keys are copied. A nullish value, number, or boolean contributes no keys. A string contributes its indexed UTF-16 code units within the Basic Multilingual Plane. Copying a host value, an engine error, or a string containing a supplementary character yields an unknown result.
 
@@ -535,6 +542,18 @@ Specs and plans that must fail. Each failure is a Lean theorem (`¬ OrderOk …`
 
 These are tests, not proofs. The Bazel target `fuzz:render_fuzz` runs [`fuzz/fuzz.py`](fuzz/fuzz.py):
 510 random placements of the 12 statements, each rendered and run in Node.
+
+Host profiles are checked data declarations, not proved facts about a deployment. Each entry that
+asserts host behavior has a named premise, and certificates report the premises they use. The Node
+comparison and debundle certification tests select the recorded Node profile from
+[`model/node-recording.json`](model/node-recording.json); recorded values remain answers supplied
+by the test world.
+
+For linked certificates, this list combines facts observed while probing both executions, such as a
+reached `typeof` or host reference, with premises used by profile-directed lowering in either full
+CoreJS tree. A lowering premise stays listed when its operation is in an inactive branch or an
+uncalled function, because the lowered code still depends on that profile rule. Recorded values
+answered by the world add no premise on their own.
 
 - 157 accepted. All 157 print what the bundle prints. 95 of them run statements in a different order than the bundle.
 - 353 rejected. 325 really break in Node. 28 are harmless: the checker is conservative.

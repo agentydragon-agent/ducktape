@@ -1,0 +1,265 @@
+import EsmSplit.CoreJS.HostProfile
+import EsmSplit.CoreJS.BrowserGlobals
+
+namespace CoreJS.HostProfileExamples
+
+private def legacyBrowserNames : List String :=
+  BrowserPageHost.aliases ++ BrowserGlobals.functions ++ BrowserGlobals.objects ++
+    BrowserGlobals.opaqueBindings ++ BrowserGlobals.shims
+
+private def legacyBrowserTypeof (name : String) : Option String :=
+  if BrowserPageHost.aliases.contains name || BrowserGlobals.objects.contains name then some "object"
+  else if BrowserGlobals.functions.contains name then some "function"
+  else if BrowserGlobals.shims.contains name then some "undefined"
+  else none
+
+private def legacyBrowserIdentity (name : String) : Option String :=
+  if BrowserPageHost.aliases.contains name then some "window"
+  else if name == "Array" then some "intrinsic.Array"
+  else if name == "Symbol" then some "intrinsic.Symbol"
+  else if BrowserGlobals.functions.contains name || BrowserGlobals.objects.contains name then
+    some ("window." ++ name)
+  else none
+
+private def canonicalBrowserIdentity (name : String) : Option String := do
+  let identity ← legacyBrowserIdentity name
+  if ECMAScriptHost.globalEntries.any (·.name == name) then
+    if let some suffix := identity.dropPrefix? "window." then
+      return "intrinsic." ++ suffix.toString
+  return identity
+
+private def legacyBrowserMemberIdentity (owner key : String) : Option String :=
+  if owner == "Symbol" then
+    match WellKnownSymbol.ofMember? key with
+    | some symbol => some symbol.description
+    | none => none
+  else if ((BrowserGlobals.methods.lookup owner).getD []).contains key then
+    if ECMAScriptHost.globalEntries.any (·.name == owner) then
+      some ("intrinsic." ++ owner ++ "." ++ key)
+    else some ("window." ++ owner ++ "." ++ key)
+  else none
+
+private def legacyBrowserReceiver (owner : String) : String :=
+  if owner == "Array" then "intrinsic.Array"
+  else if owner == "Symbol" then "Symbol"
+  else "window." ++ owner
+
+private def observedRefHasPremise (profile : HostProfile) (ref : HostRef) (premise : String) : Bool :=
+  match (HostPremises.observations profile).hostRef ref {} with
+  | some (_, state) => state.profileFacts.contains premise
+  | none => false
+
+private def observedTypeHasPremise (profile : HostProfile) (name premise : String) : Bool :=
+  match (HostPremises.observations profile).globalTypeof name {} with
+  | some (_, state) => state.profileFacts.contains premise
+  | none => false
+
+private def observedOperationHasPremise (profile : HostProfile) (name premise : String) : Bool :=
+  let (_, state) := (HostPremises.observations profile).step name .undef [] {}
+  state.profileFacts.contains premise
+
+#guard HostProfile.valid HostProfile.ecmascript
+#guard HostProfile.valid HostProfile.browserPage
+#guard HostProfile.valid HostProfile.node
+#guard HostProfile.valid HostProfile.nodeRecording
+
+-- The page deployment contract is a browser-layer feature. Node and the bare
+-- ECMAScript layer do not acquire it by sharing the common intrinsics.
+#guard HostProfile.hasCapability .browserPage .pageEnvironment
+#guard !(HostProfile.hasCapability .node .pageEnvironment)
+#guard !(HostProfile.hasCapability .ecmascript .pageEnvironment)
+#guard HostProfile.capabilityPremise? .browserPage .pageEnvironment ==
+  some "window, globalThis, and self return the same page global object throughout initialization"
+
+-- Both concrete host descriptions include exactly the same authored ECMAScript
+-- layer, including Symbol's intrinsic operations and well-known members.
+#guard BrowserPageHost.layers.head? == some ECMAScriptHost.layer
+#guard NodeHost.layers.head? == some ECMAScriptHost.layer
+#guard ECMAScriptHost.layer.members.filter (·.owner == "Symbol") == ECMAScriptHost.symbolMembers
+#guard HostProfile.bindingIdentity .browserPage "Symbol" == some "intrinsic.Symbol"
+#guard HostProfile.bindingIdentity .node "Symbol" == some "intrinsic.Symbol"
+#guard HostProfile.identity .browserPage (.property "intrinsic.Symbol" "iterator") == some "Symbol.iterator"
+#guard HostProfile.identity .node (.property "intrinsic.Symbol" "iterator") == some "Symbol.iterator"
+#guard HostProfile.ambientSymbols .browserPage
+#guard HostProfile.ambientSymbols .node
+#guard HostProfile.capabilityPremise? .browserPage .ambientSymbols ==
+  HostProfile.capabilityPremise? .node .ambientSymbols
+
+-- The browser layer and the shared ECMAScript layer preserve every old browser
+-- catalog answer while keeping all standard names out of the page-only layer.
+#guard legacyBrowserNames.all fun name =>
+  HostProfile.bindingType .browserPage name == legacyBrowserTypeof name
+#guard legacyBrowserNames.all fun name =>
+  HostProfile.bindingIdentity .browserPage name == canonicalBrowserIdentity name
+#guard legacyBrowserNames.all fun name =>
+  HostProfile.opaqueBinding .browserPage name ==
+    (BrowserGlobals.opaqueBindings.contains name || BrowserGlobals.shims.contains name)
+#guard legacyBrowserNames.all fun name => (HostProfile.globalEntry? .browserPage name).isSome
+#guard BrowserPageHost.globals.all fun entry =>
+  !(ECMAScriptHost.globalEntries.any (·.name == entry.name))
+#guard BrowserPageHost.layer.capabilities.any (·.capability == .pageEnvironment)
+#guard NodeHost.globals.all fun entry =>
+  !(ECMAScriptHost.globalEntries.any (·.name == entry.name))
+#guard HostProfile.bindingIdentity .node "global" == some "node.global"
+#guard HostProfile.bindingIdentity .node "globalThis" == some "node.global"
+#guard HostProfile.bindingIdentity .browserPage "Object" == some "intrinsic.Object"
+#guard HostProfile.identity .browserPage (.property "window.Object" "defineProperty") ==
+  some "intrinsic.Object.defineProperty"
+#guard HostProfile.bindingType .node "URL" == some "function"
+#guard HostProfile.bindingType .node "FileReader" == some "undefined"
+
+#guard ((ECMAScriptHost.allMembers.map fun entry => (entry.owner, entry.key)) ++
+    (BrowserPageHost.members.map fun entry => (entry.owner, entry.key))).all fun (owner, key) =>
+  HostProfile.identity .browserPage (.property (legacyBrowserReceiver owner) key) ==
+    legacyBrowserMemberIdentity owner key
+#guard BrowserGlobals.methods.all fun (owner, keys) => keys.all fun key =>
+  HostProfile.identity .browserPage (.property (legacyBrowserReceiver owner) key) ==
+    legacyBrowserMemberIdentity owner key
+#guard HostProfile.identity .browserPage (.property "intrinsic.Symbol" "for") == none
+
+-- The model's world-call table matches the pre-layer host-call fragment.
+#guard ECMAScriptHost.hostFunctions == ["Boolean", "Number", "isFinite", "isNaN", "parseFloat", "parseInt"]
+#guard ECMAScriptHost.hostNamespaces == [
+  ("Math", ["abs", "acos", "acosh", "asin", "asinh", "atan", "atanh", "atan2", "cbrt", "ceil",
+    "clz32", "cos", "cosh", "exp", "expm1", "floor", "fround", "hypot", "imul", "log", "log10",
+    "log1p", "log2", "max", "min", "pow", "random", "round", "sign", "sin", "sinh", "sqrt", "tan",
+    "tanh", "trunc"]),
+  ("Number", ["isFinite", "isInteger", "isNaN", "isSafeInteger", "parseFloat", "parseInt"]),
+  ("String", ["fromCharCode", "fromCodePoint"])]
+
+#guard BrowserGlobals.opaqueBindings.all fun name =>
+  HostProfile.opaqueBinding .browserPage name &&
+    (HostProfile.bindingIdentity .browserPage name).isNone
+#guard BrowserGlobals.shims.all fun name =>
+  HostProfile.opaqueBinding .browserPage name && (HostProfile.bindingIdentity .browserPage name).isNone
+
+#guard HostProfile.valueForRef? .browserPage (.property "intrinsic.Math" "PI") ==
+  some (.number 0x400921fb54442d18)
+#guard observedRefHasPremise .browserPage (.property "intrinsic.Math" "PI")
+  "the own Math.PI data property returns a Number with binary64 bits 4614256656552045848 throughout initialization"
+
+-- The recording layer replaces only Node globals with world-supplied values;
+-- ECMAScript globals retain their shared intrinsic identities.
+#guard (ECMAScriptHost.globalFunctions ++ ECMAScriptHost.globalObjects).all fun name =>
+  !HostProfile.recordedHostValue .nodeRecording name
+#guard NodeHost.globals.all fun entry => HostProfile.recordedHostValue .nodeRecording entry.name
+#guard RecordedNodeHost.globals.all fun entry =>
+  entry.recordedValue && entry.typeTag.isNone && entry.identity.isNone && entry.premise.isNone
+#guard HostProfile.bindingType .nodeRecording "Object" == some "function"
+#guard HostProfile.bindingIdentity .nodeRecording "Object" == some "intrinsic.Object"
+#guard HostProfile.valueForRef? .nodeRecording (.binding "Object") ==
+  some (.identity "intrinsic.Object")
+#guard HostProfile.bindingIdentity .nodeRecording "Symbol" == some "intrinsic.Symbol"
+#guard HostProfile.identity .nodeRecording (.property "intrinsic.Symbol" "iterator") ==
+  some "Symbol.iterator"
+#guard NodeHost.globals.all fun entry =>
+  HostProfile.recordedHostValue .nodeRecording entry.name &&
+    HostProfile.bindingType .nodeRecording entry.name == entry.typeTag
+#guard observedTypeHasPremise .nodeRecording "Object"
+  "the ambient Object binding is the unmodified ECMAScript intrinsic throughout initialization"
+#guard BrowserPageHost.globals.all fun entry =>
+  if (ECMAScriptHost.globalEntries.any (·.name == entry.name)) then
+    !HostProfile.recordedHostValue .nodeRecording entry.name &&
+      !HostProfile.undeclaredGlobal .nodeRecording entry.name
+  else if NodeHost.globals.any (·.name == entry.name) then
+    HostProfile.recordedHostValue .nodeRecording entry.name
+  else HostProfile.undeclaredGlobal .nodeRecording entry.name
+#guard !HostProfile.recordedHostValue .nodeRecording "FileReader"
+#guard HostProfile.undeclaredGlobal .nodeRecording "FileReader"
+#guard HostProfile.bindingType .nodeRecording "FileReader" == some "undefined"
+#guard !HostProfile.undeclaredGlobal .nodeRecording "Object"
+#guard observedTypeHasPremise .nodeRecording "FileReader"
+  "a global name absent from the ECMAScript and Node layers is undeclared throughout initialization"
+
+#guard HostProfile.recordedPrim .nodeRecording "console" "log" == some .log
+#guard HostProfile.recordedPrim .nodeRecording "Object" "create" == some .create
+#guard HostProfile.recordedPrim .nodeRecording "Object" "defineProperty" == some .defineProperty
+#guard HostProfile.recordedPrim .nodeRecording "Object" "getPrototypeOf" == some .getPrototypeOf
+#guard HostProfile.recordedPrim .nodeRecording "Object" "setPrototypeOf" == some .setPrototypeOf
+#guard (HostProfile.recordedPrim .browserPage "Object" "create").isNone
+#guard observedOperationHasPremise .nodeRecording "console.log"
+  "Node's console.log binding is the unmodified console method throughout initialization; additionally, console.log is the unmodified Node console method and appends formatted output to the recording"
+
+#guard ECMAScriptHost.opaqueConstructorNames.all fun name =>
+  HostProfile.opaqueConstructor .browserPage name
+#guard HostProfile.opaqueConstructor .browserPage "URL"
+#guard !HostProfile.opaqueConstructor .nodeRecording "URL"
+#guard ECMAScriptHost.opaqueConstructorNames.all fun name =>
+  !HostProfile.opaqueConstructor .nodeRecording name
+#guard (HostProfile.premises .browserPage).contains
+  "deferred standard constructors use the page realm's unchanged constructors throughout initialization"
+
+private def invalidGlobalProfile : HostProfile :=
+  HostProfile.fromLayers "invalid" [{ name := "bad", globals := [{ name := "x", identity := some "x" }] }]
+
+private def conflictingGlobalFieldsProfile : HostProfile :=
+  HostProfile.fromLayers "invalid" [{ name := "bad", globals := [
+      { name := "x", typeTag := some "object", identity := some "x", opaqueRef := true,
+        premise := some "conflicting global facts" }] }]
+
+#guard !HostProfile.valid invalidGlobalProfile
+#guard !HostProfile.valid conflictingGlobalFieldsProfile
+
+private def recordedValueWithoutPremise : HostProfile :=
+  HostProfile.fromLayers "recorded" [{ name := "recorded", globals := [{ name := "x", recordedValue := true }] }]
+
+#guard HostProfile.valid recordedValueWithoutPremise
+#guard HostProfile.premises recordedValueWithoutPremise == []
+#guard observedRefHasPremise .browserPage (.binding "Object")
+  "the ambient Object binding is the unmodified ECMAScript intrinsic throughout initialization"
+#guard observedTypeHasPremise .browserPage "FileReader"
+  "the browser page exposes the unchanged FileReader function throughout initialization"
+
+private def invalidMemberProfile : HostProfile :=
+  HostProfile.fromLayers "invalid" [{ name := "bad", members := [
+      { owner := "Object", key := "create", primitive := some .create }] }]
+
+private def invalidCapabilityProfile : HostProfile :=
+  HostProfile.fromLayers "invalid" [{ name := "bad", capabilities := [⟨.ambientSymbols, none⟩] }]
+
+private def unboundSymbolCapabilityProfile : HostProfile :=
+  HostProfile.fromLayers "unbound-symbol" [{ name := "test", capabilities := [
+    ⟨.ambientSymbols, some "the test Symbol operations are stable"⟩] }]
+
+#guard !HostProfile.valid invalidMemberProfile
+#guard !HostProfile.valid invalidCapabilityProfile
+#guard !HostProfile.ambientSymbols unboundSymbolCapabilityProfile
+
+private def conflictingGlobalProfile : HostProfile :=
+  HostProfile.fromLayers "conflict" [
+      { name := "first", globals := [⟨"x", none, some "first", false, false, false, false, some "first premise"⟩] },
+      { name := "second", globals := [⟨"x", none, some "second", false, false, false, false, some "second premise"⟩] }]
+
+private def conflictingMemberProfile : HostProfile :=
+  HostProfile.fromLayers "conflict" [
+      { name := "first", members := [⟨"X", "y", some "first", false, none, none, some "first premise"⟩] },
+      { name := "second", members := [⟨"X", "y", some "second", false, none, none, some "second premise"⟩] }]
+
+#guard !HostProfile.valid conflictingGlobalProfile
+#guard !HostProfile.valid conflictingMemberProfile
+
+private def explicitUndeclaredProfile : HostProfile :=
+  HostProfile.fromLayers "author-extension" [{ name := "author-extension", globals := [
+      { name := "optionalFeature", undeclared := true, premise := some "optionalFeature is absent" }] }]
+
+#guard HostProfile.valid explicitUndeclaredProfile
+#guard HostProfile.undeclaredGlobal explicitUndeclaredProfile "optionalFeature"
+#guard HostProfile.premises explicitUndeclaredProfile == []
+#guard observedTypeHasPremise explicitUndeclaredProfile "optionalFeature" "optionalFeature is absent"
+#guard HostProfile.bindingType explicitUndeclaredProfile "optionalFeature" == some "undefined"
+
+private def parseProfile (source : String) : Except String HostProfile := do
+  HostProfile.read (← Lean.Json.parse source)
+
+#guard (parseProfile "{\"profile\":\"browser-page\"}").isOk
+#guard (parseProfile "{\"profile\":\"empty\",\"extensions\":[{\"name\":\"app\",\"globals\":[{\"name\":\"appConfig\",\"typeof\":\"object\",\"premise\":\"appConfig is stable\"}]}]}").isOk
+#guard (match parseProfile "{\"profile\":\"empty\",\"extensions\":[{\"name\":\"bad\",\"globals\":[{\"name\":\"appConfig\",\"typeof\":\"object\"}]}]}" with
+    | .error _ => true
+    | .ok _ => false)
+#guard (parseProfile "{\"profile\":\"empty\",\"extensions\":[{\"name\":\"recording\",\"globals\":[{\"name\":\"recorded\",\"recordedValue\":true}]}]}").isOk
+#guard (parseProfile "{\"profile\":\"empty\",\"extensions\":[{\"name\":\"app\",\"members\":[{\"owner\":\"appConfig\",\"key\":\"version\",\"dataValue\":{\"kind\":\"number\",\"bits\":\"4614256656552045848\"},\"premise\":\"appConfig.version is stable\"}]}]}").isOk
+#guard (match parseProfile "{\"profile\":\"empty\",\"extensions\":[{\"name\":\"bad\",\"globals\":[{\"name\":\"appConfig\",\"typeof\":\"other\",\"premise\":\"bad type\"}]}]}" with
+    | .error _ => true
+    | .ok _ => false)
+
+end CoreJS.HostProfileExamples

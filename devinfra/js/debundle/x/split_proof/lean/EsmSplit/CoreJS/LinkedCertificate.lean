@@ -3,11 +3,20 @@ import EsmSplit.CoreJS.LinkedCertificate.Probe
 import EsmSplit.CoreJS.LinkedCertificate.QuoteJson
 import EsmSplit.CoreJS.LinkedCertificate.QuoteRecords
 import EsmSplit.CoreJS.LinkedCertificate.QuoteWrites
+import Lean.Elab.Deriving.ToExpr
 
 namespace CoreJS.LinkedBehavior
 
 deriving instance Lean.ToExpr for EsmSplit.Module
 deriving instance Lean.ToExpr for EsmSplit.Plan
+deriving instance Lean.ToExpr for CoreJS.HostCapability
+deriving instance Lean.ToExpr for CoreJS.HostValue
+deriving instance Lean.ToExpr for CoreJS.HostGlobalEntry
+deriving instance Lean.ToExpr for CoreJS.HostMemberEntry
+deriving instance Lean.ToExpr for CoreJS.HostCapabilityEntry
+deriving instance Lean.ToExpr for CoreJS.HostConstructorEntry
+deriving instance Lean.ToExpr for CoreJS.HostLayer
+deriving instance Lean.ToExpr for CoreJS.HostProfile
 
 structure ProofModule where
   name : Lean.Name
@@ -100,6 +109,28 @@ private partial def expandedBytes (expr : Lean.Expr) : Nat :=
   | .fvar id => id.name.toString.utf8ByteSize
   | _ => 0
 
+/-- Reuse the compiled definitions for built-in layers in generated certificates.
+The merged lookup tables are emitted from the already validated profile so AST
+rechecking does not rebuild the full catalog for each global lookup. -/
+private def hostLayerExpr (layer : HostLayer) : Lean.Expr :=
+  if layer = ECMAScriptHost.layer then Lean.mkConst ``ECMAScriptHost.layer
+  else if layer = NodeHost.layer then Lean.mkConst ``NodeHost.layer
+  else if layer = BrowserPageHost.layer then Lean.mkConst ``BrowserPageHost.layer
+  else if layer = RecordedNodeHost.layer then Lean.mkConst ``RecordedNodeHost.layer
+  else Lean.toExpr layer
+
+private def hostProfileExpr (profile : HostProfile) : Lean.Expr := Id.run do
+  let layerType := Lean.mkConst ``HostLayer
+  let layers := profile.layers.foldr (fun layer tail =>
+    Lean.mkApp3 (Lean.mkConst ``List.cons [0]) layerType (hostLayerExpr layer) tail)
+    (Lean.mkApp (Lean.mkConst ``List.nil [0]) layerType)
+  return Lean.mkAppN (Lean.mkConst ``HostProfile.mk) #[
+    Lean.toExpr profile.name,
+    layers,
+    Lean.toExpr profile.resolvedGlobals,
+    Lean.toExpr profile.resolvedMembers
+  ]
+
 private def certificateText (profile : HostProfile) (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan)
     (witness? : Option (HostPremises × Nat)) (source candidate : Program) :
     EsmSplit.CertificateData.Quotes Refusal Certificate := do
@@ -130,28 +161,25 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   let recordTerms ← records.definitions sourceTerm candidateTerm move.isSome
   let writeTerms ← writes.definitions
   let p ← EsmSplit.CertificateData.quote "plan" (Lean.toExpr plan)
+  let profileTerm ← EsmSplit.CertificateData.quote "profile" (hostProfileExpr profile)
   let (asts, astData) := jsonDefinitions [("sourceAST", sourceAST), ("providers", providers), ("files", files)]
   modify (· ++ astData)
   -- The generated declarations are short. Estimate the compiler's workload from
   -- the quoted terms when deciding whether to run correspondence separately.
   let stagedGate := astData.foldl (fun bytes (_, term) => bytes + expandedBytes term) 0 ≥ 512 * 1024
   let writeImports := if writes.isEmpty then "" else "import EsmSplit.Fast\n"
-  let profileTerm := fun (p : HostProfile) => match p with
-    | .empty => "CoreJS.HostProfile.empty"
-    | .browserPage => "CoreJS.HostProfile.browserPage"
-    | .ecmascript => "CoreJS.HostProfile.ecmascript"
-    | .nodeRecording => "CoreJS.HostProfile.nodeRecording"
   let ordinaryTactic := s!"verify_linked_programs {fuel}{strategy}"
   -- This only selects the proof attempt. The theorem checks the complete units,
   -- free-name cells, hoisted state and entry exports from the actual links.
   let order := fun (p : Program) => p.loaded.flatMap fun m => m.body.map Prod.fst
   let ordered := order source == order candidate
+  let orderedProof := ordered
   -- Larger module graphs can spend most of one reduction budget on linking.
   let stageLink := ordered || (source.modules.map (·.body.length)).sum ≥ 32
   let (layouts, tactic) := if stageLink then
     (layoutDeclaration "private " "source" ++ layoutDeclaration "private " "candidate",
      "  first\n" ++
-     (if ordered then s!"  | verify_ordered_linked_programs {fuel} sourceLink candidateLink premises\n" else "") ++
+     (if orderedProof then s!"  | verify_ordered_linked_programs {fuel} sourceLink candidateLink premises\n" else "") ++
      s!"  | verify_linked_programs_from {fuel} sourceLink candidateLink premises\n  | {ordinaryTactic}\n")
     else ("", s!"  {ordinaryTactic}\n")
   let options := "\nopen CoreJS\n" ++
@@ -163,8 +191,8 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   let raw := String.join asts.toList ++ "private def plan : EsmSplit.Plan := " ++ p ++ "\n"
   let programs := s!"def source : Program := {s}\ndef candidate : Program := {c}\n"
   let profiles := fun (visibility : String) =>
-    s!"{visibility}def profile := {profileTerm profile}\n" ++
-    s!"{visibility}def premises : HostPremises := ⟨{reprStr premises.typeofBindings}, {reprStr premises.refs}⟩\n"
+    s!"{visibility}def profile : HostProfile := {profileTerm}\n" ++
+    s!"{visibility}def premises : HostPremises := ⟨{reprStr premises.typeofBindings}, {reprStr premises.refs}, {reprStr premises.profileFacts}⟩\n"
   let execution := "namespace LinkedExecutionProof\n" ++ data ++ programs ++ profiles "" ++ layouts ++
     "theorem executions : LinkedBehavior.EquivalentFor premises source candidate ∧ LinkedBehavior.SameExports source candidate := by\n" ++
     tactic ++ "end LinkedExecutionProof\n"

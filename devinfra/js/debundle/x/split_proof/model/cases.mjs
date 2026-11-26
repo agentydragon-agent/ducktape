@@ -606,7 +606,7 @@ export const cases = [
     `,
     end: "unknown",
     expectedStop: {
-      detail: "host function eval is called",
+      detail: "host function intrinsic.eval is called",
       left: 1,
       out: ["before"],
     },

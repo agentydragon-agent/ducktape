@@ -60,24 +60,37 @@ private def runCensus (file : String) (profile : CoreJS.HostProfile)
   | .ok result => IO.println result.compress; pure 0
   | .error why => IO.eprintln why; pure 1
 
-/-- Replay uses the recorded Node host; the census defaults to the empty production profile. -/
+/-- Replay uses the recorded Node host; census defaults to the empty production profile.
+`--ast` lowers through certification with the supplied host profile; other modes use `CoreJS.main`. -/
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["--moves-ast", file] => runCensus file .empty moveCensus
   | ["--moves-ast", file, "--node-recording"] => runCensus file .nodeRecording moveCensus
   | ["--moves-ast", file, "--host-contract", contract] =>
     match Lean.Json.parse (← IO.FS.readFile contract) >>= censusProfile with
-    | .ok profile => runCensus file profile moveCensus
+    | .ok profile =>
+      if profile.hasCapability .recordedModelPrimitives then
+        IO.eprintln "--moves-ast --host-contract does not accept the test-only recorded host; use --node-recording"
+        pure 1
+      else runCensus file profile moveCensus
     | .error why => IO.eprintln why; pure 1
   | ["--lowering-census", file] => runCensus file .empty CoreJS.LinkedInput.concreteCensus
   | ["--lowering-census", file, "--host-contract", contract] =>
     match Lean.Json.parse (← IO.FS.readFile contract) >>= censusProfile with
     | .ok profile => runCensus file profile CoreJS.LinkedInput.concreteCensus
     | .error why => IO.eprintln why; pure 1
-  | ["--ast", file] =>
+  | ["--ast", "--host-contract", profileFile, file] =>
+    let profileJson ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile profileFile))
+    let (profile, intrinsics) ← IO.ofExcept (CoreJS.StableIntrinsic.readContract profileJson)
+    unless intrinsics.isEmpty do
+      IO.eprintln "stableIntrinsicValues are used only by certified structural lowering"
+      return 2
     for line in (← IO.FS.lines file) do
-      IO.println (CoreJS.runLine 100000 line fun j scripts =>
-        CoreJS.LinkedInput.program j ((j.getObjVal? "providers").toOption.getD (Lean.Json.mkObj []))
+      IO.println (CoreJS.runLineWithProfile 100000 line profile fun j scripts =>
+        CoreJS.LinkedInput.program profile j ((j.getObjVal? "providers").toOption.getD (Lean.Json.mkObj []))
           (Std.HashSet.ofList (scripts.map Prod.fst)) ((j.getObjValAs? String "entry").toOption.getD "main"))
     pure 0
+  | "--ast" :: _ =>
+    IO.eprintln "usage: corejs --ast --host-contract PROFILE.json dumps.jsonl"
+    pure 2
   | _ => CoreJS.main args

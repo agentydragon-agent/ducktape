@@ -634,6 +634,7 @@ js_test(
         ":split_dump",
         "//devinfra/js/debundle/x/split_proof/lean:corejs",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/model:node_recording_host_profile",
         "//devinfra/js/debundle/x/split_proof/model:to_core",
         "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
         "//devinfra/js/debundle/x/split_proof/translation/testing:split",
@@ -643,6 +644,7 @@ js_test(
         "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:corejs)",
         "DUMP_AST": "$(rootpath :dump_ast)",
         "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+        "NODE_HOST_PROFILE": "$(rootpath //devinfra/js/debundle/x/split_proof/model:node_recording_host_profile)",
     },
 )
 

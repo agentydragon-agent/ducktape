@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { caseShard, root, threeUnitFixture as fixture } from "./harness.mjs";
+import { browserObservedAssumptions, caseShard, root, threeUnitFixture as fixture } from "./harness.mjs";
 
 const profile = path.join(root, "page.json");
 writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
 const entry = "entry.mjs";
 const includesCase = caseShard();
+function assertAssumptions(actual, observed) {
+  assert.deepEqual(browserObservedAssumptions(actual).sort(), [...observed].sort());
+}
 
 if (includesCase("page-reference")) {
   const test = fixture(
@@ -18,7 +21,8 @@ if (includesCase("page-reference")) {
   assert(!existsSync(test.out));
   const verdict = test.run("--host-contract", profile);
   assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-  assert.deepEqual(verdict.assumptions, [
+  assertAssumptions(verdict.assumptions, [
+    "window, globalThis, and self return the same page global object throughout initialization",
     "window returns the same page object without observable effects throughout initialization",
   ]);
   assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
@@ -45,7 +49,8 @@ if (includesCase("page-aliases")) {
   assert.match(test.run().reason, /unsupported global self/);
   const verdict = test.run("--host-contract", profile);
   assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-  assert.deepEqual(verdict.assumptions, [
+  assertAssumptions(verdict.assumptions, [
+    "window, globalThis, and self return the same page global object throughout initialization",
     "typeof globalThis is object without observable effects throughout initialization",
     "typeof self is object without observable effects throughout initialization",
     "self returns the same page object without observable effects throughout initialization",
@@ -73,7 +78,8 @@ if (includesCase("guarded-global")) {
   assert.match(test.run().reason, /unsupported global global/);
   const verdict = test.run("--host-contract", profile);
   assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-  assert.deepEqual(verdict.assumptions, [
+  assertAssumptions(verdict.assumptions, [
+    "typeof global is undefined on this page, and a direct read is treated as opaque",
     "typeof global is undefined without observable effects throughout initialization",
   ]);
   assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
@@ -94,10 +100,12 @@ for (const deferred of [false, true]) {
   const assumptions = deferred
     ? []
     : [
+        "window, globalThis, and self return the same page global object throughout initialization",
+        "the ambient Error binding is the unmodified ECMAScript intrinsic throughout initialization",
         "globalThis returns the same page object without observable effects throughout initialization",
-        "window.Error returns the stable host reference window.Error without observable effects throughout initialization",
+        "window.Error returns the stable host reference intrinsic.Error without observable effects throughout initialization",
       ];
-  assert.deepEqual(verdict.assumptions, assumptions);
+  assertAssumptions(verdict.assumptions, assumptions);
   assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
   for (const file of [test.sourceFile, path.join(test.out, entry)]) {
     const { result } = await import(pathToFileURL(file).href);
@@ -109,7 +117,7 @@ for (const [name, body, reason] of [
   [
     "construct-page-error",
     "try { return new self.Error(); } catch { return 17; }",
-    /host value window.Error is constructed/,
+    /host value intrinsic.Error is constructed/,
   ],
   ["reached-global", "try { return global; } catch { return 17; }", /ambient binding global is reached/],
   ["alias-property", "return self.document.title;", /unsupported host reference window.document.title/],
@@ -130,7 +138,7 @@ if (includesCase("module-try-typed-array")) {
   );
   const verdict = test.run("--host-contract", profile);
   assert.equal(verdict.status, "rejected");
-  assert.match(verdict.reason, /host value window\.Uint8Array is constructed/);
+  assert.match(verdict.reason, /host value intrinsic\.Uint8Array is constructed/);
   assert(!existsSync(test.out));
 }
 
@@ -141,14 +149,21 @@ if (includesCase("bulk-browser-bindings")) {
   );
   const verdict = test.run("--host-contract", profile);
   assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-  assert.deepEqual(verdict.assumptions, [
+  assertAssumptions(verdict.assumptions, [
+    "the browser page exposes the unchanged document object throughout initialization",
+    "the browser page exposes the unchanged fetch function throughout initialization",
+    "typeof process is undefined on this page, and a direct read is treated as opaque",
+    "the ambient Object binding is the unmodified ECMAScript intrinsic throughout initialization",
+    "the ambient ECMAScript intrinsic Object provides its unmodified defineProperty property throughout initialization",
+    "window, globalThis, and self return the same page global object throughout initialization",
+    "the browser page exposes the unchanged URL function throughout initialization",
     "typeof document is object without observable effects throughout initialization",
     "typeof fetch is function without observable effects throughout initialization",
     "typeof process is undefined without observable effects throughout initialization",
-    "Object returns the stable host reference window.Object without observable effects throughout initialization",
-    "window.Object.defineProperty returns the stable host reference window.Object.defineProperty without observable effects throughout initialization",
+    "Object returns the stable host reference intrinsic.Object without observable effects throughout initialization",
+    "window.Object.defineProperty returns the stable host reference intrinsic.Object.defineProperty without observable effects throughout initialization",
     "globalThis returns the same page object without observable effects throughout initialization",
-    "window.Object returns the stable host reference window.Object without observable effects throughout initialization",
+    "window.Object returns the stable host reference intrinsic.Object without observable effects throughout initialization",
     "URL returns the stable host reference window.URL without observable effects throughout initialization",
   ]);
   assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
@@ -168,11 +183,11 @@ for (const reached of [false, true]) {
   );
   const verdict = test.run("--host-contract", profile);
   if (reached) {
-    assert.match(verdict.reason, /host function window.Date.now is called/);
+    assert.match(verdict.reason, /host function intrinsic.Date.now is called/);
     assert(!existsSync(test.out));
   } else {
     assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-    assert.deepEqual(verdict.assumptions, []);
+    assertAssumptions(verdict.assumptions, []);
     assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
   }
 }

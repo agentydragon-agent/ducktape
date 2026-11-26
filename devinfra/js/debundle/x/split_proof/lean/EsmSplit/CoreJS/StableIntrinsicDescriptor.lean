@@ -10,24 +10,43 @@ structure StableIntrinsic where
   owner : String
   key : String
   value : HostValue
+  premise : String
   deriving DecidableEq
 
 namespace StableIntrinsic
 
-def mathPI : StableIntrinsic := ⟨"Math.PI@1", "Math", "window.Math", "PI", .number 0x400921fb54442d18⟩
+def fromProfile? (profile : HostProfile) (id : String) : Option StableIntrinsic := do
+  let [path, version] := id.splitOn "@" | none
+  guard (version == "1")
+  let [binding, key] := path.splitOn "." | none
+  let global ← profile.globalEntry? binding
+  guard !global.recordedValue
+  let owner ← global.identity
+  let bindingPremise ← global.premise
+  let entry ← profile.memberEntry? binding key
+  let value ← match entry.dataValue, entry.identity with
+    | some value, none => some value
+    | none, some identity => some (.identity identity)
+    | _, _ => none
+  let propertyPremise ← entry.premise
+  let propertyValue := match value with
+    | .identity identity => s!"the stable host reference {identity}"
+    | .number bits => s!"a Number with binary64 bits {bits.toNat}"
+  return ⟨id, binding, owner, key, value,
+    s!"the ambient binding {binding} returns {owner} throughout initialization; {propertyPremise}; it returns {propertyValue}"⟩
 
-def objectDefineProperty : StableIntrinsic :=
-  ⟨"Object.defineProperty@1", "Object", "intrinsic.Object", "defineProperty", .identity "intrinsic.Object.defineProperty"⟩
-
-/-- Parse exactly the production contracts used by certification. The returned
-premises are still enforced by the caller when selecting a proof strategy. -/
+/-- Parse a host profile and resolve every selected stable intrinsic through its
+layer entries. Certification separately enforces the structural-mode requirement. -/
 def readContract (j : Lean.Json) : Except String (HostProfile × List StableIntrinsic) := do
-  let presets : List (HostProfile × StableIntrinsic) :=
-    [(.browserPage, .mathPI), (.ecmascript, .objectDefineProperty)]
-  match presets.find? (fun (p, d) => j == Lean.Json.mkObj [("profile", Lean.toJson p.label),
-      ("stableIntrinsicValues", Lean.toJson [d.id])]) with
-  | some (p, d) => return (p, [d])
-  | none => return (← HostProfile.read j, [])
+  let profile ← HostProfile.read j
+  let ids ← match j.getObjVal? "stableIntrinsicValues" with
+    | .error _ => pure []
+    | .ok values => (← values.getArr?).toList.mapM Lean.Json.getStr?
+  let intrinsics ← ids.mapM fun id =>
+    match fromProfile? profile id with
+    | some intrinsic => pure intrinsic
+    | none => throw s!"host profile does not define stable intrinsic {id}"
+  return (profile, intrinsics)
 
 end StableIntrinsic
 end CoreJS

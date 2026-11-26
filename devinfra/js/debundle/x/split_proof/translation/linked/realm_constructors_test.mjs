@@ -5,6 +5,8 @@ import { pathToFileURL } from "node:url";
 import {
   array,
   arrow,
+  browserProfileAssumptions,
+  browserObservedAssumptions,
   call,
   conditional,
   assertRejectedOrOrderKeptSlice,
@@ -71,7 +73,10 @@ for (const { name, args, observe, expected } of constructors) {
       continue;
     }
     assert.equal(verdict.status, "certified", log);
-    assert.deepEqual(verdict.assumptions, []);
+    assert.deepEqual(browserObservedAssumptions(verdict.assumptions), []);
+    assert.deepEqual(browserProfileAssumptions(verdict.assumptions), [
+      "deferred standard constructors use the page realm's unchanged constructors throughout initialization",
+    ]);
     assert.deepEqual(lower(files.sourceFile, files.specFile, out, [...opts, "--check-output"]).verdict, verdict);
     for (const file of [files.sourceFile, path.join(out, entry)]) {
       const mod = await import(pathToFileURL(file).href);

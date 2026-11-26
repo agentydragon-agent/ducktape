@@ -5,11 +5,14 @@ import { pathToFileURL } from "node:url";
 import { split } from "../testing/split.mjs";
 import {
   assertCertified,
+  browserLoweringAssumptions,
+  browserObservedAssumptions,
   arrow,
   block,
   call,
   caseShard,
   conditional,
+  browserProfileAssumptions,
   exportNamed,
   expression,
   id,
@@ -34,18 +37,51 @@ const entry = "entry.mjs";
 const includesCase = caseShard();
 
 const nodeProfileFixture = fixture(
-  "unsupported-node-recording-profile",
+  "node-recording-profile",
   "const moved = 1; const kept = 2; export const result = moved + kept;"
 );
-const unsupportedProfile = split({
+const nodeProfileVerdict = split({
   source: nodeProfileFixture.sourceFile,
   spec: nodeProfileFixture.specFile,
   out: nodeProfileFixture.out,
   hostContract: nodeProfile,
 });
-assert.equal(unsupportedProfile.status, "refused", unsupportedProfile.log);
-assert.match(unsupportedProfile.reason, /unsupported host contract/);
-assert(!existsSync(nodeProfileFixture.out));
+assert.equal(nodeProfileVerdict.status, "certified", nodeProfileVerdict.log);
+assert.equal(nodeProfileVerdict.verdict.hostProfile, "node-recording");
+assert(existsSync(nodeProfileFixture.out));
+
+if (includesCase("shared-ecmascript-symbol-node")) {
+  const symbolFixture = fixture(
+    "shared-ecmascript-symbol-node",
+    'const brand = Symbol("node-host"); const result = typeof brand; export { result };'
+  );
+  const verdict = symbolFixture.run("--host-contract", nodeProfile);
+  assert.equal(verdict.status, "certified", JSON.stringify(verdict));
+  assert.deepEqual(
+    [...verdict.assumptions].sort(),
+    [
+      "Symbol returns the intrinsic Symbol function without observable effects throughout initialization",
+      "the ambient Symbol binding is the unmodified ECMAScript intrinsic throughout initialization",
+      "the intrinsic Symbol operations return fresh symbols and canonical well-known symbols without observable effects throughout initialization",
+    ].sort()
+  );
+  for (const file of [symbolFixture.sourceFile, path.join(symbolFixture.out, entry)]) {
+    assert.equal((await import(pathToFileURL(file).href)).result, "symbol");
+  }
+}
+
+if (includesCase("shadowed-symbol-is-not-intrinsic")) {
+  const shadowed = fixture(
+    "shadowed-symbol-is-not-intrinsic",
+    'const read = (Symbol) => Symbol.iterator; const result = read({ iterator: "shadowed" }); export { result };'
+  );
+  const verdict = shadowed.run("--host-contract", profile);
+  assert.equal(verdict.status, "certified", JSON.stringify(verdict));
+  assert.deepEqual(verdict.assumptions, []);
+  for (const file of [shadowed.sourceFile, path.join(shadowed.out, entry)]) {
+    assert.equal((await import(pathToFileURL(file).href)).result, "shadowed");
+  }
+}
 
 for (const [binding, defaulted] of [
   ["ambient", false],
@@ -80,7 +116,16 @@ for (const [binding, defaulted] of [
   const verdict = test.run("--host-contract", profile);
   assert.equal(verdict.status, "certified", JSON.stringify(verdict));
   assert.equal(verdict.hostProfile, "browser-page");
-  assert.equal(verdict.assumptions.length, local ? 0 : 1);
+  assert.deepEqual(
+    browserObservedAssumptions(verdict.assumptions),
+    local
+      ? []
+      : [
+          "window, globalThis, and self return the same page global object throughout initialization",
+          "typeof window is object without observable effects throughout initialization",
+        ]
+  );
+  assert.deepEqual(browserProfileAssumptions(verdict.assumptions), []);
   assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
   // Supply the single observation promised by the profile in this Node realm.
   globalThis.window = {};
@@ -205,7 +250,7 @@ for (const args of [[], [literal("absent")]]) {
       assert(!existsSync(test.out));
     } else {
       assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-      assert.deepEqual(verdict.assumptions, []);
+      assert.deepEqual(browserObservedAssumptions(verdict.assumptions), []);
       assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
       for (const file of [test.sourceFile, path.join(test.out, entry)]) {
         assert.equal((await import(pathToFileURL(file).href)).result, 42);
@@ -225,20 +270,25 @@ if (includesCase("caught-opaque-error")) {
 }
 
 if (includesCase("shadowed-host-bindings")) {
-  const lexical = fixture(
-    "shadowed-host-bindings",
-    `const read = () => {
+  for (const [hostName, hostProfile] of [
+    ["browser", profile],
+    ["node", nodeProfile],
+  ]) {
+    const lexical = fixture(
+      `shadowed-host-bindings-${hostName}`,
+      `const read = () => {
     class Error { value = "local"; }
     const Symbol = { for: (key) => key };
     return Symbol.for((new Error()).value);
   };
   const result = read(); export { result };`
-  );
-  const localVerdict = lexical.run("--host-contract", profile);
-  assert.equal(localVerdict.status, "certified", JSON.stringify(localVerdict));
-  assert.deepEqual(localVerdict.assumptions, []);
-  for (const file of [lexical.sourceFile, path.join(lexical.out, entry)]) {
-    assert.equal((await import(pathToFileURL(file).href)).result, "local");
+    );
+    const localVerdict = lexical.run("--host-contract", hostProfile);
+    assert.equal(localVerdict.status, "certified", JSON.stringify(localVerdict));
+    assert.deepEqual(browserObservedAssumptions(localVerdict.assumptions), []);
+    for (const file of [lexical.sourceFile, path.join(lexical.out, entry)]) {
+      assert.equal((await import(pathToFileURL(file).href)).result, "local");
+    }
   }
 }
 
@@ -299,7 +349,13 @@ for (const pageSkipsError of [true, false]) {
     continue;
   }
   assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.assumptions.length, 1);
+  assert.deepEqual(browserObservedAssumptions(verdict.assumptions), [
+    "window, globalThis, and self return the same page global object throughout initialization",
+    "typeof window is object without observable effects throughout initialization",
+  ]);
+  assert.deepEqual(browserProfileAssumptions(verdict.assumptions), [
+    "deferred standard constructors use the page realm's unchanged constructors throughout initialization",
+  ]);
   assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
   globalThis.window = {};
   try {
@@ -339,11 +395,80 @@ for (const active of [false, true]) {
     assert(!existsSync(test.out));
   } else {
     assert.equal(status, "certified", reason);
-    assert.deepEqual(assumptions, []);
+    assert.deepEqual(browserObservedAssumptions(assumptions), []);
+    assert.deepEqual(browserProfileAssumptions(assumptions), [
+      "the browser page exposes the unchanged URL constructor throughout initialization",
+    ]);
     for (const file of [test.sourceFile, path.join(test.out, entry)]) {
       const mod = await import(pathToFileURL(file).href);
       assert.equal(mod.result, "help");
       assert.equal(mod.make(true).hostname, "example.org");
     }
   }
+}
+
+if (includesCase("profile-premise-sources")) {
+  const fixtureWithProfileUse = fixture(
+    "profile-premise-sources",
+    `if (false) console.log("must not run");
+    const result = typeof window;
+    export { result };`
+  );
+  const verdict = split({
+    source: fixtureWithProfileUse.sourceFile,
+    spec: fixtureWithProfileUse.specFile,
+    out: fixtureWithProfileUse.out,
+    hostContract: nodeProfile,
+  });
+  assert.equal(verdict.status, "certified", JSON.stringify(verdict));
+  assert.equal(verdict.verdict.hostProfile, "node-recording");
+
+  // These two facts justify profile-directed lowering of the retained .prim log,
+  // even though the branch is not taken. The remaining facts come from the reached
+  // typeof window observation in the source and candidate executions.
+  const loweringFacts = [
+    "Node's console.log binding is the unmodified console method throughout initialization; additionally, console.log is the unmodified Node console method and appends formatted output to the recording",
+    "the recording harness uses the model's standard primitive handlers for listed calls",
+  ];
+  const observedFacts = [
+    "a global name absent from the ECMAScript and Node layers is undeclared throughout initialization",
+    "typeof window is undefined without observable effects throughout initialization",
+  ];
+  assert.deepEqual([...verdict.verdict.assumptions].sort(), [...loweringFacts, ...observedFacts].sort());
+
+  const deadSymbol = fixture(
+    "profile-premise-dead-symbol",
+    `if (false) { const key = Symbol.iterator; }
+    const result = typeof window;
+    export { result };`
+  );
+  const symbolVerdict = deadSymbol.run("--host-contract", profile);
+  assert.equal(symbolVerdict.status, "certified", JSON.stringify(symbolVerdict));
+  assert.deepEqual(browserLoweringAssumptions(symbolVerdict.assumptions), [
+    "the ambient Symbol binding is the unmodified ECMAScript intrinsic throughout initialization",
+    "the intrinsic Symbol.iterator property is the realm's well-known symbol and reading it has no observable effects throughout initialization",
+  ]);
+  assert.deepEqual(browserProfileAssumptions(symbolVerdict.assumptions), [
+    "the intrinsic Symbol operations return fresh symbols and canonical well-known symbols without observable effects throughout initialization",
+  ]);
+  assert.deepEqual(browserObservedAssumptions(symbolVerdict.assumptions), [
+    "window, globalThis, and self return the same page global object throughout initialization",
+    "typeof window is object without observable effects throughout initialization",
+  ]);
+  // `typeof window` alone is the unused-fact control: the profile contains the
+  // Symbol layer, but its premises are omitted when no Symbol operation is lowered.
+  assert.deepEqual(browserProfileAssumptions(verdict.verdict.assumptions), []);
+
+  const capturedOutput = [];
+  const originalLog = console.log;
+  console.log = (...args) => capturedOutput.push(args);
+  try {
+    for (const file of [fixtureWithProfileUse.sourceFile, path.join(fixtureWithProfileUse.out, entry)]) {
+      const module = await import(pathToFileURL(file).href);
+      assert.equal(module.result, "undefined");
+    }
+  } finally {
+    console.log = originalLog;
+  }
+  assert.deepEqual(capturedOutput, []);
 }

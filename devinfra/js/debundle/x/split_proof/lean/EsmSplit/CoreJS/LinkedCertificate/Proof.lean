@@ -260,10 +260,11 @@ macro "verify_ordered_linked_programs " fuel:num source:ident candidate:ident pr
     (constructor
      · apply of_host_evaluation (premises := $premises) $fuel
        intro w
+       let specialized := HostPremises.specialize $premises w
        constructor
-       · rw [run_after_link $fuel (($source (HostPremises.specialize $premises w)).get (by rfl))]
-         first | cbv <;> rfl | rfl
-       · check_ordered_linked_runs $fuel $source $candidate (HostPremises.specialize $premises w)
+       · rw [run_after_link $fuel (($source specialized).get (by rfl))]
+         first | rfl | cbv <;> rfl
+       · check_ordered_linked_runs $fuel $source $candidate specialized
      · verify_linked_exports_from $source $candidate))
 
 /-- Reuse each checked link between execution and export matching. -/
@@ -278,8 +279,9 @@ macro "verify_linked_programs_from " fuel:num source:ident candidate:ident premi
              run_after_link $fuel (($candidate w).get (by rfl))] <;> $reduce
        | apply of_host_evaluation (premises := $premises) $fuel
          intro w
-         rw [run_after_link $fuel (($source (HostPremises.specialize $premises w)).get (by rfl)),
-             run_after_link $fuel (($candidate (HostPremises.specialize $premises w)).get (by rfl))]
+         let specialized := HostPremises.specialize $premises w
+         rw [run_after_link $fuel (($source specialized).get (by rfl)),
+             run_after_link $fuel (($candidate specialized).get (by rfl))]
          -- Lean 4.35 can panic when cbv simplifies the conjunction in the specialized world.
          constructor <;> (first | cbv <;> rfl | rfl)
      · verify_linked_exports_from $source $candidate))

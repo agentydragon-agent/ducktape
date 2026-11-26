@@ -2,7 +2,18 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { assertCertifiedResult, assertRejected, caseShard, lower, observe, prepare, root } from "./harness.mjs";
+import {
+  assertCertifiedResult,
+  assertRejected,
+  browserLoweringAssumptions,
+  browserProfileAssumptions,
+  browserObservedAssumptions,
+  caseShard,
+  lower,
+  observe,
+  prepare,
+  root,
+} from "./harness.mjs";
 
 const runCase = caseShard();
 
@@ -78,8 +89,15 @@ if (runCase("async-iterator-symbol")) {
     { "base.mjs": ["#0"], "entry.mjs": ["#1", "#2"] }
   );
   assertCertifiedResult(run, true);
-  assert.deepEqual(run.verdict.assumptions, [
+  assert.deepEqual(browserObservedAssumptions(run.verdict.assumptions), [
     "Symbol.asyncIterator returns the well-known asyncIterator symbol without observable effects throughout initialization",
+  ]);
+  assert.deepEqual(browserLoweringAssumptions(run.verdict.assumptions), [
+    "the ambient Symbol binding is the unmodified ECMAScript intrinsic throughout initialization",
+    "the intrinsic Symbol.asyncIterator property is the realm's well-known symbol and reading it has no observable effects throughout initialization",
+  ]);
+  assert.deepEqual(browserProfileAssumptions(run.verdict.assumptions), [
+    "the intrinsic Symbol operations return fresh symbols and canonical well-known symbols without observable effects throughout initialization",
   ]);
   assert.deepEqual(
     lower(run.files.sourceFile, run.files.specFile, run.out, [...run.options, "--check-output"]).verdict,

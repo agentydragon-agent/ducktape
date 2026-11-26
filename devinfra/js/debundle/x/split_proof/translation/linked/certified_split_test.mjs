@@ -196,7 +196,12 @@ if (runCase("browser-and-path-contracts")) {
   );
   assert.match(check(browserTree, all, "rejected").reason, /safe relative \.mjs path/);
   const browserArgs = ["--host-contract", pageProfile];
-  check(browserTree, all, "certified", ...browserArgs);
+  const browserVerdict = check(browserTree, all, "certified", ...browserArgs);
+  assert(
+    browserVerdict.assumptions.includes(
+      "window, globalThis, and self return the same page global object throughout initialization"
+    )
+  );
   check(browserTree, all, "certified", ...browserArgs, "--check-output");
   const valueFile = path.join(browserTree, "value.js");
   const valueSource = fs.readFileSync(valueFile, "utf8");

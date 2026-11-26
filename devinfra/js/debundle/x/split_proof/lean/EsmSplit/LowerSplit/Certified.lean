@@ -122,10 +122,16 @@ private def probeRefusal (refusal : CoreJS.LinkedBehavior.Refusal) : Certificati
     observation := refusal.observation }
 
 private def profileFields (profile : CoreJS.HostProfile) : List (String × Json) :=
-  if profile == .empty then [] else [("hostProfile", toJson profile.label)]
+  if profile.isEmpty then [] else [("hostProfile", toJson profile.label)]
 
-private def profileVerdict (selected : CoreJS.HostProfile) (used : CoreJS.HostPremises) : List (String × Json) :=
-  if selected == .empty then [] else profileFields selected ++ [("assumptions", toJson used.assumptions)]
+private def profileVerdict (selected : CoreJS.HostProfile) (used : CoreJS.HostPremises)
+    (pageEnvironmentUsed : Bool := false) : List (String × Json) := Id.run do
+  if selected.isEmpty then return []
+  let profileFacts :=
+    if pageEnvironmentUsed then used.profileFacts ++ (selected.capabilityPremise? .pageEnvironment).toList
+    else used.profileFacts
+  let used := { used with profileFacts := profileFacts.eraseDups }
+  return profileFields selected ++ [("assumptions", toJson used.assumptions)]
 
 private structure CertifiedOptions where
   request : Guarantee
@@ -156,11 +162,11 @@ private def parseCertifiedOptions (label : String) (args : List String) : IO (Sy
     throw (IO.userError "--deployment-origin requires --structural")
   let (preset, args) := EsmSplit.takeFlag "--deployment-preset" args
   let nativeRecord := preset == some CoreJS.NativeRecord.preset
-  if preset.isSome && !(nativeRecord && deploymentOrigin.isSome && profile == .browserPage) then
+  if preset.isSome && !(nativeRecord && deploymentOrigin.isSome && profile.hasCapability .pageEnvironment) then
     throw (IO.userError "native-browser-record@1 requires a browser-page profile and deployment origin")
   let (mapProfile, args) := EsmSplit.takeFlag "--deployment-import-map" args
   let emptyMap := mapProfile == some "empty@1"
-  if mapProfile.isSome && !(emptyMap && deploymentOrigin.isSome && profile == .browserPage) then
+  if mapProfile.isSome && !(emptyMap && deploymentOrigin.isSome && profile.hasCapability .pageEnvironment) then
     throw (IO.userError "empty@1 requires a browser-page profile and deployment origin")
   let checkOnly := args.contains "--check-output"
   let args := args.filter (· != "--check-output")
@@ -212,7 +218,7 @@ private def prepare (chunk : DeploymentChunk) (input : BundleInput) (work : Syst
   let S ← IO.ofExcept (chunk.spec asts.size)
   for name in S.entry :: S.modules.map Prod.fst do
     let moduleExtension := name.endsWith ".mjs" ||
-      ((profile == .browserPage || (retainEntryRoute && name == sourcePath)) && name.endsWith ".js")
+      ((profile.hasCapability .pageEnvironment || (retainEntryRoute && name == sourcePath)) && name.endsWith ".js")
     unless CoreJS.ModuleInput.supportedFilename name && moduleExtension do
       throw (IO.userError s!"certified output requires a safe relative .mjs path (.js requires a retained deployment entry or browser-page modules), got {name}")
   for (ast, i) in asts.zipIdx do
@@ -232,13 +238,15 @@ private def requireGuarantee (request proved : Guarantee) : IO Unit := do
     throw (IO.userError "the certificate proves only normal-completion")
 
 private def emitStructural (options : CertifiedOptions) (used : List CoreJS.StableIntrinsic)
-    (level : Guarantee) (proof : CoreJS.LinkedBehavior.StructuralProof) : IO UInt32 := do
+    (level : Guarantee) (proof : CoreJS.LinkedBehavior.StructuralProof)
+    (pageEnvironmentUsed : Bool := false) : IO UInt32 := do
   let scope := match proof with
     | .preservedOrder => "linked-structural-order"
     | .singlePivot => "linked-structural-pivot"
     | .multiplePivots => "linked-structural-moves"
   let assumptions :=
     ["Retained source units use the same capability-closed opaque world in both layouts."] ++
+    (if pageEnvironmentUsed then (options.profile.capabilityPremise? .pageEnvironment).toList else []) ++
     (if options.browserOptions.nativeRecord then [s!"{CoreJS.NativeRecord.preset}: Initializing retained module metadata is unobservable except for a fresh null-prototype object with only native writable, enumerable, configurable url and resolve data properties. Each per-record resolver uses the unchanged module URL and static resolution context."] else []) ++
     (if options.browserOptions.emptyMap then ["empty@1: The browser's import map remains empty and the native module resolver is unchanged. Retained bare imports reject their promises on resolution failure, with ordinary browser promise scheduling and rejection reporting."] else []) ++
     used.map (·.assumption) ++
@@ -302,6 +310,8 @@ private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
   let declarations := (CoreJS.DeclarationInput.decode src.program).toOption
   let part ← prepare chunk src work profile "bundle.mjs" timings declarations
   let { original := program, bundle := B, spec := S, plan := P, output } := part
+  let pageEnvironmentUsed := profile.hasCapability .pageEnvironment &&
+    P.mods.any fun mod => mod.name.endsWith ".js"
   let verify {α : Type} (providers : Json) (check : Json → IO (Except CertificationRefusal α)) :=
     certifyOutput [output] providers out work checkOnly timings check
   let providers := fun _ => timePhase timings "provider_loading" fun _ => do
@@ -327,7 +337,8 @@ private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
           let _ ← IO.ofExcept (prepared.certify files)
           pure (.ok ())
       match checked with
-      | .ok _ => return ← emitVerdict request.label (.ok level) "closed-declarations" (profileVerdict profile {})
+      | .ok _ => return ← emitVerdict request.label (.ok level) "closed-declarations"
+        (profileVerdict profile {} pageEnvironmentUsed)
       | .error refusal => return ← emitRefusal request.label refusal "closed-declarations"
     catch e => return ← emitVerdict request.label (.error e.toString) "closed-declarations"
   if structural then
@@ -345,6 +356,7 @@ private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
             pure (.ok (used, level, proof))
       match checked with
       | .ok (used, level, proof) => return ← emitStructural options used level proof
+        (pageEnvironmentUsed || options.browserOptions.nativeRecord || options.browserOptions.emptyMap)
       | .error refusal => return ← emitRefusal request.label refusal "linked-structural"
     catch e => return ← emitVerdict request.label (.error e.toString) "linked-structural"
   try
@@ -409,11 +421,11 @@ private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
     | .ok (some kind, active, strategy, blockers) => do
       let blockerFields := if blockers.isEmpty then [] else [("replay_blockers", toJson blockers)]
       return ← emitVerdict request.label (.ok kind.level) kind.scope
-        (profileVerdict profile active ++ [("strategy", toJson strategy)] ++ blockerFields)
+        (profileVerdict profile active pageEnvironmentUsed ++ [("strategy", toJson strategy)] ++ blockerFields)
     | .ok (none, active, strategy, blockers) => do
       let blockerFields := if blockers.isEmpty then [] else [("replay_blockers", toJson blockers)]
       return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs"
-        (profileVerdict profile active ++ [("strategy", toJson strategy)] ++ blockerFields)
+        (profileVerdict profile active pageEnvironmentUsed ++ [("strategy", toJson strategy)] ++ blockerFields)
     | .error refusal => return ← emitRefusal request.label refusal "linked-programs"
   catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"
 
@@ -440,6 +452,8 @@ private def runDeployment (manifest : DeploymentManifest) (out work : System.Fil
         parts := parts.push part
         originals := originals.push (chunk.path, source.program)
     if parts.isEmpty then throw (IO.userError "expected at least one chunk placement")
+    let pageEnvironmentUsed := profile.hasCapability .pageEnvironment &&
+      parts.toList.any fun part => part.plan.mods.any fun mod => mod.name.endsWith ".js"
     let paths := parts.toList.flatMap fun part =>
       (part.plan.mods.map (·.name)).filter (· != part.plan.entry)
     checkNewRoutes root work paths
@@ -471,6 +485,7 @@ private def runDeployment (manifest : DeploymentManifest) (out work : System.Fil
           pure (.ok (used, level, proof))
     match checked with
     | .ok (used, level, proof) => emitStructural options used level proof
+      (pageEnvironmentUsed || browserOptions.nativeRecord || browserOptions.emptyMap)
     | .error refusal => emitRefusal request.label refusal "linked-structural"
   catch e => emitVerdict request.label (.error e.toString) "linked-structural"
 

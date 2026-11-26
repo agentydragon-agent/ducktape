@@ -3,6 +3,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { forcePreview, lower, prepare, root } from "./harness.mjs";
+import { split } from "../testing/split.mjs";
 
 const entry = "entry.mjs";
 const worker = "renderer.mjs";
@@ -38,12 +39,92 @@ for (const member of ["url", "env.MODE"]) {
     const accepted = lower(sourceFile, specFile, out, preset, "linked-structural-pivot").verdict;
     assert.equal(accepted.status, "certified", JSON.stringify(accepted));
     assert(accepted.assumptions.some((p) => p.startsWith("native-browser-record@1:")));
+    assert(
+      accepted.assumptions.includes(
+        "window, globalThis, and self return the same page global object throughout initialization"
+      )
+    );
     assert.deepEqual(
       lower(sourceFile, specFile, out, [...preset, "--check-output"], "linked-structural-pivot").verdict,
       accepted
     );
   }
 }
+
+// Browser deployment options require the page capability; a Node profile cannot
+// enable browser metadata or empty-import-map assumptions.
+const nonBrowserDir = path.join(root, "non-browser-deployment");
+const nonBrowser = prepare(nonBrowserDir, {
+  source: "const value = 1; export { value };",
+  sourceName: entry,
+  provider: "",
+  spec: placement("#0", []),
+});
+const nodeProfile = path.join(nonBrowserDir, "node.json");
+writeFileSync(nodeProfile, JSON.stringify({ profile: "node" }));
+for (const [flag, value] of [
+  ["--deployment-preset", "native-browser-record@1"],
+  ["--deployment-import-map", "empty@1"],
+]) {
+  const out = path.join(nonBrowserDir, value);
+  const { verdict } = split({
+    source: nonBrowser.sourceFile,
+    spec: nonBrowser.specFile,
+    out,
+    structural: true,
+    deploymentOrigin: "https://example.org",
+    hostContract: nodeProfile,
+    ...(flag === "--deployment-preset" ? { deploymentPreset: value } : { deploymentImportMap: value }),
+  });
+  assert.equal(verdict.status, "rejected", JSON.stringify(verdict));
+  assert.match(verdict.reason, /requires a browser-page profile and deployment origin/);
+  assert(!existsSync(out));
+}
+
+// The same browser profile still enables the empty import-map contract and
+// reports both the page capability and the selected deployment premise.
+const browserProfile = path.join(nonBrowserDir, "browser.json");
+writeFileSync(browserProfile, JSON.stringify({ profile: "browser-page" }));
+const browserDeployment = prepare(path.join(nonBrowserDir, "browser-profile-input"), {
+  source: "const value = 1; export { value };",
+  sourceName: entry,
+  provider: "",
+  spec: { entry, modules: { [entry]: ["#0", "#1"] }, order: [], sequential: true },
+});
+const mapOut = path.join(nonBrowserDir, "browser-empty-map");
+const browserMapOptions = [
+  "--structural",
+  "--deployment-origin",
+  "https://example.org",
+  "--host-contract",
+  browserProfile,
+  "--deployment-import-map",
+  "empty@1",
+];
+const mapVerdict = lower(
+  browserDeployment.sourceFile,
+  browserDeployment.specFile,
+  mapOut,
+  browserMapOptions,
+  "linked-structural"
+).verdict;
+assert.equal(mapVerdict.status, "certified", JSON.stringify(mapVerdict));
+assert(
+  mapVerdict.assumptions.includes(
+    "window, globalThis, and self return the same page global object throughout initialization"
+  )
+);
+assert(mapVerdict.assumptions.some((p) => p.startsWith("empty@1:")));
+assert.deepEqual(
+  lower(
+    browserDeployment.sourceFile,
+    browserDeployment.specFile,
+    mapOut,
+    [...browserMapOptions, "--check-output"],
+    "linked-structural"
+  ).verdict,
+  mapVerdict
+);
 
 // One native module record shares mutable metadata between its closures. The outer
 // getter returns an object; the inner getter can see a changed cell on a later call.
@@ -95,10 +176,10 @@ assert.notEqual(first, live.value());
 assert.equal(original.read(), live.value());
 assert.equal(live.calls(), 2);
 
-const split = await import(pathToFileURL(path.join(out, entry)));
-assert.deepEqual(Object.keys(split), Object.keys(original));
-const wrongRecord = instrument(split);
-assert.throws(() => split.read(), TypeError);
+const splitModule = await import(pathToFileURL(path.join(out, entry)));
+assert.deepEqual(Object.keys(splitModule), Object.keys(original));
+const wrongRecord = instrument(splitModule);
+assert.throws(() => splitModule.read(), TypeError);
 assert.equal(wrongRecord.calls(), 0);
 
 const profile = path.join(root, "browser-profile.json");
