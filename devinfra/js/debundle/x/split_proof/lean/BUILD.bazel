@@ -586,12 +586,23 @@ lean_library(
 )
 
 lean_library(
+    name = "lowersplit_input",
+    srcs = ["EsmSplit/LowerSplit/Input.lean"],
+    deps = [
+        ":corejs_certificate_support",
+        ":effects",
+        ":lowersplit_support",
+        ":planner",
+    ],
+)
+
+lean_library(
     name = "sparse_checked_artifact",
     srcs = ["EsmSplit/LowerSplit/SparseArtifact.lean"],
     deps = [
         ":corejs_sparse_checked_split",
+        ":lowersplit_input",
         ":lowersplit_support",
-        ":lowersplit_workflows",
     ],
 )
 
@@ -632,7 +643,6 @@ lean_library(
     srcs = [
         "EsmSplit/LowerSplit/Certified.lean",
         "EsmSplit/LowerSplit/Diagnostic.lean",
-        "EsmSplit/LowerSplit/Input.lean",
         "EsmSplit/LowerSplit/InstanceGenerator.lean",
         "EsmSplit/LowerSplit/SliceCertificate.lean",
     ],
@@ -642,8 +652,10 @@ lean_library(
         ":corejs_runtime",
         ":corejs_single_module",
         ":corejs_structural",
+        ":lowersplit_input",
         ":lowersplit_support",
         ":planner",
+        ":sparse_checked_artifact",
     ],
 )
 
