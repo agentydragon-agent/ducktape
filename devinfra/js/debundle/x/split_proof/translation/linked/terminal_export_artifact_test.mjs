@@ -82,6 +82,7 @@ assert.equal(inputWitness.status, 0, inputWitness.error?.message ?? inputWitness
 for (const [label, source, authored, accepted] of [
   ["one", "const x = 1;\nexport { x };\n", spec, true],
   ["nine", "const x = 9;\nexport { x };\n", spec, true],
+  ["hashbang", "#!/usr/bin/env node\nconst x = 3;\nexport { x };\n", spec, true],
   ["wrong-name", "const a = 1;\nexport { a };\n", spec, false],
   [
     "wrong-owner",
@@ -101,6 +102,11 @@ for (const [label, source, authored, accepted] of [
     const emitted = spawnSync(process.env.LOWERSPLIT, ["--probe-emission", manifest], { encoding: "utf8" });
     assert.equal(emitted.status, 0, emitted.error?.message ?? emitted.stdout + emitted.stderr);
     assert.equal(emitted.stdout.trim(), "emitter example matched");
+    // Uses Q's encoder, then the existing printer and exact disk reread gate.
+    // The test-only diagnostic refuses publication even when the probe passes.
+    const staged = spawnSync(process.env.LOWERSPLIT, ["--probe-codec-staging", manifest], { encoding: "utf8" });
+    assert.equal(staged.status, 0, staged.error?.message ?? staged.stdout + staged.stderr);
+    assert.equal(staged.stdout.trim(), "codec staged and reread");
   }
   assert(!existsSync(unusedOut));
 }

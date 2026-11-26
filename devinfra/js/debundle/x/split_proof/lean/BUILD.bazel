@@ -734,6 +734,7 @@ lean_library(
         ":lowersplit_support",
         ":lowersplit_workflows",
         ":terminal_const_input_bridge",
+        ":terminal_const_typed",
         ":terminal_export_artifact",
     ],
 )
