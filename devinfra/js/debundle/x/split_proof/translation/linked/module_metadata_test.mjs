@@ -78,6 +78,51 @@ for (const [flag, value] of [
   assert(!existsSync(out));
 }
 
+// The same browser profile still enables the empty import-map contract and
+// reports both the page capability and the selected deployment premise.
+const browserProfile = path.join(nonBrowserDir, "browser.json");
+writeFileSync(browserProfile, JSON.stringify({ profile: "browser-page" }));
+const browserDeployment = prepare(path.join(nonBrowserDir, "browser-profile-input"), {
+  source: "const value = 1; export { value };",
+  sourceName: entry,
+  provider: "",
+  spec: { entry, modules: { [entry]: ["#0", "#1"] }, order: [], sequential: true },
+});
+const mapOut = path.join(nonBrowserDir, "browser-empty-map");
+const browserMapOptions = [
+  "--structural",
+  "--deployment-origin",
+  "https://example.org",
+  "--host-contract",
+  browserProfile,
+  "--deployment-import-map",
+  "empty@1",
+];
+const mapVerdict = lower(
+  browserDeployment.sourceFile,
+  browserDeployment.specFile,
+  mapOut,
+  browserMapOptions,
+  "linked-structural"
+).verdict;
+assert.equal(mapVerdict.status, "certified", JSON.stringify(mapVerdict));
+assert(
+  mapVerdict.assumptions.includes(
+    "window, globalThis, and self return the same page global object throughout initialization"
+  )
+);
+assert(mapVerdict.assumptions.some((p) => p.startsWith("empty@1:")));
+assert.deepEqual(
+  lower(
+    browserDeployment.sourceFile,
+    browserDeployment.specFile,
+    mapOut,
+    [...browserMapOptions, "--check-output"],
+    "linked-structural"
+  ).verdict,
+  mapVerdict
+);
+
 // One native module record shares mutable metadata between its closures. The outer
 // getter returns an object; the inner getter can see a changed cell on a later call.
 const dir = path.join(root, "different-record");

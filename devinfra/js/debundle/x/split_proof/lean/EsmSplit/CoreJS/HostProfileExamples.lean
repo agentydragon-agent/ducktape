@@ -7,10 +7,6 @@ private def legacyBrowserNames : List String :=
   BrowserPageHost.aliases ++ BrowserGlobals.functions ++ BrowserGlobals.objects ++
     BrowserGlobals.opaqueBindings ++ BrowserGlobals.shims
 
--- The old catalog treated eval as an opaque extra. It now comes from the shared
--- ECMAScript layer as a standard intrinsic and is recorded by the Node harness.
-private def legacyBrowserComparisonNames : List String := legacyBrowserNames.filter (· != "eval")
-
 private def legacyBrowserTypeof (name : String) : Option String :=
   if BrowserPageHost.aliases.contains name || BrowserGlobals.objects.contains name then some "object"
   else if BrowserGlobals.functions.contains name then some "function"
@@ -67,6 +63,14 @@ private def observedOperationHasPremise (profile : HostProfile) (name premise : 
 #guard HostProfile.valid HostProfile.node
 #guard HostProfile.valid HostProfile.nodeRecording
 
+-- The page deployment contract is a browser-layer feature. Node and the bare
+-- ECMAScript layer do not acquire it by sharing the common intrinsics.
+#guard HostProfile.hasCapability .browserPage .pageEnvironment
+#guard !(HostProfile.hasCapability .node .pageEnvironment)
+#guard !(HostProfile.hasCapability .ecmascript .pageEnvironment)
+#guard HostProfile.capabilityPremise? .browserPage .pageEnvironment ==
+  some "window, globalThis, and self return the same page global object throughout initialization"
+
 -- Both concrete host descriptions include exactly the same authored ECMAScript
 -- layer, including Symbol's intrinsic operations and well-known members.
 #guard BrowserPageHost.layers.head? == some ECMAScriptHost.layer
@@ -83,19 +87,17 @@ private def observedOperationHasPremise (profile : HostProfile) (name premise : 
 
 -- The browser layer and the shared ECMAScript layer preserve every old browser
 -- catalog answer while keeping all standard names out of the page-only layer.
-#guard legacyBrowserComparisonNames.all fun name =>
+#guard legacyBrowserNames.all fun name =>
   HostProfile.bindingType .browserPage name == legacyBrowserTypeof name
-#guard legacyBrowserComparisonNames.all fun name =>
+#guard legacyBrowserNames.all fun name =>
   HostProfile.bindingIdentity .browserPage name == canonicalBrowserIdentity name
-#guard legacyBrowserComparisonNames.all fun name =>
+#guard legacyBrowserNames.all fun name =>
   HostProfile.opaqueBinding .browserPage name ==
     (BrowserGlobals.opaqueBindings.contains name || BrowserGlobals.shims.contains name)
 #guard legacyBrowserNames.all fun name => (HostProfile.globalEntry? .browserPage name).isSome
-#guard HostProfile.bindingType .browserPage "eval" == some "function"
-#guard HostProfile.bindingIdentity .browserPage "eval" == some "intrinsic.eval"
-#guard !HostProfile.opaqueBinding .browserPage "eval"
 #guard BrowserPageHost.globals.all fun entry =>
   !(ECMAScriptHost.globalEntries.any (·.name == entry.name))
+#guard BrowserPageHost.layer.capabilities.any (·.capability == .pageEnvironment)
 #guard NodeHost.globals.all fun entry =>
   !(ECMAScriptHost.globalEntries.any (·.name == entry.name))
 #guard HostProfile.bindingIdentity .node "global" == some "node.global"
@@ -125,7 +127,7 @@ private def observedOperationHasPremise (profile : HostProfile) (name premise : 
   ("Number", ["isFinite", "isInteger", "isNaN", "isSafeInteger", "parseFloat", "parseInt"]),
   ("String", ["fromCharCode", "fromCodePoint"])]
 
-#guard (BrowserGlobals.opaqueBindings.filter (· != "eval")).all fun name =>
+#guard BrowserGlobals.opaqueBindings.all fun name =>
   HostProfile.opaqueBinding .browserPage name &&
     (HostProfile.bindingIdentity .browserPage name).isNone
 #guard BrowserGlobals.shims.all fun name =>

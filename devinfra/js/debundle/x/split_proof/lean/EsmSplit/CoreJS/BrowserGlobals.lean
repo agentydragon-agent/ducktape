@@ -44,10 +44,10 @@ def objects : List String :=
    "sessionStorage"]
 
 -- These names can be retained, but the profile supplies no value or typeof result.
+-- `eval` is supplied by the shared ECMAScript layer, so it is not listed here.
 def opaqueBindings : List String :=
   ["devicePixelRatio", "event", "innerHeight", "innerWidth", "isSecureContext", "opener",
-   "pageXOffset", "pageYOffset", "parent", "scrollX", "scrollY", "visualViewport", "eval",
-   "NodeFilter"]
+   "pageXOffset", "pageYOffset", "parent", "scrollX", "scrollY", "visualViewport", "NodeFilter"]
 
 -- Browser bundles commonly guard platform shims. An absence test needs a premise;
 -- directly reading such a binding remains opaque.
