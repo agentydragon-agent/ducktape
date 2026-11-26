@@ -28,7 +28,7 @@ def globalObjects : List String := ["Atomics", "Intl", "JSON", "Math", "Reflect"
 def globalEntries : List HostGlobalEntry :=
   (globalFunctions.map fun name => intrinsicFunction name
     (name == "Boolean" || name == "Number" || name == "isFinite" || name == "isNaN" ||
-      name == "parseFloat" || name == "parseInt" || name == "eval")) ++
+      name == "parseFloat" || name == "parseInt")) ++
   (globalObjects.map intrinsicObject)
 
 -- These constructors can be retained opaquely by profiles that opt into the

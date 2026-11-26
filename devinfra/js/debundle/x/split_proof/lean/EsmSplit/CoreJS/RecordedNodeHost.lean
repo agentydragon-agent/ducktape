@@ -6,7 +6,7 @@ private def recordedValue (entry : HostGlobalEntry) : HostGlobalEntry :=
   { name := entry.name, recordedValue := true }
 
 def globals : List HostGlobalEntry :=
-  (NodeHost.layers.flatMap fun layer => layer.globals).filterMap fun entry =>
+  NodeHost.globals.filterMap fun entry =>
     if entry.undeclared || entry.opaqueRef then none else some (recordedValue entry)
 
 def layer : HostLayer :=

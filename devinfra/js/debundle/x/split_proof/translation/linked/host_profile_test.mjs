@@ -69,6 +69,19 @@ if (includesCase("shared-ecmascript-symbol-node")) {
   }
 }
 
+if (includesCase("shadowed-symbol-is-not-intrinsic")) {
+  const shadowed = fixture(
+    "shadowed-symbol-is-not-intrinsic",
+    'const result = ((Symbol) => Symbol.iterator)({ iterator: "shadowed" }); export { result };'
+  );
+  const verdict = shadowed.run("--host-contract", profile);
+  assert.equal(verdict.status, "certified", JSON.stringify(verdict));
+  assert.deepEqual(verdict.assumptions, []);
+  for (const file of [shadowed.sourceFile, path.join(shadowed.out, entry)]) {
+    assert.equal((await import(pathToFileURL(file).href)).result, "shadowed");
+  }
+}
+
 for (const [binding, defaulted] of [
   ["ambient", false],
   ["local", false],
@@ -407,7 +420,7 @@ if (includesCase("profile-premise-sources")) {
     hostContract: nodeProfile,
   });
   assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-  assert.equal(verdict.hostProfile, "node-recording");
+  assert.equal(verdict.verdict.hostProfile, "node-recording");
 
   // These two facts justify profile-directed lowering of the retained .prim log,
   // even though the branch is not taken. The remaining facts come from the reached

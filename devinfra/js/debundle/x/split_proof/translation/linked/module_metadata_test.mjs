@@ -3,6 +3,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { forcePreview, lower, prepare, root } from "./harness.mjs";
+import { split } from "../testing/split.mjs";
 
 const entry = "entry.mjs";
 const worker = "renderer.mjs";
@@ -66,13 +67,15 @@ for (const [flag, value] of [
   ["--deployment-import-map", "empty@1"],
 ]) {
   const out = path.join(nonBrowserDir, value);
-  const { verdict } = lower(
-    nonBrowser.sourceFile,
-    nonBrowser.specFile,
+  const { verdict } = split({
+    source: nonBrowser.sourceFile,
+    spec: nonBrowser.specFile,
     out,
-    ["--structural", "--deployment-origin", "https://example.org", "--host-contract", nodeProfile, flag, value],
-    "linked-structural"
-  );
+    structural: true,
+    deploymentOrigin: "https://example.org",
+    hostContract: nodeProfile,
+    ...(flag === "--deployment-preset" ? { deploymentPreset: value } : { deploymentImportMap: value }),
+  });
   assert.equal(verdict.status, "rejected", JSON.stringify(verdict));
   assert.match(verdict.reason, /requires a browser-page profile and deployment origin/);
   assert(!existsSync(out));

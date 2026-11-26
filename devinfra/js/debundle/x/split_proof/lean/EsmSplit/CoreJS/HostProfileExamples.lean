@@ -118,7 +118,7 @@ private def observedOperationHasPremise (profile : HostProfile) (name premise : 
 #guard HostProfile.identity .browserPage (.property "intrinsic.Symbol" "for") == none
 
 -- The model's world-call table matches the pre-layer host-call fragment.
-#guard ECMAScriptHost.hostFunctions == ["Boolean", "Number", "eval", "isFinite", "isNaN", "parseFloat", "parseInt"]
+#guard ECMAScriptHost.hostFunctions == ["Boolean", "Number", "isFinite", "isNaN", "parseFloat", "parseInt"]
 #guard ECMAScriptHost.hostNamespaces == [
   ("Math", ["abs", "acos", "acosh", "asin", "asinh", "atan", "atanh", "atan2", "cbrt", "ceil",
     "clz32", "cos", "cosh", "exp", "expm1", "floor", "fround", "hypot", "imul", "log", "log10",
@@ -138,23 +138,30 @@ private def observedOperationHasPremise (profile : HostProfile) (name premise : 
 #guard observedRefHasPremise .browserPage (.property "intrinsic.Math" "PI")
   "the own Math.PI data property returns a Number with binary64 bits 4614256656552045848 throughout initialization"
 
--- The test recording uses only ECMAScript and Node names. A page-only name is
--- undeclared and its premise is carried into a typeof observation.
+-- The recording layer replaces only Node globals with world-supplied values;
+-- ECMAScript globals retain their shared intrinsic identities.
 #guard (ECMAScriptHost.globalFunctions ++ ECMAScriptHost.globalObjects).all fun name =>
-  HostProfile.recordedHostValue .nodeRecording name
+  !HostProfile.recordedHostValue .nodeRecording name
 #guard NodeHost.globals.all fun entry => HostProfile.recordedHostValue .nodeRecording entry.name
 #guard RecordedNodeHost.globals.all fun entry =>
   entry.recordedValue && entry.typeTag.isNone && entry.identity.isNone && entry.premise.isNone
 #guard HostProfile.bindingType .nodeRecording "Object" == some "function"
-#guard (HostProfile.bindingIdentity .nodeRecording "Object").isNone
-#guard (HostProfile.valueForRef? .nodeRecording (.binding "Object")).isNone
+#guard HostProfile.bindingIdentity .nodeRecording "Object" == some "intrinsic.Object"
+#guard HostProfile.valueForRef? .nodeRecording (.binding "Object") ==
+  some (.identity "intrinsic.Object")
+#guard HostProfile.bindingIdentity .nodeRecording "Symbol" == some "intrinsic.Symbol"
+#guard HostProfile.identity .nodeRecording (.property "intrinsic.Symbol" "iterator") ==
+  some "Symbol.iterator"
 #guard NodeHost.globals.all fun entry =>
   HostProfile.recordedHostValue .nodeRecording entry.name &&
     HostProfile.bindingType .nodeRecording entry.name == entry.typeTag
 #guard observedTypeHasPremise .nodeRecording "Object"
   "the ambient Object binding is the unmodified ECMAScript intrinsic throughout initialization"
 #guard BrowserPageHost.globals.all fun entry =>
-  if (ECMAScriptHost.globalEntries ++ NodeHost.globals).any (·.name == entry.name) then
+  if (ECMAScriptHost.globalEntries.any (·.name == entry.name)) then
+    !HostProfile.recordedHostValue .nodeRecording entry.name &&
+      !HostProfile.undeclaredGlobal .nodeRecording entry.name
+  else if NodeHost.globals.any (·.name == entry.name) then
     HostProfile.recordedHostValue .nodeRecording entry.name
   else HostProfile.undeclaredGlobal .nodeRecording entry.name
 #guard !HostProfile.recordedHostValue .nodeRecording "FileReader"
