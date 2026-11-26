@@ -181,7 +181,8 @@ for (const [observed, leftArg, rightArg] of [
   const fixture = prepareLinkedFixture("reordered-probe-equivalent-host-calls", source, spec);
   const { manifest, out, sourceFile } = fixture;
   assertPublicEmissionRefused(manifest, out);
-  await withSplitPreview({ manifest, expectedExit: 1 }, async ({ directory, entryFile }) => {
+  await withSplitPreview({ manifest }, async ({ directory, entryFile, log: previewLog }) => {
+    assert.match(previewLog, /model diagnostic: none/);
     assert.deepEqual(moduleEvaluationOrder(directory, spec.entry), [...spec.order, spec.entry]);
     assertMatchedModel(fixture, directory, [
       [["first"], undefined],

@@ -32,7 +32,7 @@ await withSplitPreview({ manifest: closed.manifest }, ({ directory, entryFile })
 // A string declaration somewhere in the program is not a proof of what this
 // cell contains at the read. Moving just the read observes undefined.
 for (const [name, before, expression, expected, moved, expectedExit] of [
-  ["prefix", 'export var parts = "a"', "`[${parts}]`", { result: "[a]" }, { result: "[undefined]" }, 0],
+  ["prefix", 'export var parts = "a"', "`[${parts}]`", { result: "[a]" }, { result: "[undefined]" }, 1],
   [
     "getter",
     'export var parts = { get text() { return "b"; } }',

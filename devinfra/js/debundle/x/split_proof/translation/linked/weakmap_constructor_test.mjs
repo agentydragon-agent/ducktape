@@ -80,7 +80,7 @@ const observe = (file, mode) => {
 };
 const marker = fixture("phase", "globalThis.phase = 1");
 assertPublicEmissionRefused(marker.manifest, marker.out);
-await withSplitPreview({ manifest: marker.manifest, expectedExit: 1 }, ({ entryFile }) => {
+await withSplitPreview({ manifest: marker.manifest }, ({ entryFile }) => {
   for (const mode of ["getter", "reentry"]) {
     assert.deepEqual(observe(marker.sourceFile, mode), { log: [1], shared: false });
     assert.deepEqual(observe(entryFile, mode), { log: [0], shared: false });
