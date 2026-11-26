@@ -45,6 +45,14 @@ lean_library(
     ],
 )
 
+lean_proof_test(
+    name = "estree_units_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.ESTreeUnits"],
+    required_theorems = ["ESTreeUnits.checkedNodes_nodes"],
+    deps = [":estree"],
+)
+
 lean_library(
     name = "effects_domain",
     srcs = ["EsmSplit/Effects/Domain.lean"],
