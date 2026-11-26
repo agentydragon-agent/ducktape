@@ -1731,3 +1731,20 @@ lean_binary(
     visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
     deps = [":terminal_const_input_test_runner_modules"],
 )
+
+lean_library(
+    name = "terminal_const_decoder",
+    srcs = ["EsmSplit/LowerSplit/TerminalConstDecoder.lean"],
+    deps = [":terminal_const_input"],
+)
+
+lean_proof_test(
+    name = "terminal_const_decoder_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.LowerSplit.TerminalConstDecoder"],
+    required_theorems = [
+        "EsmSplit.LowerSplit.TerminalConstDecoder.export_spec",
+        "EsmSplit.LowerSplit.TerminalConstDecoder.import_decl",
+    ],
+    deps = [":terminal_const_decoder"],
+)
