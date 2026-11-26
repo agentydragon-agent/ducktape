@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse } from "acorn";
-import { assertCertified, lower, moduleEvaluationOrder, observe, prepare, root } from "./harness.mjs";
+import {
+  assertCertified,
+  forcePreview,
+  lower,
+  moduleEvaluationOrder,
+  observe,
+  prepare,
+  root,
+  runLinkedCoreJSModel,
+} from "./harness.mjs";
 
 // Sixteen provider/reader pairs reach the staged linking threshold of 32 executable units.
 const count = process.argv.includes("--full-graph") ? 48 : 16;
@@ -55,8 +64,21 @@ const aliasFiles = prepare(aliasDir, {
 });
 const aliasOut = path.join(aliasDir, "out");
 const alias = lower(aliasFiles.sourceFile, aliasFiles.specFile, aliasOut);
-assert.equal(alias.verdict.status, "certified", alias.log);
-const reader = parse(readFileSync(path.join(aliasOut, "reader.mjs"), "utf8"), {
+assert.equal(alias.verdict.status, "rejected", alias.log);
+assert.equal(alias.verdict.reason_code, "strict_observation_unsupported", alias.log);
+assert.equal(alias.verdict.guarantee, null, alias.log);
+assert.equal(alias.verdict.every_ending_matches, false, alias.log);
+assert(!existsSync(aliasOut));
+
+// This checks CoreJS initialization only; later JavaScript calls are observed below.
+const preview = path.join(aliasDir, "diagnostic-preview");
+forcePreview(aliasFiles, preview);
+assert.deepEqual(runLinkedCoreJSModel(aliasFiles, preview, "publicValue"), {
+  guarantee: "modeled-normal-completion",
+  original: { number: "17", bits: "4625478292286210048" },
+  split: { number: "17", bits: "4625478292286210048" },
+});
+const reader = parse(readFileSync(path.join(preview, "reader.mjs"), "utf8"), {
   sourceType: "module",
   ecmaVersion: "latest",
 });
@@ -66,7 +88,7 @@ assert.deepEqual(
   Object.fromEntries(request.specifiers.map(({ imported, local }) => [local.name, imported.name ?? imported.value])),
   { value: "publicValue", offset: "public-offset" }
 );
-for (const file of [aliasFiles.sourceFile, path.join(aliasOut, entry)]) {
+for (const file of [aliasFiles.sourceFile, path.join(preview, entry)]) {
   const namespace = await import(pathToFileURL(file).href);
   assert.deepEqual(Object.keys(namespace), ["public-offset", "publicValue", "read", "set"]);
   assert.equal(namespace.read(), 20);

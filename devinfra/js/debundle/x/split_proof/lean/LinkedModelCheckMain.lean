@@ -24,15 +24,16 @@ private def check (input : Json) : IO (Except CertificationRefusal Json) := do
         CoreJS.LinkedBehavior.StructuralRefusal.reason
     let probe := eligibility.probe
     let world := probe.premises.specialize CoreJS.World.probe
-    let observe (program : CoreJS.Program) (state : CoreJS.State world) : IO Bool := do
+    let observe (program : CoreJS.Program) (state : CoreJS.State world) : IO Json := do
       let cell := (CoreJS.LinkedBehavior.exports world program).bind (·.lookup exportName)
-      let some (.bool value) := (cell.bind state.cellAt).bind (·.value) |
-        throw (IO.userError s!"expected a Boolean export: {exportName}")
-      return value
+      match (cell.bind state.cellAt).bind (·.value) with
+      | some (.bool value) => return toJson value
+      | some (.num value) => return Json.mkObj [("number", toJson (CoreJS.Num.toString value)), ("bits", toJson (toString value.toBits))]
+      | _ => throw (IO.userError s!"expected a Boolean or numeric export: {exportName}")
     return .ok (Json.mkObj [
       ("guarantee", toJson s!"modeled-{level.label}"),
-      ("original", toJson (← observe before probe.sourceState)),
-      ("split", toJson (← observe after probe.candidateState))
+      ("original", ← observe before probe.sourceState),
+      ("split", ← observe after probe.candidateState)
     ])
 
 def main : IO UInt32 := do
