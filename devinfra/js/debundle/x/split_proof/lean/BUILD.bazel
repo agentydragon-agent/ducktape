@@ -1795,3 +1795,24 @@ lean_proof_test(
     ],
     deps = [":terminal_const_typed"],
 )
+
+lean_library(
+    name = "terminal_const_compose",
+    srcs = ["EsmSplit/LowerSplit/TerminalConstCompose.lean"],
+    deps = [
+        ":terminal_const_input_bridge",
+        ":terminal_const_typed",
+    ],
+)
+
+lean_proof_test(
+    name = "terminal_const_compose_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.LowerSplit.TerminalConstCompose"],
+    required_theorems = [
+        "EsmSplit.LowerSplit.TerminalConstCompose.emitted_decodes",
+        "EsmSplit.LowerSplit.TerminalConstCompose.emitted_sound",
+        "EsmSplit.LowerSplit.TerminalConstCompose.encode_eq_emittedAST",
+    ],
+    deps = [":terminal_const_compose"],
+)
