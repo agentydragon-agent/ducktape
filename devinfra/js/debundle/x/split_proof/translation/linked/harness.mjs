@@ -49,15 +49,17 @@ export function browserLoweringAssumptions(assumptions) {
 export function caseShard() {
   const count = Number(process.env.TEST_TOTAL_SHARDS ?? 1);
   const index = Number(process.env.TEST_SHARD_INDEX ?? 0);
+  const onlyCase = process.env.LINKED_TEST_CASE;
   assert(Number.isInteger(count) && count > 0, "invalid TEST_TOTAL_SHARDS");
   assert(Number.isInteger(index) && index >= 0 && index < count, "invalid TEST_SHARD_INDEX");
   if (process.env.TEST_SHARD_STATUS_FILE) writeFileSync(process.env.TEST_SHARD_STATUS_FILE, "");
 
-  // Every shard visits the same case names in the same order.
+  // Every shard visits the same case names in the same order. The optional filter
+  // makes a single expensive fixture reproducible without changing its resource limits.
   const names = new Set();
   return (name) => {
     assert(!names.has(name), `duplicate case ${name}`);
-    const selected = names.size % count === index;
+    const selected = onlyCase ? name === onlyCase && index === 0 : names.size % count === index;
     names.add(name);
     if (selected) console.log(`Case ${name}`);
     return selected;
