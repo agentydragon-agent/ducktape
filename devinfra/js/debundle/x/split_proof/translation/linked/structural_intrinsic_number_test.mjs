@@ -1,51 +1,45 @@
 import assert from "node:assert/strict";
-import { existsSync, writeFileSync } from "node:fs";
-import path from "node:path";
-import { forcePreview, observe, root, structuralSplit } from "./harness.mjs";
-
-const plain = path.join(root, "page.json");
-const stable = path.join(root, "pi.json");
-writeFileSync(plain, JSON.stringify({ profile: "browser-page" }));
-writeFileSync(stable, JSON.stringify({ profile: "browser-page", stableIntrinsicValues: ["Math.PI@1"] }));
-const pivot = "linked-structural-pivot";
-const refusal = "linked-structural";
+import { probeLinkedModel } from "../testing/linked_model_probe.mjs";
+import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
+import { withSplitPreview } from "../testing/split_preview.mjs";
+import { prepareLinkedFixture } from "./fixture_preview.mjs";
+import { observe } from "./harness.mjs";
 
 function fixture(name, before, operand) {
-  return structuralSplit(name, `${before}; var result = ${operand} / 12; export { result };`, {
-    "entry.mjs": ["#0", "#2"],
-    "angle.mjs": ["#1"],
+  return prepareLinkedFixture(name, `${before}; var result = ${operand} / 12; export { result };`, {
+    entry: "entry.mjs",
+    modules: { "entry.mjs": ["#0", "#2"], "angle.mjs": ["#1"] },
   });
 }
 
-for (const [name, before, operand, expected, moved] of [
-  ["ordinary", "var marker = 1", "Math.PI", Math.PI / 12, Math.PI / 12],
-  ["replaced", "globalThis.Math = { PI: 24 }", "Math.PI", 2, Math.PI / 12],
-  ["getter", "globalThis.Math = { get PI() { return 36; } }", "Math.PI", 3, Math.PI / 12],
-  ["coercion", "Object.prototype.valueOf = () => 48", "({})", 4, null],
+for (const [name, before, operand, expected, moved, expectedExit] of [
+  ["ordinary", "var marker = 1", "Math.PI", Math.PI / 12, Math.PI / 12, 0],
+  ["replaced", "globalThis.Math = { PI: 24 }", "Math.PI", 2, Math.PI / 12, 1],
+  ["getter", "globalThis.Math = { get PI() { return 36; } }", "Math.PI", 3, Math.PI / 12, 1],
+  ["coercion", "Object.prototype.valueOf = () => 48", "({})", 4, null, 1],
 ]) {
-  const test = fixture(name, before, operand);
-  const { dir, out, run } = test;
-  assert.equal(run(refusal).status, "rejected");
-  assert.match(run(refusal, "--host-contract", plain).reason, /unit 1 is not a local allocating declaration/);
-  assert(!existsSync(out));
-  if (name === "ordinary") {
-    const emitted = run(pivot, "--host-contract", stable);
-    assert.equal(emitted.status, "certified", JSON.stringify(emitted));
-    assert.match(emitted.assumptions.join("\n"), /Math.*window\.Math.*PI.*4614256656552045848.*no observable effects/);
-    assert.deepEqual(run(pivot, "--check-output", "--host-contract", stable), emitted);
-    assert.equal(run(refusal, "--check-output", "--host-contract", plain).status, "rejected");
-    assert.deepEqual(observe(path.join(out, "entry.mjs"), "result"), { result: moved });
-  } else if (name === "coercion") {
-    assert.equal(run(refusal, "--host-contract", stable).status, "rejected");
-  }
-  // The forced preview exposes what the unconditional move would do in a
-  // deployment that violates the stated premise. Observe each in a fresh realm.
-  const preview = path.join(dir, "preview");
-  forcePreview(test, preview);
-  assert.deepEqual(observe(test.sourceFile, "result"), { result: expected });
-  assert.deepEqual(observe(path.join(preview, "entry.mjs"), "result"), { result: moved });
+  const { manifest, out, sourceFile, specFile } = fixture(name, before, operand);
+  assertPublicEmissionRefused(manifest, out);
+  assert.deepEqual(observe(sourceFile, "result"), { result: expected });
+  await withSplitPreview({ manifest, expectedExit }, ({ directory, entryFile }) => {
+    assert.deepEqual(observe(entryFile, "result"), { result: moved });
+    if (name === "ordinary") {
+      const request = { source: sourceFile, spec: specFile, directory };
+      const model = probeLinkedModel({ ...request, host: { profile: "browser-page" } });
+      assert.equal(model.status, "refused", JSON.stringify(model));
+      assert.match(model.reason, /Math\.PI/);
+      const stable = probeLinkedModel({
+        ...request,
+        host: { profile: "browser-page", stableIntrinsicValues: ["Math.PI@1"] },
+      });
+      assert.equal(stable.status, "refused", JSON.stringify(stable));
+      assert.match(stable.reason, /unsupported host contract/);
+    }
+    assertPublicEmissionRefused(manifest, directory);
+    assertPublicRecheckRefused(manifest, directory);
+  });
 }
 
 const shadow = fixture("lexical", "export const Math = { get PI() { return 24; } }", "Math.PI");
-assert.match(shadow.run(refusal, "--host-contract", stable).reason, /unit 1 is not a local allocating declaration/);
-assert(!existsSync(shadow.out));
+assertPublicEmissionRefused(shadow.manifest, shadow.out);
+assert.deepEqual(observe(shadow.sourceFile, "result"), { result: 2 });

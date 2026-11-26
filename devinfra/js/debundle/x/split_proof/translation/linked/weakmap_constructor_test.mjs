@@ -1,41 +1,37 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
-import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { forcePreview, lower, prepare, root } from "./harness.mjs";
-
-const profile = path.join(root, "browser-page.json");
-writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
-const opts = ["--host-contract", profile];
+import { probeLinkedModel } from "../testing/linked_model_probe.mjs";
+import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
+import { withSplitPreview } from "../testing/split_preview.mjs";
+import { prepareLinkedFixture } from "./fixture_preview.mjs";
 
 function fixture(name, crossed, init = "new WeakMap()") {
-  const dir = path.join(root, name);
-  const files = prepare(dir, {
-    source: `${crossed}; var cache = ${init}; export {cache};`,
-    provider: "",
-    spec: { entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#2"], "owner.mjs": ["#1"] } },
+  return prepareLinkedFixture(name, `${crossed}; var cache = ${init}; export {cache};`, {
+    entry: "entry.mjs",
+    modules: { "entry.mjs": ["#0", "#2"], "owner.mjs": ["#1"] },
   });
-  return { dir, files, out: path.join(dir, "out") };
 }
 
 const neutral = fixture("neutral", "var phase = 1");
-for (const [scope, flags, reason, reasonCode] of [
-  [
-    "linked-structural",
-    ["--structural"],
-    /unit 1 is not a local allocating declaration/,
-    "structural_non_local_allocation",
-  ],
-  ["linked-programs", [], /host value window\.WeakMap is constructed/, undefined],
-]) {
-  const { verdict } = lower(neutral.files.sourceFile, neutral.files.specFile, neutral.out, [...opts, ...flags], scope);
-  assert.equal(verdict.status, "rejected");
-  assert.equal(verdict.guarantee, null);
-  assert.match(verdict.reason, reason);
-  if (reasonCode) assert.equal(verdict.reason_code, reasonCode);
-  assert(!existsSync(neutral.out));
-}
+assertPublicEmissionRefused(neutral.manifest, neutral.out);
+await withSplitPreview({ manifest: neutral.manifest }, async ({ directory, entryFile }) => {
+  for (const file of [neutral.sourceFile, entryFile]) {
+    const { cache } = await import(pathToFileURL(file).href);
+    assert.equal(WeakMap.prototype.has.call(cache, {}), false);
+  }
+  const model = probeLinkedModel({
+    source: neutral.sourceFile,
+    spec: neutral.specFile,
+    directory,
+    host: { profile: "browser-page" },
+  });
+  assert.equal(model.status, "refused", JSON.stringify(model));
+  assert.equal(model.reason_code, "probe_unknown", JSON.stringify(model));
+  assert.match(model.reason, /host value window\.WeakMap is constructed/);
+  assertPublicEmissionRefused(neutral.manifest, directory);
+  assertPublicRecheckRefused(neutral.manifest, directory);
+});
 
 // No property or prototype tag encodes [[WeakMapData]]. The inherited brand
 // string and instanceof both accept this ordinary fake. A native method does not.
@@ -83,12 +79,13 @@ const observe = (file, mode) => {
   return JSON.parse(run.stdout);
 };
 const marker = fixture("phase", "globalThis.phase = 1");
-const preview = path.join(marker.dir, "preview");
-forcePreview(marker.files, preview);
-for (const mode of ["getter", "reentry"]) {
-  assert.deepEqual(observe(marker.files.sourceFile, mode), { log: [1], shared: false });
-  assert.deepEqual(observe(path.join(preview, "entry.mjs"), mode), { log: [0], shared: false });
-}
+assertPublicEmissionRefused(marker.manifest, marker.out);
+await withSplitPreview({ manifest: marker.manifest, expectedExit: 1 }, ({ entryFile }) => {
+  for (const mode of ["getter", "reentry"]) {
+    assert.deepEqual(observe(marker.sourceFile, mode), { log: [1], shared: false });
+    assert.deepEqual(observe(entryFile, mode), { log: [0], shared: false });
+  }
+});
 
 const sentinelCtor = "class { constructor() { return globalThis.sentinel; } }";
 for (const [name, crossed] of [
@@ -96,19 +93,11 @@ for (const [name, crossed] of [
   ["shadowed", "export const WeakMap = " + sentinelCtor],
 ]) {
   const test = fixture(name, crossed);
-  const { verdict } = lower(
-    test.files.sourceFile,
-    test.files.specFile,
-    test.out,
-    ["--structural", ...opts],
-    "linked-structural"
-  );
-  assert.equal(verdict.status, "rejected", JSON.stringify(verdict));
-  assert(!existsSync(test.out));
-  assert.deepEqual(observe(test.files.sourceFile, name), { log: [], shared: true });
+  assertPublicEmissionRefused(test.manifest, test.out);
+  assert.deepEqual(observe(test.sourceFile, name), { log: [], shared: true });
   if (name === "replaced") {
-    const forced = path.join(test.dir, "preview");
-    forcePreview(test.files, forced);
-    assert.deepEqual(observe(path.join(forced, "entry.mjs"), name), { log: [], shared: false });
+    await withSplitPreview({ manifest: test.manifest, expectedExit: 1 }, ({ entryFile }) => {
+      assert.deepEqual(observe(entryFile, name), { log: [], shared: false });
+    });
   }
 }
