@@ -35,6 +35,7 @@ _TEST_DATA = [
     ":harness",
     "//devinfra/js/debundle/x/split_proof/lean:split_preview",
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    "//devinfra/js/debundle/x/split_proof/translation/testing:split_preview",
 ]
 
 _TEST_ENV = {
@@ -130,8 +131,18 @@ js_test(
     ),
 )
 
+js_test(
+    name = "arithmetic_observer_test",
+    size = "medium",
+    data = _TEST_DATA + [
+        "//devinfra/js/debundle/x/split_proof/lean:arithmetic_observer_model",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
+    ],
+    entry_point = "arithmetic_observer_test.mjs",
+    env = _TEST_ENV | {"ARITHMETIC_OBSERVER_MODEL": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:arithmetic_observer_model)"},
+)
+
 _UNSHARDED_TESTS = [
-    "arithmetic_observer_test",
     "arithmetic_test",
     "arrays_test",
     "async_methods_test",

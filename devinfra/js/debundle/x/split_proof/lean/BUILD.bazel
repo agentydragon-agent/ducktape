@@ -909,6 +909,13 @@ lean_proof_test(
 )
 
 test_runner(
+    name = "arithmetic_observer_model",
+    src = "ArithmeticObserverModelMain.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    deps = [":lowersplit_workflows"],
+)
+
+test_runner(
     name = "joint_static_test_runner",
     src = "JointStaticTest.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
