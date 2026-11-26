@@ -604,7 +604,6 @@ export const cases = [
       const value = (0, eval)("1 + " + Number(-0));
       console.log("after", Math.abs(value));
     `,
-    allowHost: true,
     end: "unknown",
     expectedStop: {
       detail: "host function eval is called",
