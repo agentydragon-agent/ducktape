@@ -1752,3 +1752,20 @@ lean_proof_test(
     ],
     deps = [":terminal_const_decoder"],
 )
+
+lean_library(
+    name = "terminal_const_typed",
+    srcs = ["EsmSplit/LowerSplit/TerminalConstTyped.lean"],
+    deps = [":terminal_const_decoder"],
+)
+
+lean_proof_test(
+    name = "terminal_const_typed_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.LowerSplit.TerminalConstTyped"],
+    required_theorems = [
+        "EsmSplit.LowerSplit.TerminalConstTyped.admitted_decode",
+        "EsmSplit.LowerSplit.TerminalConstTyped.decode_encode",
+    ],
+    deps = [":terminal_const_typed"],
+)
