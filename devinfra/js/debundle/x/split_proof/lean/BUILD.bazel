@@ -1120,7 +1120,9 @@ lean_library(
     ],
     deps = [
         ":corejs_certificates",
+        ":corejs_checked_split",
         ":corejs_indexed_checked_split",
+        ":corejs_indexed_inline_constructor",
         ":corejs_indexed_source_facts",
         ":corejs_indexed_source_schedule",
         ":corejs_runtime",
@@ -1128,7 +1130,6 @@ lean_library(
         ":corejs_structural",
         ":lowersplit_input",
         ":lowersplit_support",
-        ":named_declaration_split",
         ":ordered_const_syntax",
         ":planner",
     ],
@@ -1292,7 +1293,7 @@ test_runner(
         "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
     ],
     deps = [
-        ":corejs_indexed_inline_plan",
+        ":corejs_indexed_inline_constructor",
         ":corejs_linked_input",
         ":corejs_runtime",
         ":effects",
@@ -2935,6 +2936,7 @@ lean_library(
     deps = [
         ":corejs_indexed_checked_split",
         ":corejs_indexed_inline_plan",
+        ":corejs_runtime",
     ],
 )
 

@@ -93,6 +93,18 @@ assert.equal(split({ source, spec, out: letOut, require: "all-outcomes", checkOu
 assert.equal(readFileSync(letEntry, "utf8"), letChanged);
 writeFileSync(letEntry, letOriginal);
 
+// An uninitialized lexical declaration keeps its original live cell.
+writeFileSync(source, "let seed; export let result = seed;\n");
+const uninitializedOut = path.join(root, "uninitialized-let-out");
+const uninitialized = split({ source, spec, out: uninitializedOut, require: "all-outcomes" });
+assert.equal(uninitialized.status, "certified", uninitialized.log);
+assert.equal(uninitialized.scope, "named-declarations");
+assert.equal((await import(pathToFileURL(path.join(uninitializedOut, "entry.mjs")))).result, undefined);
+assert.equal(
+  split({ source, spec, out: uninitializedOut, require: "all-outcomes", checkOutput: true }).status,
+  "certified"
+);
+
 // Exercise tampering against the same source and placement that produced `out`.
 writeFileSync(source, "const seed = 7; export const result = seed;\n");
 assert.equal(run({ checkOutput: true }).status, "certified");

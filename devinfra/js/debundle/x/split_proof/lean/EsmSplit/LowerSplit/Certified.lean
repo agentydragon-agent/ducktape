@@ -2,11 +2,12 @@ import EsmSplit.Cli
 import EsmSplit.CoreJS.Declaration.Artifacts
 import EsmSplit.CoreJS.JointStatic
 import EsmSplit.CoreJS.IndexedCheckedSplit
+import EsmSplit.CoreJS.IndexedInlineConstructor
 import EsmSplit.CoreJS.IndexedSourceFacts
 import EsmSplit.CoreJS.LinkedCertificate
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.Move
-import EsmSplit.CoreJS.NamedDeclarationSplit
+import EsmSplit.CoreJS.CheckedSplit
 import EsmSplit.CoreJS.StructuralCertificate
 import EsmSplit.CoreJS.OrderedConstSyntax
 import EsmSplit.ESTreeEmit
@@ -310,30 +311,25 @@ private def tryNamedDeclarations (chunk : DeploymentChunk) (src : BundleInput)
   unless options.profile == .empty && options.intrinsics.isEmpty && !options.structural do return none
   let .authored spec := chunk.placement | return none
   unless spec.sequential do return none
-  let .ok (source, localExports) :=
-    CoreJS.LinkedInput.decodeSingletonSourceWithLocalExports src.program spec.entry | return none
-  let [original] := source.modules | return none
+  let .ok decoded := CoreJS.LinkedInput.decodeIndexedSource src.program src.source spec.entry | return none
+  let source := decoded.program
+  let original := decoded.source
   unless !original.body.isEmpty && original.body.all (fun (_, stmt) =>
       match stmt with
-      | .decl .const _ _ => true
-      | .decl .let_ _ .undef => false
-      | .decl .let_ _ _ => true
+      | .decl .const _ _ | .decl .let_ _ _ => true
       | _ => false) do return none
   unless spec.modules.all (fun row => row.1.endsWith ".mjs") do return none
-  let .ok constructed := CoreJS.NamedDeclarationSplit.construct source spec | return none
-  -- This dense constructor accounts for executable source units only. Do not
-  -- publish or fall through to another route when original nodes were omitted
-  -- or a standalone export row lacks an authenticated owner.
-  let provenance : Except String Unit := do
-    let nodes ← ESTreeUnits.checkedNodes src.program src.source
-    let _ ← CoreJS.LinkedInput.checkSourceUnitCoverage nodes.size source localExports
-    unless localExports.isEmpty do
-      throw "standalone export rows require source-indexed placement"
-    return ()
-  if let .error reason := provenance then
-    return some (← emitRefusal options.request.label { reason := s!"source provenance: {reason}" } "named-declarations")
+  -- Indexed decoding has already checked original-unit coverage. A standalone
+  -- export row must be handled by the source-indexed local-export route.
+  unless decoded.localExports.isEmpty do
+    return some (← emitRefusal options.request.label
+      { reason := "source provenance: standalone export rows require source-indexed placement" } "named-declarations")
+  let constructed ← match CoreJS.IndexedInlineConstructor.construct decoded (CoreJS.CheckedSplit.summarize source) spec with
+    | .ok built => pure built
+    | .error reason =>
+      return some (← emitRefusal options.request.label { reason } "named-declarations")
   try
-    let checked ← stageConstructed constructed.split.program src out work options timings
+    let checked ← stageConstructed constructed.program src out work options timings
     match checked with
     | .ok _ => return some (← emitVerdict options.request.label (.ok .allOutcomes) "named-declarations"
         [("strategy", toJson "compiled-constructor")])
