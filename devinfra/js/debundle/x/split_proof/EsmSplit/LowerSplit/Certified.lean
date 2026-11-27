@@ -2,6 +2,7 @@ import EsmSplit.CoreJS.AuthenticatedSource
 import EsmSplit.Cli
 import EsmSplit.CoreJS.ConstructedOutput
 import EsmSplit.CoreJS.IndexedCheckedSplit
+import EsmSplit.CoreJS.IndexedHelperConstructor
 import EsmSplit.CoreJS.IndexedInlineConstructor
 import EsmSplit.CoreJS.IndexedSourceFacts
 import EsmSplit.CoreJS.LinkedInput
@@ -184,6 +185,38 @@ private def rejectDuplicateTerminalSelectors (chunk : DeploymentChunk)
         "terminal-declarations")
     return none
 
+/-- Keep the original callable ranges when printing a helper. Compare both
+the emitted syntax and the independently lowered program before publication. -/
+private def tryOrderedHelper (spec : Spec) (src : BundleInput)
+    (decoded : CoreJS.AuthenticatedSource.IndexedSource) (out work : System.FilePath)
+    (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
+  unless spec.sequential && !spec.privateEntryBody &&
+      decoded.source.body.any (fun (_, stmt) => match stmt with | .funDecl _ => true | _ => false) do
+    return none
+  let bundle := sourceBundle decoded.nodes
+  let built ← match CoreJS.IndexedHelperConstructor.construct decoded bundle spec with
+    | .ok built => pure built
+    | .error reason =>
+      return some (← emitRefusal options.request.label
+        { reason, reasonCode := some "no_constructed_rule" } "ordered-helper")
+  try
+    let programs ← IO.ofExcept (ESTreeEmit.programs decoded.nodes bundle built.schedule.plan src.source spec.entry)
+    let part : OutputPart := { programs, source := src.source, input := src.input, work }
+    let checked ← certifyOutput (α := Unit) [part] (Json.mkObj []) out work options.checkOnly timings fun files =>
+      pure do
+        let ⟨same⟩ ← (CoreJS.ConstructedOutput.checkConstructedOutput files built.program).mapError
+          fun reason => ({ reason } : CertificationRefusal)
+        let _proof := fun observed
+            (decoded : CoreJS.ConstructedOutput.decodeConstructedOutput files built.program = .ok observed) =>
+          built.readbackGuarantees (Except.ok.inj (decoded.symm.trans same))
+        return ()
+    match checked with
+    | .ok _ =>
+      return some (← emitVerdict options.request.label (.ok .allOutcomes) "ordered-helper"
+        [("strategy", toJson "compiled-constructor")])
+    | .error refusal => return some (← emitRefusal options.request.label refusal "ordered-helper")
+  catch e => return some (← emitVerdict options.request.label (.error e.toString) "ordered-helper")
+
 /-- Both emission and readback must start from a successful construction. -/
 private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
     (options : CertifiedOptions) (timings : Bool) : IO UInt32 := do
@@ -195,6 +228,9 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
         let indexed := CoreJS.AuthenticatedSource.checkIndexedSource classified
         if let some verdict ← tryLocalExports chunk src classified indexed out work options timings then return verdict
         if let some verdict ← tryInlineDeclarations chunk src classified indexed out work options timings then return verdict
+        if javascriptSource chunk.source then
+          if let .ok decoded := indexed then
+            if let some verdict ← tryOrderedHelper spec src decoded out work options timings then return verdict
   noConstructor options.request.label s!"no constructor accepts the requested placement of {chunk.path}"
 
 def certified (args : List String) : IO UInt32 := do
