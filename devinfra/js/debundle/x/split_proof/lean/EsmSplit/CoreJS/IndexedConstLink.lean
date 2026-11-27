@@ -1,5 +1,6 @@
 import EsmSplit.CoreJS.IndexedUnitsAgree
 import EsmSplit.CoreJS.SingleModule
+import EsmSplit.CoreJS.ExportRowsLink
 
 /-! Successful source allocation and live exports for sparse original IDs. -/
 
@@ -40,8 +41,9 @@ theorem source_allocation {body : List (Nat × Stmt)} {sourceProgram : Program} 
   obtain ⟨frames, ready, allocation, _⟩ := declareConstTops_ok body consts (initialState w sourceProgram.regions) bound
   exact ⟨frames, ready, allocation⟩
 
-/-- All worlds link to the very same ordered public cell table. -/
-theorem same_exports_of_order_kept {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+/-- All source-indexed local-export rows link to the same public cells in
+every world, provided the actual plan selects their original order. -/
+theorem rows_same_exports_of_order_kept {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
     {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
     (footprints : IndexedExportCells.Footprints body B) (complete : IndexedPlanCells.DefinitionsPresent body B)
     {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
@@ -49,35 +51,47 @@ theorem same_exports_of_order_kept {body : List (Nat × Stmt)} {B : EsmSplit.Bun
     (singleton : sourceProgram.modules = [source])
     (ordered : body.Pairwise (fun a b => a.1 ≤ b.1)) (kept : SparseProjectedOrder.OrderKept body P)
     (sourceConsts : ∀ p ∈ body, ∃ name init, p.2 = .decl .const name init)
-    {row : EsmSplit.LocalExportUnit} (sourceRow : InteriorExportNames.SourceRow source row)
-    (rowFootprint : row.FootprintMatches (B.stmt row.ordinal))
-    {owner : EsmSplit.Module} (ownerIn : owner ∈ P.mods) (rowWithin : row.ordinal < B.length)
-    (planEntry : P.find P.entry = some owner)
-    (authored : S.claimants B row.ordinal = [owner.name]) (unitsUnique : owner.stmts.Nodup)
-    (glue : owner.exports = [])
-    (onlyRow : ∀ id ∈ owner.stmts, id ≠ row.ordinal → (B.stmt id).exports = [])
-    (sourceDefs : ∀ pair ∈ row.names, ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs) :
+    {rows : List EsmSplit.LocalExportUnit} (sourceRows : ExportRows.SourceRows source rows)
+    {owner : EsmSplit.Module} (planEntry : P.find P.entry = some owner)
+    (unitMatches : ∀ id ∈ owner.stmts, ExportRows.UnitMatches B rows id)
+    (orderedRows : owner.stmts.filterMap (ExportRows.rowAt rows) = rows) (glue : owner.exports = [])
+    (sourceDefs : ∀ pair ∈ rows.flatMap (·.names), ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs) :
     LinkedBehavior.SameExports sourceProgram (splitProgramIndexed body B P) := by
   intro w
   obtain ⟨frames, ready, allocated⟩ := source_allocation sourceBody singleton sourceConsts w
   have regions : (splitProgramIndexed body B P).regions = sourceProgram.regions := by
     rw [SparseProjectedOrder.split_indexed_regions_eq_source kept,
       IndexedEntryLink.singleton_source_regions singleton, sourceBody]
-  obtain ⟨targetLinked, table, sourceLink, targetLink, _, sourceTable, targetTable, _⟩ :=
-    IndexedEntryLink.row_actual_links_from_allocation valid footprints complete sourceBody sourceImports sourceFind
-      ordered sourceConsts (SparseProjectedOrder.split_indexed_tops_eq_source kept ordered) regions allocated
-      sourceRow rowFootprint ownerIn rowWithin planEntry authored unitsUnique glue onlyRow sourceDefs
+  have sourceOrdered : source.body.Pairwise (fun a b => a.1 ≤ b.1) := by rw [sourceBody]; exact ordered
+  have sourceTops : sourceProgram.tops = body :=
+    (IndexedEntryLink.import_free_source_tops sourceFind sourceImports sourceOrdered).trans sourceBody
+  have sourceShape : ∀ p ∈ source.body, ∃ name init, p.2 = .decl .const name init := by
+    rw [sourceBody]
+    exact sourceConsts
+  have sourceLink := IndexedEntryLink.link_after_const_allocation sourceTops footprints.uniqueIds allocated
+    (IndexedEntryLink.import_free_entry_scopes sourceFind sourceImports frames)
+    (IndexedEntryLink.source_const_init sourceShape)
+  obtain ⟨targetLinked, table, targetScopes, _, before, after, _⟩ :=
+    ExportRows.rows_resolved_from_plan valid footprints complete allocated sourceBody sourceImports sourceFind
+      sourceRows planEntry unitMatches orderedRows glue sourceDefs
+  have targetAllocation : declareTops body (initialState w (splitProgramIndexed body B P).regions) = .ok frames ready := by
+    rw [regions]
+    exact allocated
+  have targetInit := IndexedEntryLink.indexed_initFunctions_consts (W := w) targetScopes sourceConsts
+  have targetLink := IndexedEntryLink.link_after_const_allocation
+    (SparseProjectedOrder.split_indexed_tops_eq_source kept ordered) footprints.uniqueIds
+    targetAllocation targetScopes targetInit
   refine ⟨table, table, ?_, ?_, List.Perm.refl _⟩
   · rw [LinkedBehavior.exports, sourceLink]
     change (EntryExports.resolve sourceProgram.entry _).toOption = some table
-    rw [sourceTable]
+    rw [before]
     rfl
   · rw [LinkedBehavior.exports, targetLink]
     change (EntryExports.resolve (splitProgramIndexed body B P).entry targetLinked).toOption = some table
-    rw [targetTable]
+    rw [after]
     rfl
 
 #print axioms source_allocation
-#print axioms same_exports_of_order_kept
+#print axioms rows_same_exports_of_order_kept
 
 end CoreJS.IndexedConstLink
