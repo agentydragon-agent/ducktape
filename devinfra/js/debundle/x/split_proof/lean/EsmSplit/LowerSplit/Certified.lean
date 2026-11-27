@@ -320,6 +320,7 @@ private def tryNamedDeclarations (chunk : DeploymentChunk) (src : BundleInput)
       | .decl .const _ _ | .decl .let_ _ _ => true
       | _ => false) do return none
   unless spec.modules.all (fun row => row.1.endsWith ".mjs") do return none
+  unless CoreJS.IndexedInlineConstructor.staticDeclarations [] original.body do return none
   -- Indexed decoding has already checked original-unit coverage. A standalone
   -- export row must be handled by the source-indexed local-export route.
   unless decoded.localExports.isEmpty do
