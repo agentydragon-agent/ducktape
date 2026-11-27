@@ -56,6 +56,7 @@ lean_proof_test(
         "EsmSplit.PlanGlue.mkPlan_glue_equation",
         "EsmSplit.PlanGlue.mkPlan_no_extra_glue",
         "EsmSplit.PlanGlue.mkPlan_no_extra_glue_iff",
+        "EsmSplit.PlanGlue.uncovered_adds_public_name",
     ],
     deps = [":plan_glue"],
 )
@@ -2133,7 +2134,6 @@ lean_library(
     name = "corejs_terminal_entry_table",
     srcs = ["EsmSplit/CoreJS/TerminalEntryTable.lean"],
     deps = [
-        ":corejs_certificate_support_base",
         ":corejs_export_rows",
         ":corejs_terminal_entry_names",
     ],
@@ -2145,7 +2145,6 @@ lean_proof_test(
     modules = ["EsmSplit.CoreJS.TerminalEntryTable"],
     required_theorems = [
         "CoreJS.TerminalEntryTable.exact_exports",
-        "CoreJS.TerminalEntryTable.resolve_table",
     ],
     deps = [":corejs_terminal_entry_table"],
 )
@@ -2191,6 +2190,7 @@ lean_library(
     name = "corejs_terminal_linked_exports",
     srcs = ["EsmSplit/CoreJS/TerminalLinkedExports.lean"],
     deps = [
+        ":corejs_indexed_entry_link",
         ":corejs_linked_entry_find",
         ":corejs_terminal_entry_cells",
         ":corejs_terminal_entry_table",
@@ -2880,6 +2880,7 @@ lean_library(
     deps = [
         ":corejs_export_rows",
         ":corejs_indexed_entry_link",
+        ":plan_glue",
     ],
 )
 
@@ -2893,6 +2894,7 @@ lean_proof_test(
         "CoreJS.ExportRows.rowAt_some",
         "CoreJS.ExportRows.row_alias_live_cell",
         "CoreJS.ExportRows.rows_resolved_from_plan",
+        "CoreJS.ExportRows.rows_resolved_from_mkPlan",
         "CoreJS.ExportRows.selected_row",
         "CoreJS.ExportRows.rows_scope_cells",
     ],
