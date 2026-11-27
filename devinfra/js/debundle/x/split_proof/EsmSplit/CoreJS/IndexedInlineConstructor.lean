@@ -15,8 +15,7 @@ open LinkedBehavior
 The order-preserving proof uses the original initializer expression unchanged. -/
 private def constInitializer (earlier : List Name) (init : Expr) : Bool :=
   match init with
-  | .arr (first :: rest) =>
-    (first :: rest).all fun element => (PrimitiveRhs.check earlier.contains element).isSome
+  | .arr elements => elements.all fun element => (PrimitiveRhs.check earlier.contains element).isSome
   | _ => (PrimitiveRhs.check earlier.contains init).isSome
 
 /-- Source-only admission for unique lexical declarations with primitive
