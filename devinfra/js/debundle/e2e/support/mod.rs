@@ -383,12 +383,11 @@ pub fn run_fixture_to_gate_outcome(opts: FixtureOpts<'_>) -> GateOutcome {
                 .join("entry.js"),
         ),
         out_root: app_root.clone(),
-        assessment: read_json(
-            &setup
-                .report_root
-                .join(opts.chunk_id)
-                .join("candidate_relocation_assessment.json"),
-        ),
+        assessment: read_json(&chunk_report(
+            &setup.report_root,
+            opts.chunk_id,
+            "candidate_relocation_assessment.json",
+        )),
         _root: setup.root,
     }
 }
