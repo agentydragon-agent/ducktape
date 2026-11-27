@@ -1,0 +1,8 @@
+# The provider audit is a Bazel proof test outside the standalone Lake project.
+exclude = ["ProviderInputBoundaryAudit.lean"]
+force-exclude = true
+
+[lint]
+# FMT004 is advisory and report-only. Keep intentional direct imports in these
+# modules despite the current transitive graph, without suppressing the rule elsewhere.
+per-file-ignores = { "EsmSplit.lean" = ["FMT004"], "EsmSplit/CoreJS/LinkedPivot.lean" = ["FMT004"], "EsmSplit/CoreJS/SparseProjectedOrder.lean" = ["FMT004"], "EsmSplit/LowerSplit/Certified.lean" = ["FMT004"], "EsmSplit/LowerSplit/Diagnostic.lean" = ["FMT004"] }

@@ -17,3 +17,8 @@ generated source). Missing deps fail the compile; extra deps only delay scheduli
 
 Name a target `corejs_<module>` for `EsmSplit/CoreJS/…`, else `<module>` (snake case). Module names follow file paths
 (`rules_lean` and Lake), so moving a file renames its module.
+
+The repository pre-commit hooks `lean-fmt-format`, `lean-fmt-organize`, and
+`lean-fmt-check` format, organize imports, and lint the split-proof Lean
+project rooted here. When a Lean source triggers the hooks, they run over
+the whole project, subject to the exclusions in `.lean-fmt.toml`.
