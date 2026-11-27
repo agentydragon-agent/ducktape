@@ -2,6 +2,7 @@ import EsmSplit.CoreJS.AuthenticatedSource
 import EsmSplit.CoreJS.IndexedCheckedSplit
 import EsmSplit.CoreJS.IndexedInlinePlan
 import EsmSplit.CoreJS.PrimitiveRhs
+import EsmSplit.CoreJS.VarInitializer
 
 /-! A proof-carrying indexed constructor for the actual decoded inline source
 and authored plan. Its output is the same indexed program used by local export
@@ -19,9 +20,7 @@ private def constInitializer (earlier : List Name) (init : Expr) : Bool :=
   | .obj [] => true
   | _ => (PrimitiveRhs.check earlier.contains init).isSome
 
-/-- Source-only admission for unique lexical declarations. Initializers may
-read earlier bindings; consts may also allocate the supported literals. A let
-without an initializer retains the model's `undef` initializer. -/
+/-- Source-only admission for unique declarations with bounded initializers. Consts may allocate supported literals; a `var` may read its own hoisted cell. An uninitialized lexical let retains the model's `undef` initializer. -/
 def staticDeclarations : List Name → List (Nat × Stmt) → Bool
   | _, [] => true
   | earlier, (_, .decl .const name init) :: rest =>
@@ -31,6 +30,9 @@ def staticDeclarations : List Name → List (Nat × Stmt) → Bool
       !earlier.contains name && staticDeclarations (name :: earlier) rest
   | earlier, (_, .decl .let_ name init) :: rest =>
       !earlier.contains name && (PrimitiveRhs.check earlier.contains init).isSome &&
+        staticDeclarations (name :: earlier) rest
+  | earlier, (_, .decl .var name init) :: rest =>
+      !earlier.contains name && VarInitializer.check earlier name init &&
         staticDeclarations (name :: earlier) rest
   | _, _ => false
 
