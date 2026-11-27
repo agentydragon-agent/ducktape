@@ -11,13 +11,21 @@ namespace CoreJS.IndexedInlineConstructor
 
 open LinkedBehavior
 
+/-- An inline const may allocate a dense array from supported operands.
+The order-preserving proof uses the original initializer expression unchanged. -/
+private def constInitializer (earlier : List Name) (init : Expr) : Bool :=
+  match init with
+  | .arr (first :: rest) =>
+    (first :: rest).all fun element => (PrimitiveRhs.check earlier.contains element).isSome
+  | _ => (PrimitiveRhs.check earlier.contains init).isSome
+
 /-- Source-only admission for unique lexical declarations with primitive
-initializers and reads from earlier bindings. A lexical let without an
+initializers or dense array consts reading earlier bindings. A lexical let without an
 initializer retains the model's `undef` initializer. -/
 def staticDeclarations : List Name → List (Nat × Stmt) → Bool
   | _, [] => true
   | earlier, (_, .decl .const name init) :: rest =>
-      !earlier.contains name && (PrimitiveRhs.check earlier.contains init).isSome &&
+      !earlier.contains name && constInitializer earlier init &&
         staticDeclarations (name :: earlier) rest
   | earlier, (_, .decl .let_ name .undef) :: rest =>
       !earlier.contains name && staticDeclarations (name :: earlier) rest
