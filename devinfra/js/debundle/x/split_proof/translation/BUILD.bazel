@@ -1,6 +1,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_test")
 load("@npm_split_proof//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/lint:linters.bzl", "eslint_test")
+load("//devinfra/lint:module_entry_points.bzl", "eslint_entry_points")
 load("//devinfra/python:defs.bzl", "py_test")
 load(":fuzz_test_rules.bzl", "seed_pair_tests")
 
@@ -51,20 +52,29 @@ js_binary(
     ],
 )
 
-# Include first-party runfile helpers as lint sources.
-js_library(
-    name = "lint_sources",
-    testonly = True,
-    srcs = glob(
-        ["**/*.mjs"],
-        exclude = ["fixtures/**"],
-    ),
-)
-
 eslint_test(
     name = "eslint_test",
     srcs = [
-        ":lint_sources",
+        ":analysis_inventory",
+        ":annotated_estree",
+        ":coverage_audit",
+        ":footprint_oracle",
+        ":footprint_reduce",
+        ":frontend",
+        ":fuzz_support",
+        ":host_inventory",
+        ":modern_syntax",
+        ":mutate",
+        ":oracle_harness",
+        ":pair",
+        ":parser",
+        ":print",
+        ":scope_metadata",
+        ":shift_candidate",
+        ":spawn_and_wait",
+        ":split_dump",
+        ":survey_source",
+        ":syntax_inventory",
         "//devinfra/js/debundle/x/split_proof/translation/debug/generator_findings:cases",
         "//devinfra/js/debundle/x/split_proof/translation/testing:lint_sources",
         "//devinfra/js/debundle/x/split_proof/translation/testing/gen:program_generator",
@@ -85,10 +95,7 @@ _CHECKER_RUNFILES = [
 
 # The fuzzer's generator, corpora, marker renderer and their imports.
 _FUZZ_SOURCES = [
-    "fuzz_support.mjs",
-    _SEEDED_RANDOM,
-    "//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator",
-    ":node_modules/astring",
+    ":fuzz_support",
     "//devinfra/js/debundle/x/split_proof/translation/testing/gen:program_generator",
 ]
 
@@ -101,7 +108,7 @@ js_test(
 js_test(
     name = "fixtures_test",
     data = [
-        "mutate.mjs",
+        ":mutate",
         ":pair",
     ] + _CHECKER_RUNFILES + glob(
         ["fixtures/**"],
@@ -369,11 +376,11 @@ js_test(
     name = "footprint_oracle_test",
     size = "medium",
     data = [
-        "oracle_harness.mjs",
         ":footprint_oracle",
         ":frontend",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
+        ":oracle_harness",
         ":scope_metadata",
         ":syntax_inventory",
         "//devinfra/js/debundle/x/split_proof:lower",
@@ -419,12 +426,12 @@ js_test(
 js_test(
     name = "footprint_reduce_test",
     data = [
-        "oracle_harness.mjs",
         ":footprint_oracle",
         ":footprint_reduce",
         ":frontend",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
+        ":oracle_harness",
         ":scope_metadata",
         ":syntax_inventory",
     ],
@@ -651,5 +658,43 @@ js_library(
         ":parser",
         ":scope_metadata",
         "//devinfra/js/debundle/x/split_proof/model:to_core",
+    ],
+)
+
+js_library(
+    name = "fuzz_support",
+    testonly = True,
+    srcs = ["fuzz_support.mjs"],
+    deps = [
+        ":node_modules/astring",
+        _SEEDED_RANDOM,
+        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator",
+        "//devinfra/js/debundle/x/split_proof/translation/testing/gen:program_generator",
+    ],
+)
+
+js_library(
+    name = "mutate",
+    testonly = True,
+    srcs = ["mutate.mjs"],
+    deps = [":frontend"],
+)
+
+js_library(
+    name = "oracle_harness",
+    testonly = True,
+    srcs = ["oracle_harness.mjs"],
+)
+
+# Standalone diagnostics are not Bazel entry points; keep their existing lint coverage.
+eslint_entry_points(
+    name = "eslint_entry_points_test",
+    standalone = [
+        "allocate_only_census.mjs",
+        "executed_census.mjs",
+        "footprint_oracle_sweep.mjs",
+        "intrinsics_probe.mjs",
+        "magic_census.mjs",
+        "opaque_census.mjs",
     ],
 )

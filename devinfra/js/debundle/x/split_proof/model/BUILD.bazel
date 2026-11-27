@@ -1,6 +1,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
 load("//devinfra/js/debundle/x/split_proof:executable_test.bzl", "test_runner")
 load("//devinfra/lint:linters.bzl", "eslint_test")
+load("//devinfra/lint:module_entry_points.bzl", "eslint_entry_points")
 
 js_library(
     name = "to_core",
@@ -12,25 +13,45 @@ js_library(
     ],
 )
 
-# Include first-party runfile helpers as lint sources.
 js_library(
-    name = "lint_sources",
+    name = "differential_inputs",
     testonly = True,
-    srcs = glob(["*.mjs"]),
+    srcs = [
+        "cases.mjs",
+        "generate.mjs",
+        "module_cases.mjs",
+        "opaque_cases.mjs",
+    ],
+    deps = [
+        ":to_core",
+        "//devinfra/js/debundle/x/split_proof:seeded_random",
+    ],
+)
+
+js_library(
+    name = "linked_async_fixture",
+    testonly = True,
+    srcs = ["linked_async_fixture.mjs"],
+)
+
+js_library(
+    name = "linked_primitive_await_fixture",
+    testonly = True,
+    srcs = ["linked_primitive_await_fixture.mjs"],
 )
 
 eslint_test(
     name = "eslint_test",
-    srcs = [":lint_sources"],
+    srcs = [
+        ":differential_inputs",
+        ":linked_async_fixture",
+        ":linked_primitive_await_fixture",
+        ":to_core",
+    ],
 )
 
 _DIFFERENTIAL_DATA = [
-    "cases.mjs",
-    "generate.mjs",
-    "module_cases.mjs",
-    "opaque_cases.mjs",
-    ":to_core",
-    "//devinfra/js/debundle/x/split_proof:seeded_random",
+    ":differential_inputs",
     "//devinfra/js/debundle/x/split_proof/translation/testing/gen:program_generator",
     "//devinfra/js/debundle/x/split_proof/translation:split_dump",
     "//devinfra/js/debundle/x/split_proof:corejs",
@@ -161,7 +182,7 @@ test_runner(
 js_test(
     name = "linked_async_differential_test",
     data = [
-        "linked_async_fixture.mjs",
+        ":linked_async_fixture",
         ":linked_async_test_runner",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
     ],
@@ -198,10 +219,12 @@ test_runner(
 js_test(
     name = "linked_primitive_await_differential_test",
     data = [
-        "linked_primitive_await_fixture.mjs",
+        ":linked_primitive_await_fixture",
         ":linked_primitive_await_test_runner",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
     ],
     entry_point = "linked_primitive_await_differential_test.mjs",
     env = {"LINKED_PRIMITIVE_AWAIT_TEST": "$(rootpath :linked_primitive_await_test_runner)"},
 )
+
+eslint_entry_points(name = "eslint_entry_points_test")

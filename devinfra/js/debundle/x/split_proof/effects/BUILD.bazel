@@ -1,17 +1,31 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
 load("//devinfra/lint:linters.bzl", "eslint_test")
+load("//devinfra/lint:module_entry_points.bzl", "eslint_entry_points")
 
-# Include first-party runfile helpers as lint sources.
 js_library(
-    name = "lint_sources",
+    name = "golden_cases",
     testonly = True,
-    srcs = glob(["**/*.mjs"]),
+    srcs = [
+        "cases.mjs",
+        "cases_general.mjs",
+    ],
+)
+
+js_library(
+    name = "generated_cases",
+    testonly = True,
+    srcs = [
+        "reflective_receivers.mjs",
+        "targeted.mjs",
+    ],
+    deps = ["//devinfra/js/debundle/x/split_proof:seeded_random"],
 )
 
 eslint_test(
     name = "eslint_test",
     srcs = [
-        ":lint_sources",
+        ":generated_cases",
+        ":golden_cases",
         "//devinfra/js/debundle/x/split_proof/effects/debug/general_known_gaps:cases",
         "//devinfra/js/debundle/x/split_proof/effects/debug/p1_known_gaps:cases",
     ],
@@ -27,10 +41,7 @@ _RUNNER_DATA = [
     "//devinfra/js/debundle/x/split_proof:lower",
 ]
 
-_GOLDEN_CASES = [
-    "cases.mjs",
-    "cases_general.mjs",
-]
+_GOLDEN_CASES = [":golden_cases"]
 
 _EFFECTS_CASES_ENV = {
     "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof:lower)",
@@ -98,7 +109,7 @@ js_test(
         "--seed",
         "20261121",
     ],
-    data = _RUNNER_DATA + ["targeted.mjs"],
+    data = _RUNNER_DATA + [":generated_cases"],
     entry_point = "run.mjs",
     env = {
         "CASES": "./targeted.mjs",
@@ -107,7 +118,7 @@ js_test(
     },
 )
 
-_REFLECTIVE_RECEIVER_DATA = _RUNNER_DATA + ["reflective_receivers.mjs"]
+_REFLECTIVE_RECEIVER_DATA = _RUNNER_DATA + [":generated_cases"]
 
 _REFLECTIVE_RECEIVER_ENV = dict(
     _EFFECTS_CASES_ENV,
@@ -141,4 +152,10 @@ js_test(
 js_test(
     name = "prototype_observations_test",
     entry_point = "prototype_observations_test.mjs",
+)
+
+# gen_members is also run directly to inspect fixture generation.
+eslint_entry_points(
+    name = "eslint_entry_points_test",
+    standalone = ["gen_members.mjs"],
 )
