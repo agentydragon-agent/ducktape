@@ -8,6 +8,7 @@ import EsmSplit.CoreJS.LinkedCertificate
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.Move
 import EsmSplit.CoreJS.CheckedSplit
+import EsmSplit.CoreJS.ResolvedPlacement
 import EsmSplit.CoreJS.StructuralCertificate
 import EsmSplit.CoreJS.OrderedConstSyntax
 import EsmSplit.ESTreeEmit
@@ -324,10 +325,20 @@ private def tryNamedDeclarations (chunk : DeploymentChunk) (src : BundleInput)
   unless decoded.localExports.isEmpty do
     return some (← emitRefusal options.request.label
       { reason := "source provenance: standalone export rows require source-indexed placement" } "named-declarations")
-  let constructed ← match CoreJS.IndexedInlineConstructor.construct decoded (CoreJS.CheckedSplit.summarize source) spec with
-    | .ok built => pure built
+  -- Selectors are resolved against the actual original units, before the
+  -- planner can deduplicate them. Invalid selectors are terminal refusals.
+  let selected ← match CoreJS.ResolvedPlacement.selectRequests original spec with
+    | .ok (_, selected) => pure selected
     | .error reason =>
       return some (← emitRefusal options.request.label { reason } "named-declarations")
+  unless decide ((selected.map Prod.fst).Nodup) do
+    return some (← emitRefusal options.request.label { reason := "an original unit is selected more than once" }
+      "named-declarations")
+  unless decide ((selected.map Prod.fst).Perm (original.body.map Prod.fst)) do
+    return some (← emitRefusal options.request.label { reason := "selectors do not cover every original unit" }
+      "named-declarations")
+  let .ok constructed := CoreJS.IndexedInlineConstructor.construct decoded (CoreJS.CheckedSplit.summarize source) spec |
+    return none
   try
     let checked ← stageConstructed constructed.program src out work options timings
     match checked with

@@ -1125,6 +1125,7 @@ lean_library(
         ":corejs_indexed_inline_constructor",
         ":corejs_indexed_source_facts",
         ":corejs_indexed_source_schedule",
+        ":corejs_resolved_placement",
         ":corejs_runtime",
         ":corejs_single_module",
         ":corejs_structural",
