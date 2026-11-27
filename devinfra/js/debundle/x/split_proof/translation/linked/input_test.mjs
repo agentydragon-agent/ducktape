@@ -38,6 +38,25 @@ const orders = [
   [5, 2, 3, 1],
 ];
 const cases = [{ kind: "linked", input: linked(), expected: orders }];
+
+// The indexed decoder associates the inline public binding with its executable
+// source ordinal; it does not turn that declaration into a second metadata row.
+const indexedLetSource = "let seed = 7; let ready = seed + 2; export let result = ready;";
+cases.push({
+  kind: "indexedSourceShape",
+  input: { source: parse(indexedLetSource), sourceText: indexedLetSource, entry: "entry.mjs" },
+  expected: {
+    body: [
+      [0, ["seed"]],
+      [1, ["ready"]],
+      [2, ["result"]],
+    ],
+    exports: [["result", "result"]],
+    localExports: [],
+    inlineExports: [[2, [["result", "result"]]]],
+    inlineOnlyAccepted: true,
+  },
+});
 cases.push({
   kind: "singletonPlacement",
   input: linked(),

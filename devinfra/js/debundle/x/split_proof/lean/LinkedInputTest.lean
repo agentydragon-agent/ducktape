@@ -145,6 +145,21 @@ private def singletonSourceShape (input : Json) : Except String Json := do
     Json.mkObj [("name", toJson m.name), ("body", toJson (m.body.map fun (id, stmt) =>
       (id, stmt.bindings.map Prod.fst))), ("exports", toJson m.exports)]))]
 
+/-- Report the decoder's inline-export association without manufacturing a
+second source ordinal for an exported declaration. -/
+private def indexedSourceShape (input : Json) : Except String Json := do
+  let source ← input.getObjVal? "source"
+  let sourceText ← input.getObjValAs? String "sourceText"
+  let entry ← input.getObjValAs? String "entry"
+  let decoded ← CoreJS.LinkedInput.decodeIndexedSource source sourceText entry
+  let [module] := decoded.program.modules | throw "expected one source module"
+  return Json.mkObj [
+    ("body", toJson (module.body.map fun (id, stmt) => (id, stmt.bindings.map Prod.fst))),
+    ("exports", toJson module.exports),
+    ("localExports", toJson (decoded.localExports.map fun row => (row.ordinal, row.names))),
+    ("inlineExports", toJson (decoded.inlineExports.map fun item => (item.ordinal, item.names))),
+    ("inlineOnlyAccepted", toJson ((CoreJS.LinkedInput.checkInlineOnlySource decoded).isOk))]
+
 private def fixtures (input : Json) : Except String Json := do
   let cases ← input.getArr?
   return .arr (← cases.mapM fun fixture => do
@@ -156,6 +171,7 @@ private def fixtures (input : Json) : Except String Json := do
       | "structural" => pure (structural (← fixture.getObjVal? "input"))
       | "structuralSparseHole" => pure (structuralSparseHole (← fixture.getObjVal? "input"))
       | "singletonSourceShape" => pure (singletonSourceShape (← fixture.getObjVal? "input"))
+      | "indexedSourceShape" => pure (indexedSourceShape (← fixture.getObjVal? "input"))
       | "namedConstructor" => pure (namedConstructor (← fixture.getObjVal? "input"))
       | "constructorContexts" => pure (constructorContexts (← fixture.getObjVal? "input"))
       | "opaque" => pure (opaqueUnits (← fixture.getObjVal? "input"))

@@ -89,11 +89,22 @@ private def numberSites (unit : Nat) (scripts : Std.HashSet (Nat × Nat)) (j : J
   let parts := if parts.size == offsets.size then parts else {}
   (annotateSites unit parts scripts j).run {}
 
+/-- An inline public export stays attached to its executable source item. Its
+ordinal is the original ESTree node index; it does not create another planned
+unit or another owner. -/
+structure InlineExportUnit where
+  ordinal : Nat
+  names : List (Name × Name)
+  deriving Repr, DecidableEq
+
+def InlineExportUnit.publicNames (item : InlineExportUnit) : List (Name × Name) := item.names
+
 private structure Parsed where
   imports : List Import
   units : List (Nat × Stmt × Json)
   exports : List (Name × Name)
   localExports : List EsmSplit.LocalExportUnit
+  inlineExports : List InlineExportUnit
   templates : List TemplateSite
 
 /-- A structural proof retains non-pivots. A recorded replay retains a unit
@@ -208,6 +219,7 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
   let mut units := #[]
   let mut exports := #[]
   let mut localExports : Array EsmSplit.LocalExportUnit := #[]
+  let mut inlineExports : Array InlineExportUnit := #[]
   let mut templates := #[]
   for (j, i) in nodes.zipIdx do
     let origin : Except StructuralRefusal Nat := match origins with
@@ -238,7 +250,9 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
         let (s, names, sites) ← decode declaration true
         templates := templates ++ sites.toArray
         units := units.push (i, ← (namespaceCaptures namespaces.toList s).mapError StructuralRefusal.unclassified, declaration)
-        for name in names do exports := exports.push (name, name)
+        let pairs := names.map fun name => (name, name)
+        inlineExports := inlineExports.push ⟨i, pairs⟩
+        exports := exports ++ pairs
     | "ExportDefaultDeclaration" =>
       let unitOrigin ← origin
       let lowered := format.lowerDefault profile names unitOrigin
@@ -248,7 +262,9 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
         (StructuralRefusal.mapReason fun why => s!"statement {i}: {why}")
       templates := templates ++ sites.toArray
       units := units.push (i, ← (namespaceCaptures namespaces.toList s).mapError StructuralRefusal.unclassified, j)
-      exports := exports.push ("default", name)
+      let pairs := [("default", name)]
+      inlineExports := inlineExports.push ⟨i, pairs⟩
+      exports := exports ++ pairs
     | _ =>
       let (s, _, sites) ← (decode j false).mapError
         (StructuralRefusal.mapReason fun why => s!"statement {i}: {why}")
@@ -259,6 +275,7 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
     units := units.toList
     exports := exports.toList
     localExports := localExports.toList
+    inlineExports := inlineExports.toList
     templates := templates.toList
   }
 
@@ -495,18 +512,19 @@ def decodePair (source providers files : Json) (P : EsmSplit.Plan) (profile : Ho
   DecodedDeployment.programs <$> decodeSingleton source providers files P profile
 
 private def decodeSingletonSourceNodes (nodes : Array Json) (entry : String) :
-    Except String (Program × List EsmSplit.LocalExportUnit) := do
+    Except String (Program × List EsmSplit.LocalExportUnit × List InlineExportUnit) := do
   let original ← (parse .linked .empty "bundle.mjs" nodes 0).mapError StructuralRefusal.reason
   unless original.imports.isEmpty do throw "checked construction requires an import-free original"
   unless original.templates.isEmpty do throw "checked construction does not install template objects"
-  return ({ entry, modules := [original.numbered entry 0] }, original.localExports)
+  return ({ entry, modules := [original.numbered entry 0] }, original.localExports, original.inlineExports)
 
 /-- Lower an import-free original in one pass, retaining each actual standalone
 local export list's original ordinal and ordered `(public, local)` names. Inline
 and default exports remain in the module export table. -/
 def decodeSingletonSourceWithLocalExports (source : Json) (entry : String) :
     Except String (Program × List EsmSplit.LocalExportUnit) := do
-  decodeSingletonSourceNodes (← ESTreeUnits.nodes source) entry
+  let (program, localExports, _) ← decodeSingletonSourceNodes (← ESTreeUnits.nodes source) entry
+  return (program, localExports)
 
 /-- Project the program from the same source decoder for rules that do not use
 standalone export-unit identities. -/
@@ -533,15 +551,37 @@ structure IndexedSource where
   nodes : Array Json
   program : Program
   localExports : List EsmSplit.LocalExportUnit
+  inlineExports : List InlineExportUnit
   coverage : (sourceUnitIds program localExports).Perm (List.range nodes.size)
+
+def IndexedSource.inlineExportNames (source : IndexedSource) : List (Name × Name) :=
+  source.inlineExports.flatMap InlineExportUnit.publicNames
+
+/-- In the inline-only case, the ordered public table is exactly the sequence
+of pairs attached to the original executable export declarations. -/
+structure InlineOnlySource (decoded : IndexedSource) where
+  module : Module
+  singleton : decoded.program.modules = [module]
+  noLocalExports : decoded.localExports = []
+  table : module.exports = decoded.inlineExportNames
+
+def checkInlineOnlySource (decoded : IndexedSource) : Except String (InlineOnlySource decoded) := do
+  match singleton : decoded.program.modules with
+  | [module] =>
+    if noLocalExports : decoded.localExports = [] then
+      if table : module.exports = decoded.inlineExportNames then
+        return ⟨module, singleton, noLocalExports, table⟩
+      else throw "inline export pairs differ from the decoded public table"
+    else throw "source has standalone local export rows"
+  | _ => throw "expected one source module"
 
 /-- Retain the full source ordinals for an authored constructor. A node the
 linked model skips, such as a debugger or empty statement, prevents coverage. -/
 def decodeIndexedSource (original : Json) (sourceText entry : String) : Except String IndexedSource := do
   let nodes ← ESTreeUnits.checkedNodes original sourceText
-  let (program, localExports) ← decodeSingletonSourceNodes nodes entry
+  let (program, localExports, inlineExports) ← decodeSingletonSourceNodes nodes entry
   let ⟨coverage⟩ ← checkSourceUnitCoverage nodes.size program localExports
-  return ⟨nodes, program, localExports, coverage⟩
+  return ⟨nodes, program, localExports, inlineExports, coverage⟩
 
 /-- Lower the independently parsed files using the constructor's file names
 and source ordinals. Bodies, binding names, imports and exports come from the
