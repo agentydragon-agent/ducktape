@@ -78,3 +78,16 @@ async function assertAlias(name, source, literal, shape) {
 }
 
 await assertAlias("empty-array-alias", "const x=[]; export const y=x;", "[]", []);
+await assertAlias("empty-object-alias", "const x={}; export const y=x;", "{}", {});
+
+// Allocation support does not admit a read before its initializer or fill an
+// array hole with a value.
+for (const [name, source] of [
+  ["array-before-binding", "const x=[y]; export const y=1;"],
+  ["sparse-array", "const x=[,]; export const y=x;"],
+]) {
+  const dir = path.join(root, name);
+  const { sourceFile, specFile } = prepare(dir, { source, provider: "", spec });
+  const refused = split({ source: sourceFile, spec: specFile, require, out: path.join(dir, "out") });
+  assert.equal(refused.reasonCode, "no_constructed_rule", refused.log);
+}
