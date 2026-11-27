@@ -102,7 +102,4 @@ theorem dense_program {decoded : AuthenticatedSource.IndexedSource} {B : EsmSpli
   rw [built.constructed, built.checked.schedule.planEq, dense]
   exact ExportRows.indexed_program_dense statements B (EsmSplit.mkPlan B S)
 
-#print axioms dense_program
-#print axioms construct
-
 end CoreJS.IndexedInlineConstructor
