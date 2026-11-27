@@ -2741,6 +2741,28 @@ lean_proof_test(
 )
 
 lean_library(
+    name = "corejs_indexed_inline_plan",
+    srcs = ["EsmSplit/CoreJS/IndexedInlinePlan.lean"],
+    deps = [
+        ":corejs_indexed_reorder",
+        ":corejs_linked_input",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_inline_plan_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedInlinePlan"],
+    required_theorems = [
+        "CoreJS.IndexedInlinePlan.Checked.originalDeclaration",
+        "CoreJS.IndexedInlinePlan.Checked.owned",
+        "CoreJS.IndexedInlinePlan.Checked.table",
+        "CoreJS.IndexedInlinePlan.check",
+    ],
+    deps = [":corejs_indexed_inline_plan"],
+)
+
+lean_library(
     name = "corejs_indexed_input_checks",
     srcs = ["EsmSplit/CoreJS/IndexedInputChecks.lean"],
     deps = [":corejs_indexed_units_agree"],
