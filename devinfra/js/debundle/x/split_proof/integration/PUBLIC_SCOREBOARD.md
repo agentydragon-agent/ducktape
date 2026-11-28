@@ -26,6 +26,17 @@ rebuilds of the published JavaScript from shipped TypeScript; it is not a
 TypeScript column-level map. The audit leaves nonunique output AST matches and
 rewrites unknown rather than guessing their owners.
 
+The retained-tail [trial #20706](https://github.com/agentydragon/ducktape/pull/20706)
+is separate from this devel snapshot. Its [122-case replay](https://app.buildbuddy.io/invocation/5004d081-d386-45e0-a6f8-e25264f7e41a)
+at the reported trial head `702ddda877670f01bed8580ba0d0d305359dbfa1` reports
+three certificates with disk readback, two of them with all authored
+observations complete. The additional complete case is the saved comma-list
+placement; `split_declarator_fragments` certifies but leaves its two nonentry
+namespace checks and whole-tree syntax check unchecked. The other 120 receipts
+match the earlier ledger. This is under review and does not change the
+devel 1/122 complete result. Recheck the trial head and its receipts before
+promoting these counts to a later devel snapshot.
+
 Each readable bundle has two distinct requests on the same pinned bytes: the
 previous halves and a source-file layout. Rust physically emitted both Acorn
 layouts (2 and 26 files), both lodash layouts (2 and 203 files), and semver
