@@ -28,7 +28,7 @@ def primitiveConstValue_decidable : (value : Expr) → Decidable (primitiveConst
   | .num _ => isTrue trivial
   | .str _ => isTrue trivial
   | .regexp _ | .var _ | .host _ | .this | .func _ | .obj _ | .arr _ | .spreadArg _ |
-    .cls .. | .derived .. | .get .. | .getSuper _ | .getOptional .. | .hasProp .. |
+    .cls .. | .derived .. | .get .. | .getSuper _ | .getOptional .. | .getOptionalThen .. | .hasProp .. |
     .delete .. | .assign .. | .assignOp .. | .assignLogical .. | .update .. |
     .call .. | .callMethod .. | .callSuper .. | .callOptionalReceiver .. |
     .callOptionalCallee .. | .new .. | .prim .. | .unary .. | .binary .. |
